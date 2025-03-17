@@ -31,7 +31,11 @@ pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
 }
 
 impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
-	pub fn new(id: ColumnId, partition_index: ColumnPartitionIndex) -> Self {
+	/// Creates a new typed column handle.
+	///
+	/// This has limited visibility to ensure that only the [`TableBuilder`] can create them. This
+	/// ensures the type parameters are consistent with the column definition.
+	pub(super) fn new(id: ColumnId, partition_index: ColumnPartitionIndex) -> Self {
 		assert!(VALUES_PER_ROW.is_power_of_two());
 		Self {
 			table_id: id.table_id,
