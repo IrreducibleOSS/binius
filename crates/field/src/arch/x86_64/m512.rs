@@ -26,10 +26,11 @@ use crate::{
 		},
 	},
 	arithmetic_traits::Broadcast,
+	tower_levels::TowerLevel,
 	underlier::{
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		transpose_square_blocks, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
+		SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -920,6 +921,61 @@ impl UnderlierWithBitOps for M512 {
 			5 => unsafe { _mm512_unpackhi_epi32(self.0, other.0).into() },
 			6 => unsafe { _mm512_unpackhi_epi64(self.0, other.0).into() },
 			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		transpose_square_blocks::<Self, TL>(values);
+
+		let (idx_1, idx_2) = unsafe {
+			(
+				_mm512_set_epi64(0b1011, 0b1010, 0b0011, 0b0010, 0b1001, 0b1000, 0b0001, 0b0000),
+				_mm512_set_epi64(0b1111, 0b1110, 0b0111, 0b0110, 0b1101, 0b1100, 0b0101, 0b0100),
+			)
+		};
+		let unpack_128b_lo_hi = |data: &mut TL::Data<Self>, i: usize, j: usize, idx_1, idx_2| {
+			let new_i = unsafe { _mm512_permutex2var_epi64(data[i].0, idx_1, data[j].0) };
+			let new_j = unsafe { _mm512_permutex2var_epi64(data[i].0, idx_2, data[j].0) };
+
+			data[i] = Self(new_i);
+			data[j] = Self(new_j);
+		};
+
+		// reorder lanes, step 1
+		for i in 0..TL::WIDTH / 2 {
+			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 2, idx_1, idx_2);
+		}
+
+		if TL::LOG_WIDTH == 0 || TL::LOG_WIDTH == 1 {
+			return;
+		}
+
+		let (idx_1, idx_2) = unsafe {
+			(
+				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
+				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
+			)
+		};
+		for i in 0..TL::WIDTH / 4 {
+			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 4, idx_1, idx_2);
+			unpack_128b_lo_hi(values, i + TL::WIDTH / 2, i + 3 * TL::WIDTH / 4, idx_1, idx_2);
+		}
+
+		// reorder rows
+		match TL::LOG_WIDTH {
+			2 | 3 => {}
+			4 => {
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
+				values.as_mut().swap(9, 10);
+				values.as_mut().swap(13, 14);
+			}
+			_ => panic!("unsupported tower level"),
 		}
 	}
 }

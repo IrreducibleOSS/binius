@@ -899,7 +899,7 @@ impl UnderlierWithBitOps for M256 {
 	{
 		transpose_square_blocks::<Self, TL>(values);
 
-		let swap_128b = |data: &mut TL::Data<Self>, i: usize, j: usize| {
+		let unpack_128b_lo_hi = |data: &mut TL::Data<Self>, i: usize, j: usize| {
 			let new_i = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x20) };
 			let new_j = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x31) };
 
@@ -909,7 +909,7 @@ impl UnderlierWithBitOps for M256 {
 
 		// reorder lanes
 		for i in 0..TL::WIDTH / 2 {
-			swap_128b(values, i, i + TL::WIDTH / 2);
+			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 2);
 		}
 
 		// reorder rows
