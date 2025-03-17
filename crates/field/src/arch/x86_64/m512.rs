@@ -29,7 +29,7 @@ use crate::{
 	tower_levels::TowerLevel,
 	underlier::{
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		transpose_square_blocks, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
+		transpose_128b_blocks, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
 		SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
@@ -930,7 +930,7 @@ impl UnderlierWithBitOps for M512 {
 		u8: NumCast<Self>,
 		Self: From<u8>,
 	{
-		transpose_square_blocks::<Self, TL>(values);
+		transpose_128b_blocks::<Self, TL>(values);
 
 		let (idx_1, idx_2) = unsafe {
 			(

@@ -182,8 +182,11 @@ where
 	single_element_mask_bits(T::BITS)
 }
 
+/// Helper function used as a building block for efficient SIMD types transposition implementation.
+/// This function actually may reorder the elements.
+#[allow(dead_code)]
 #[inline(always)]
-pub(crate) fn transpose_square_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
+pub(crate) fn transpose_128b_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 	values: &mut TL::Data<U>,
 ) {
 	assert!(TL::WIDTH <= 16);
@@ -193,8 +196,8 @@ pub(crate) fn transpose_square_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 	}
 
 	let (left, right) = TL::split_mut(values);
-	transpose_square_blocks::<_, TL::Base>(left);
-	transpose_square_blocks::<_, TL::Base>(right);
+	transpose_128b_blocks::<_, TL::Base>(left);
+	transpose_128b_blocks::<_, TL::Base>(right);
 
 	let log_block_len = checked_log_2(TL::WIDTH) - 1;
 	for i in 0..TL::WIDTH / 2 {
@@ -205,13 +208,16 @@ pub(crate) fn transpose_square_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 	}
 }
 
+/// Transposition implementation for 128-bit SIMD types.
+/// This implementations is used for NEON and SSE2.
+#[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn transpose_128b_values<U: UnderlierWithBitOps, TL: TowerLevel>(
 	values: &mut TL::Data<U>,
 ) {
 	assert!(U::BITS == 128);
 
-	transpose_square_blocks::<U, TL>(values);
+	transpose_128b_blocks::<U, TL>(values);
 
 	// Elements are transposed, but we need to reorder them
 	match TL::LOG_WIDTH {
