@@ -240,7 +240,6 @@ impl<F: Field> ArithExpr<F> {
 			return Err(Error::NonLinearExpression);
 		}
 
-		let mut normal_form = LinearNormalForm::default();
 		let n_vars = self.n_vars();
 
 		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
@@ -249,12 +248,17 @@ impl<F: Field> ArithExpr<F> {
 
 		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
 		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
-		for i in 0..n_vars {
-			let mut vars = vec![F::ZERO; n_vars];
-			vars[i] = F::ONE;
-			normal_form.var_coeffs.push(self.evaluate(&vars) - constant);
-		}
-		Ok(normal_form)
+		let var_coeffs = (0..n_vars)
+			.map(|i| {
+				let mut vars = vec![F::ZERO; n_vars];
+				vars[i] = F::ONE;
+				self.evaluate(&vars) - constant
+			})
+			.collect();
+		Ok(LinearNormalForm {
+			constant,
+			var_coeffs,
+		})
 	}
 
 	fn evaluate(&self, vars: &[F]) -> F {
@@ -485,7 +489,7 @@ mod tests {
 			+ Const(F::new(42)) * Var(0)
 			+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
 		let normal_form = expr.linear_normal_form().unwrap();
-		assert_eq!(normal_form.constant, F::ZERO);
+		assert_eq!(normal_form.constant, F::new(133));
 		assert_eq!(
 			normal_form.var_coeffs,
 			vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]

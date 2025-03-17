@@ -56,10 +56,8 @@ impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 	}
 }
 
-/// Upcast a columns from a subfield to an extension field..
-pub fn upcast_col<F, FSub, const VALUES_PER_ROW: usize>(
-	col: Col<FSub, VALUES_PER_ROW>,
-) -> Col<F, VALUES_PER_ROW>
+/// Upcast a column from a subfield to an extension field..
+pub fn upcast_col<F, FSub, const V: usize>(col: Col<FSub, V>) -> Col<F, V>
 where
 	FSub: TowerField,
 	F: TowerField + ExtensionField<FSub>,
@@ -120,10 +118,6 @@ pub struct ColumnId {
 pub enum ColumnDef<F: TowerField = B128> {
 	Committed {
 		tower_level: usize,
-	},
-	LinearCombination {
-		offset: F,
-		col_scalars: Vec<(ColumnIndex, F)>,
 	},
 	Selected {
 		col: ColumnId,

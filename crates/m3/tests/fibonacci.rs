@@ -67,8 +67,8 @@ mod arithmetization {
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar};
 	use binius_m3::{
 		builder::{
-			upcast_col, Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller,
-			TableId, TableWitnessIndexSegment, B1, B128, B32,
+			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller, TableId,
+			TableWitnessIndexSegment, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -103,8 +103,8 @@ mod arithmetization {
 			let f1 = table.add_packed("f1", f1_bits);
 			let f2 = table.add_packed("f2", f2_bits.zout);
 
-			table.pull(fibonacci_pairs, [upcast_col(f0), upcast_col(f1)]);
-			table.push(fibonacci_pairs, [upcast_col(f1), upcast_col(f2)]);
+			table.pull(fibonacci_pairs, [f0, f1]);
+			table.push(fibonacci_pairs, [f1, f2]);
 
 			Self {
 				id: table.id(),

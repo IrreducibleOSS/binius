@@ -52,7 +52,7 @@ impl U32Add {
 		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
 
 		let cin = if let Some(carry_in_bit) = flags.carry_in_bit {
-			table.add_linear_combination("cin", cout_shl + carry_in_bit)
+			table.add_computed("cin", cout_shl + carry_in_bit)
 		} else {
 			cout_shl
 		};
@@ -68,7 +68,7 @@ impl U32Add {
 			table.assert_zero("zout", xin + yin + cin - zout);
 			zout
 		} else {
-			table.add_linear_combination("zout", xin + yin + cin)
+			table.add_computed("zout", xin + yin + cin)
 		};
 
 		Self {
