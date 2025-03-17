@@ -7,12 +7,14 @@ use std::ops::Mul;
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField128b, AESTowerField16b,
 	AESTowerField32b, AESTowerField64b, AESTowerField8b, BinaryField128b, BinaryField128bPolyval,
-	BinaryField16b, BinaryField32b, BinaryField64b, BinaryField8b, ByteSlicedAES32x128b,
-	ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b, ByteSlicedAES32x8b,
+	BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
+	ByteSlicedAES32x128b, ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b,
+	ByteSlicedAES32x8b,
 };
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;
 
+type OptimalPackedFP1b = PackedType<OptimalUnderlier, BinaryField1b>;
 type OptimalPackedFP8b = PackedType<OptimalUnderlier, BinaryField8b>;
 type OptimalPackedFP16b = PackedType<OptimalUnderlier, BinaryField16b>;
 type OptimalPackedFP32b = PackedType<OptimalUnderlier, BinaryField32b>;
@@ -43,6 +45,7 @@ benchmark_packed_operation!(
 	),
 	packed_fields @ [
 		// Fan-Paar Packed Fields
+		OptimalPackedFP1b
 		OptimalPackedFP8b
 		OptimalPackedFP16b
 		OptimalPackedFP32b
