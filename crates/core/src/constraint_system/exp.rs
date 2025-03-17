@@ -8,7 +8,7 @@ use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::{MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use tracing::instrument;
@@ -309,12 +309,7 @@ where
 			let packed_evals = PackedType::<U, Tower::B128>::cast_bases(packed_evals);
 
 			MultilinearExtension::new(exp_witness.n_vars(), packed_evals.to_vec())
-				.map(|mle| {
-					MLEEmbeddingAdapter::<PackedType<U, Tower::B1>, PackedType<U, Tower::FastB128>>::from(
-				mle,
-			)
-			.upcast_arc_dyn()
-				})
+				.map(|mle| mle.specialize_arc_dyn())
 				.map_err(Error::from)
 		})
 		.collect::<Result<Vec<_>, _>>()

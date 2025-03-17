@@ -3,7 +3,7 @@
 //! Multiplication based on exponentiation.
 //!
 //! The core idea of this method is to verify the equality $a \cdot b = c$
-//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{clowbits}})^{chigh}$,
+//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{len(clow)}})^{chigh}$,
 //! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
 //!
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
@@ -48,7 +48,7 @@ where
 		FExpBase::TOWER_LEVEL,
 	);
 
-	// $(g^{2^{32}})^{chigh}$
+	// $(g^{2^{len(clow)}})^{chigh}$
 	let cout_high_exp_result_id = builder.add_committed(
 		format!("{} cout_high_exp_result", name),
 		log_rows,
@@ -107,7 +107,7 @@ where
 		arith_expr!([xin, yin, cout] = xin * yin - cout).convert_field(),
 	);
 
-	// $(g^x)^y = g^{clow} * (g^{2^{32}})^{chigh}$
+	// $(g^x)^y = g^{clow} * (g^{2^{len(clow)}})^{chigh}$
 	builder.assert_zero(
 		name,
 		[
