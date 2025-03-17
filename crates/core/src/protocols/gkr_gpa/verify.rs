@@ -8,14 +8,12 @@ use binius_utils::{
 };
 use tracing::instrument;
 
-use super::{
-	gkr_gpa::LayerClaim,
-	gpa_sumcheck::verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
-	Error, GrandProductClaim,
-};
+use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim};
 use crate::{
+	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
-	protocols::sumcheck,
+	polynomial::Error as PolynomialError,
+	protocols::sumcheck::{self, CompositeSumClaim, EqIndSumcheckClaim},
 	transcript::VerifierTranscript,
 };
 
@@ -116,28 +114,48 @@ where
 		return Ok(vec![]);
 	}
 
-	let curr_layer_challenge = &claims[0].eval_point[..];
+	let curr_layer_challenge = &claims[0].eval_point;
 	if !claims
 		.iter()
-		.all(|claim| claim.eval_point == curr_layer_challenge)
+		.all(|claim| &claim.eval_point == curr_layer_challenge)
 	{
 		bail!(Error::MismatchedEvalPointLength);
 	}
 
-	// Verify the gpa sumcheck batch proof and receive the corresponding reduced claims
-	let gpa_sumcheck_claims = claims
+	let n_vars = curr_layer_challenge.len();
+	let n_multilinears = 2 * claims.len();
+
+	let composite_sums = claims
 		.iter()
-		.map(|claim| GPASumcheckClaim::new(claim.eval_point.len(), claim.eval))
-		.collect::<Result<Vec<_>, _>>()?;
+		.enumerate()
+		.map(|(i, claim)| {
+			let composition =
+				IndexComposition::new(n_multilinears, [2 * i, 2 * i + 1], BivariateProduct {})?;
 
-	let sumcheck_claim = reduce_to_sumcheck(&gpa_sumcheck_claims)?;
-	let sumcheck_claims = [sumcheck_claim];
+			let composite_sum_claim = CompositeSumClaim {
+				composition,
+				sum: claim.eval,
+			};
+
+			Ok(composite_sum_claim)
+		})
+		.collect::<Result<Vec<_>, PolynomialError>>()?;
+
+	let eq_ind_sumcheck_claim = EqIndSumcheckClaim::new(n_vars, n_multilinears, composite_sums)?;
+
+	let eq_ind_sumcheck_claims = [eq_ind_sumcheck_claim];
+
+	let regular_sumcheck_claims =
+		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
 	let batch_sumcheck_output =
-		sumcheck::batch_verify(evaluation_order, &sumcheck_claims, transcript)?;
+		sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
 
-	let batch_sumcheck_output =
-		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;
+	let batch_sumcheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		&eq_ind_sumcheck_claims,
+		curr_layer_challenge,
+		batch_sumcheck_output,
+	)?;
 
 	// Create the new (k+1)th layer LayerClaims for each grand product circuit
 	let sumcheck_challenge = batch_sumcheck_output.challenges.clone();
