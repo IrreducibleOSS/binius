@@ -221,10 +221,6 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 
 	/// Adds an exponentiation operation to the constraint system.
 	///
-	/// # Warning
-	/// Be careful, `exp_result` witness will be added during the proving stage,
-	/// so ensure the correct order is maintained.
-	///
 	/// # Parameters
 	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
 	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..

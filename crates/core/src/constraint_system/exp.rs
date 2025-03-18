@@ -29,9 +29,11 @@ use crate::{
 
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Exp<F: Field> {
+	/// A vector of `OracleId`s representing the exponent in little-endian bit order
 	pub bits_ids: Vec<OracleId>,
 	pub base: ExpBase<F>,
 	pub exp_result_id: OracleId,
+	/// Specifies the field level in the tower where `base` is defined
 	pub base_tower_level: usize,
 }
 
@@ -71,8 +73,18 @@ where
 	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
-	exponents
+	// Since dynamic witnesses may need the `exp_result` of static witnesses,
+	// we start processing with static ones first.
+	let static_exponents_iter = exponents
 		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+	let dynamic_exponents_iter = exponents
+		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+
+	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
+
+	exponents_iter
 		.map(|exp| {
 			let fast_exponent_witnesses = get_fast_exponent_witnesses(witness, &exp.bits_ids)?;
 
@@ -127,16 +139,23 @@ pub fn make_claims<F>(
 where
 	F: TowerField,
 {
-	let constant_bases = exponents
+	let static_exponents_iter = exponents
 		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+	let dynamic_exponents_iter = exponents
+		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
+
+	let constant_bases = exponents_iter
+		.clone()
 		.map(|exp| match exp.base {
 			ExpBase::Static(base) => Some(base),
 			ExpBase::Dynamic(_) => None,
 		})
 		.collect::<Vec<_>>();
 
-	let exponents_ids = exponents
-		.iter()
+	let exponents_ids = exponents_iter
 		.cloned()
 		.map(|exp| exp.bits_ids)
 		.collect::<Vec<_>>();
@@ -149,16 +168,23 @@ pub fn make_eval_claims<F: TowerField>(
 	exponents: &[Exp<F>],
 	base_exp_output: BaseExpReductionOutput<F>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
-	let dynamic_base_ids = exponents
+	let static_exponents_iter = exponents
 		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+	let dynamic_exponents_iter = exponents
+		.iter()
+		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
+
+	let dynamic_base_ids = exponents_iter
+		.clone()
 		.map(|exp| match exp.base {
 			ExpBase::Static(_) => None,
 			ExpBase::Dynamic(base_id) => Some(base_id),
 		})
 		.collect::<Vec<_>>();
 
-	let metas = exponents
-		.iter()
+	let metas = exponents_iter
 		.cloned()
 		.map(|exp| exp.bits_ids)
 		.collect::<Vec<_>>();
