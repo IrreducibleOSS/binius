@@ -181,7 +181,7 @@ pub mod tests {
 					fn check_transpose_from(scalar_elems in scalar_array_strategy()) {
 						let mut destination = [<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
 						for i in 0..<$name>::WIDTH {
-							set_packed_slice(&mut destination, i, <$scalar_type>::from_underlier(i as _));
+							set_packed_slice(&mut destination, i, scalar_elems[i]);
 						}
 
 						let bytesliced = <$name>::transpose_from(&destination);

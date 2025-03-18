@@ -976,20 +976,37 @@ impl UnderlierWithBitOps for M256 {
 			bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref())
 		);
 
-		transpose_128b_blocks_low_to_high::<Self, TL>(values, 4 - TL::LOG_WIDTH);
-
-		println!(
-			"\n\n\nafter transpose 128 {:?}",
-			bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref())
-		);
-
 		match TL::LOG_WIDTH {
-			1 | 2 => {}
+			1 => {
+				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
+			}
+			2 => {
+				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
+
+				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+			}
 			3 => {
-				values.as_mut().swap(2, 4);
-				values.as_mut().swap(3, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
+				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
+				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
+				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
+				unpack_lo_hi_128b_lanes(values, 0, 1, 5);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 5);
+				unpack_lo_hi_128b_lanes(values, 4, 5, 5);
+				unpack_lo_hi_128b_lanes(values, 6, 7, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 2, 6);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 6);
+				unpack_lo_hi_128b_lanes(values, 4, 6, 6);
+				unpack_lo_hi_128b_lanes(values, 5, 7, 6);
+
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
 			}
 			4 => {
+				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
+
 				values.as_mut().swap(2, 8);
 				values.as_mut().swap(3, 9);
 				values.as_mut().swap(6, 12);
@@ -1084,13 +1101,27 @@ impl UnderlierWithBitConstants for M256 {
 	}
 }
 
-#[inline]
-fn unpack_128b_lo_hi(data: impl AsMut<[M256]> + AsRef<[M256]>, i: usize, j: usize) {
-	let new_i = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x20) };
-	let new_j = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x31) };
+#[inline(always)]
+fn unpack_128b_lo_hi(data: &mut (impl AsMut<[M256]> + AsRef<[M256]>), i: usize, j: usize) {
+	let new_i = unsafe { _mm256_permute2x128_si256(data.as_ref()[i].0, data.as_ref()[j].0, 0x20) };
+	let new_j = unsafe { _mm256_permute2x128_si256(data.as_ref()[i].0, data.as_ref()[j].0, 0x31) };
 
 	data.as_mut()[i] = M256(new_i);
 	data.as_mut()[j] = M256(new_j);
+}
+
+#[inline(always)]
+fn unpack_lo_hi_128b_lanes(
+	data: &mut (impl AsMut<[M256]> + AsRef<[M256]>),
+	i: usize,
+	j: usize,
+	log_block_len: usize,
+) {
+	let new_i = data.as_ref()[i].unpack_lo_128b_lanes(data.as_ref()[j], log_block_len);
+	let new_j = data.as_ref()[i].unpack_hi_128b_lanes(data.as_ref()[j], log_block_len);
+
+	data.as_mut()[i] = new_i;
+	data.as_mut()[j] = new_j;
 }
 
 #[inline]
