@@ -117,6 +117,8 @@ pub enum VerificationError {
 	NumberOfRounds,
 	#[error("the number of final evaluations must match the number of instances")]
 	NumberOfFinalEvaluations,
+	#[error("the number of reduced multilinear evaluations should conform to the claim shape")]
+	NumberOfMultilinearEvals,
 	#[error("the final batch composite evaluation is incorrect")]
 	IncorrectBatchEvaluation,
 	#[error("the proof contains an incorrect evaluation of the eq indicator")]

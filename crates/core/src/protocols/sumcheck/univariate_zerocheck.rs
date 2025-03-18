@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{util::inner_product_unchecked, Field, TowerField};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
-use binius_utils::{bail, sorting::is_sorted_ascending};
+use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain};
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize, sorting::is_sorted_ascending};
 use tracing::instrument;
 
 use super::{
@@ -87,9 +87,13 @@ where
 		.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
 
-	let evaluation_domain = EvaluationDomainFactory::<F>::create(
-		&IsomorphicEvaluationDomainFactory::<F::Canonical>::default(),
-		max_domain_size,
+	// REVIEW: consider using novel basis for the univariate round representation
+	//         (instead of Lagrange)
+	let max_dim = log2_ceil_usize(max_domain_size);
+	let subspace = BinarySubspace::<F::Canonical>::with_dim(max_dim)?.isomorphic::<F>();
+	let evaluation_domain = EvaluationDomain::from_points(
+		subspace.iter().take(max_domain_size).collect::<Vec<_>>(),
+		false,
 	)?;
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
