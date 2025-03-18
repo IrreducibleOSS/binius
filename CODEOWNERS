@@ -2,7 +2,7 @@
 * @jimpo-ulvt @onesk
 
 # Code owners for specific crates
-/crates/m3 @bergkvist
+/crates/m3 @jimpo-ulvt @bergkvist
 
 # Code owners for the .github path
 /.github/ @IrreducibleOSS/Infrastructure
