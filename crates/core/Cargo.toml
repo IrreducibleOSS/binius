@@ -62,6 +62,10 @@ harness = false
 name = "poly_commit"
 harness = false
 
+[[bench]]
+name = "sumcheck"
+harness = false
+
 [features]
 debug_validate_sumcheck = []
 stable_only = [

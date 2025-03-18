@@ -12,7 +12,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use rand::thread_rng;
 
 fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterion, field: &str) {
-	let mut group = c.benchmark_group("slow/transform");
+	let mut group = c.benchmark_group("NTT");
 	for log_dim in [16, 20] {
 		for log_batch_size in [1, 4] {
 			let data_len = 1 << (log_dim + log_batch_size - PE::LOG_WIDTH);
