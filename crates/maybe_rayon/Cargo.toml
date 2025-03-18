@@ -14,5 +14,5 @@ itertools.workspace = true
 rayon = { optional = true, workspace = true }
 
 [features]
-default = []# "rayon"]
+default = ["rayon"]
 rayon = ["dep:rayon"]
