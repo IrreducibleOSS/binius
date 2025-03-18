@@ -100,11 +100,11 @@ mod tests {
 		PackedFieldIndexable, PackedSubfield, RepackedExtension,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+	use binius_hash::groestl::Groestl256;
 	use binius_math::{
 		EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory,
 		MultilinearPoly,
 	};
-	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;

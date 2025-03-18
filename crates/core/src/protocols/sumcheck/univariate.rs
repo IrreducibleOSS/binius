@@ -227,11 +227,11 @@ mod tests {
 		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable, TowerField,
 	};
 	use binius_hal::ComputationBackend;
+	use binius_hash::groestl::Groestl256;
 	use binius_math::{
 		BinarySubspace, CompositionPoly, EvaluationOrder, IsomorphicEvaluationDomainFactory,
 		MultilinearPoly,
 	};
-	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;

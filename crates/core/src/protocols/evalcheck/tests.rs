@@ -10,6 +10,7 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{
 	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
@@ -583,7 +584,7 @@ fn test_evalcheck_serialization() {
 	);
 
 	let mut transcript = crate::transcript::ProverTranscript::<
-		crate::fiat_shamir::HasherChallenger<groestl_crypto::Groestl256>,
+		crate::fiat_shamir::HasherChallenger<Groestl256>,
 	>::new();
 
 	let mut writer = transcript.message();

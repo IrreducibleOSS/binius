@@ -111,7 +111,7 @@ mod arithmetization {
 		underlier::{SmallU, UnderlierType},
 		Field, PackedField,
 	};
-	use binius_hash::groestl::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
@@ -122,7 +122,6 @@ mod arithmetization {
 	use binius_math::DefaultEvaluationDomainFactory;
 	use bumpalo::Bump;
 	use bytemuck::Pod;
-	use groestl_crypto::Groestl256;
 
 	use super::model;
 

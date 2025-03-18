@@ -16,12 +16,11 @@ use binius_core::{
 };
 use binius_field::{BinaryField32b, BinaryField8b};
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::IsomorphicEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

@@ -15,6 +15,7 @@ use binius_field::{
 	RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
@@ -22,7 +23,6 @@ use binius_math::{
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
-use groestl_crypto::Groestl256;
 use itertools::izip;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 

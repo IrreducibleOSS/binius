@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 //use binius_field::PackedField;
-use binius_hash::{Groestl256, VisionHasherDigest};
+use binius_hash::{groestl::Groestl256, VisionHasherDigest};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use digest::Digest;
 use rand::{thread_rng, RngCore};

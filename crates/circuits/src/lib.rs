@@ -371,9 +371,9 @@ mod tests {
 			OptimalUnderlier,
 			CanonicalTowerFamily,
 			_,
-			groestl_crypto::Groestl256,
+			Groestl256,
 			Groestl256ByteCompression,
-			HasherChallenger<groestl_crypto::Groestl256>,
+			HasherChallenger<Groestl256>,
 			_,
 		>(
 			&constraint_system,
@@ -389,9 +389,9 @@ mod tests {
 		binius_core::constraint_system::verify::<
 			OptimalUnderlier,
 			CanonicalTowerFamily,
-			groestl_crypto::Groestl256,
+			Groestl256,
 			Groestl256ByteCompression,
-			HasherChallenger<groestl_crypto::Groestl256>,
+			HasherChallenger<Groestl256>,
 		>(&constraint_system, log_inv_rate, security_bits, &[], proof)
 		.unwrap();
 	}

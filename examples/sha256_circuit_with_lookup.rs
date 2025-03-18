@@ -14,12 +14,11 @@ use binius_core::{
 };
 use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField1b};
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 // P:LOG_WIDTH + BinaryField8b::TOWER_LEVEL - COMPRESSION_LOG_LEN

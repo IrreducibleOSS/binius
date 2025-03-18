@@ -2,14 +2,13 @@
 
 use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
-use binius_hash::groestl::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
 	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B64,
 };
 use binius_math::DefaultEvaluationDomainFactory;
 use bumpalo::Bump;
 use bytemuck::Pod;
-use groestl_crypto::Groestl256;
 
 const VALUES_PER_ROW: usize = 32;
 const N_ROWS: usize = 8;

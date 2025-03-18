@@ -13,11 +13,10 @@ use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField128b,
 	BinaryField32b, PackedField,
 };
-use binius_hash::groestl::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use groestl_crypto::Groestl256;
 use itertools::Itertools;
 use rand::thread_rng;
 
