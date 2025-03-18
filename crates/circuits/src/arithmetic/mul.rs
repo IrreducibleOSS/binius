@@ -142,9 +142,7 @@ where
 	builder.add_exp(
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-		ExpBase::Static(
-			exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, 1 << cout_low_bits.len()).into(),
-		),
+		ExpBase::Static(exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, cout_low_bits.len()).into()),
 		FExpBase::TOWER_LEVEL,
 	);
 
@@ -185,7 +183,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		builder,
 		"xin_high_exp_res",
 		xin_high,
-		exp_pow2(BinaryField64b::MULTIPLICATIVE_GENERATOR, 1 << 16),
+		exp_pow2(BinaryField64b::MULTIPLICATIVE_GENERATOR, 16),
 		None,
 	)?;
 
@@ -281,7 +279,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 				builder,
 				format!("cout_exp_result_id {}", i),
 				cout[i],
-				exp_pow2(BinaryField64b::MULTIPLICATIVE_GENERATOR, 1 << (16 * i)),
+				exp_pow2(BinaryField64b::MULTIPLICATIVE_GENERATOR, 16 * i),
 				g_table,
 			)
 			.map(|res| res.0)
@@ -306,10 +304,9 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	Ok(cout.to_vec())
 }
 
-fn exp_pow2<F: BinaryField>(mut g: F, mut exp: u128) -> F {
-	while exp > 1 {
-		g *= g;
-		exp >>= 1;
+fn exp_pow2<F: BinaryField>(mut g: F, log_exp: usize) -> F {
+	for _ in 0..log_exp {
+		g *= g
 	}
 	g
 }
