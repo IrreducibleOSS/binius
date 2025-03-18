@@ -223,11 +223,11 @@ mod tests {
 		TowerField,
 	};
 	use binius_hal::make_portable_backend;
+	use binius_hash::groestl::Groestl256;
 	use binius_math::{
 		DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
 		MultilinearPoly, MultilinearQuery,
 	};
-	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use crate::{
