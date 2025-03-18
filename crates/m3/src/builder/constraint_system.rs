@@ -33,8 +33,6 @@ use crate::builder::expr::ArithExprNamedVars;
 pub struct ConstraintSystem<F: TowerField = B128> {
 	pub tables: Vec<Table<F>>,
 	pub channels: Vec<Channel>,
-	/// All valid channel IDs are strictly less than this bound.
-	pub channel_id_bound: ChannelId,
 }
 
 impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
@@ -142,7 +140,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 	pub fn add_channel(&mut self, name: impl ToString) -> ChannelId {
 		let id = self.channels.len();
-		self.channel_id_bound += 1;
 		self.channels.push(Channel {
 			name: name.to_string(),
 		});
@@ -284,7 +281,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			table_constraints,
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
-			max_channel_id: self.channel_id_bound.saturating_sub(1),
+			max_channel_id: self.channels.len().saturating_sub(1),
 		})
 	}
 }
