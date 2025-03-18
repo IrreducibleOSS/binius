@@ -106,7 +106,6 @@ fn regular_sumcheck(c: &mut Criterion) {
 	}
 }
 
-// TODO: Change sampling time to be small enough if all them are quick
 criterion_group!(sumcheck_benches, regular_sumcheck);
 
 criterion_main!(sumcheck_benches);
