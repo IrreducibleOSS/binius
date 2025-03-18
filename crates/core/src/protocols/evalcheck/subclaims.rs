@@ -22,12 +22,12 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 
-use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
+use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPointOracleIdMap};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
 		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, OracleId, Packed, ProjectionVariant, Shifted,
+		MultilinearOracleSet, MultilinearPolyVariant, OracleId, Packed, ProjectionVariant, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -134,7 +134,7 @@ pub fn composite_sumcheck_meta<F: TowerField>(
 		multiplier_id: oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?,
 		inner_id: None,
 		projected_id: None,
-		projected_n_vars: eval_point.len(),
+		projected_n_vars: 0,
 	})
 }
 
@@ -282,7 +282,10 @@ where
 	let projected_eval_point = if let Some(projected_id) = projected_id {
 		witness_index.update_multilin_poly(vec![(
 			projected_id,
-			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
+			MLEDirectAdapter::from(
+				projected.expect("projected should exist if projected_id exist"),
+			)
+			.upcast_arc_dyn(),
 		)])?;
 
 		&eval_point[..projected_n_vars]
@@ -293,7 +296,7 @@ where
 	let m = multiplier_witness_ctr(projected_eval_point)?;
 
 	if !witness_index.has(multiplier_id) {
-		witness_index.update_multilin_poly(vec![(multiplier_id, m)])?;
+		witness_index.update_multilin_poly([(multiplier_id, m)])?;
 	}
 	Ok(())
 }
@@ -325,27 +328,52 @@ where
 	projected_bivariate_claims
 		.par_iter()
 		.zip(metas)
-		.map(|(claim, meta)| {
-			match meta.inner_id {
-				Some(inner_id) => {
-					{
-						// packed / shifted
-						let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
-						let eval_point = &claim.eval_point[meta.projected_n_vars..];
-						let query = memoized_queries
-							.full_query_readonly(eval_point)
-							.ok_or(Error::MissingQuery)?;
-						Ok(Some(
-							backend
-								.evaluate_partial_high(&inner_multilin, query.to_ref())
-								.map_err(Error::from)?,
-						))
-					}
-				}
-				None => Ok(None), // composite
+		.map(|(claim, meta)| match (meta.inner_id, meta.projected_id) {
+			(Some(inner_id), Some(_)) => {
+				let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
+				let eval_point = &claim.eval_point[meta.projected_n_vars..];
+				let query = memoized_queries
+					.full_query_readonly(eval_point)
+					.ok_or(Error::MissingQuery)?;
+				Ok(Some(
+					backend
+						.evaluate_partial_high(&inner_multilin, query.to_ref())
+						.map_err(Error::from)?,
+				))
 			}
+			_ => Ok(None),
 		})
 		.collect::<Result<Vec<Option<_>>, Error>>()
+}
+
+pub fn memoize_partial_evals<'a, U, F>(
+	metas: &[ProjectedBivariateMeta],
+	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	oracles: &mut MultilinearOracleSet<F>,
+	witness_index: &MultilinearExtensionIndex<'a, U, F>,
+	memoized_partial_evals: &mut EvalPointOracleIdMap<MultilinearWitness<'a, PackedType<U, F>>, F>,
+) where
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+{
+	projected_bivariate_claims
+		.iter()
+		.zip(metas)
+		.filter(|(_, meta)| meta.inner_id.is_some())
+		.for_each(|(claim, meta)| {
+			let inner_id = meta.inner_id.unwrap();
+			if matches!(oracles.oracle(inner_id).variant, MultilinearPolyVariant::Committed)
+				&& meta.projected_id.is_some()
+			{
+				let eval_point = claim.eval_point[meta.projected_n_vars..].to_vec().into();
+
+				let projected_id = meta.projected_id.expect("checked above");
+
+				let projected = witness_index.get_multilin_poly(projected_id).unwrap();
+
+				memoized_partial_evals.insert(inner_id, eval_point, projected);
+			}
+		});
 }
 
 /// Each composite oracle induces a new eq oracle, for which we need to fill the witness
@@ -374,14 +402,14 @@ where
 	let eq_indicators = dedup_eval_points
 		.into_iter()
 		.map(|eval_point| {
-			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
+			let mle = MultilinearExtension::from_values(
 				memoized_queries
 					.full_query_readonly(eval_point)
 					.expect("computed above")
 					.expansion()
 					.to_vec(),
-			)?)
-			.upcast_arc_dyn();
+			)?
+			.specialize_arc_dyn();
 			Ok((eval_point, mle))
 		})
 		.collect::<Result<HashMap<_, _>, Error>>()?;
@@ -461,7 +489,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		&mut self,
 		eval_points: &[&[P::Scalar]],
 		backend: &Backend,
-	) -> Result<(), Error> {
+	) -> Result<(), binius_hal::Error> {
 		let deduplicated_eval_points = eval_points.iter().collect::<HashSet<_>>();
 
 		let new_queries = deduplicated_eval_points
@@ -471,9 +499,8 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 				backend
 					.multilinear_query::<P>(ep)
 					.map(|res| (ep.to_vec(), res))
-					.map_err(Error::from)
 			})
-			.collect::<Result<Vec<_>, Error>>()?;
+			.collect::<Result<Vec<_>, binius_hal::Error>>()?;
 
 		self.memo.extend(new_queries);
 

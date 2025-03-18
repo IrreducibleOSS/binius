@@ -10,12 +10,19 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		serialize_evalcheck_proof, subclaims::prove_bivariate_sumchecks_with_switchover,
-		EvalcheckMultilinearClaim, EvalcheckProver,
+		serialize_evalcheck_proof,
+		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedQueries},
+		EvalPointOracleIdMap, EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, ProverTranscript},
-	witness::MultilinearExtensionIndex,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
+
+pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
+	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
+	pub memoized_queries: MemoizedQueries<P, Backend>,
+	pub memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<'a, P>, F>,
+}
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "greedy_evalcheck::prove")]
@@ -27,7 +34,7 @@ pub fn prove<F, P, DomainField, Challenger_, Backend>(
 	transcript: &mut ProverTranscript<Challenger_>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
-) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
+) -> Result<GreedyEvalcheckProveOutput<'a, F, PackedType<U, F>, Backend>, Error>
 where
 	F: TowerField + ExtensionField<DomainField>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -79,5 +86,10 @@ where
 		.committed_eval_claims_mut()
 		.drain(..)
 		.collect::<Vec<_>>();
-	Ok(committed_claims)
+
+	Ok(GreedyEvalcheckProveOutput {
+		eval_claims: committed_claims,
+		memoized_queries: evalcheck_prover.memoized_queries,
+		memoized_partial_evals: evalcheck_prover.memoized_partial_evals,
+	})
 }
