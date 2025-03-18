@@ -24,9 +24,9 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
-		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		impl_divisible, impl_iteration, spread_fallback, transpose_128b_blocks_low_to_high,
+		transpose_128b_values, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
+		SmallU, SpreadToByte, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -737,7 +737,43 @@ impl UnderlierWithBitOps for M128 {
 		u8: NumCast<Self>,
 		Self: From<u8>,
 	{
-		transpose_128b_values::<Self, TL>(values);
+		transpose_128b_values::<Self, TL>(values, 0);
+	}
+
+	#[inline]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		if TL::LOG_WIDTH == 0 {
+			return;
+		}
+
+		match TL::LOG_WIDTH {
+			1 => unsafe {
+				let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			2 => unsafe {
+				let shuffle = _mm_set_epi8(15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			3 => unsafe {
+				let shuffle = _mm_set_epi8(15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			4 => {}
+			_ => unreachable!("Log width must be less than 5"),
+		}
+
+		transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
 	}
 }
 

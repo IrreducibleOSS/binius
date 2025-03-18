@@ -70,11 +70,27 @@ macro_rules! define_byte_sliced_3d {
 					.to_underlier()
 			}
 
+			/// Convert the byte-sliced field to an array of "ordinary" packed fields preserving the order of scalars.
+			#[inline]
 			pub fn transpose_to(&self, out: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed; Self::HEIGHT_BYTES]) {
 				let underliers = WithUnderlier::to_underliers_arr_ref_mut(out);
 				*underliers = bytemuck::must_cast(self.data);
 
 				UnderlierWithBitOps::transpose_bytes_from_byte_sliced::<$storage_tower_level>(underliers);
+			}
+
+			/// Convert an array of "ordinary" packed fields to a byte-sliced field preserving the order of scalars.
+			#[inline]
+			pub fn transpose_from(
+				underliers: &[<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed; Self::HEIGHT_BYTES],
+			) -> Self {
+				let mut result = Self {
+					data: bytemuck::must_cast(*underliers),
+				};
+
+				<$packed_storage as WithUnderlier>::Underlier::transpose_bytes_to_byte_sliced::<$storage_tower_level>(bytemuck::must_cast_mut(&mut result.data));
+
+				result
 			}
 		}
 

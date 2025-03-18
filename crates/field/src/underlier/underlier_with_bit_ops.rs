@@ -152,6 +152,15 @@ pub trait UnderlierWithBitOps:
 		unpack_hi_128b_fallback(self, other, log_block_len)
 	}
 
+	/// Transpose bytes from byte-sliced representation to a packed "normal one".
+	///
+	/// For example for tower level 1, having the following bytes:
+	///     [a0, b0, c1, d1]
+	///     [a1, b1, c2, d2]
+	///
+	/// The result will be:
+	///     [a0, a1, b0, b1]
+	///     [c1, c2, d1, d2]
 	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
 	where
 		u8: NumCast<Self>,
@@ -165,6 +174,26 @@ pub trait UnderlierWithBitOps:
 
 				// Safety: `index` is always less than `N * byte_count`.
 				unsafe { values[index % TL::WIDTH].get_subvalue::<u8>(index / TL::WIDTH) }
+			})
+		});
+
+		*values = result;
+	}
+
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		assert!(TL::LOG_WIDTH <= 4);
+
+		let bytes = Self::BITS / 8;
+		let result = TL::from_fn(|row| {
+			Self::from_fn(|col| {
+				let index = row + col * TL::WIDTH;
+
+				// Safety: `index` is always less than `N * byte_count`.
+				unsafe { values[index / bytes].get_subvalue::<u8>(index % bytes) }
 			})
 		});
 
@@ -186,8 +215,9 @@ where
 /// This function actually may reorder the elements.
 #[allow(dead_code)]
 #[inline(always)]
-pub(crate) fn transpose_128b_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
+pub(crate) fn transpose_128b_blocks_low_to_high<U: UnderlierWithBitOps, TL: TowerLevel>(
 	values: &mut TL::Data<U>,
+	log_block_len: usize,
 ) {
 	assert!(TL::WIDTH <= 16);
 
@@ -196,10 +226,10 @@ pub(crate) fn transpose_128b_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 	}
 
 	let (left, right) = TL::split_mut(values);
-	transpose_128b_blocks::<_, TL::Base>(left);
-	transpose_128b_blocks::<_, TL::Base>(right);
+	transpose_128b_blocks_low_to_high::<_, TL::Base>(left, log_block_len);
+	transpose_128b_blocks_low_to_high::<_, TL::Base>(right, log_block_len);
 
-	let log_block_len = checked_log_2(TL::WIDTH) - 1;
+	let log_block_len = log_block_len + TL::LOG_WIDTH - 1;
 	for i in 0..TL::WIDTH / 2 {
 		(values[i], values[i + TL::WIDTH / 2]) = (
 			values[i].unpack_lo_128b_lanes(values[i + TL::WIDTH / 2], log_block_len + 3),
@@ -214,10 +244,11 @@ pub(crate) fn transpose_128b_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 #[inline(always)]
 pub(crate) fn transpose_128b_values<U: UnderlierWithBitOps, TL: TowerLevel>(
 	values: &mut TL::Data<U>,
+	log_block_len: usize,
 ) {
 	assert!(U::BITS == 128);
 
-	transpose_128b_blocks::<U, TL>(values);
+	transpose_128b_blocks_low_to_high::<U, TL>(values, log_block_len);
 
 	// Elements are transposed, but we need to reorder them
 	match TL::LOG_WIDTH {
@@ -535,5 +566,16 @@ mod tests {
 		let mut value = [0x67452301u32, 0xefcdab89u32];
 		u32::transpose_bytes_from_byte_sliced::<TowerLevel2>(&mut value);
 		assert_eq!(value, [0xab238901u32, 0xef67cd45u32]);
+	}
+
+	#[test]
+	fn test_transpose_to_byte_sliced() {
+		let mut value = [0x01234567u32];
+		u32::transpose_bytes_to_byte_sliced::<TowerLevel1>(&mut value);
+		assert_eq!(value, [0x01234567u32]);
+
+		let mut value = [0x67452301u32, 0xefcdab89u32];
+		u32::transpose_bytes_to_byte_sliced::<TowerLevel2>(&mut value);
+		assert_eq!(value, [0xcd894501u32, 0xefab6723u32]);
 	}
 }

@@ -379,7 +379,7 @@ impl UnderlierWithBitOps for M128 {
 		u8: NumCast<Self>,
 		Self: From<u8>,
 	{
-		transpose_128b_values::<Self, TL>(values);
+		transpose_128b_values::<Self, TL>(values, 0);
 	}
 }
 
