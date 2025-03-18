@@ -287,9 +287,8 @@ mod count_multiplicity_tests {
 mod tests {
 	use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 	use binius_hal::make_portable_backend;
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_math::DefaultEvaluationDomainFactory;
-	use groestl_crypto::Groestl256;
 
 	use super::test_plain_lookup;
 	use crate::builder::ConstraintSystemBuilder;

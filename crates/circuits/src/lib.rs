@@ -41,12 +41,11 @@ mod tests {
 		BinaryField128b, BinaryField64b, BinaryField8b, Field,
 	};
 	use binius_hal::make_portable_backend;
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	};
-	use groestl_crypto::Groestl256;
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;

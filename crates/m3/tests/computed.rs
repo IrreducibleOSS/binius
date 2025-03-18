@@ -2,7 +2,7 @@
 
 use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::Groestl256ByteCompression;
 use binius_m3::builder::{
 	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B64,
 };

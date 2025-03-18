@@ -1,17 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
-use std::array;
 
-use binius_field::{
-	AESTowerField8b, BinaryField8b, PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
-};
-use binius_hash::{
-	Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest, HasherDigest,
-	PseudoCompressionFunction, VisionHasherDigest,
-};
+//use binius_field::PackedField;
+use binius_hash::{Groestl256, VisionHasherDigest};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
+use digest::Digest;
 use rand::{thread_rng, RngCore};
 
+/*
 fn bench_groestl_compression(c: &mut Criterion) {
 	let mut group = c.benchmark_group("groestl-compression");
 
@@ -66,9 +61,10 @@ fn bench_groestl(c: &mut Criterion) {
 
 	group.finish()
 }
+ */
 
-fn bench_groestl_rustcrypto(c: &mut Criterion) {
-	let mut group = c.benchmark_group("groestl");
+fn bench_groestl(c: &mut Criterion) {
+	let mut group = c.benchmark_group("Grøstl");
 
 	let mut rng = thread_rng();
 
@@ -77,15 +73,18 @@ fn bench_groestl_rustcrypto(c: &mut Criterion) {
 	rng.fill_bytes(&mut data);
 
 	group.throughput(Throughput::Bytes(N as u64));
+	group.bench_function("Groestl256", |bench| {
+		bench.iter(|| Groestl256::digest(data));
+	});
 	group.bench_function("Groestl256-RustCrypto", |bench| {
-		bench.iter(|| GenericGroestl256::digest(data));
+		bench.iter(|| groestl_crypto::Groestl256::digest(data));
 	});
 
 	group.finish()
 }
 
 fn bench_vision32(c: &mut Criterion) {
-	let mut group = c.benchmark_group("vision");
+	let mut group = c.benchmark_group("Vision Mark-32");
 
 	let mut rng = thread_rng();
 
@@ -99,11 +98,5 @@ fn bench_vision32(c: &mut Criterion) {
 	group.finish()
 }
 
-criterion_group!(
-	hash,
-	bench_groestl_compression,
-	bench_groestl,
-	bench_groestl_rustcrypto,
-	bench_vision32
-);
+criterion_group!(hash, bench_groestl, bench_vision32);
 criterion_main!(hash);

@@ -4,7 +4,7 @@ use std::iter::repeat_with;
 
 use binius_core::merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver};
 use binius_field::{BinaryField128b, Field};
-use binius_hash::{compress::Groestl256ByteCompression, PseudoCompressionFunction};
+use binius_hash::{groestl::Groestl256ByteCompression, PseudoCompressionFunction};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use groestl_crypto::Groestl256;
@@ -40,7 +40,7 @@ where
 }
 
 fn bench_groestl_merkle_tree(c: &mut Criterion) {
-	bench_binary_merkle_tree::<Groestl256, _>(c, Groestl256ByteCompression, "Gröstl-256");
+	bench_binary_merkle_tree::<Groestl256, _>(c, Groestl256ByteCompression, "Grøstl-256");
 }
 
 criterion_main!(binary_merkle_tree);

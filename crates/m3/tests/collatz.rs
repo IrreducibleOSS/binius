@@ -111,7 +111,7 @@ mod arithmetization {
 		underlier::{SmallU, UnderlierType},
 		Field, PackedField,
 	};
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::Groestl256ByteCompression;
 	use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,

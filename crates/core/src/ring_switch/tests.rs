@@ -9,7 +9,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::Groestl256ByteCompression;
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,

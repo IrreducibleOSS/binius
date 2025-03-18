@@ -19,7 +19,7 @@
 )]
 
 pub mod compression;
-mod groestl;
+pub mod groestl;
 pub mod hasher;
 pub mod permutation;
 mod serialization;
