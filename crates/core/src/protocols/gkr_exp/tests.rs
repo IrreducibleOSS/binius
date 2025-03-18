@@ -7,11 +7,11 @@ use binius_field::{
 	PackedField,
 };
 use binius_hal::make_portable_backend;
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
 	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
-use groestl_crypto::Groestl256;
 use rand::{thread_rng, Rng};
 
 use super::{batch_prove, common::BaseExpReductionOutput};

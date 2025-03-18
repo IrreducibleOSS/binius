@@ -16,12 +16,12 @@ use binius_field::{
 	PackedFieldIndexable, TowerField, BINARY_TO_POLYVAL_TRANSFORMATION,
 };
 use binius_hal::{make_portable_backend, CpuBackend};
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
 };
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
 // Creates T(x), a multilinear with evaluations over the n-dimensional boolean hypercube
