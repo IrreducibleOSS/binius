@@ -65,6 +65,10 @@ name = "u32_mul"
 path = "u32_mul.rs"
 
 [[example]]
+name = "u32_mul_gkr_exp_lookups"
+path = "u32_mul_gkr_exp_lookups.rs"
+
+[[example]]
 name = "u64_mul"
 path = "u64_mul.rs"
 
