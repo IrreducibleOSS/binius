@@ -15,12 +15,12 @@ use binius_field::{
 	PackedExtension, PackedField, TowerField,
 };
 use binius_hal::make_portable_backend;
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
 };
 use binius_maybe_rayon::prelude::*;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use groestl_crypto::Groestl256;
 use rand::thread_rng;
 
 fn bench_bivariate_with_evaluation_order<
