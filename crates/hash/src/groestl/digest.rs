@@ -1,4 +1,7 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright (c) 2020-2025 The RustCrypto Project Developers
+// Copyright 2025 Irreducible Inc.
+
+// Implementation is copied from <https://github.com/RustCrypto/hashes>, with some modifications.
 
 use core::fmt;
 
