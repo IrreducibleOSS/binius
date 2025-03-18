@@ -66,6 +66,7 @@ pub fn prove<U, Tower, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	security_bits: usize,
 	boundaries: &[Boundary<FExt<Tower>>],
 	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
+	// REVIEW: Construct this in prove
 	domain_factory: DomainFactory,
 	backend: &Backend,
 ) -> Result<Proof, Error>
@@ -121,6 +122,7 @@ where
 	let merkle_scheme = merkle_prover.scheme();
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	// REVIEW: This does not manipulate witness data, it organizes witness handles
 	let committed_multilins = piop::collect_committed_witnesses(
 		&commit_meta,
 		&oracle_to_commit_index,
@@ -134,6 +136,8 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
+
+	// committed_multilins holds witness data handles
 	let CommitOutput {
 		commitment,
 		committed,
@@ -547,6 +551,8 @@ where
 				<< lincom
 					.n_vars()
 					.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
+			// REVIEW: This is a very interesting case study. This requires a linear combination
+			// of several multilinears with potentially different tower heights.
 			let data = (0..packed_len)
 				.into_par_iter()
 				.map(|i| {

@@ -206,6 +206,7 @@ pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
 	params: &FRIParams<F, FA>,
 	merkle_prover: &MerkleProver,
+	// REVIEW: Closure argument is a handle. Closure itself probably owns handles.
 	message_writer: impl FnOnce(&mut [P]),
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
@@ -222,6 +223,7 @@ where
 		todo!("can't handle this case well");
 	}
 
+	// REVIEW: encoded is a device buffer.
 	let mut encoded = tracing::debug_span!("allocate codeword")
 		.in_scope(|| zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate())));
 	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
