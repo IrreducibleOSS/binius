@@ -84,6 +84,14 @@ path = "b32_mul.rs"
 name = "blake3_circuit"
 path = "blake3_circuit.rs"
 
+[[example]]
+name = "u32_gkr_static_exp"
+path = "u32_gkr_static_exp.rs"
+
+[[example]]
+name = "u32_lookups_static_exp"
+path = "u32_lookups_static_exp.rs"
+
 [lints.clippy]
 needless_range_loop = "allow"
 
