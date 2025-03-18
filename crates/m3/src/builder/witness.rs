@@ -26,11 +26,13 @@ use getset::CopyGetters;
 use super::{
 	column::{Col, ColumnShape},
 	error::Error,
+	multi_iter::MultiIterator,
 	statement::Statement,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
 	ColumnDef, ColumnId, ColumnIndex, Expr,
 };
+use crate::builder::multi_iter::SplitAtMut;
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
 ///
@@ -209,6 +211,40 @@ impl<'a, U: UnderlierType> WitnessDataMut<'a, U> {
 	}
 }
 
+#[derive(Debug)]
+struct WitnessDataSegmentView<'a, U: UnderlierType> {
+	data: WitnessDataMut<'a, U>,
+	stride: usize,
+	n_strides: usize,
+}
+
+impl<'a, U> SplitAtMut for WitnessDataSegmentView<'a, U> {
+	fn split_at_mut(&mut self, index: usize) -> (Self, Self) {
+		let (left, right) = match self.data {
+			WitnessDataMut::Owned(data) => {
+				let (left, right) = data.split_at_mut(index * self.stride);
+				(WitnessDataMut::Owned(left), WitnessDataMut::Owned(right))
+			}
+			WitnessDataMut::SameAsOracleIndex(index) => (
+				WitnessDataMut::SameAsOracleIndex(*index),
+				WitnessDataMut::SameAsOracleIndex(*index),
+			),
+		};
+		(
+			WitnessDataSegmentView {
+				data: left,
+				stride: self.stride,
+				n_strides: index,
+			},
+			WitnessDataSegmentView {
+				data: right,
+				stride: self.stride,
+				n_strides: self.n_strides - index,
+			},
+		)
+	}
+}
+
 type RefCellData<'a, U> = WitnessColumnInfo<RefCell<&'a mut [U]>>;
 
 #[derive(Debug)]
@@ -341,56 +377,24 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 
 
 		let log_n = self.log_capacity - log_size;
-		let iters = self
-			.cols
-			.iter_mut()
-			.map(|col| match &mut col.data {
-				WitnessDataMut::SameAsOracleIndex(index) => itertools::Either::Left(
-					iter::repeat_n(*index, log_n).map(RefCellData::SameAsOracleIndex),
-				),
-				WitnessDataMut::Owned(data) => {
-					let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
-					itertools::Either::Right(
-						data.chunks_mut(1 << log_stride)
-							.map(|x| RefCellData::Owned(RefCell::new(x))),
-					)
-				}
-			})
-			.collect::<Vec<_>>();
-
-		struct MultiIterator<I: Iterator> {
-			iters: Vec<I>,
-		}
-
-		impl<I: Iterator> Iterator for MultiIterator<I> {
-			type Item = Vec<I::Item>;
-
-			fn next(&mut self) -> Option<Vec<I::Item>> {
-				self.iters.iter_mut().map(Iterator::next).collect()
-			}
-
-			fn size_hint(&self) -> (usize, Option<usize>) {
-				let (min, max) = self.iters.iter().fold(
-					(None, Some(0)),
-					|(min, max): (Option<usize>, Option<usize>), next| {
-						let (next_min, next_max) = next.size_hint();
-						let new_min = match min {
-							None => Some(next_min),
-							Some(min) => Some(min.min(next_min)),
-						};
-						let new_max = match (max, next_max) {
-							(Some(a), Some(b)) => Some(a.max(b)),
-							_ => None,
-						};
-						(new_min, new_max)
-					},
-				);
-				(min.unwrap_or(0), max)
-			}
-		}
-
-		let iter = MultiIterator { iters };
+		let iter = MultiIterator::new(
+			self.cols
+				.iter_mut()
+				.map(|col| match &mut col.data {
+					WitnessDataMut::SameAsOracleIndex(index) => itertools::Either::Left(
+						iter::repeat_n(*index, log_n).map(RefCellData::SameAsOracleIndex),
+					),
+					WitnessDataMut::Owned(data) => {
+						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
+						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+						itertools::Either::Right(
+							data.chunks_mut(1 << log_stride)
+								.map(|data| RefCellData::Owned(RefCell::new(data))),
+						)
+					}
+				})
+				.collect(),
+		);
 
 		let table = self.table;
 		let oracle_offset = self.oracle_offset;
