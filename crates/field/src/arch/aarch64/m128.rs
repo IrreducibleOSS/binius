@@ -18,6 +18,7 @@ use super::super::portable::{
 use crate::{
 	arch::binary_utils::{as_array_mut, as_array_ref},
 	arithmetic_traits::Broadcast,
+	tower_levels::TowerLevel,
 	underlier::{
 		impl_divisible, impl_iteration, transpose_128b_values, unpack_lo_128b_fallback, NumCast,
 		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
