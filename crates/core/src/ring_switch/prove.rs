@@ -3,7 +3,7 @@
 use std::{iter, sync::Arc};
 
 use binius_field::{PackedField, PackedFieldIndexable, TowerField};
-use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -18,6 +18,7 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
+	protocols::evalcheck::{subclaims::MemoizedQueries, EvalPointOracleIdMap},
 	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
 	tower::{PackedTop, TowerFamily},
 	transcript::ProverTranscript,
@@ -37,6 +38,8 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
+	memoized_queries: MemoizedQueries<P, Backend>,
+	memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<P>, F>,
 	backend: &Backend,
 ) -> Result<ReducedWitness<P>, Error>
 where
@@ -61,7 +64,13 @@ where
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
-	let tensor_elems = compute_partial_evals::<_, _, _, Tower, _>(system, witnesses, backend)?;
+	let tensor_elems = compute_partial_evals::<_, _, _, Tower, _>(
+		system,
+		witnesses,
+		memoized_queries,
+		memoized_partial_evals,
+		backend,
+	)?;
 	let scaled_tensor_elems = scale_tensor_elems(tensor_elems, &mixing_coeffs);
 	let mixed_tensor_elems = mix_tensor_elems_for_prefixes(
 		&scaled_tensor_elems,
@@ -114,6 +123,8 @@ where
 fn compute_partial_evals<F, P, M, Tower, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
+	mut memoized_queries: MemoizedQueries<P, Backend>,
+	memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<P>, F>,
 	backend: &Backend,
 ) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
 where
@@ -123,11 +134,15 @@ where
 	Tower: TowerFamily<B128 = F>,
 	Backend: ComputationBackend,
 {
-	let suffix_queries = system
+	let eval_points = system
 		.suffix_descs
 		.par_iter()
-		.map(|desc| backend.multilinear_query(&desc.suffix))
-		.collect::<Result<Vec<_>, _>>()?;
+		.map(|desc| Arc::as_ref(&desc.suffix))
+		.collect::<Vec<_>>();
+
+	memoized_queries
+		.memoize_query_par(&eval_points, backend)
+		.unwrap();
 
 	let tensor_elems = system
 		.sumcheck_claim_descs
@@ -136,18 +151,30 @@ where
 			|PIOPSumcheckClaimDesc {
 			     committed_idx,
 			     suffix_desc_idx,
-			     eval_claim: _,
+			     eval_claim,
 			 }| {
-				let suffix = &system.suffix_descs[*suffix_desc_idx];
-				let suffix_query = &suffix_queries[*suffix_desc_idx];
-				let partial_eval =
-					witnesses[*committed_idx].evaluate_partial_high(suffix_query.to_ref())?;
-				TowerTensorAlgebra::new(
-					suffix.kappa,
+				let suffix_desc = &system.suffix_descs[*suffix_desc_idx];
+
+				let elems = if let Some(partial_eval) =
+					memoized_partial_evals.get(eval_claim.id, Arc::as_ref(&suffix_desc.suffix))
+				{
+					PackedField::iter_slice(
+						partial_eval.packed_evals().expect("packed_evals exist"),
+					)
+					.take(1 << suffix_desc.kappa)
+					.collect()
+				} else {
+					let suffix_query = memoized_queries
+						.full_query_readonly(&suffix_desc.suffix)
+						.expect("memoized above");
+					let partial_eval =
+						witnesses[*committed_idx].evaluate_partial_high(suffix_query.into())?;
 					PackedField::iter_slice(partial_eval.evals())
-						.take(1 << suffix.kappa)
-						.collect(),
-				)
+						.take(1 << suffix_desc.kappa)
+						.collect()
+				};
+
+				TowerTensorAlgebra::new(suffix_desc.kappa, elems)
 			},
 		)
 		.collect::<Result<Vec<_>, _>>()?;
