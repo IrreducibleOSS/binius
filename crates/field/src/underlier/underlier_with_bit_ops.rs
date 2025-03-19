@@ -180,6 +180,15 @@ pub trait UnderlierWithBitOps:
 		*values = result;
 	}
 
+	/// Transpose bytes from `ordinal` packed representation to a byte-sliced one.
+	///
+	/// For example for tower level 1, having the following bytes:
+	///    [a0, a1, b0, b1]
+	///    [c0, c1, d0, d1]
+	///
+	/// The result will be:
+	///   [a0, b0, c0, d0]
+	///   [a1, b1, c1, d1]
 	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
 	where
 		u8: NumCast<Self>,

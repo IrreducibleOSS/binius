@@ -973,21 +973,20 @@ impl UnderlierWithBitOps for M256 {
 				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
 			}
 			2 => {
-				pair_unpack_lo_hi_128b_lanes(values, 0, 2, 5);
-				pair_unpack_lo_hi_128b_lanes(values, 1, 3, 5);
-
-				pair_unpack_lo_hi_128b_lanes(values, 0, 1, 6);
-				pair_unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+				for i in 0..2 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+				}
+				for i in 0..2 {
+					pair_unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 6);
+				}
 			}
 			3 => {
 				for i in 0..4 {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
 				}
-
 				for i in 0..4 {
 					pair_unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
 				}
-
 				for i in 0..2 {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 6);
 					pair_unpack_lo_hi_128b_lanes(values, i + 4, i + 6, 6);
@@ -1000,16 +999,13 @@ impl UnderlierWithBitOps for M256 {
 				for i in 0..8 {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 8, 3);
 				}
-
 				for i in (0..16).step_by(2) {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 1, 4);
 				}
-
 				for i in (0..16).step_by(4) {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
 					pair_unpack_lo_hi_128b_lanes(values, i + 1, i + 3, 5);
 				}
-
 				for i in 0..4 {
 					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 6);
 					pair_unpack_lo_hi_128b_lanes(values, i + 8, i + 12, 6);
