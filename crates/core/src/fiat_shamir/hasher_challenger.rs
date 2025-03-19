@@ -51,7 +51,7 @@ where
 
 impl<H> HasherChallenger<H>
 where
-	H: Digest + BlockSizeUser + FixedOutputReset,
+	H: Digest + BlockSizeUser,
 {
 	fn new(initial_digest: Output<H>) -> Self {
 		let mut hasher = H::new();
