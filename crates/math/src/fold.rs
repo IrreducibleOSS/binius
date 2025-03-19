@@ -55,7 +55,7 @@ where
 
 	if is_lerp {
 		let lerp_query = get_packed_slice(query, 1);
-		fold_right_lerp(evals, log_evals_size, lerp_query, out)?;
+		fold_right_lerp(evals, 1 << log_evals_size, lerp_query, out)?;
 	} else {
 		fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -107,7 +107,7 @@ where
 			unsafe { std::mem::transmute::<&mut [MaybeUninit<PE>], &mut [MaybeUninit<P>]>(out) };
 
 		let lerp_query_p = lerp_query.try_into().ok().expect("P == PE");
-		fold_left_lerp(evals, log_evals_size, lerp_query_p, out_p)?;
+		fold_left_lerp(evals, 1 << log_evals_size, log_evals_size, lerp_query_p, out_p)?;
 	} else {
 		fold_left_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -133,23 +133,23 @@ where
 		});
 	}
 
-	if P::LOG_WIDTH + evals.len() < log_evals_size {
+	if P::WIDTH * evals.len() < 1 << log_evals_size {
 		bail!(Error::IncorrectArgumentLength {
 			arg: "evals".into(),
-			expected: log_evals_size
+			expected: 1 << log_evals_size
 		});
 	}
 
-	if PE::LOG_WIDTH + query.len() < log_query_size {
+	if PE::WIDTH * query.len() < 1 << log_query_size {
 		bail!(Error::IncorrectArgumentLength {
 			arg: "query".into(),
-			expected: log_query_size
+			expected: 1 << log_query_size
 		});
 	}
 
-	if PE::LOG_WIDTH + out.len() < log_evals_size - log_query_size {
+	if PE::WIDTH * out.len() < 1 << (log_evals_size - log_query_size) {
 		bail!(Error::IncorrectOutputPolynomialSize {
-			expected: log_evals_size - log_query_size
+			expected: 1 << (log_evals_size - log_query_size)
 		});
 	}
 
@@ -157,8 +157,39 @@ where
 }
 
 #[inline]
-fn check_lerp_fold_arguments<P, PE, POut>(
+fn check_right_lerp_fold_arguments<P, PE, POut>(
 	evals: &[P],
+	evals_size: usize,
+	out: &[POut],
+) -> Result<(), Error>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	if evals_size & 1 != 0 {
+		bail!(Error::IncorrectQuerySize { expected: 1 });
+	}
+
+	if P::WIDTH * evals.len() < evals_size {
+		bail!(Error::IncorrectArgumentLength {
+			arg: "evals".into(),
+			expected: evals_size
+		});
+	}
+
+	if PE::WIDTH * out.len() * 2 < evals_size {
+		bail!(Error::IncorrectOutputPolynomialSize {
+			expected: evals_size.div_ceil(2)
+		});
+	}
+
+	Ok(())
+}
+
+#[inline]
+fn check_left_lerp_fold_arguments<P, PE, POut>(
+	evals: &[P],
+	nonzero_scalars_prefix: usize,
 	log_evals_size: usize,
 	out: &[POut],
 ) -> Result<(), Error>
@@ -170,16 +201,24 @@ where
 		bail!(Error::IncorrectQuerySize { expected: 1 });
 	}
 
-	if P::LOG_WIDTH + evals.len() < log_evals_size {
-		bail!(Error::IncorrectArgumentLength {
-			arg: "evals".into(),
-			expected: log_evals_size
+	if nonzero_scalars_prefix > 1 << log_evals_size {
+		bail!(Error::IncorrectNonzeroScalarPrefix {
+			expected: 1 << log_evals_size,
 		});
 	}
 
-	if PE::LOG_WIDTH + out.len() + 1 < log_evals_size {
+	if P::WIDTH * evals.len() < nonzero_scalars_prefix {
+		bail!(Error::IncorrectArgumentLength {
+			arg: "evals".into(),
+			expected: nonzero_scalars_prefix,
+		});
+	}
+
+	let folded_nonzero_scalars_prefix = nonzero_scalars_prefix.min(1 << (log_evals_size - 1));
+
+	if PE::WIDTH * out.len() < folded_nonzero_scalars_prefix {
 		bail!(Error::IncorrectOutputPolynomialSize {
-			expected: log_evals_size - 1
+			expected: folded_nonzero_scalars_prefix,
 		});
 	}
 
@@ -362,7 +401,7 @@ where
 /// function, we can implement it separately.
 pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
-	log_evals_size: usize,
+	evals_size: usize,
 	lerp_query: PE::Scalar,
 	out: &mut [PE],
 ) -> Result<(), Error>
@@ -370,12 +409,14 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	check_lerp_fold_arguments::<_, PE, _>(evals, log_evals_size, out)?;
+	check_right_lerp_fold_arguments::<_, PE, _>(evals, evals_size, out)?;
 
-	out.iter_mut()
+	let folded_evals_size = evals_size >> 1;
+	out[..folded_evals_size.div_ceil(PE::WIDTH)]
+		.iter_mut()
 		.enumerate()
 		.for_each(|(i, packed_result_eval)| {
-			for j in 0..min(PE::WIDTH, 1 << (log_evals_size - 1)) {
+			for j in 0..min(PE::WIDTH, folded_evals_size - (i << PE::LOG_WIDTH)) {
 				let index = (i << PE::LOG_WIDTH) | j;
 
 				let (eval0, eval1) = unsafe {
@@ -412,6 +453,7 @@ where
 /// a lerp query of its scalar (and not a nontrivial extension field!).
 pub fn fold_left_lerp<P>(
 	evals: &[P],
+	nonzero_scalars_prefix: usize,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 	out: &mut [MaybeUninit<P>],
@@ -419,14 +461,22 @@ pub fn fold_left_lerp<P>(
 where
 	P: PackedField,
 {
-	check_lerp_fold_arguments::<_, P, _>(evals, log_evals_size, out)?;
+	check_left_lerp_fold_arguments::<_, P, _>(evals, nonzero_scalars_prefix, log_evals_size, out)?;
 
 	if log_evals_size > P::LOG_WIDTH {
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
 		let (evals_0, evals_1) = evals.split_at(packed_len);
 
-		for (out, eval_0, eval_1) in izip!(out, evals_0, evals_1) {
+		let pivot = nonzero_scalars_prefix
+			.saturating_sub(1 << (log_evals_size - 1))
+			.div_ceil(P::WIDTH);
+
+		for (out, eval_0, eval_1) in izip!(&mut out[..pivot], evals_0, evals_1) {
 			out.write(*eval_0 + (*eval_1 - *eval_0) * lerp_query);
+		}
+
+		for (out, eval_0) in izip!(&mut out[pivot..], &evals_0[pivot..]) {
+			out.write(*eval_0 * (P::Scalar::ONE - lerp_query));
 		}
 	} else {
 		let only_packed = *evals.first().expect("log_evals_size > 0");
@@ -452,20 +502,34 @@ where
 /// function, we can implement it separately.
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
+	nonzero_scalars_prefix: usize,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 ) -> Result<(), Error>
 where
 	P: PackedField,
 {
-	check_lerp_fold_arguments::<_, P, _>(evals, log_evals_size, evals)?;
+	check_left_lerp_fold_arguments::<_, P, _>(
+		evals,
+		nonzero_scalars_prefix,
+		log_evals_size,
+		evals,
+	)?;
 
 	if log_evals_size > P::LOG_WIDTH {
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
 		let (evals_0, evals_1) = evals.split_at_mut(packed_len);
 
-		for (eval_0, eval_1) in izip!(evals_0, evals_1) {
+		let pivot = nonzero_scalars_prefix
+			.saturating_sub(1 << (log_evals_size - 1))
+			.div_ceil(P::WIDTH);
+
+		for (eval_0, eval_1) in izip!(&mut evals_0[..pivot], evals_1) {
 			*eval_0 += (*eval_1 - *eval_0) * lerp_query;
+		}
+
+		for eval_0 in &mut evals_0[pivot..] {
+			*eval_0 *= P::Scalar::ONE - lerp_query;
 		}
 
 		evals.truncate(evals.len() >> 1);
@@ -1034,7 +1098,8 @@ mod tests {
 				1 << log_evals_size.saturating_sub(B128bOptimal::LOG_WIDTH + 1)
 			];
 			fold_left(&evals, log_evals_size, &query, 1, &mut out).unwrap();
-			fold_left_lerp_inplace(&mut evals, log_evals_size, lerp_query).unwrap();
+			fold_left_lerp_inplace(&mut evals, 1 << log_evals_size, log_evals_size, lerp_query)
+				.unwrap();
 
 			for (out, &inplace) in izip!(&out, &evals) {
 				unsafe {

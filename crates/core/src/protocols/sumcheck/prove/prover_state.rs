@@ -1,19 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{
-	iter,
-	sync::atomic::{AtomicBool, Ordering},
-};
+use std::iter;
 
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, fold_left_lerp_inplace, fold_right_lerp, CompositionPoly, EvaluationOrder,
-	MultilinearPoly, MultilinearQuery,
+	evaluate_univariate, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use bytemuck::zeroed_vec;
 use getset::CopyGetters;
 use itertools::izip;
 use tracing::instrument;
@@ -124,6 +119,8 @@ where
 			.map(|(multilinear, &switchover_round)| SumcheckMultilinear::Transparent {
 				multilinear,
 				switchover_round,
+				// REVIEW: find a way to specify this
+				nonzero_scalars_prefix: None,
 			})
 			.collect();
 
@@ -177,81 +174,15 @@ where
 			}
 		}
 
-		// Use Relaxed ordering for writes and the read, because:
-		// * all writes can only update this value in the same direction of false->true
-		// * the barrier at the end of rayon "parallel for" is a big enough synchronization point to be Relaxed about memory ordering of accesses to this Atomic.
-		let any_transparent_left = AtomicBool::new(false);
-		self.multilinears
-			.par_iter_mut()
-			.try_for_each(|multilinear| {
-				match multilinear {
-					SumcheckMultilinear::Transparent {
-						multilinear: inner_multilinear,
-						ref mut switchover_round,
-					} => {
-						if *switchover_round == 0 {
-							let tensor_query = self.tensor_query.as_ref()
-							.expect(
-								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
-							);
+		let any_transparent_left = self.backend.sumcheck_fold_multilinears(
+			self.evaluation_order,
+			self.n_vars,
+			&mut self.multilinears,
+			challenge,
+			self.tensor_query.as_ref().map(Into::into),
+		)?;
 
-							// At switchover we partially evaluate the multilinear at an expanded tensor query.
-							let large_field_folded_evals = match self.evaluation_order {
-								EvaluationOrder::LowToHigh => inner_multilinear
-									.evaluate_partial_low(tensor_query.to_ref())?
-									.into_evals(),
-								EvaluationOrder::HighToLow => inner_multilinear
-									.evaluate_partial_high(tensor_query.to_ref())?
-									.into_evals(),
-							};
-
-							*multilinear = SumcheckMultilinear::Folded {
-								large_field_folded_evals,
-							};
-						} else {
-							*switchover_round -= 1;
-							any_transparent_left.store(true, Ordering::Relaxed);
-						}
-					}
-					SumcheckMultilinear::Folded {
-						ref mut large_field_folded_evals,
-					} => {
-						// Post-switchover, we perform single variable folding (linear interpolation).
-
-						match self.evaluation_order {
-							// Lerp folding in low-to-high evaluation order can be made inplace, but not
-							// easily so if multithreading is desired.
-							EvaluationOrder::LowToHigh => {
-								let mut new_large_field_folded_evals =
-									zeroed_vec(1 << self.n_vars.saturating_sub(1 + P::LOG_WIDTH));
-
-								fold_right_lerp(
-									&*large_field_folded_evals,
-									self.n_vars,
-									challenge,
-									&mut new_large_field_folded_evals,
-								)?;
-
-								*large_field_folded_evals = new_large_field_folded_evals;
-							}
-
-							// High-to-low evaluation order allows trivial inplace multithreaded folding.
-							EvaluationOrder::HighToLow => {
-								// REVIEW: note that this method is currently _not_ multithreaded, as
-								//         traces are usually sufficiently wide
-								fold_left_lerp_inplace(
-									large_field_folded_evals,
-									self.n_vars,
-									challenge,
-								)?;
-							}
-						}
-					}
-				};
-				Ok::<(), Error>(())
-			})?;
-
-		if !any_transparent_left.load(Ordering::Relaxed) {
+		if !any_transparent_left {
 			self.tensor_query = None;
 		}
 

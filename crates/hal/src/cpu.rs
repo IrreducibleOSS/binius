@@ -10,8 +10,8 @@ use binius_math::{
 use tracing::instrument;
 
 use crate::{
-	sumcheck_round_calculator::calculate_round_evals, ComputationBackend, Error, RoundEvals,
-	SumcheckEvaluator, SumcheckMultilinear,
+	sumcheck_folding::fold_multilinears, sumcheck_round_calculation::calculate_round_evals,
+	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
@@ -61,6 +61,21 @@ impl ComputationBackend for CpuBackend {
 			evaluators,
 			nontrivial_evaluation_points,
 		)
+	}
+
+	fn sumcheck_fold_multilinears<P, M>(
+		&self,
+		evaluation_order: EvaluationOrder,
+		n_vars: usize,
+		multilinears: &mut [SumcheckMultilinear<P, M>],
+		challenge: P::Scalar,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+	) -> Result<bool, Error>
+	where
+		P: PackedField,
+		M: MultilinearPoly<P> + Send + Sync,
+	{
+		fold_multilinears(evaluation_order, n_vars, multilinears, challenge, tensor_query)
 	}
 
 	#[instrument(skip_all, name = "CpuBackend::evaluate_partial_high")]
