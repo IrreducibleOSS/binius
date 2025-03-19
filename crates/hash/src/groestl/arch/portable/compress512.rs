@@ -7,7 +7,7 @@
 #![allow(clippy::needless_range_loop)]
 use super::table::TABLE;
 
-pub(super) const COLS: usize = 8;
+pub const COLS: usize = 8;
 const ROUNDS: u64 = 10;
 
 #[inline(always)]
