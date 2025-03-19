@@ -18,7 +18,10 @@ use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
 
 use super::permutation::{HASHES_PER_BYTE_SLICED_PERMUTATION, PERMUTATION};
-use crate::{multi_digest::MultiDigest, permutation::Permutation};
+use crate::{
+	multi_digest::{MultiDigest, ParallelMulidigestImpl},
+	permutation::Permutation,
+};
 
 const RATE_AS_U32: usize = 16;
 const RATE_AS_U8: usize = RATE_AS_U32 * std::mem::size_of::<u32>();
@@ -344,6 +347,9 @@ impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteS
 		digest.finalize_into(out);
 	}
 }
+
+pub type Vision32ParallelDigest =
+	ParallelMulidigestImpl<VisionHasherDigestByteSliced, HASHES_PER_BYTE_SLICED_PERMUTATION>;
 
 #[cfg(test)]
 mod tests {
