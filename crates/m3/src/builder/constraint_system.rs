@@ -282,7 +282,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
 			max_channel_id: self.channels.len().saturating_sub(1),
-			exponents: Vec::new()
+			exponents: Vec::new(),
 		})
 	}
 }
