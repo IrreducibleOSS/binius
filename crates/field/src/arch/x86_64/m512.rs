@@ -938,13 +938,6 @@ impl UnderlierWithBitOps for M512 {
 				_mm512_set_epi64(0b1111, 0b1110, 0b0111, 0b0110, 0b1101, 0b1100, 0b0101, 0b0100),
 			)
 		};
-		let unpack_128b_lo_hi = |data: &mut TL::Data<Self>, i: usize, j: usize, idx_1, idx_2| {
-			let new_i = unsafe { _mm512_permutex2var_epi64(data[i].0, idx_1, data[j].0) };
-			let new_j = unsafe { _mm512_permutex2var_epi64(data[i].0, idx_2, data[j].0) };
-
-			data[i] = Self(new_i);
-			data[j] = Self(new_j);
-		};
 
 		// reorder lanes, step 1
 		for i in 0..TL::WIDTH / 2 {
@@ -976,6 +969,182 @@ impl UnderlierWithBitOps for M512 {
 				values.as_mut().swap(13, 14);
 			}
 			_ => panic!("unsupported tower level"),
+		}
+	}
+
+	#[inline]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		if TL::LOG_WIDTH == 0 {
+			return;
+		}
+
+		match TL::LOG_WIDTH {
+			1 => unsafe {
+				let shuffle = _mm512_set_epi8(
+					15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3,
+					1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4,
+					2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm512_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			2 => unsafe {
+				let shuffle = _mm512_set_epi8(
+					15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0, 15, 11, 7, 3, 14, 10, 6,
+					2, 13, 9, 5, 1, 12, 8, 4, 0, 15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4,
+					0, 15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm512_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			3 => unsafe {
+				let shuffle = _mm512_set_epi8(
+					15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0, 15, 7, 14, 6, 13, 5, 12,
+					4, 11, 3, 10, 2, 9, 1, 8, 0, 15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8,
+					0, 15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm512_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			4 => {}
+			_ => unreachable!("Log width must be less than 5"),
+		}
+
+		let unpack_128b_lo_hi_idx = || unsafe {
+			(
+				_mm512_set_epi64(0b1011, 0b1010, 0b0011, 0b0010, 0b1001, 0b1000, 0b0001, 0b0000),
+				_mm512_set_epi64(0b1111, 0b1110, 0b0111, 0b0110, 0b1101, 0b1100, 0b0101, 0b0100),
+			)
+		};
+		let unpack_256b_lo_hi_idx = || unsafe {
+			(
+				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
+				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
+			)
+		};
+
+		match TL::LOG_WIDTH {
+			1 => {
+				let (idx_1, idx_2) = unsafe {
+					(
+						_mm512_set_epi64(
+							0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000,
+						),
+						_mm512_set_epi64(
+							0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001,
+						),
+					)
+				};
+
+				unpack_128b_lo_hi(values, 0, 1, idx_1, idx_2);
+			}
+			2 => {
+				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 1, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 2, 3, idx_1, idx_2);
+
+				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 2, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 1, 3, idx_1, idx_2);
+
+				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+			}
+			3 => {
+				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 2, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 1, 3, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 4, 6, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 5, 7, idx_1, idx_2);
+
+				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 4, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 1, 5, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 2, 6, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 3, 7, idx_1, idx_2);
+
+				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
+				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
+				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
+				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
+				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
+				unpack_lo_hi_128b_lanes(values, 4, 6, 5);
+				unpack_lo_hi_128b_lanes(values, 5, 7, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+				unpack_lo_hi_128b_lanes(values, 4, 5, 6);
+				unpack_lo_hi_128b_lanes(values, 6, 7, 6);
+			}
+			4 => {
+				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 4, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 1, 5, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 2, 6, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 3, 7, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 8, 12, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 9, 13, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 10, 14, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 11, 15, idx_1, idx_2);
+
+				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
+				unpack_128b_lo_hi(values, 0, 8, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 1, 9, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 2, 10, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 3, 11, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 4, 12, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 5, 13, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 6, 14, idx_1, idx_2);
+				unpack_128b_lo_hi(values, 7, 15, idx_1, idx_2);
+
+				unpack_lo_hi_128b_lanes(values, 0, 8, 3);
+				unpack_lo_hi_128b_lanes(values, 1, 9, 3);
+				unpack_lo_hi_128b_lanes(values, 2, 10, 3);
+				unpack_lo_hi_128b_lanes(values, 3, 11, 3);
+				unpack_lo_hi_128b_lanes(values, 4, 12, 3);
+				unpack_lo_hi_128b_lanes(values, 5, 13, 3);
+				unpack_lo_hi_128b_lanes(values, 6, 14, 3);
+				unpack_lo_hi_128b_lanes(values, 7, 15, 3);
+				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
+				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
+				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
+				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
+				unpack_lo_hi_128b_lanes(values, 8, 12, 4);
+				unpack_lo_hi_128b_lanes(values, 9, 13, 4);
+				unpack_lo_hi_128b_lanes(values, 10, 14, 4);
+				unpack_lo_hi_128b_lanes(values, 11, 15, 4);
+				unpack_lo_hi_128b_lanes(values, 0, 1, 5);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 5);
+				unpack_lo_hi_128b_lanes(values, 4, 5, 5);
+				unpack_lo_hi_128b_lanes(values, 6, 7, 5);
+				unpack_lo_hi_128b_lanes(values, 8, 9, 5);
+				unpack_lo_hi_128b_lanes(values, 10, 11, 5);
+				unpack_lo_hi_128b_lanes(values, 12, 13, 5);
+				unpack_lo_hi_128b_lanes(values, 14, 15, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 2, 6);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 6);
+				unpack_lo_hi_128b_lanes(values, 4, 6, 6);
+				unpack_lo_hi_128b_lanes(values, 5, 7, 6);
+				unpack_lo_hi_128b_lanes(values, 8, 10, 6);
+				unpack_lo_hi_128b_lanes(values, 9, 11, 6);
+				unpack_lo_hi_128b_lanes(values, 12, 14, 6);
+				unpack_lo_hi_128b_lanes(values, 13, 15, 6);
+
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
+				values.as_mut().swap(9, 10);
+				values.as_mut().swap(13, 14);
+			}
+			_ => unreachable!("log width must be less than 5"),
 		}
 	}
 }
@@ -1147,6 +1316,35 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 		}
 		_ => panic!("unsupported block length"),
 	}
+}
+
+#[inline(always)]
+fn unpack_128b_lo_hi(
+	data: &mut (impl AsMut<[M512]> + AsRef<[M512]>),
+	i: usize,
+	j: usize,
+	idx_1: __m512i,
+	idx_2: __m512i,
+) {
+	let new_i = unsafe { _mm512_permutex2var_epi64(data.as_ref()[i].0, idx_1, data.as_ref()[j].0) };
+	let new_j = unsafe { _mm512_permutex2var_epi64(data.as_ref()[i].0, idx_2, data.as_ref()[j].0) };
+
+	data.as_mut()[i] = M512(new_i);
+	data.as_mut()[j] = M512(new_j);
+}
+
+#[inline(always)]
+fn unpack_lo_hi_128b_lanes(
+	data: &mut (impl AsMut<[M512]> + AsRef<[M512]>),
+	i: usize,
+	j: usize,
+	log_block_len: usize,
+) {
+	let new_i = data.as_ref()[i].unpack_lo_128b_lanes(data.as_ref()[j], log_block_len);
+	let new_j = data.as_ref()[i].unpack_hi_128b_lanes(data.as_ref()[j], log_block_len);
+
+	data.as_mut()[i] = new_i;
+	data.as_mut()[j] = new_j;
 }
 
 #[inline]
