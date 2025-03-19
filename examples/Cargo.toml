@@ -11,10 +11,10 @@ array-util.workspace = true
 binius_circuits = { path = "../crates/circuits", default-features = false }
 binius_core = { path = "../crates/core", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
-binius_hal = { path = "../crates/hal" }
+binius_hal = { path = "../crates/hal", default-features = false }
 binius_hash = { path = "../crates/hash", default-features = false }
-binius_macros = { path = "../crates/macros" }
-binius_math = { path = "../crates/math" }
+binius_macros = { path = "../crates/macros", default-features = false }
+binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
 bytesize.workspace = true
@@ -90,4 +90,4 @@ bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
 perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
-nightly_features = ["binius_core/nightly_features"]
+nightly_features = ["binius_core/nightly_features","binius_hal/nightly_features", "binius_macros/nightly_features"]

@@ -10,11 +10,11 @@ workspace = true
 [dependencies]
 assert_matches.workspace = true
 auto_impl.workspace = true
-binius_macros = { path = "../macros" }
+binius_macros = { path = "../macros", default-features = false }
 binius_field = { path = "../field", default-features = false }
-binius_hal = { path = "../hal" }
+binius_hal = { path = "../hal", default-features = false }
 binius_hash = { path = "../hash", default-features = false }
-binius_math = { path = "../math" }
+binius_math = { path = "../math", default-features = false }
 binius_ntt = { path = "../ntt" }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
@@ -33,7 +33,7 @@ trait-set.workspace = true
 transpose.workspace = true
 
 [dev-dependencies]
-binius_macros = { path = "../macros" }
+binius_macros = { path = "../macros", default-features = false }
 criterion.workspace = true
 rand = { workspace = true, features = ["std"] }
 
@@ -68,6 +68,9 @@ harness = false
 debug_validate_sumcheck = []
 default = ["nightly_features"]
 nightly_features = [
-    "binius_field/nightly_features",
-    "binius_hash/nightly_features",
+  "binius_field/nightly_features",
+  "binius_hal/nightly_features",
+  "binius_hash/nightly_features",
+  "binius_macros/nightly_features",
+  "binius_math/nightly_features",
 ]
