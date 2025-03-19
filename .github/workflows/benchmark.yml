@@ -37,6 +37,8 @@ jobs:
         with:
           name: gh-pages
           path: output/
+      - name: Execute Benchmark Tests
+        run: ls -latrh
       - name: Upload Perfetto Trace
         uses: actions/upload-artifact@v4
         with:
