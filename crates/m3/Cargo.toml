@@ -21,6 +21,7 @@ assert_matches.workspace = true
 binius_hal = { path = "../hal" }
 binius_hash = { path = "../hash", default-features = false }
 groestl_crypto.workspace = true
+rand.workspace = true
 
 [features]
 default = ["binius_utils/rayon"]

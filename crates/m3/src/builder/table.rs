@@ -13,7 +13,6 @@ use binius_field::{
 	packed::pack_slice,
 	ExtensionField, TowerField,
 };
-use binius_math::LinearNormalForm;
 use binius_utils::{
 	checked_arithmetics::{checked_log_2, log2_strict_usize},
 	sparse_index::SparseIndex,
@@ -103,46 +102,6 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 				offset,
 				log_block_size,
 				variant,
-			},
-		)
-	}
-
-	pub fn add_linear_combination<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		expr: Expr<FSub, V>,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let LinearNormalForm {
-			constant: offset,
-			var_coeffs,
-		} = expr
-			.expr()
-			.convert_field::<F>()
-			.linear_normal_form()
-			.expect("pre-condition: expression must be linear");
-
-		let col_scalars = var_coeffs
-			.into_iter()
-			.enumerate()
-			.filter_map(|(partition_index, coeff)| {
-				if coeff != F::ZERO {
-					let partition = &self.table.partitions[partition_id::<V>()];
-					Some((partition.columns[partition_index], coeff))
-				} else {
-					None
-				}
-			})
-			.collect();
-
-		self.table.new_column(
-			self.namespaced_name(name),
-			ColumnDef::LinearCombination {
-				offset,
-				col_scalars,
 			},
 		)
 	}
@@ -277,27 +236,19 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.assert_zero(name, expr)
 	}
 
-	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.partition_mut(1).pull_one(channel, col)
-	}
-
-	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.table.partition_mut(1).push_one(channel, col)
-	}
-
-	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
 		self.table.partition_mut(1).pull(channel, cols);
 	}
 
-	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
+	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
 		self.table.partition_mut(1).push(channel, cols);
 	}
 
@@ -366,28 +317,20 @@ impl<F: TowerField> TablePartition<F> {
 		});
 	}
 
-	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.pull(channel, std::iter::once(upcast_col(col)))
+		self.flush(channel, FlushDirection::Pull, cols.into_iter().map(upcast_col))
 	}
 
-	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.push(channel, std::iter::once(upcast_col(col)))
-	}
-
-	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.flush(channel, FlushDirection::Pull, cols)
-	}
-
-	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.flush(channel, FlushDirection::Push, cols)
+		self.flush(channel, FlushDirection::Push, cols.into_iter().map(upcast_col))
 	}
 
 	fn flush(
