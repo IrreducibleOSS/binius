@@ -25,5 +25,7 @@ rand.workspace = true
 
 [features]
 default = ["nightly_features"]
-nightly_features = ["binius_core/nightly_features", "binius_hal/nightly_features"]
-
+nightly_features = [
+    "binius_core/nightly_features",
+    "binius_hal/nightly_features",
+]

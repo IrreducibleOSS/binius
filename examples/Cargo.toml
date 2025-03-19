@@ -90,4 +90,8 @@ bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
 perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
-nightly_features = ["binius_core/nightly_features","binius_hal/nightly_features", "binius_macros/nightly_features"]
+nightly_features = [
+    "binius_core/nightly_features",
+    "binius_hal/nightly_features",
+    "binius_macros/nightly_features",
+]
