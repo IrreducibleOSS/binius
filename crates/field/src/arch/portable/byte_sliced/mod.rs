@@ -34,148 +34,148 @@ pub mod tests {
 				}
 
 				proptest! {
-					// #[test]
-					// fn check_add(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_add(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	let bytesliced_result = bytesliced_a + bytesliced_b;
+						let bytesliced_result = bytesliced_a + bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_result.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_add_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_add_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	bytesliced_a += bytesliced_b;
+						bytesliced_a += bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_a.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_a.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_sub(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_sub(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	let bytesliced_result = bytesliced_a - bytesliced_b;
+						let bytesliced_result = bytesliced_a - bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_result.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_sub_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_sub_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	bytesliced_a -= bytesliced_b;
+						bytesliced_a -= bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_a.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_a.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_mul(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_mul(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	let bytesliced_result = bytesliced_a * bytesliced_b;
+						let bytesliced_result = bytesliced_a * bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_result.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_mul_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_mul_assign(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let mut bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	bytesliced_a *= bytesliced_b;
+						bytesliced_a *= bytesliced_b;
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_a.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_a.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_inv(scalar_elems in scalar_array_strategy()) {
-					// 	let bytesliced = <$name>::from_scalars(scalar_elems);
+					#[test]
+					fn check_inv(scalar_elems in scalar_array_strategy()) {
+						let bytesliced = <$name>::from_scalars(scalar_elems);
 
-					// 	let bytesliced_result = bytesliced.invert_or_zero();
+						let bytesliced_result = bytesliced.invert_or_zero();
 
-					// 	for (i, scalar_elem) in scalar_elems.iter().enumerate() {
-					// 		assert_eq!(scalar_elem.invert_or_zero(), bytesliced_result.get(i));
-					// 	}
-					// }
+						for (i, scalar_elem) in scalar_elems.iter().enumerate() {
+							assert_eq!(scalar_elem.invert_or_zero(), bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_square(scalar_elems in scalar_array_strategy()) {
-					// 	let bytesliced = <$name>::from_scalars(scalar_elems);
+					#[test]
+					fn check_square(scalar_elems in scalar_array_strategy()) {
+						let bytesliced = <$name>::from_scalars(scalar_elems);
 
-					// 	let bytesliced_result = bytesliced.square();
+						let bytesliced_result = bytesliced.square();
 
-					// 	for (i, scalar_elem) in scalar_elems.iter().enumerate() {
-					// 		assert_eq!(scalar_elem.square(), bytesliced_result.get(i));
-					// 	}
-					// }
+						for (i, scalar_elem) in scalar_elems.iter().enumerate() {
+							assert_eq!(scalar_elem.square(), bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_linear_transformation(scalar_elems in scalar_array_strategy()) {
-					// 	use crate::linear_transformation::{PackedTransformationFactory, FieldLinearTransformation, Transformation};
-					// 	use rand::{rngs::StdRng, SeedableRng};
+					#[test]
+					fn check_linear_transformation(scalar_elems in scalar_array_strategy()) {
+						use crate::linear_transformation::{PackedTransformationFactory, FieldLinearTransformation, Transformation};
+						use rand::{rngs::StdRng, SeedableRng};
 
-					// 	let bytesliced = <$name>::from_scalars(scalar_elems);
+						let bytesliced = <$name>::from_scalars(scalar_elems);
 
-					// 	let linear_transformation = FieldLinearTransformation::random(StdRng::seed_from_u64(0));
-					// 	let packed_transformation = <$name>::make_packed_transformation(linear_transformation.clone());
+						let linear_transformation = FieldLinearTransformation::random(StdRng::seed_from_u64(0));
+						let packed_transformation = <$name>::make_packed_transformation(linear_transformation.clone());
 
-					// 	let bytesliced_result = packed_transformation.transform(&bytesliced);
+						let bytesliced_result = packed_transformation.transform(&bytesliced);
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(linear_transformation.transform(&scalar_elems[i]), bytesliced_result.get(i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(linear_transformation.transform(&scalar_elems[i]), bytesliced_result.get(i));
+						}
+					}
 
-					// #[test]
-					// fn check_interleave(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
-					// 	let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
-					// 	let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+					#[test]
+					fn check_interleave(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
 
-					// 	for log_block_len in 0..<$name>::LOG_WIDTH {
-					// 		let (bytesliced_c, bytesliced_d) = bytesliced_a.interleave(bytesliced_b, log_block_len);
+						for log_block_len in 0..<$name>::LOG_WIDTH {
+							let (bytesliced_c, bytesliced_d) = bytesliced_a.interleave(bytesliced_b, log_block_len);
 
-					// 		let block_len = 1 << log_block_len;
-					// 		for offset in (0..<$name>::WIDTH).step_by(2 * block_len) {
-					// 			for i in 0..block_len {
-					// 				assert_eq!(bytesliced_c.get(offset + i), scalar_elems_a[offset + i]);
-					// 				assert_eq!(bytesliced_c.get(offset + block_len + i), scalar_elems_b[offset + i]);
+							let block_len = 1 << log_block_len;
+							for offset in (0..<$name>::WIDTH).step_by(2 * block_len) {
+								for i in 0..block_len {
+									assert_eq!(bytesliced_c.get(offset + i), scalar_elems_a[offset + i]);
+									assert_eq!(bytesliced_c.get(offset + block_len + i), scalar_elems_b[offset + i]);
 
-					// 				assert_eq!(bytesliced_d.get(offset + i), scalar_elems_a[offset + block_len + i]);
-					// 				assert_eq!(bytesliced_d.get(offset + block_len + i), scalar_elems_b[offset + block_len + i]);
-					// 			}
-					// 		}
-					// 	}
-					// }
+									assert_eq!(bytesliced_d.get(offset + i), scalar_elems_a[offset + block_len + i]);
+									assert_eq!(bytesliced_d.get(offset + block_len + i), scalar_elems_b[offset + block_len + i]);
+								}
+							}
+						}
+					}
 
-					// #[test]
-					// fn check_transpose_to(scalar_elems in scalar_array_strategy()) {
-					// 	let bytesliced = <$name>::from_scalars(scalar_elems);
-					// 	let mut destination = [<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
-					// 	bytesliced.transpose_to(&mut destination);
+					#[test]
+					fn check_transpose_to(scalar_elems in scalar_array_strategy()) {
+						let bytesliced = <$name>::from_scalars(scalar_elems);
+						let mut destination = [<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
+						bytesliced.transpose_to(&mut destination);
 
-					// 	for i in 0..<$name>::WIDTH {
-					// 		assert_eq!(scalar_elems[i], get_packed_slice(&destination, i));
-					// 	}
-					// }
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], get_packed_slice(&destination, i));
+						}
+					}
 
 					#[test]
 					fn check_transpose_from(scalar_elems in scalar_array_strategy()) {
