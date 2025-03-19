@@ -773,7 +773,7 @@ impl UnderlierWithBitOps for M128 {
 			_ => unreachable!("Log width must be less than 5"),
 		}
 
-		transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
+		transpose_128b_values::<_, TL>(values, 4 - TL::LOG_WIDTH);
 	}
 }
 
