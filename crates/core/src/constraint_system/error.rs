@@ -49,6 +49,9 @@ pub enum Error {
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
 
+	#[error("Tower level cannot be more than 7")]
+	IncorrectTowerLevel,
+
 	#[error("{oracle} underlier witness data does not match")]
 	PackedUnderlierMismatch { oracle: String },
 
@@ -90,6 +93,9 @@ pub enum Error {
 
 	#[error("transcript error: {0}")]
 	TranscriptError(#[from] crate::transcript::Error),
+
+	#[error("gkr exp error: {0}")]
+	GkrExp(#[from] crate::protocols::gkr_exp::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

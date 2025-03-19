@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
+mod arch;
 mod compression;
 mod digest;
-pub mod portable;
 #[cfg(test)]
 mod tests;
 
@@ -11,7 +11,7 @@ mod tests;
 /// This abstracts over optimized implementations of subcomponents using different
 /// architecture-specific instructions, while sharing the code for hash function construction.
 pub trait GroestlShortInternal {
-	type State: Default + Clone;
+	type State: Clone;
 
 	fn state_from_bytes(block: &[u8; 64]) -> Self::State;
 
@@ -34,6 +34,6 @@ pub trait GroestlShortInternal {
 	}
 }
 
+pub use arch::GroestlShortImpl;
 pub use compression::*;
 pub use digest::Groestl256;
-pub use portable::GroestlShortImpl;

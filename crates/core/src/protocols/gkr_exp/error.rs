@@ -7,6 +7,8 @@ use crate::{
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("the number of variables must all be equal")]
+	NumberOfVariablesMismatch,
 	#[error("metas length does not conform to the provided indexed claims")]
 	MetasClaimMismatch,
 	#[error("incorrect witness type")]

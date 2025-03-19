@@ -1,9 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	TowerField,
-};
+use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -15,7 +12,7 @@ use super::{
 	compositions::IndexedExpComposition,
 	error::Error,
 	provers::{
-		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, GeneratorExpProver,
+		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, StaticExpProver,
 	},
 	witness::BaseExpWitness,
 };
@@ -44,21 +41,19 @@ use crate::{
 ///
 /// # Recommendations
 /// - Witnesses and claims should be grouped by evaluation points from the claims.
-pub fn batch_prove<'a, FBase, F, P, FDomain, Challenger_, Backend>(
+#[instrument(skip_all, name = "gkr_exp::batch_prove")]
+pub fn batch_prove<'a, F, P, FDomain, Challenger_, Backend>(
 	evaluation_order: EvaluationOrder,
-	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P, FBase>>,
+	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P>>,
 	claims: &[ExpClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<BaseExpReductionOutput<F>, Error>
 where
-	F: ExtensionField<FBase> + ExtensionField<FDomain> + TowerField,
+	F: ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
-	FBase: TowerField + ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
@@ -79,9 +74,13 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let mut provers = make_provers::<_, FBase>(witnesses, claims)?;
+	let mut provers = make_provers(witnesses, claims)?;
 
-	let max_exponent_bit_number = provers.first().map(|p| p.exponent_bit_width()).unwrap_or(0);
+	let max_exponent_bit_number = provers
+		.iter()
+		.map(|p| p.exponent_bit_width())
+		.max()
+		.unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
 		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
@@ -123,7 +122,7 @@ fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
 ) -> Result<GKRExpProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
 where
 	FDomain: Field,
-	P: PackedFieldIndexable + PackedExtension<FDomain>,
+	P: PackedField + PackedExtension<FDomain>,
 	P::Scalar: TowerField + ExtensionField<FDomain>,
 	Backend: ComputationBackend,
 {
@@ -279,14 +278,13 @@ where
 }
 
 /// Creates a vector of boxed [ExpProver]s from the given witnesses and claims.
-fn make_provers<'a, P, FBase>(
-	witnesses: Vec<BaseExpWitness<'a, P, FBase>>,
+fn make_provers<'a, P>(
+	witnesses: Vec<BaseExpWitness<'a, P>>,
 	claims: &[ExpClaim<P::Scalar>],
 ) -> Result<Vec<Box<dyn ExpProver<'a, P> + 'a>>, Error>
 where
 	P: PackedField,
-	FBase: BinaryField,
-	P::Scalar: BinaryField + ExtensionField<FBase>,
+	P::Scalar: BinaryField,
 {
 	witnesses
 		.into_iter()
@@ -296,7 +294,7 @@ where
 				DynamicBaseExpProver::new(witness, claim)
 					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			} else {
-				GeneratorExpProver::<'a, P, FBase>::new(witness, claim)
+				StaticExpProver::<'a, P>::new(witness, claim)
 					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			}
 		})
