@@ -10,11 +10,10 @@ use binius_field::{
 	PackedBinaryField16x16b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::ParallelIterator;
 use binius_ntt::NTTOptions;
-use groestl_crypto::Groestl256;
 use rand::prelude::*;
 
 use super::to_par_scalar_big_chunks;

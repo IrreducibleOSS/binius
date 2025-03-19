@@ -7,12 +7,11 @@ use binius_field::{
 	PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_utils::{DeserializeBytes, SerializeBytes};
-use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use super::{

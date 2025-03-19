@@ -1,12 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{BinaryField, ExtensionField};
+use binius_field::BinaryField;
 
-pub fn first_layer_inverse<FBase, F>(input: F) -> F
+pub fn first_layer_inverse<F>(input: F, base: F) -> F
 where
-	FBase: BinaryField,
-	F: BinaryField + ExtensionField<FBase>,
+	F: BinaryField,
 {
-	let generator_upcasted = F::from(FBase::MULTIPLICATIVE_GENERATOR);
-	(input - F::ONE) * (generator_upcasted - F::ONE).invert_or_zero()
+	(input - F::ONE) * (base - F::ONE).invert_or_zero()
 }

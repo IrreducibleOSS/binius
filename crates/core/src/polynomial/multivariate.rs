@@ -2,6 +2,7 @@
 
 use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
 
+use auto_impl::auto_impl;
 use binius_field::{Field, PackedField};
 use binius_math::{
 	ArithExpr, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
@@ -17,6 +18,7 @@ use super::error::Error;
 ///
 /// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPoly`], except that
 /// `MultivariatePoly` is _object safe_, whereas `CompositionPoly` is not.
+#[auto_impl(Arc)]
 pub trait MultivariatePoly<P>: Debug + Send + Sync {
 	/// The number of variables.
 	fn n_vars(&self) -> usize;

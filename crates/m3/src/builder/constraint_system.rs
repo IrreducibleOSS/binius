@@ -12,6 +12,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
+use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bumpalo::Bump;
 
@@ -32,8 +33,6 @@ use crate::builder::expr::ArithExprNamedVars;
 pub struct ConstraintSystem<F: TowerField = B128> {
 	pub tables: Vec<Table<F>>,
 	pub channels: Vec<Channel>,
-	/// All valid channel IDs are strictly less than this bound.
-	pub channel_id_bound: ChannelId,
 }
 
 impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
@@ -78,6 +77,12 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					let name = constraint.name.clone();
 					let expr = ArithExprNamedVars(&constraint.expr, &names);
 					writeln!(f, "        ZERO {name}: {expr}")?;
+				}
+			}
+
+			for col in table.columns.iter() {
+				if matches!(col.col, ColumnDef::Constant { .. }) {
+					oracle_id += 1;
 				}
 			}
 
@@ -185,12 +190,28 @@ impl<F: TowerField> ConstraintSystem<F> {
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let mut oracle_lookup = Vec::new();
 
+			let mut transparent_single = vec![None; table.columns.len()];
+			for (table_index, info) in table.columns.iter().enumerate() {
+				if let ColumnDef::Constant { poly } = &info.col {
+					let oracle_id = oracles
+						.add_named(format!("{}_single", info.name))
+						.transparent(poly.clone())?;
+					transparent_single[table_index] = Some(oracle_id);
+				}
+			}
+
 			// Add multilinear oracles for all table columns.
-			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
-				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
+			for column_info in table.columns.iter() {
+				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let oracle_id = add_oracle_for_column(
+					&mut oracles,
+					&oracle_lookup,
+					&transparent_single,
+					column_info,
+					n_vars,
+				)?;
 				oracle_lookup.push(oracle_id);
-				if info.is_nonzero {
+				if column_info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
 				}
 			}
@@ -260,7 +281,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 			table_constraints,
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
-			max_channel_id: self.channel_id_bound.saturating_sub(1),
+			max_channel_id: self.channels.len().saturating_sub(1),
+			exponents: Vec::new(),
 		})
 	}
 }
@@ -276,23 +298,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
+	transparent_single: &[Option<OracleId>],
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
-	let ColumnInfo { col, name, .. } = column_info;
-	let addition = oracles.add_named(name.clone());
+	let ColumnInfo {
+		id,
+		col,
+		name,
+		shape,
+		..
+	} = column_info;
+	let addition = oracles.add_named(name);
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		ColumnDef::LinearCombination {
-			offset,
-			col_scalars,
-		} => {
-			let inner_oracles = col_scalars
-				.iter()
-				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
-				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
-		}
 		ColumnDef::Selected {
 			col,
 			index,
@@ -327,12 +346,29 @@ fn add_oracle_for_column<F: TowerField>(
 			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
 		ColumnDef::Computed { cols, expr } => {
-			let inner_oracles = cols
-				.iter()
-				.map(|&col_index| oracle_lookup[col_index])
-				.collect::<Vec<_>>();
-			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			if let Ok(LinearNormalForm {
+				constant: offset,
+				var_coeffs,
+			}) = expr.linear_normal_form()
+			{
+				let col_scalars = cols
+					.iter()
+					.zip(var_coeffs)
+					.map(|(&col_index, coeff)| (oracle_lookup[col_index], coeff))
+					.collect::<Vec<_>>();
+				addition.linear_combination_with_offset(n_vars, offset, col_scalars)?
+			} else {
+				let inner_oracles = cols
+					.iter()
+					.map(|&col_index| oracle_lookup[col_index])
+					.collect::<Vec<_>>();
+				addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			}
 		}
+		ColumnDef::Constant { .. } => addition.repeating(
+			transparent_single[id.table_index].unwrap(),
+			n_vars - shape.log_values_per_row,
+		)?,
 	};
 	Ok(oracle_id)
 }

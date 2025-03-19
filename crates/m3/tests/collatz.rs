@@ -108,10 +108,10 @@ mod arithmetization {
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
-		underlier::UnderlierType,
+		underlier::{SmallU, UnderlierType},
 		Field, PackedField,
 	};
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
@@ -122,7 +122,6 @@ mod arithmetization {
 	use binius_math::DefaultEvaluationDomainFactory;
 	use bumpalo::Bump;
 	use bytemuck::Pod;
-	use groestl_crypto::Groestl256;
 
 	use super::model;
 
@@ -152,8 +151,8 @@ mod arithmetization {
 			let even_packed = table.add_packed::<_, 32, B32, 1>("even_packed", even);
 			let half_packed = table.add_packed::<_, 32, B32, 1>("half_packed", half);
 
-			table.pull_one(seq_chan, even_packed);
-			table.push_one(seq_chan, half_packed);
+			table.pull(seq_chan, [even_packed]);
+			table.push(seq_chan, [half_packed]);
 
 			Self {
 				id: table.id(),
@@ -222,10 +221,7 @@ mod arithmetization {
 			let double =
 				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
-			// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
-			// multilinear extension of some constant vector, repeating for the number of rows.
-			// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-			let carry_bit = table.add_committed::<B1, 32>("carry_bit");
+			let carry_bit = table.add_constant("carry_bit", decomposed_u32_bits(1));
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
@@ -242,8 +238,8 @@ mod arithmetization {
 			let triple_plus_one_packed =
 				table.add_packed::<_, 32, B32, 1>("triple_plus_one_packed", triple_plus_one.zout);
 
-			table.pull_one(seq_chan, odd_packed);
-			table.push_one(seq_chan, triple_plus_one_packed);
+			table.pull(seq_chan, [odd_packed]);
+			table.push(seq_chan, [triple_plus_one_packed]);
 
 			Self {
 				id: table.id(),
@@ -256,6 +252,10 @@ mod arithmetization {
 				_triple_plus_one_packed: triple_plus_one_packed,
 			}
 		}
+	}
+
+	fn decomposed_u32_bits(bits: u32) -> [B1; 32] {
+		std::array::from_fn(|i| B1::new(SmallU::new(((bits >> i) & 1) as u8)))
 	}
 
 	impl<U: UnderlierType> TableFiller<U> for OddsTable

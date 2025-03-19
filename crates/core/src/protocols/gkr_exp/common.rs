@@ -2,7 +2,7 @@
 
 use binius_field::Field;
 
-use crate::protocols::gkr_gpa::gpa_sumcheck::prove::GPAProver;
+use crate::protocols::sumcheck::prove::eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder};
 
 /// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
 ///
@@ -15,6 +15,21 @@ pub struct LayerClaim<F: Field> {
 	pub eval: F,
 }
 
+impl<F: Field> LayerClaim<F> {
+	pub fn isomorphic<FI>(self) -> LayerClaim<FI>
+	where
+		F: Into<FI>,
+		FI: Field,
+	{
+		let Self { eval_point, eval } = self;
+
+		LayerClaim {
+			eval_point: eval_point.into_iter().map(|x| x.into()).collect::<Vec<_>>(),
+			eval: eval.into(),
+		}
+	}
+}
+
 /// ExpClaim is a claim about the evaluation of the first layer-multilinear at a specific evaluation point.
 #[derive(Clone)]
 pub struct ExpClaim<F: Field> {
@@ -24,8 +39,8 @@ pub struct ExpClaim<F: Field> {
 	pub exponent_bit_width: usize,
 	pub n_vars: usize,
 	/// - `true`: Indicates that the dynamic base is used
-	/// - `false`: Indicates that the constant base is used.
-	pub uses_dynamic_base: bool,
+	/// - `false`: Indicates that the static base is used.
+	pub static_base: Option<F>,
 }
 
 impl<F: Field> From<ExpClaim<F>> for LayerClaim<F> {
@@ -33,6 +48,26 @@ impl<F: Field> From<ExpClaim<F>> for LayerClaim<F> {
 		Self {
 			eval: value.eval,
 			eval_point: value.eval_point,
+		}
+	}
+}
+
+impl<F: Field> ExpClaim<F> {
+	pub fn isomorphic<FI: Field + From<F>>(self) -> ExpClaim<FI> {
+		let Self {
+			eval_point,
+			eval,
+			exponent_bit_width,
+			n_vars,
+			static_base,
+		} = self;
+
+		ExpClaim {
+			eval_point: eval_point.into_iter().map(|x| x.into()).collect::<Vec<_>>(),
+			eval: eval.into(),
+			exponent_bit_width,
+			n_vars,
+			static_base: static_base.map(|base| base.into()),
 		}
 	}
 }
@@ -48,5 +83,29 @@ pub struct BaseExpReductionOutput<F: Field> {
 	pub layers_claims: Vec<Vec<LayerClaim<F>>>,
 }
 
+impl<F: Field> BaseExpReductionOutput<F> {
+	pub fn isomorphic<FI>(self) -> BaseExpReductionOutput<FI>
+	where
+		F: Into<FI>,
+		FI: Field,
+	{
+		let Self { layers_claims } = self;
+
+		BaseExpReductionOutput {
+			layers_claims: layers_claims
+				.into_iter()
+				.map(|claims| {
+					claims
+						.into_iter()
+						.map(|claim| claim.isomorphic())
+						.collect::<Vec<_>>()
+				})
+				.collect::<Vec<_>>(),
+		}
+	}
+}
+
+pub type GKRExpProverBuilder<'a, P, Backend> = EqIndSumcheckProverBuilder<'a, P, Backend>;
+
 pub type GKRExpProver<'a, FDomain, P, Composition, M, Backend> =
-	GPAProver<'a, FDomain, P, Composition, M, Backend>;
+	EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>;

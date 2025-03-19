@@ -2,16 +2,14 @@
 
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
-	BinaryField, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field,
-	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField2x64b, PackedExtension,
-	PackedField,
+	AESTowerField128b, AESTowerField8b, BinaryField, ByteSlicedAES32x128b, Field, PackedField,
 };
 use binius_hal::make_portable_backend;
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
 	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
-use groestl_crypto::Groestl256;
 use rand::{thread_rng, Rng};
 
 use super::{batch_prove, common::BaseExpReductionOutput};
@@ -22,18 +20,16 @@ use crate::{
 	witness::MultilinearWitness,
 };
 
-type PBits = PackedBinaryField128x1b;
-type FBase = BinaryField64b;
-type PBase = PackedBinaryField2x64b;
-type F = BinaryField128b;
-type P = PackedBinaryField1x128b;
+type PBits = ByteSlicedAES32x128b;
+type F = AESTowerField128b;
+type P = ByteSlicedAES32x128b;
 
 fn generate_claim_witness<'a>(
-	exponents_in_each_row: &[u128],
+	exponents_in_each_row: &[u64],
 	exponent_bit_width: usize,
 	base: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
-) -> (BaseExpWitness<'a, P, FBase>, ExpClaim<F>) {
+) -> (BaseExpWitness<'a, P>, ExpClaim<F>) {
 	let column_len = exponents_in_each_row.len();
 
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
@@ -45,9 +41,9 @@ fn generate_claim_witness<'a>(
 				let this_bit_of_exponent = (this_row_exponent >> i) & 1;
 
 				let single_bit_value = if this_bit_of_exponent == 1 {
-					BinaryField1b::ONE
+					F::ONE
 				} else {
-					BinaryField1b::ZERO
+					F::ZERO
 				};
 
 				set_packed_slice(&mut column_witness, row, single_bit_value);
@@ -66,15 +62,11 @@ fn generate_claim_witness<'a>(
 		.collect::<Vec<_>>();
 
 	let witness = if let Some(base) = base {
-		BaseExpWitness::<'_, P, FBase>::new_with_dynamic_base::<PBits, PBase>(
-			exponent_witnesses,
-			base,
-		)
-		.unwrap()
+		BaseExpWitness::<'_, P>::new_with_dynamic_base(exponent_witnesses, base).unwrap()
 	} else {
-		BaseExpWitness::<'_, P, FBase>::new_with_constant_base::<PBits, PBase>(
+		BaseExpWitness::<'_, P>::new_with_static_base(
 			exponent_witnesses,
-			FBase::MULTIPLICATIVE_GENERATOR,
+			F::MULTIPLICATIVE_GENERATOR,
 		)
 		.unwrap()
 	};
@@ -83,6 +75,12 @@ fn generate_claim_witness<'a>(
 
 	let last_layer_query = MultilinearQuery::expand(eval_point);
 
+	let static_base = if witness.uses_dynamic_base() {
+		None
+	} else {
+		Some(F::MULTIPLICATIVE_GENERATOR)
+	};
+
 	let claim = ExpClaim {
 		eval_point: eval_point.to_vec(),
 		eval: exponentiation_result_witness
@@ -90,21 +88,21 @@ fn generate_claim_witness<'a>(
 			.unwrap(),
 		exponent_bit_width: witness.exponent.len(),
 		n_vars: eval_point.len(),
-		uses_dynamic_base: witness.uses_dynamic_base(),
+		static_base,
 	};
 	(witness, claim)
 }
 
 fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P, FBase>>) {
+) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P>>) {
 	let mut rng = thread_rng();
 
 	let a: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.gen::<u128>() % (1 << exponent_bit_width))
+		.map(|_| rng.gen::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let b: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.gen::<u128>() % (1 << exponent_bit_width))
+		.map(|_| rng.gen::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
@@ -133,7 +131,7 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 
 #[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims_with_different_log_size<'a>(
-) -> (Vec<BaseExpWitness<'a, P, FBase>>, Vec<ExpClaim<F>>) {
+) -> (Vec<BaseExpWitness<'a, P>>, Vec<ExpClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
@@ -164,8 +162,8 @@ fn witness_gen_happens_correctly() {
 
 	let mut rng = thread_rng();
 
-	let a: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u128).collect();
-	let b: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u128).collect();
+	let a: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u64).collect();
+	let b: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u64).collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
 	let eval_point = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
@@ -173,12 +171,11 @@ fn witness_gen_happens_correctly() {
 	let (a_witness, _) = generate_claim_witness(&a, EXPONENT_BIT_WIDTH, None, &eval_point);
 	let a_exponentiation_result = a_witness.exponentiation_result_witness();
 
-	let a_exponentiation_result_evals =
-		P::cast_bases(a_exponentiation_result.packed_evals().unwrap());
+	let a_exponentiation_result_evals = a_exponentiation_result.packed_evals().unwrap();
 
 	for (row_idx, this_row_exponent) in a.into_iter().enumerate() {
 		assert_eq!(
-			FBase::MULTIPLICATIVE_GENERATOR.pow(this_row_exponent as u64),
+			F::MULTIPLICATIVE_GENERATOR.pow(this_row_exponent),
 			get_packed_slice(a_exponentiation_result_evals, row_idx)
 		);
 	}
@@ -191,13 +188,12 @@ fn witness_gen_happens_correctly() {
 	);
 	let b_exponentiation_result = b_witness.exponentiation_result_witness();
 
-	let b_exponentiation_result_evals =
-		P::cast_bases(b_exponentiation_result.packed_evals().unwrap());
+	let b_exponentiation_result_evals = b_exponentiation_result.packed_evals().unwrap();
 
 	for (row_idx, this_row_exponent) in b.into_iter().enumerate() {
 		assert_eq!(
-			get_packed_slice(a_exponentiation_result_evals, row_idx).pow(this_row_exponent as u64),
-			get_packed_slice(b_exponentiation_result_evals, row_idx)
+			get_packed_slice::<P>(a_exponentiation_result_evals, row_idx).pow(this_row_exponent),
+			get_packed_slice::<P>(b_exponentiation_result_evals, row_idx)
 		);
 	}
 
@@ -205,10 +201,7 @@ fn witness_gen_happens_correctly() {
 
 	let c_exponentiation_result = c_witness.exponentiation_result_witness();
 
-	assert_eq!(
-		b_exponentiation_result_evals,
-		P::cast_bases(c_exponentiation_result.packed_evals().unwrap())
-	);
+	assert_eq!(b_exponentiation_result_evals, c_exponentiation_result.packed_evals().unwrap());
 }
 
 #[test]
@@ -218,13 +211,13 @@ fn prove_reduces_to_correct_claims() {
 	let (witnesses, claims): (Vec<_>, Vec<_>) =
 		generate_mul_witnesses_claims_with_different_log_size();
 
-	let evaluation_domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
+	let evaluation_domain_factory = DefaultEvaluationDomainFactory::<AESTowerField8b>::default();
 
 	let backend = make_portable_backend();
 
 	let BaseExpReductionOutput {
 		layers_claims: layer_eval_claims,
-	} = batch_prove::batch_prove::<FBase, _, _, _, _, _>(
+	} = batch_prove::batch_prove(
 		EvaluationOrder::LowToHigh,
 		witnesses.clone(),
 		&claims,
@@ -247,7 +240,7 @@ fn prove_reduces_to_correct_claims() {
 			let this_bit_query = MultilinearQuery::expand(&this_claim.eval_point);
 
 			match &witness.base {
-				super::witness::BaseWitness::Constant(_) => {
+				super::witness::BaseWitness::Static(_) => {
 					let exponent = witness.exponent[exponent_len - exponent_bit_number].clone();
 
 					let claimed_evaluation = this_claim.eval;
@@ -294,11 +287,12 @@ fn good_proof_verifies() {
 		let (witnesses, claims): (Vec<_>, Vec<_>) =
 			generate_mul_witnesses_claims_with_different_log_size();
 
-		let evaluation_domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
+		let evaluation_domain_factory =
+			DefaultEvaluationDomainFactory::<AESTowerField8b>::default();
 
 		let backend = make_portable_backend();
 
-		batch_prove::batch_prove::<FBase, _, _, _, _, _>(
+		batch_prove::batch_prove(
 			evaluation_order,
 			witnesses,
 			&claims,
@@ -310,12 +304,9 @@ fn good_proof_verifies() {
 
 		let mut verifier_transcript = transcript.into_verifier();
 
-		let _reduced_claims = batch_verify::batch_verify::<FBase, _, _>(
-			evaluation_order,
-			&claims,
-			&mut verifier_transcript,
-		)
-		.unwrap();
+		let _reduced_claims =
+			batch_verify::batch_verify(evaluation_order, &claims, &mut verifier_transcript)
+				.unwrap();
 
 		verifier_transcript.finalize().unwrap()
 	}

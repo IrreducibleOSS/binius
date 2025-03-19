@@ -17,7 +17,10 @@ use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
-		common::{get_nontrivial_evaluation_points, CompositeSumClaim, RoundCoeffs},
+		common::{
+			get_nontrivial_evaluation_points, interpolation_domains_for_composition_degrees,
+			CompositeSumClaim, RoundCoeffs,
+		},
 		error::Error,
 		prove::prover_state::SumcheckInterpolator,
 	},
@@ -126,16 +129,12 @@ where
 			.map(|composite_claim| composite_claim.sum)
 			.collect();
 
-		let domains = composite_claims
-			.iter()
-			.map(|composite_claim| {
-				let degree = composite_claim.composition.degree();
-				let domain =
-					evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
-				Ok(domain.into())
-			})
-			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
-			.map_err(Error::MathError)?;
+		let domains = interpolation_domains_for_composition_degrees(
+			evaluation_domain_factory,
+			composite_claims
+				.iter()
+				.map(|composite_claim| composite_claim.composition.degree()),
+		)?;
 
 		let compositions = composite_claims
 			.into_iter()
