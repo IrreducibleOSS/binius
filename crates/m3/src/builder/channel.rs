@@ -10,6 +10,7 @@ pub struct Flush {
 	pub column_indices: Vec<ColumnIndex>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
+	pub selector: Option<ColumnIndex>,
 }
 
 /// A channel.
