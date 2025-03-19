@@ -110,7 +110,7 @@ impl PermutationVariant {
 	fn shift_bytes_offset(self, i: usize) -> usize {
 		match self {
 			PermutationVariant::P => (8 - i) % 8,
-			PermutationVariant::Q => (8 - (2 * i + 1)) % 8,
+			PermutationVariant::Q => (16 - (2 * i + 1)) % 8,
 		}
 	}
 }
@@ -456,6 +456,44 @@ mod tests {
 
 		let input = table.add_committed_multiple::<B8, 8, 8>("state_in");
 		let perm = Permutation::new(&mut table, PermutationVariant::P, input);
+
+		let table_id = table.id();
+
+		let allocator = Bump::new();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![1 << 8],
+		};
+		let mut witness = cs
+			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.unwrap();
+
+		let table_witness = witness.get_table(table_id).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let mut segment = table_witness.full_segment();
+		for i in 0..8 {
+			for in_j in &mut *segment.get_mut(input[i]).unwrap() {
+				*in_j = PackedField::random(&mut rng);
+			}
+		}
+
+		perm.populate(&mut segment).unwrap();
+
+		let ccs = cs.compile(&statement).unwrap();
+		let witness = witness.into_multilinear_extension_index(&statement);
+
+		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+	}
+
+	#[test]
+	fn test_q_permutation() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("Q-permutation test");
+
+		let input = table.add_committed_multiple::<B8, 8, 8>("state_in");
+		let perm = Permutation::new(&mut table, PermutationVariant::Q, input);
 
 		let table_id = table.id();
 
