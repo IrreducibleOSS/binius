@@ -1,15 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{arch::x86_64::*, convert::TryInto, mem::transmute_copy};
+use std::{arch::x86_64::*, mem::transmute_copy};
 
-use binius_field::{
-	underlier::WithUnderlier, AESTowerField8b, ExtensionField, PackedAESBinaryField64x8b,
-	PackedExtension, PackedField, PackedFieldIndexable,
-};
+use crate::groestl::GroestlShortInternal;
 
 const ROUND_SIZE: usize = 10;
 
 /// Helper struct for converting between Aligned bytes and `__m512` register
+#[derive(Debug, Clone, Copy)]
 #[repr(align(64))]
 struct AlignedArray([u8; 64]);
 
@@ -58,27 +56,6 @@ fn xor_blocks(a: __m512i, b: __m512i) -> __m512i {
 	unsafe { _mm512_xor_si512(a, b) }
 }
 
-#[inline]
-fn to_u8_slice<
-	PT: PackedField<Scalar: ExtensionField<AESTowerField8b>>
-		+ PackedExtension<AESTowerField8b, PackedSubfield: PackedFieldIndexable>,
->(
-	slice: &[PT],
-) -> &[u8] {
-	let packed_subfields = PT::cast_bases(slice);
-	let scalars = PT::PackedSubfield::unpack_scalars(packed_subfields);
-	AESTowerField8b::to_underliers_ref(scalars)
-}
-
-#[inline]
-fn from_u8_slice(slice: &[u8; 64]) -> PackedAESBinaryField64x8b {
-	let aes_arr = AESTowerField8b::from_underliers_ref(slice);
-	let mut p = [PackedAESBinaryField64x8b::zero()];
-	let p_slice = PackedAESBinaryField64x8b::unpack_scalars_mut(&mut p);
-	p_slice.copy_from_slice(aes_arr);
-	p[0]
-}
-
 const INDEX: AlignedArray = AlignedArray([
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -89,140 +66,149 @@ const INDEX: AlignedArray = AlignedArray([
 /// An implementation of Grøstl256 that uses AVX512 vector extensions to perform P and Q
 /// permutation functions. Some of the steps in a round of the permutation gets simplified to a
 /// single instruction.
-#[derive(Clone, Default)]
-pub struct Groestl256Core;
+#[derive(Clone, Default, Debug)]
+pub struct GroestlShortImpl;
 
-impl Groestl256Core {
-	#[inline]
-	fn mix_bytes(&self, block: __m512i) -> __m512i {
-		let b_adj_1: __m512i = unsafe { _mm512_ror_epi64(block, 8) };
-		let x: __m512i = xor_blocks(block, b_adj_1);
+#[inline]
+fn mix_bytes(block: __m512i) -> __m512i {
+	let b_adj_1: __m512i = unsafe { _mm512_ror_epi64(block, 8) };
+	let x: __m512i = xor_blocks(block, b_adj_1);
 
-		let x_adj_3: __m512i = unsafe { _mm512_ror_epi64(x, 24) };
-		let y: __m512i = xor_blocks(x, x_adj_3);
+	let x_adj_3: __m512i = unsafe { _mm512_ror_epi64(x, 24) };
+	let y: __m512i = xor_blocks(x, x_adj_3);
 
-		let x_adj_2: __m512i = unsafe { _mm512_ror_epi64(x, 16) };
+	let x_adj_2: __m512i = unsafe { _mm512_ror_epi64(x, 16) };
 
-		let b_adj_6: __m512i = unsafe { _mm512_ror_epi64(block, 48) };
+	let b_adj_6: __m512i = unsafe { _mm512_ror_epi64(block, 48) };
 
-		let z: __m512i = xor_blocks(x, x_adj_2);
-		let z: __m512i = xor_blocks(z, b_adj_6);
+	let z: __m512i = xor_blocks(x, x_adj_2);
+	let z: __m512i = xor_blocks(z, b_adj_6);
 
-		let z_adj_7: __m512i = unsafe { _mm512_ror_epi64(z, 56) };
-		let z_adj_4: __m512i = unsafe { _mm512_ror_epi64(z, 32) };
-		let y_adj_3: __m512i = unsafe { _mm512_ror_epi64(y, 24) };
+	let z_adj_7: __m512i = unsafe { _mm512_ror_epi64(z, 56) };
+	let z_adj_4: __m512i = unsafe { _mm512_ror_epi64(z, 32) };
+	let y_adj_3: __m512i = unsafe { _mm512_ror_epi64(y, 24) };
 
-		let _2: __m512i = unsafe { _mm512_set1_epi8(2) };
-		let first_mul: __m512i = unsafe { _mm512_gf2p8mul_epi8(_2, y_adj_3) };
-		let mul_2_z_adj_7: __m512i = unsafe { _mm512_xor_si512(first_mul, z_adj_7) };
-		let second_mul: __m512i = unsafe { _mm512_gf2p8mul_epi8(_2, mul_2_z_adj_7) };
+	let _2: __m512i = unsafe { _mm512_set1_epi8(2) };
+	let first_mul: __m512i = unsafe { _mm512_gf2p8mul_epi8(_2, y_adj_3) };
+	let mul_2_z_adj_7: __m512i = unsafe { _mm512_xor_si512(first_mul, z_adj_7) };
+	let second_mul: __m512i = unsafe { _mm512_gf2p8mul_epi8(_2, mul_2_z_adj_7) };
 
-		xor_blocks(second_mul, z_adj_4)
+	xor_blocks(second_mul, z_adj_4)
+}
+
+#[inline]
+fn sub_bytes(block: __m512i) -> __m512i {
+	// The affine transformation can be build from 8 u64's
+	const SBOX_AFFINE: i64 = 0xf1e3c78f1f3e7cf8u64 as i64;
+
+	let a: __m512i = unsafe { _mm512_set1_epi64(SBOX_AFFINE) };
+
+	unsafe { _mm512_gf2p8affineinv_epi64_epi8(block, a, 0b01100011) }
+}
+
+#[inline]
+fn shift_bytes(block: __m512i, shift: &AlignedArray) -> __m512i {
+	let idx: __m512i = unsafe { _mm512_load_si512(transmute_copy(&shift.0.as_ptr())) };
+
+	unsafe { _mm512_permutexvar_epi8(idx, block) }
+}
+
+#[inline]
+fn add_round_constants_p(block: __m512i, r: u8) -> __m512i {
+	let round_reg: __m512i = unsafe { _mm512_set1_epi64(r as i64) };
+
+	// The compiler gets rid of all these instruction into just a mov
+	let block_idx: __m512i = unsafe { _mm512_set1_epi64(0x10) };
+	let idx_one: __m512i = INDEX.into();
+	let block_idx: __m512i = unsafe { _mm512_mullox_epi64(idx_one, block_idx) };
+
+	let res = xor_blocks(block_idx, round_reg);
+	xor_blocks(res, block)
+}
+
+#[inline]
+fn add_round_constants_q(block: __m512i, r: u8) -> __m512i {
+	let round_reg: __m512i = unsafe { _mm512_set1_epi64((r as i64) << 56) };
+
+	let block_idx: __m512i = unsafe { _mm512_set1_epi64(0x10 << 56) };
+	let idx_one: __m512i = INDEX.into();
+	let block_idx: __m512i = unsafe { _mm512_mullox_epi64(idx_one, block_idx) };
+
+	// first we need to xor by 0xff
+	let block: __m512i = unsafe { _mm512_ternarylogic_epi32(block, block, block, 0b01010101) };
+	let res = xor_blocks(block_idx, round_reg);
+	xor_blocks(res, block)
+}
+
+fn perm_p_m512i(block: __m512i) -> __m512i {
+	let mut block = block;
+	for r in 0..ROUND_SIZE {
+		block = add_round_constants_p(block, r as u8);
+		block = sub_bytes(block);
+		block = shift_bytes(block, &SHIFT_ARRAY_P);
+		block = mix_bytes(block);
+	}
+	block
+}
+
+fn perm_q_m512i(block: __m512i) -> __m512i {
+	let mut block = block;
+	for r in 0..ROUND_SIZE {
+		block = add_round_constants_q(block, r as u8);
+		block = sub_bytes(block);
+		block = shift_bytes(block, &SHIFT_ARRAY_Q);
+		block = mix_bytes(block);
+	}
+	block
+}
+
+fn combined_perm_m512i(p_block: __m512i, q_block: __m512i) -> (__m512i, __m512i) {
+	let mut p_block = p_block;
+	let mut q_block = q_block;
+	for r in 0..ROUND_SIZE {
+		p_block = add_round_constants_p(p_block, r as u8);
+		q_block = add_round_constants_q(q_block, r as u8);
+		p_block = sub_bytes(p_block);
+		q_block = sub_bytes(q_block);
+		p_block = shift_bytes(p_block, &SHIFT_ARRAY_P);
+		q_block = shift_bytes(q_block, &SHIFT_ARRAY_Q);
+		p_block = mix_bytes(p_block);
+		q_block = mix_bytes(q_block);
 	}
 
-	#[inline]
-	fn sub_bytes(&self, block: __m512i) -> __m512i {
-		// The affine transformation can be build from 8 u64's
-		const SBOX_AFFINE: i64 = 0xf1e3c78f1f3e7cf8u64 as i64;
+	(q_block, p_block)
+}
 
-		let a: __m512i = unsafe { _mm512_set1_epi64(SBOX_AFFINE) };
+impl GroestlShortInternal for GroestlShortImpl {
+	type State = __m512i;
 
-		unsafe { _mm512_gf2p8affineinv_epi64_epi8(block, a, 0b01100011) }
+	fn state_from_bytes(block: &[u8; 64]) -> Self::State {
+		let arr = AlignedArray(*block);
+		arr.into()
 	}
 
-	#[inline]
-	fn shift_bytes(&self, block: __m512i, shift: &AlignedArray) -> __m512i {
-		let idx: __m512i = unsafe { _mm512_load_si512(transmute_copy(&shift.0.as_ptr())) };
-
-		unsafe { _mm512_permutexvar_epi8(idx, block) }
+	fn state_to_bytes(state: &Self::State) -> [u8; 64] {
+		let arr: AlignedArray = (*state).into();
+		arr.0
 	}
 
-	#[inline]
-	fn add_round_constants_p(&self, block: __m512i, r: u8) -> __m512i {
-		let round_reg: __m512i = unsafe { _mm512_set1_epi64(r as i64) };
-
-		// The compiler gets rid of all these instruction into just a mov
-		let block_idx: __m512i = unsafe { _mm512_set1_epi64(0x10) };
-		let idx_one: __m512i = INDEX.into();
-		let block_idx: __m512i = unsafe { _mm512_mullox_epi64(idx_one, block_idx) };
-
-		let res = xor_blocks(block_idx, round_reg);
-		xor_blocks(res, block)
+	fn xor_state(h: &mut Self::State, m: &Self::State) {
+		*h = xor_blocks(*h, *m);
 	}
 
-	#[inline]
-	fn add_round_constants_q(&self, block: __m512i, r: u8) -> __m512i {
-		let round_reg: __m512i = unsafe { _mm512_set1_epi64((r as i64) << 56) };
-
-		let block_idx: __m512i = unsafe { _mm512_set1_epi64(0x10 << 56) };
-		let idx_one: __m512i = INDEX.into();
-		let block_idx: __m512i = unsafe { _mm512_mullox_epi64(idx_one, block_idx) };
-
-		// first we need to xor by 0xff
-		let block: __m512i = unsafe { _mm512_ternarylogic_epi32(block, block, block, 0b01010101) };
-		let res = xor_blocks(block_idx, round_reg);
-		xor_blocks(res, block)
+	fn p_perm(h: &mut Self::State) {
+		*h = perm_p_m512i(*h);
 	}
 
-	fn perm_p_m512i(&self, block: __m512i) -> __m512i {
-		let mut block = block;
-		for r in 0..ROUND_SIZE {
-			block = self.add_round_constants_p(block, r as u8);
-			block = self.sub_bytes(block);
-			block = self.shift_bytes(block, &SHIFT_ARRAY_P);
-			block = self.mix_bytes(block);
-		}
-		block
+	fn q_perm(h: &mut Self::State) {
+		*h = perm_q_m512i(*h);
 	}
 
-	fn combined_perm_m512i(&self, p_block: __m512i, q_block: __m512i) -> (__m512i, __m512i) {
-		let mut p_block = p_block;
-		let mut q_block = q_block;
-		for r in 0..ROUND_SIZE {
-			p_block = self.add_round_constants_p(p_block, r as u8);
-			q_block = self.add_round_constants_q(q_block, r as u8);
-			p_block = self.sub_bytes(p_block);
-			q_block = self.sub_bytes(q_block);
-			p_block = self.shift_bytes(p_block, &SHIFT_ARRAY_P);
-			q_block = self.shift_bytes(q_block, &SHIFT_ARRAY_Q);
-			p_block = self.mix_bytes(p_block);
-			q_block = self.mix_bytes(q_block);
-		}
-
-		(q_block, p_block)
-	}
-
-	/// This function is simply the P permutation from Grøstl256 that is intended to be used in the
-	/// output transformation stage of hash function at finalization
-	#[inline]
-	pub fn permutation_p(&self, p: PackedAESBinaryField64x8b) -> PackedAESBinaryField64x8b {
-		let p = [p];
-		let p_slice = to_u8_slice(&p);
-		let input = AlignedArray(p_slice.try_into().unwrap());
-		let out: AlignedArray = self.perm_p_m512i(input.into()).into();
-
-		from_u8_slice(&out.0)
-	}
-
-	/// This function can be used to create the compression function of Grøstl256 hash efficiently
-	/// from the P and Q permutations.
-	#[inline]
-	pub fn permutation_pq(
-		&self,
-		p: PackedAESBinaryField64x8b,
-		q: PackedAESBinaryField64x8b,
-	) -> (PackedAESBinaryField64x8b, PackedAESBinaryField64x8b) {
-		let p = [p];
-		let q = [q];
-		let p_slice = to_u8_slice(&p);
-		let q_slice = to_u8_slice(&q);
-		let p_align = AlignedArray(p_slice.try_into().unwrap());
-		let q_align = AlignedArray(q_slice.try_into().unwrap());
-
-		let (p_out_arr, q_out_arr) = self.combined_perm_m512i(p_align.into(), q_align.into());
-		let p_out_arr: AlignedArray = p_out_arr.into();
-		let q_out_arr: AlignedArray = q_out_arr.into();
-
-		(from_u8_slice(&p_out_arr.0), from_u8_slice(&q_out_arr.0))
+	fn compress(h: &mut Self::State, m: &[u8; 64]) {
+		let mut p = h.clone();
+		let q = Self::state_from_bytes(m);
+		Self::xor_state(&mut p, &q);
+		let (p, q) = combined_perm_m512i(p, q);
+		Self::xor_state(h, &xor_blocks(p, q));
 	}
 }

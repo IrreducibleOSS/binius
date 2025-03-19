@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use super::GroestlShortInternal;
+use super::super::GroestlShortInternal;
 
 mod compress512;
 mod table;

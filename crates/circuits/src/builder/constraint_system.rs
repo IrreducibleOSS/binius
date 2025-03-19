@@ -6,6 +6,7 @@ use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection},
+		exp::{Exp, ExpBase},
 		ConstraintSystem,
 	},
 	oracle::{
@@ -31,6 +32,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
+	exponents: Vec<Exp<F>>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
 	next_channel_id: ChannelId,
@@ -69,6 +71,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 				})?
 				.into_inner(),
 			flushes: self.flushes,
+			exponents: self.exponents,
 		})
 	}
 
@@ -214,6 +217,49 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.committed(n_vars, tower_level)
+	}
+
+	/// Adds an exponentiation operation to the constraint system.
+	///
+	/// # Parameters
+	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
+	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..
+	/// - `base`: The static base value.
+	/// - `base_tower_level`: Specifies the field level in the tower where `base` is defined
+	pub fn add_static_exp(
+		&mut self,
+		bits_ids: Vec<OracleId>,
+		exp_result_id: OracleId,
+		base: F,
+		base_tower_level: usize,
+	) {
+		self.exponents.push(Exp {
+			bits_ids,
+			exp_result_id,
+			base: ExpBase::Static {
+				base,
+				tower_level: base_tower_level,
+			},
+		});
+	}
+
+	/// Adds an exponentiation operation to the constraint system.
+	///
+	/// # Parameters
+	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
+	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..
+	/// - `base`: The dynamic base value.
+	pub fn add_dynamic_exp(
+		&mut self,
+		bits_ids: Vec<OracleId>,
+		exp_result_id: OracleId,
+		base: OracleId,
+	) {
+		self.exponents.push(Exp {
+			bits_ids,
+			exp_result_id,
+			base: ExpBase::Dynamic(base),
+		});
 	}
 
 	pub fn add_committed_multiple<const N: usize>(
