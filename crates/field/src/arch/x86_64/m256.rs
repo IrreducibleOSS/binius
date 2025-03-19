@@ -2,7 +2,7 @@
 
 use std::{
 	arch::x86_64::*,
-	mem::{self, transmute},
+	mem::transmute,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
@@ -931,8 +931,6 @@ impl UnderlierWithBitOps for M256 {
 			return;
 		}
 
-		println!("\n\n\ninitial {:?}", bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref()));
-
 		match TL::LOG_WIDTH {
 			1 => unsafe {
 				let shuffle = _mm256_set_epi8(
@@ -965,16 +963,9 @@ impl UnderlierWithBitOps for M256 {
 			_ => unreachable!("Log width must be less than 5"),
 		}
 
-		println!("after shuffle {:?}", bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref()));
-
 		for i in 0..TL::WIDTH / 2 {
 			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 2);
 		}
-
-		println!(
-			"\n\n\nafter unpack 128 {:?}",
-			bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref())
-		);
 
 		match TL::LOG_WIDTH {
 			1 => {
@@ -988,34 +979,62 @@ impl UnderlierWithBitOps for M256 {
 				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
 			}
 			3 => {
-				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
-				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
-				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
-				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
-				unpack_lo_hi_128b_lanes(values, 0, 1, 5);
-				unpack_lo_hi_128b_lanes(values, 2, 3, 5);
-				unpack_lo_hi_128b_lanes(values, 4, 5, 5);
-				unpack_lo_hi_128b_lanes(values, 6, 7, 5);
-				unpack_lo_hi_128b_lanes(values, 0, 2, 6);
-				unpack_lo_hi_128b_lanes(values, 1, 3, 6);
-				unpack_lo_hi_128b_lanes(values, 4, 6, 6);
-				unpack_lo_hi_128b_lanes(values, 5, 7, 6);
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
+				}
+
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
+				}
+
+				for i in [0, 1, 4, 5] {
+					unpack_lo_hi_128b_lanes(values, i, i + 2, 6);
+				}
 
 				values.as_mut().swap(1, 2);
 				values.as_mut().swap(5, 6);
 			}
 			4 => {
-				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
+				unpack_lo_hi_128b_lanes(values, 0, 8, 3);
+				unpack_lo_hi_128b_lanes(values, 1, 9, 3);
+				unpack_lo_hi_128b_lanes(values, 2, 10, 3);
+				unpack_lo_hi_128b_lanes(values, 3, 11, 3);
+				unpack_lo_hi_128b_lanes(values, 4, 12, 3);
+				unpack_lo_hi_128b_lanes(values, 5, 13, 3);
+				unpack_lo_hi_128b_lanes(values, 6, 14, 3);
+				unpack_lo_hi_128b_lanes(values, 7, 15, 3);
+				unpack_lo_hi_128b_lanes(values, 0, 1, 4);
+				unpack_lo_hi_128b_lanes(values, 2, 3, 4);
+				unpack_lo_hi_128b_lanes(values, 4, 5, 4);
+				unpack_lo_hi_128b_lanes(values, 6, 7, 4);
+				unpack_lo_hi_128b_lanes(values, 8, 9, 4);
+				unpack_lo_hi_128b_lanes(values, 10, 11, 4);
+				unpack_lo_hi_128b_lanes(values, 12, 13, 4);
+				unpack_lo_hi_128b_lanes(values, 14, 15, 4);
+				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
+				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
+				unpack_lo_hi_128b_lanes(values, 4, 6, 5);
+				unpack_lo_hi_128b_lanes(values, 5, 7, 5);
+				unpack_lo_hi_128b_lanes(values, 8, 10, 5);
+				unpack_lo_hi_128b_lanes(values, 9, 11, 5);
+				unpack_lo_hi_128b_lanes(values, 12, 14, 5);
+				unpack_lo_hi_128b_lanes(values, 13, 15, 5);
+				unpack_lo_hi_128b_lanes(values, 0, 4, 6);
+				unpack_lo_hi_128b_lanes(values, 1, 5, 6);
+				unpack_lo_hi_128b_lanes(values, 2, 6, 6);
+				unpack_lo_hi_128b_lanes(values, 3, 7, 6);
+				unpack_lo_hi_128b_lanes(values, 8, 12, 6);
+				unpack_lo_hi_128b_lanes(values, 9, 13, 6);
+				unpack_lo_hi_128b_lanes(values, 10, 14, 6);
+				unpack_lo_hi_128b_lanes(values, 11, 15, 6);
 
-				values.as_mut().swap(2, 8);
-				values.as_mut().swap(3, 9);
-				values.as_mut().swap(6, 12);
-				values.as_mut().swap(7, 13);
+				values.as_mut().swap(1, 4);
+				values.as_mut().swap(3, 6);
+				values.as_mut().swap(9, 12);
+				values.as_mut().swap(11, 14);
 			}
 			_ => unreachable!("Log width must be less than 5"),
 		}
-
-		println!("\n\n\nafter reorder {:?}", bytemuck::cast_slice::<_, [u8; 32]>(values.as_ref()));
 	}
 }
 
