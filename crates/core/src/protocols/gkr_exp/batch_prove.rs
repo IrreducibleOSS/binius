@@ -1,9 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	TowerField,
-};
+use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -56,9 +53,7 @@ pub fn batch_prove<'a, F, P, FDomain, Challenger_, Backend>(
 where
 	F: ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
@@ -127,7 +122,7 @@ fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
 ) -> Result<GKRExpProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
 where
 	FDomain: Field,
-	P: PackedFieldIndexable + PackedExtension<FDomain>,
+	P: PackedField + PackedExtension<FDomain>,
 	P::Scalar: TowerField + ExtensionField<FDomain>,
 	Backend: ComputationBackend,
 {

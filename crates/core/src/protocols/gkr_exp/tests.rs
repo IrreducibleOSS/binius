@@ -2,8 +2,7 @@
 
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
-	BinaryField, BinaryField128bPolyval, BinaryField1b, Field, PackedBinaryField128x1b,
-	PackedBinaryPolyval1x128b, PackedExtension, PackedField,
+	AESTowerField128b, AESTowerField8b, BinaryField, ByteSlicedAES32x128b, Field, PackedField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
@@ -21,9 +20,9 @@ use crate::{
 	witness::MultilinearWitness,
 };
 
-type PBits = PackedBinaryField128x1b;
-type F = BinaryField128bPolyval;
-type P = PackedBinaryPolyval1x128b;
+type PBits = ByteSlicedAES32x128b;
+type F = AESTowerField128b;
+type P = ByteSlicedAES32x128b;
 
 fn generate_claim_witness<'a>(
 	exponents_in_each_row: &[u64],
@@ -42,9 +41,9 @@ fn generate_claim_witness<'a>(
 				let this_bit_of_exponent = (this_row_exponent >> i) & 1;
 
 				let single_bit_value = if this_bit_of_exponent == 1 {
-					BinaryField1b::ONE
+					F::ONE
 				} else {
-					BinaryField1b::ZERO
+					F::ZERO
 				};
 
 				set_packed_slice(&mut column_witness, row, single_bit_value);
@@ -172,8 +171,7 @@ fn witness_gen_happens_correctly() {
 	let (a_witness, _) = generate_claim_witness(&a, EXPONENT_BIT_WIDTH, None, &eval_point);
 	let a_exponentiation_result = a_witness.exponentiation_result_witness();
 
-	let a_exponentiation_result_evals =
-		P::cast_bases(a_exponentiation_result.packed_evals().unwrap());
+	let a_exponentiation_result_evals = a_exponentiation_result.packed_evals().unwrap();
 
 	for (row_idx, this_row_exponent) in a.into_iter().enumerate() {
 		assert_eq!(
@@ -190,13 +188,12 @@ fn witness_gen_happens_correctly() {
 	);
 	let b_exponentiation_result = b_witness.exponentiation_result_witness();
 
-	let b_exponentiation_result_evals =
-		P::cast_bases(b_exponentiation_result.packed_evals().unwrap());
+	let b_exponentiation_result_evals = b_exponentiation_result.packed_evals().unwrap();
 
 	for (row_idx, this_row_exponent) in b.into_iter().enumerate() {
 		assert_eq!(
-			get_packed_slice(a_exponentiation_result_evals, row_idx).pow(this_row_exponent),
-			get_packed_slice(b_exponentiation_result_evals, row_idx)
+			get_packed_slice::<P>(a_exponentiation_result_evals, row_idx).pow(this_row_exponent),
+			get_packed_slice::<P>(b_exponentiation_result_evals, row_idx)
 		);
 	}
 
@@ -204,10 +201,7 @@ fn witness_gen_happens_correctly() {
 
 	let c_exponentiation_result = c_witness.exponentiation_result_witness();
 
-	assert_eq!(
-		b_exponentiation_result_evals,
-		P::cast_bases(c_exponentiation_result.packed_evals().unwrap())
-	);
+	assert_eq!(b_exponentiation_result_evals, c_exponentiation_result.packed_evals().unwrap());
 }
 
 #[test]
@@ -217,8 +211,7 @@ fn prove_reduces_to_correct_claims() {
 	let (witnesses, claims): (Vec<_>, Vec<_>) =
 		generate_mul_witnesses_claims_with_different_log_size();
 
-	let evaluation_domain_factory =
-		DefaultEvaluationDomainFactory::<BinaryField128bPolyval>::default();
+	let evaluation_domain_factory = DefaultEvaluationDomainFactory::<AESTowerField8b>::default();
 
 	let backend = make_portable_backend();
 
@@ -295,7 +288,7 @@ fn good_proof_verifies() {
 			generate_mul_witnesses_claims_with_different_log_size();
 
 		let evaluation_domain_factory =
-			DefaultEvaluationDomainFactory::<BinaryField128bPolyval>::default();
+			DefaultEvaluationDomainFactory::<AESTowerField8b>::default();
 
 		let backend = make_portable_backend();
 
