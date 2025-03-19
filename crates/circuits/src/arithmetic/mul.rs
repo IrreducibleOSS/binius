@@ -144,17 +144,16 @@ where
 	builder.add_static_exp(
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-		exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, 1 << cout_low_bits.len()).into(),
+		exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, cout_low_bits.len()).into(),
 		FExpBase::TOWER_LEVEL,
 	);
 
 	Ok(cout_bits)
 }
 
-fn exp_pow2<F: BinaryField>(mut g: F, mut exp: u128) -> F {
-	while exp > 1 {
-		g *= g;
-		exp >>= 1;
+fn exp_pow2<F: BinaryField>(mut g: F, log_exp: usize) -> F {
+	for _ in 0..log_exp {
+		g *= g
 	}
 	g
 }
@@ -195,9 +194,8 @@ mod tests {
 	};
 	use binius_field::{BinaryField1b, BinaryField8b};
 	use binius_hal::make_portable_backend;
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_math::DefaultEvaluationDomainFactory;
-	use groestl_crypto::Groestl256;
 
 	use super::mul;
 	use crate::{
