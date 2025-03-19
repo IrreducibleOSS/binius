@@ -141,6 +141,7 @@ where
 	let CommitOutput {
 		commitment,
 		committed,
+		// REVIEW: this is also a memory handle to computed data (it's the NTT output)
 		codeword,
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
 
@@ -152,6 +153,7 @@ where
 	// Grand products for non-zero checking
 	let non_zero_fast_witnesses =
 		make_fast_masked_flush_witnesses(&oracles, &witness, &non_zero_oracle_ids, None)?;
+	// REVIEW: This does backend computation
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
 		.map(GrandProductWitness::new)
@@ -168,6 +170,7 @@ where
 
 	writer.write_scalar_slice(&non_zero_products);
 
+	// REVIEW: No backend interaction
 	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
 		&non_zero_oracle_ids,
 		&oracles,
@@ -186,6 +189,7 @@ where
 		.map(|flush| flush.selector)
 		.collect::<Vec<_>>();
 
+	// REVIEW: This should take a backend
 	make_unmasked_flush_witnesses(&oracles, &mut witness, &flush_oracle_ids)?;
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses = make_fast_masked_flush_witnesses(
@@ -535,7 +539,7 @@ where
 {
 	// The function is on the critical path, parallelize.
 	let flush_witnesses: Result<Vec<MultilinearWitness<'a, _>>, Error> = flush_oracle_ids
-		.par_iter()
+		.iter()
 		.map(|&oracle_id| {
 			let MultilinearPolyVariant::LinearCombination(lincom) =
 				oracles.oracle(oracle_id).variant

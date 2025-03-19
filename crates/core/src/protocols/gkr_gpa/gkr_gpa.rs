@@ -33,6 +33,7 @@ impl<F: Field> GrandProductClaim<F> {
 #[derive(Debug, Clone)]
 pub struct GrandProductWitness<PW: PackedField> {
 	n_vars: usize,
+	/// Triangular 2D array of the binary tree of products of the input layer.
 	circuit_evals: Vec<Vec<PW>>,
 }
 

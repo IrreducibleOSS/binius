@@ -41,6 +41,7 @@ where
 	PW: PackedField<Scalar: Into<F>>,
 	F: Field,
 {
+	// REVIEW: Reading back one field element per GKR instance from device to CPU.
 	witnesses
 		.iter()
 		.map(|witness| witness.grand_product_evaluation().into())

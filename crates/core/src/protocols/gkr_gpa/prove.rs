@@ -65,6 +65,7 @@ where
 	}
 
 	// Create a vector of GrandProductProverStates
+	// REVIEW: No computation to see here
 	let provers_vec = witness_vec
 		.iter()
 		.zip(claims)
@@ -177,6 +178,7 @@ where
 	// The current claim about a layer multilinear of the product circuit
 	current_layer_claim: LayerClaim<F>,
 
+	// This shouldn't be a struct field, it should be a method input
 	backend: Backend,
 }
 
