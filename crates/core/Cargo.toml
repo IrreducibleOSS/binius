@@ -66,3 +66,8 @@ harness = false
 
 [features]
 debug_validate_sumcheck = []
+default = ["nightly_features"]
+nightly_features = [
+    "binius_field/nightly_features",
+    "binius_hash/nightly_features",
+]
