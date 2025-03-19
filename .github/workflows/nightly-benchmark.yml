@@ -48,6 +48,7 @@ jobs:
           --threshold-upper-boundary 0.99 \
           --thresholds-reset \
           --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
           --adapter rust_criterion \
           'cargo bench --bench main_field_binary_ops  \
           --bench main_field_unary_ops \
