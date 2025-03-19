@@ -24,9 +24,9 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, transpose_128b_blocks_low_to_high,
-		transpose_128b_values, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
-		SmallU, SpreadToByte, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
+		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };

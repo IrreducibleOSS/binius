@@ -288,6 +288,31 @@ where
 
 		*values = result;
 	}
+
+	#[inline]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		let mut result = TL::from_fn(|row| {
+			Self(array::from_fn(|col| {
+				let index = row + col * TL::WIDTH;
+
+				values[index / N].0[index % N]
+			}))
+		});
+
+		for col in 0..N {
+			let mut column = TL::from_fn(|row| result[row].0[col]);
+			U::transpose_bytes_to_byte_sliced::<TL>(&mut column);
+			for row in 0..TL::WIDTH {
+				result[row].0[col] = column[row];
+			}
+		}
+
+		*values = result;
+	}
 }
 
 impl<U: UnderlierType, const N: usize> NumCast<ScaledUnderlier<U, N>> for u8
