@@ -1,0 +1,56 @@
+name: Nightly Benchmark
+
+on:
+  push:
+    branches: [ mbackonja/micro-benchmark-nighlty ]
+  schedule:
+    - cron: "0 3 * * *"  # Runs at 3 AM UTC every day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  checks: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Benchmark for ${{ matrix.os }}
+    container: rustlang/rust:nightly
+    permissions:
+      checks: write
+      actions: write
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    env:
+      RAYON_NUM_THREADS: 0
+    strategy:
+      matrix:
+        os: [ c7a-2xlarge, c8g-2xlarge, supermicro ]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: "-D warnings -C target-cpu=native"
+      - name: Setup Bencher
+        uses: bencherdev/bencher@v0.4.37 # Fix to specific version to avoid breaking changes
+      - name: Execute Benchmark Tests
+        run: |
+          bencher run \
+          --project binius \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch ${{ github.ref_name }} \
+          --testbed micro-${{ matrix.os }} \
+          --threshold-measure latency \
+          --threshold-test t_test \
+          --threshold-max-sample-size 64 \
+          --threshold-upper-boundary 0.99 \
+          --thresholds-reset \
+          --err \
+          --adapter rust_criterion \
+          'cargo bench --bench main_field_binary_ops  \
+          --bench main_field_unary_ops \
+          --bench sumcheck \
+          --bench large_transform \
+          --bench binary_merkle_tree'
