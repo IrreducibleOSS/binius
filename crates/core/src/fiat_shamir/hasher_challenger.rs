@@ -42,8 +42,7 @@ where
 	fn default() -> Self {
 		let mut hasher = H::new();
 		let initial_hash = {
-			let zeros = [0u8; 32];
-			Digest::update(&mut hasher, zeros);
+			Digest::update(&mut hasher, []);
 			hasher.finalize_reset()
 		};
 		Self::new(initial_hash)
