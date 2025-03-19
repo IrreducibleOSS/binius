@@ -2,7 +2,7 @@ name: Benchmark
 
 on:
   push:
-    branches: [ main, mbackonja/micro-benchmark-nighlty ]
+    branches: [ main ]
 permissions:
   contents: write
   checks: write
@@ -60,22 +60,22 @@ jobs:
           --adapter json \
           --github-actions '${{ secrets.GITHUB_TOKEN }}' \
           --file output/result.json
-#  publish_results:
-#    name: Publish Results to Github Page
-#    needs: [ benchmark ]
-#    if: success() || failure()
-#    runs-on: ubuntu-latest
-#    steps:
-#      - name: Download artifact
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: gh-pages
-#      - name: Deploy to GitHub Pages
-#        uses: crazy-max/ghaction-github-pages@v4
-#        with:
-#          repo: irreducibleoss/binius-benchmark
-#          fqdn: benchmark.binius.xyz
-#          target_branch: main
-#          build_dir: ./
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  publish_results:
+    name: Publish Results to Github Page
+    needs: [ benchmark ]
+    if: success() || failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gh-pages
+      - name: Deploy to GitHub Pages
+        uses: crazy-max/ghaction-github-pages@v4
+        with:
+          repo: irreducibleoss/binius-benchmark
+          fqdn: benchmark.binius.xyz
+          target_branch: main
+          build_dir: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
