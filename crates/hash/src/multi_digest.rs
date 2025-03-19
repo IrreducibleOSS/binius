@@ -19,6 +19,7 @@ pub trait MultiDigest<const N: usize>: Clone {
 	/// The corresponding non-parallelized hash function.
 	type Digest: Digest;
 
+	/// Create new hasher instance with empty state.
 	fn new() -> Self;
 
 	/// Create new hasher instance which has processed the provided data.
@@ -69,6 +70,7 @@ pub trait ParallelDigest: Send {
 	/// The corresponding non-parallelized hash function.
 	type Digest: digest::Digest + Send;
 
+	/// Create new hasher instance with empty state.
 	fn new() -> Self;
 
 	/// Create new hasher instance which has processed the provided data.
@@ -82,14 +84,9 @@ pub trait ParallelDigest: Send {
 	);
 }
 
+/// A wrapper that implements the `ParallelDigest` trait for a `MultiDigest` implementation.
 #[derive(Clone)]
 pub struct ParallelMulidigestImpl<D: MultiDigest<N>, const N: usize>(D);
-
-impl<D: MultiDigest<N>, const N: usize> ParallelMulidigestImpl<D, N> {
-	pub fn new(inner: D) -> Self {
-		Self(inner)
-	}
-}
 
 impl<D: MultiDigest<N, Digest: Send> + Send + Sync, const N: usize> ParallelDigest
 	for ParallelMulidigestImpl<D, N>
@@ -311,7 +308,7 @@ mod tests {
 		}
 	}
 
-	fn check_parallel_digest_consistency<D: ParallelDigest<Digest: Clone>>(
+	fn check_parallel_digest_consistency<D: ParallelDigest<Digest: Send + Sync + Clone>>(
 		data: impl ParallelDigestSource,
 		hashes: usize,
 	) {
@@ -321,9 +318,15 @@ mod tests {
 			.collect::<Vec<_>>();
 		parallel_digest.digest(&data, &mut parallel_results);
 
+		let single_digest_as_parallel = <D::Digest as ParallelDigest>::new();
+		let mut single_results = repeat_with(MaybeUninit::<Output<D::Digest>>::uninit)
+			.take(hashes)
+			.collect::<Vec<_>>();
+		single_digest_as_parallel.digest(&data, &mut single_results);
+
 		let mut buf = BytesMut::new();
 		let serial_results = (0..hashes).map(move |i| {
-			let mut hasher = D::Digest::new();
+			let mut hasher = <D::Digest as Digest>::new();
 			for chunk in 0..data.n_chunks() {
 				buf.clear();
 				data.get_chunk(i, chunk, &mut buf);
@@ -332,8 +335,9 @@ mod tests {
 			hasher.finalize()
 		});
 
-		for (parallel, serial) in izip!(parallel_results, serial_results) {
+		for (parallel, single, serial) in izip!(parallel_results, single_results, serial_results) {
 			assert_eq!(unsafe { parallel.assume_init() }, serial);
+			assert_eq!(unsafe { single.assume_init() }, serial);
 		}
 	}
 
