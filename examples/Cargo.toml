@@ -8,8 +8,8 @@ authors.workspace = true
 anyhow.workspace = true
 alloy-primitives.workspace = true
 array-util.workspace = true
-binius_circuits = { path = "../crates/circuits" }
-binius_core = { path = "../crates/core" }
+binius_circuits = { path = "../crates/circuits", default-features = false }
+binius_core = { path = "../crates/core", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
 binius_hal = { path = "../crates/hal" }
 binius_hash = { path = "../crates/hash", default-features = false }
@@ -84,9 +84,10 @@ path = "blake3_circuit.rs"
 needless_range_loop = "allow"
 
 [features]
-default = ["rayon"]
+default = ["rayon", "nightly_features"]
 aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
 perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
+nightly_features = ["binius_core/nightly_features"]
