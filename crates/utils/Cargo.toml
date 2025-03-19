@@ -22,7 +22,6 @@ thread_local.workspace = true
 rand.workspace = true
 
 [features]
-default = ["rayon", "nightly_features"]
+default = ["rayon"]
 bail_panic = []
-nightly_features = []
 rayon = ["binius_maybe_rayon/rayon"]

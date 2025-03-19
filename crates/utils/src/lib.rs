@@ -2,8 +2,6 @@
 
 //! Utility modules used in Binius.
 
-#![cfg_attr(feature = "nightly_features", feature(iter_advance_by))]
-
 pub mod array_2d;
 pub mod checked_arithmetics;
 pub mod env;
