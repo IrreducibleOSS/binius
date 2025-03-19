@@ -9,15 +9,22 @@
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
 use anyhow::Error;
-use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
-use binius_field::{BinaryField, BinaryField1b, TowerField};
+use binius_core::oracle::OracleId;
+use binius_field::{
+	as_packed_field::PackedType,
+	packed::{get_packed_slice, set_packed_slice},
+	BinaryField, BinaryField1b, Field, TowerField,
+};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use binius_utils::bail;
 
-use crate::builder::{types::F, ConstraintSystemBuilder};
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
+};
 
 pub fn mul<FExpBase>(
 	builder: &mut ConstraintSystemBuilder,
@@ -74,12 +81,12 @@ where
 	if let Some(witness) = builder.witness() {
 		let xin_columns = xin_bits
 			.iter()
-			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.as_slice::<u8>()))
+			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.packed()))
 			.collect::<Result<Vec<_>, Error>>()?;
 
 		let yin_columns = yin_bits
 			.iter()
-			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.as_slice::<u8>()))
+			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.packed()))
 			.collect::<Result<Vec<_>, Error>>()?;
 
 		let result = columns_to_numbers(&xin_columns)
@@ -95,12 +102,13 @@ where
 
 		let mut cout_columns_u8 = cout_columns
 			.iter_mut()
-			.map(|column| column.as_mut_slice::<u8>())
+			.map(|column| column.packed())
 			.collect::<Vec<_>>();
 
 		numbers_to_columns(&result, &mut cout_columns_u8);
 	}
 
+	// Handling special case when $x == 0$ $y == 0$ $c == 2^{2 \cdot n} -1$
 	builder.assert_zero(
 		name.clone(),
 		[xin_bits[0], yin_bits[0], cout_bits[0]],
@@ -120,30 +128,23 @@ where
 
 	let (cout_low_bits, cout_high_bits) = cout_bits.split_at(cout_bits.len() / 2);
 
-	builder.add_exp(
+	builder.add_static_exp(
 		xin_bits,
 		xin_exp_result_id,
-		ExpBase::Static(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		FExpBase::MULTIPLICATIVE_GENERATOR.into(),
 		FExpBase::TOWER_LEVEL,
 	);
-	builder.add_exp(
-		yin_bits,
-		yin_exp_result_id,
-		ExpBase::Dynamic(xin_exp_result_id),
-		FExpBase::TOWER_LEVEL,
-	);
-	builder.add_exp(
+	builder.add_dynamic_exp(yin_bits, yin_exp_result_id, xin_exp_result_id);
+	builder.add_static_exp(
 		cout_low_bits.to_vec(),
 		cout_low_exp_result_id,
-		ExpBase::Static(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		FExpBase::MULTIPLICATIVE_GENERATOR.into(),
 		FExpBase::TOWER_LEVEL,
 	);
-	builder.add_exp(
+	builder.add_static_exp(
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-		ExpBase::Static(
-			exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, 1 << cout_low_bits.len()).into(),
-		),
+		exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, 1 << cout_low_bits.len()).into(),
 		FExpBase::TOWER_LEVEL,
 	);
 
@@ -158,15 +159,13 @@ fn exp_pow2<F: BinaryField>(mut g: F, mut exp: u128) -> F {
 	g
 }
 
-fn columns_to_numbers(columns: &[&[u8]]) -> Vec<u128> {
-	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len()).unwrap_or(0) * 8];
+fn columns_to_numbers(columns: &[&[PackedType<U, BinaryField1b>]]) -> Vec<u128> {
+	let width = PackedType::<U, BinaryField1b>::WIDTH;
+	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len() * width).unwrap_or(0)];
 
 	for (bit, column) in columns.iter().enumerate() {
 		numbers.par_iter_mut().enumerate().for_each(|(i, number)| {
-			let num_idx = i / 8;
-			let bit_idx = i % 8;
-
-			if (column[num_idx] >> bit_idx) & 1 == 1 {
+			if get_packed_slice(column, i) == BinaryField1b::ONE {
 				*number |= 1 << bit;
 			}
 		});
@@ -174,16 +173,14 @@ fn columns_to_numbers(columns: &[&[u8]]) -> Vec<u128> {
 	numbers
 }
 
-fn numbers_to_columns(numbers: &[u128], columns: &mut [&mut [u8]]) {
+fn numbers_to_columns(numbers: &[u128], columns: &mut [&mut [PackedType<U, BinaryField1b>]]) {
 	columns
 		.par_iter_mut()
 		.enumerate()
 		.for_each(|(bit, column)| {
 			for (i, number) in numbers.iter().enumerate() {
 				if (number >> bit) & 1 == 1 {
-					let num_idx = i / 8;
-					let bit_idx = i % 8;
-					column[num_idx] |= 1 << bit_idx;
+					set_packed_slice(column, i, BinaryField1b::ONE);
 				}
 			}
 		});

@@ -224,20 +224,41 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	/// # Parameters
 	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
 	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..
-	/// - `base`: The base value for exponentiation, represented as an [`ExpBase`].
+	/// - `base`: The static base value.
 	/// - `base_tower_level`: Specifies the field level in the tower where `base` is defined
-	pub fn add_exp(
+	pub fn add_static_exp(
 		&mut self,
 		bits_ids: Vec<OracleId>,
 		exp_result_id: OracleId,
-		base: ExpBase<F>,
+		base: F,
 		base_tower_level: usize,
 	) {
 		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
-			base,
-			base_tower_level,
+			base: ExpBase::Static {
+				base,
+				tower_level: base_tower_level,
+			},
+		});
+	}
+
+	/// Adds an exponentiation operation to the constraint system.
+	///
+	/// # Parameters
+	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
+	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..
+	/// - `base`: The dynamic base value.
+	pub fn add_dynamic_exp(
+		&mut self,
+		bits_ids: Vec<OracleId>,
+		exp_result_id: OracleId,
+		base: OracleId,
+	) {
+		self.exponents.push(Exp {
+			bits_ids,
+			exp_result_id,
+			base: ExpBase::Dynamic(base),
 		});
 	}
 

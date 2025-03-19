@@ -53,7 +53,6 @@ where
 				),
 			};
 
-			// TODO: fix when MLEEmbeddingAdapter::packed_evals() works correct
 			let exponent_bit =
 				P::from_fn(|j| {
 					exponent_bit_witness
@@ -90,7 +89,6 @@ where
 					.expect("base and exponent_bit_witness have the same width")[i],
 			};
 
-			// TODO: fix when MLEEmbeddingAdapter::packed_evals() works correct
 			let exponent_bit = P::from_fn(|j| {
 				exponent_bit_witness
 					.evaluate_on_hypercube(P::WIDTH * i + j)

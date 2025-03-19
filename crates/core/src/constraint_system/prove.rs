@@ -120,7 +120,7 @@ where
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
-	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &exponents)?;
+	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &oracles, &exponents)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));

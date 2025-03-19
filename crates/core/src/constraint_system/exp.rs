@@ -11,6 +11,7 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
+use itertools::chain;
 use tracing::instrument;
 
 use super::{
@@ -33,13 +34,11 @@ pub struct Exp<F: Field> {
 	pub bits_ids: Vec<OracleId>,
 	pub base: ExpBase<F>,
 	pub exp_result_id: OracleId,
-	/// Specifies the field level in the tower where `base` is defined
-	pub base_tower_level: usize,
 }
 
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub enum ExpBase<F: Field> {
-	Static(F),
+	Static { base: F, tower_level: usize },
 	Dynamic(OracleId),
 }
 
@@ -65,6 +64,7 @@ type MultiplicationWitnesses<'a, U, Tower> =
 #[instrument(skip_all, name = "exp::make_exp_witnesses")]
 pub fn make_exp_witnesses<'a, U, Tower>(
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	exponents: &[Exp<Tower::B128>],
 ) -> Result<MultiplicationWitnesses<'a, U, Tower>, Error>
 where
@@ -77,34 +77,39 @@ where
 	// we start processing with static ones first.
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
 		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
 
-	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
-
-	exponents_iter
+	chain!(static_exponents_iter, dynamic_exponents_iter)
 		.map(|exp| {
 			let fast_exponent_witnesses = get_fast_exponent_witnesses(witness, &exp.bits_ids)?;
 
-			let exp_witness = match exp.base {
-				ExpBase::Static(base) => gkr_exp::BaseExpWitness::new_with_static_base(
-					fast_exponent_witnesses,
-					base.into(),
-				),
+			let (exp_witness, tower_level) = match exp.base {
+				ExpBase::Static { base, tower_level } => {
+					let witness = gkr_exp::BaseExpWitness::new_with_static_base(
+						fast_exponent_witnesses,
+						base.into(),
+					)?;
+					(witness, tower_level)
+				}
 				ExpBase::Dynamic(base_id) => {
 					let fast_base_witnesses =
 						to_fast_witness::<U, Tower>(witness.get_multilin_poly(base_id)?)?;
 
-					gkr_exp::BaseExpWitness::new_with_dynamic_base(
+					let witness = gkr_exp::BaseExpWitness::new_with_dynamic_base(
 						fast_exponent_witnesses,
 						fast_base_witnesses,
-					)
-				}
-			}?;
+					)?;
 
-			let exp_result_witness = match exp.base_tower_level {
+					let tower_level = oracles.tower_level(base_id);
+
+					(witness, tower_level)
+				}
+			};
+
+			let exp_result_witness = match tower_level {
 				0..=3 => repack_witness::<U, Tower, Tower::B8>(
 					exp_witness.exponentiation_result_witness(),
 				)?,
@@ -141,16 +146,16 @@ where
 {
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
 		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
-	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
+	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
 
 	let constant_bases = exponents_iter
 		.clone()
 		.map(|exp| match exp.base {
-			ExpBase::Static(base) => Some(base),
+			ExpBase::Static { base, .. } => Some(base),
 			ExpBase::Dynamic(_) => None,
 		})
 		.collect::<Vec<_>>();
@@ -170,16 +175,16 @@ pub fn make_eval_claims<F: TowerField>(
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static(_)));
+		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
 		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
-	let exponents_iter = static_exponents_iter.chain(dynamic_exponents_iter);
+	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
 
 	let dynamic_base_ids = exponents_iter
 		.clone()
 		.map(|exp| match exp.base {
-			ExpBase::Static(_) => None,
+			ExpBase::Static { .. } => None,
 			ExpBase::Dynamic(base_id) => Some(base_id),
 		})
 		.collect::<Vec<_>>();
