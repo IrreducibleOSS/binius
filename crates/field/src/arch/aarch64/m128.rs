@@ -381,6 +381,42 @@ impl UnderlierWithBitOps for M128 {
 	{
 		transpose_128b_values::<Self, TL>(values, 0);
 	}
+
+	#[inline]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		if TL::LOG_WIDTH == 0 {
+			return;
+		}
+
+		match TL::LOG_WIDTH {
+			1 => {
+				let shuffle = [15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0];
+				for v in values.as_mut().iter_mut() {
+					*v = v.shuffle_u8(shuffle);
+				}
+			}
+			2 => {
+				let shuffle = [15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0];
+				for v in values.as_mut().iter_mut() {
+					*v = v.shuffle_u8(shuffle);
+				}
+			}
+			3 => {
+				let shuffle = [15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0];
+				for v in values.as_mut().iter_mut() {
+					*v = v.shuffle_u8(shuffle);
+				}
+			}
+			4 => {}
+			_ => unreachable!("Log width must be less than 5"),
+		}
+
+		transpose_128b_values::<_, TL>(values, 4 - TL::LOG_WIDTH);
+	}
 }
 
 impl UnderlierWithBitConstants for M128 {

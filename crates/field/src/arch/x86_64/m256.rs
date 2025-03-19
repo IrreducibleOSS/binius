@@ -26,9 +26,10 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		transpose_128b_blocks_low_to_high, unpack_hi_128b_fallback, unpack_lo_128b_fallback,
-		NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		get_block_values, get_spread_bytes, impl_divisible, impl_iteration,
+		pair_unpack_lo_hi_128b_lanes, spread_fallback, transpose_128b_blocks_low_to_high,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -972,24 +973,24 @@ impl UnderlierWithBitOps for M256 {
 				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
 			}
 			2 => {
-				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
-				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
+				pair_unpack_lo_hi_128b_lanes(values, 0, 2, 5);
+				pair_unpack_lo_hi_128b_lanes(values, 1, 3, 5);
 
-				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
-				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+				pair_unpack_lo_hi_128b_lanes(values, 0, 1, 6);
+				pair_unpack_lo_hi_128b_lanes(values, 2, 3, 6);
 			}
 			3 => {
 				for i in 0..4 {
-					unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
 				}
 
 				for i in 0..4 {
-					unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
+					pair_unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
 				}
 
 				for i in 0..2 {
-					unpack_lo_hi_128b_lanes(values, i, i + 2, 6);
-					unpack_lo_hi_128b_lanes(values, i + 4, i + 6, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i + 4, i + 6, 6);
 				}
 
 				values.as_mut().swap(1, 2);
@@ -997,21 +998,21 @@ impl UnderlierWithBitOps for M256 {
 			}
 			4 => {
 				for i in 0..8 {
-					unpack_lo_hi_128b_lanes(values, i, i + 8, 3);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 8, 3);
 				}
 
 				for i in (0..16).step_by(2) {
-					unpack_lo_hi_128b_lanes(values, i, i + 1, 4);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 1, 4);
 				}
 
 				for i in (0..16).step_by(4) {
-					unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
-					unpack_lo_hi_128b_lanes(values, i + 1, i + 3, 5);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+					pair_unpack_lo_hi_128b_lanes(values, i + 1, i + 3, 5);
 				}
 
 				for i in 0..4 {
-					unpack_lo_hi_128b_lanes(values, i, i + 4, 6);
-					unpack_lo_hi_128b_lanes(values, i + 8, i + 12, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i + 8, i + 12, 6);
 				}
 
 				for i in 0..2 {
@@ -1113,20 +1114,6 @@ fn unpack_128b_lo_hi(data: &mut (impl AsMut<[M256]> + AsRef<[M256]>), i: usize, 
 
 	data.as_mut()[i] = M256(new_i);
 	data.as_mut()[j] = M256(new_j);
-}
-
-#[inline(always)]
-fn unpack_lo_hi_128b_lanes(
-	data: &mut (impl AsMut<[M256]> + AsRef<[M256]>),
-	i: usize,
-	j: usize,
-	log_block_len: usize,
-) {
-	let new_i = data.as_ref()[i].unpack_lo_128b_lanes(data.as_ref()[j], log_block_len);
-	let new_j = data.as_ref()[i].unpack_hi_128b_lanes(data.as_ref()[j], log_block_len);
-
-	data.as_mut()[i] = new_i;
-	data.as_mut()[j] = new_j;
 }
 
 #[inline]

@@ -211,7 +211,24 @@ where
 	single_element_mask_bits(T::BITS)
 }
 
-/// Helper function used as a building block for efficient SIMD types transposition implementation.
+/// A helper function to apply unpack_lo/hi_128b_lanes for two values in an array
+#[allow(dead_code)]
+#[inline(always)]
+pub(crate) fn pair_unpack_lo_hi_128b_lanes<U: UnderlierWithBitOps>(
+	values: &mut impl AsMut<[U]>,
+	i: usize,
+	j: usize,
+	log_block_len: usize,
+) {
+	let values = values.as_mut();
+
+	(values[i], values[j]) = (
+		values[i].unpack_lo_128b_lanes(values[j], log_block_len),
+		values[i].unpack_hi_128b_lanes(values[j], log_block_len),
+	);
+}
+
+/// A helper function used as a building block for efficient SIMD types transposition implementation.
 /// This function actually may reorder the elements.
 #[allow(dead_code)]
 #[inline(always)]
@@ -231,10 +248,7 @@ pub(crate) fn transpose_128b_blocks_low_to_high<U: UnderlierWithBitOps, TL: Towe
 
 	let log_block_len = log_block_len + TL::LOG_WIDTH - 1;
 	for i in 0..TL::WIDTH / 2 {
-		(values[i], values[i + TL::WIDTH / 2]) = (
-			values[i].unpack_lo_128b_lanes(values[i + TL::WIDTH / 2], log_block_len + 3),
-			values[i].unpack_hi_128b_lanes(values[i + TL::WIDTH / 2], log_block_len + 3),
-		);
+		pair_unpack_lo_hi_128b_lanes(values, i, i + TL::WIDTH / 2, log_block_len);
 	}
 }
 
