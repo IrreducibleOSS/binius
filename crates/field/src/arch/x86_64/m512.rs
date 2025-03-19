@@ -1047,102 +1047,73 @@ impl UnderlierWithBitOps for M512 {
 			}
 			2 => {
 				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 1, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 2, 3, idx_1, idx_2);
+				for i in 0..2 {
+					unpack_128b_lo_hi(values, 2 * i, 2 * i + 1, idx_1, idx_2);
+				}
 
 				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 2, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 1, 3, idx_1, idx_2);
+				for i in 0..2 {
+					unpack_128b_lo_hi(values, i, i + 2, idx_1, idx_2);
+				}
 
-				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
-				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
-				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
-				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
+				for i in 0..2 {
+					unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+				}
+				for i in 0..2 {
+					unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 6);
+				}
 			}
 			3 => {
 				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 2, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 1, 3, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 4, 6, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 5, 7, idx_1, idx_2);
+				for i in [0, 1, 4, 5] {
+					unpack_128b_lo_hi(values, i, i + 2, idx_1, idx_2);
+				}
 
 				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 4, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 1, 5, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 2, 6, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 3, 7, idx_1, idx_2);
+				for i in 0..4 {
+					unpack_128b_lo_hi(values, i, i + 4, idx_1, idx_2);
+				}
 
-				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
-				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
-				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
-				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
-				unpack_lo_hi_128b_lanes(values, 0, 2, 5);
-				unpack_lo_hi_128b_lanes(values, 1, 3, 5);
-				unpack_lo_hi_128b_lanes(values, 4, 6, 5);
-				unpack_lo_hi_128b_lanes(values, 5, 7, 5);
-				unpack_lo_hi_128b_lanes(values, 0, 1, 6);
-				unpack_lo_hi_128b_lanes(values, 2, 3, 6);
-				unpack_lo_hi_128b_lanes(values, 4, 5, 6);
-				unpack_lo_hi_128b_lanes(values, 6, 7, 6);
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
+				}
+				for i in [0, 1, 4, 5] {
+					unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+				}
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 6);
+				}
 			}
 			4 => {
 				let (idx_1, idx_2) = unpack_128b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 4, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 1, 5, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 2, 6, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 3, 7, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 8, 12, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 9, 13, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 10, 14, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 11, 15, idx_1, idx_2);
+				for i in 0..4 {
+					unpack_128b_lo_hi(values, i, i + 4, idx_1, idx_2);
+					unpack_128b_lo_hi(values, i + 8, i + 12, idx_1, idx_2);
+				}
 
 				let (idx_1, idx_2) = unpack_256b_lo_hi_idx();
-				unpack_128b_lo_hi(values, 0, 8, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 1, 9, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 2, 10, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 3, 11, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 4, 12, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 5, 13, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 6, 14, idx_1, idx_2);
-				unpack_128b_lo_hi(values, 7, 15, idx_1, idx_2);
+				for i in 0..8 {
+					unpack_128b_lo_hi(values, i, i + 8, idx_1, idx_2);
+				}
 
-				unpack_lo_hi_128b_lanes(values, 0, 8, 3);
-				unpack_lo_hi_128b_lanes(values, 1, 9, 3);
-				unpack_lo_hi_128b_lanes(values, 2, 10, 3);
-				unpack_lo_hi_128b_lanes(values, 3, 11, 3);
-				unpack_lo_hi_128b_lanes(values, 4, 12, 3);
-				unpack_lo_hi_128b_lanes(values, 5, 13, 3);
-				unpack_lo_hi_128b_lanes(values, 6, 14, 3);
-				unpack_lo_hi_128b_lanes(values, 7, 15, 3);
-				unpack_lo_hi_128b_lanes(values, 0, 4, 4);
-				unpack_lo_hi_128b_lanes(values, 1, 5, 4);
-				unpack_lo_hi_128b_lanes(values, 2, 6, 4);
-				unpack_lo_hi_128b_lanes(values, 3, 7, 4);
-				unpack_lo_hi_128b_lanes(values, 8, 12, 4);
-				unpack_lo_hi_128b_lanes(values, 9, 13, 4);
-				unpack_lo_hi_128b_lanes(values, 10, 14, 4);
-				unpack_lo_hi_128b_lanes(values, 11, 15, 4);
-				unpack_lo_hi_128b_lanes(values, 0, 1, 5);
-				unpack_lo_hi_128b_lanes(values, 2, 3, 5);
-				unpack_lo_hi_128b_lanes(values, 4, 5, 5);
-				unpack_lo_hi_128b_lanes(values, 6, 7, 5);
-				unpack_lo_hi_128b_lanes(values, 8, 9, 5);
-				unpack_lo_hi_128b_lanes(values, 10, 11, 5);
-				unpack_lo_hi_128b_lanes(values, 12, 13, 5);
-				unpack_lo_hi_128b_lanes(values, 14, 15, 5);
-				unpack_lo_hi_128b_lanes(values, 0, 2, 6);
-				unpack_lo_hi_128b_lanes(values, 1, 3, 6);
-				unpack_lo_hi_128b_lanes(values, 4, 6, 6);
-				unpack_lo_hi_128b_lanes(values, 5, 7, 6);
-				unpack_lo_hi_128b_lanes(values, 8, 10, 6);
-				unpack_lo_hi_128b_lanes(values, 9, 11, 6);
-				unpack_lo_hi_128b_lanes(values, 12, 14, 6);
-				unpack_lo_hi_128b_lanes(values, 13, 15, 6);
+				for i in 0..8 {
+					unpack_lo_hi_128b_lanes(values, i, i + 8, 3);
+				}
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
+					unpack_lo_hi_128b_lanes(values, i + 8, i + 12, 4);
+				}
+				for i in 0..8 {
+					unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
+				}
+				for i in 0..4 {
+					unpack_lo_hi_128b_lanes(values, 4 * i, 4 * i + 2, 6);
+					unpack_lo_hi_128b_lanes(values, 4 * i + 1, 4 * i + 3, 6);
+				}
 
-				values.as_mut().swap(1, 2);
-				values.as_mut().swap(5, 6);
-				values.as_mut().swap(9, 10);
-				values.as_mut().swap(13, 14);
+				for i in 0..4 {
+					values.as_mut().swap(4 * i + 1, 4 * i + 2);
+				}
 			}
 			_ => unreachable!("log width must be less than 5"),
 		}
