@@ -7,22 +7,19 @@
 use std::{array, iter};
 
 use anyhow::Result;
-use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
+use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
-	packed::{get_packed_slice, set_packed_slice},
-	underlier::UnderlierType,
+	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	AESTowerField8b, ExtensionField, PackedField,
 };
 use bytemuck::Pod;
-use itertools::chain;
 
 use crate::builder::{
-	upcast_col, upcast_expr, Col, ConstraintSystem, Expr, TableBuilder, TableFiller, TableId,
-	TableWitnessIndexSegment, B1, B64, B8,
+	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessIndexSegment, B1, B8,
 };
 
 /// The first row of the circulant matrix defining the MixBytes step in Grøstl.
@@ -54,7 +51,7 @@ const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 /// gadget verifies one permutation, depending on the variant given as a constructor argument.
 #[derive(Debug, Clone)]
 pub struct Permutation {
-	rounds: [PermutationRound; 10],
+	rounds: [PermutationRound; 1],
 }
 
 impl Permutation {
@@ -81,7 +78,7 @@ impl Permutation {
 	}
 
 	pub fn state_out(&self) -> [Col<B8, 8>; 8] {
-		self.rounds[9].state_out
+		self.rounds[0].state_out
 	}
 
 	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
@@ -93,6 +90,55 @@ impl Permutation {
 			round.populate(index)?;
 		}
 		Ok(())
+	}
+
+	/// Populate the input column of the witness with a full permutation state.
+	///
+	/// The state is represented as an array of 64 B8 elements, which is  isomorphic to the
+	/// standard representation of bytes in a Grøstl state. This isomorphic representation is
+	/// cheaper to verify with a Binius M3 constrant system.
+	pub fn populate_state_in<'a, U>(
+		&'a self,
+		index: &'a mut TableWitnessIndexSegment<U>,
+		states: impl IntoIterator<Item = &'a [B8; 64]>,
+	) -> Result<()>
+	where
+		U: PackScalar<B8>,
+	{
+		let mut state_in = self
+			.state_in()
+			.try_map(|state_in_i| index.get_mut(state_in_i))?;
+		for (k, state_k) in states.into_iter().enumerate() {
+			for (i, state_in_i) in state_in.iter_mut().enumerate() {
+				for j in 0..8 {
+					set_packed_slice(state_in_i, k * 8 + j, state_k[j * 8 + i]);
+				}
+			}
+		}
+		Ok(())
+	}
+
+	/// Reads the state outputs from the witness index.
+	///
+	/// This is currently only used for testing.
+	pub fn read_state_outs<'a, U>(
+		&'a self,
+		index: &'a mut TableWitnessIndexSegment<'a, U>,
+	) -> Result<impl Iterator<Item = [B8; 64]> + 'a>
+	where
+		U: PackScalar<B8>,
+	{
+		let state_out = self
+			.state_out()
+			.try_map(|state_out_i| index.get(state_out_i))?;
+		let iter = (0..index.log_size()).map(move |k| {
+			array::from_fn(|ij| {
+				let i = ij % 8;
+				let j = ij / 8;
+				get_packed_slice(&state_out[i], k * 8 + j)
+			})
+		});
+		Ok(iter)
 	}
 }
 
@@ -108,11 +154,22 @@ impl PermutationVariant {
 	/// The Grøstl specification presents the ShiftBytes step as a circular shift of the rows of
 	/// the state; in this gadget, the state is transposed so that we shift columns instead.
 	fn shift_bytes_offset(self, i: usize) -> usize {
-		match self {
-			PermutationVariant::P => (8 - i) % 8,
-			PermutationVariant::Q => (16 - (2 * i + 1)) % 8,
-		}
+		const P_SHIFTS: [usize; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+		const Q_SHIFTS: [usize; 8] = [1, 3, 5, 7, 0, 2, 4, 6];
+		let right_shift = match self {
+			PermutationVariant::P => P_SHIFTS[i],
+			PermutationVariant::Q => Q_SHIFTS[i],
+		};
+		// Left rotation amount
+		(8 - right_shift) % 8
 	}
+}
+
+fn round_consts(round: usize) -> [B8; 8] {
+	array::from_fn(|i| {
+		let val = (i * 0x10) ^ round;
+		B8::from(AESTowerField8b::new(val as u8))
+	})
 }
 
 /// A single round of a Grøstl permutation.
@@ -137,18 +194,17 @@ impl PermutationRound {
 		state_in: [Col<B8, 8>; 8],
 		round: usize,
 	) -> Self {
-		let round_const = table.add_constant(
-			"RoundConstant",
-			array::from_fn(|i| B8::from(((i * 0x10) ^ round) as u8)),
-		);
+		let round_const = table.add_constant("RoundConstant", round_consts(round));
 
 		// AddRoundConstant + SubBytes
 		let sbox = array::from_fn(|i| {
 			let sbox_in = match (i, pq) {
-				(0, PermutationVariant::P) => state_in[0].into(), // + round_const,
+				(0, PermutationVariant::P) => state_in[0] + round_const,
 				(_, PermutationVariant::P) => state_in[i].into(),
-				(7, PermutationVariant::Q) => state_in[7] + B8::new(0xFF) + round_const,
-				(_, PermutationVariant::Q) => state_in[i] + B8::new(0xFF),
+				(7, PermutationVariant::Q) => {
+					state_in[7] + round_const + B8::from(AESTowerField8b::new(0xFF))
+				}
+				(_, PermutationVariant::Q) => state_in[i] + B8::from(AESTowerField8b::new(0xFF)),
 			};
 			SBox::new(&mut table.with_namespace(format!("SubBytes[{i}]")), sbox_in)
 		});
@@ -200,11 +256,10 @@ impl PermutationRound {
 		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
 	{
 		{
-			let mut round_const = index.get_mut_as::<u8, _, 8>(self.round_const)?;
-			for k in 0..round_const.len() / 8 {
-				for i in 0..8 {
-					round_const[k * 8 + i] = ((i * 0x10) ^ self.round) as u8;
-				}
+			let mut round_const = index.get_mut(self.round_const)?;
+			let round_consts = round_consts(self.round);
+			for k in 0..len_packed_slice(&round_const) {
+				set_packed_slice(&mut round_const, k, round_consts[k % 8]);
 			}
 		}
 
@@ -339,74 +394,12 @@ impl<const V: usize> SBox<V> {
 	}
 }
 
-#[derive(Debug)]
-pub struct PermutationTable {
-	table_id: TableId,
-	permutation: Permutation,
-	state_in: [Col<B64>; 8],
-	state_out: [Col<B64>; 8],
-}
-
-impl PermutationTable {
-	pub fn new(cs: &mut ConstraintSystem, pq: PermutationVariant, chan: ChannelId) -> Self {
-		let mut table = cs.add_table(format!("Grøstl {pq} permutation"));
-
-		let state_in_bytes = table.add_committed_multiple::<B8, 8, 8>("state_in_bytes");
-		let permutation = Permutation::new(&mut table, pq, state_in_bytes);
-
-		let state_in = state_in_bytes
-			.map(|state_in_bytes_i| table.add_packed::<_, 8, B64, 1>("state_in", state_in_bytes_i));
-		let state_out = state_in_bytes.map(|state_out_bytes_i| {
-			table.add_packed::<_, 8, B64, 1>("state_out", state_out_bytes_i)
-		});
-
-		table.pull(chan, chain!(state_in, state_out));
-
-		Self {
-			table_id: table.id(),
-			permutation,
-			state_in,
-			state_out,
-		}
-	}
-}
-
-impl<U: UnderlierType> TableFiller<U> for PermutationTable
-where
-	U: Pod + PackScalar<B1> + PackScalar<B8> + PackScalar<B64>,
-	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
-{
-	type Event = [u64; 8];
-
-	fn id(&self) -> TableId {
-		self.table_id
-	}
-
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessIndexSegment<U>,
-	) -> Result<()> {
-		// Populate the input states
-		{
-			let mut state_in = self
-				.state_in
-				.try_map(|state_in_i| witness.get_mut_as::<u64, _, 1>(state_in_i))?;
-			for (k, event_k) in rows.enumerate() {
-				for (&event_ki, state_in_i) in iter::zip(event_k, &mut state_in) {
-					state_in_i[k] = event_ki;
-				}
-			}
-		}
-
-		self.permutation.populate(witness)?;
-		Ok(())
-	}
-}
-
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
 	use binius_field::{arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero};
+	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use bumpalo::Bump;
 	use rand::{prelude::StdRng, SeedableRng};
 
@@ -472,14 +465,30 @@ mod tests {
 		let table_witness = witness.get_table(table_id).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut segment = table_witness.full_segment();
-		for i in 0..8 {
-			for in_j in &mut *segment.get_mut(input[i]).unwrap() {
-				*in_j = PackedField::random(&mut rng);
-			}
-		}
+		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+			.take(1 << 8)
+			.collect::<Vec<_>>();
+		let out_states = in_states
+			.iter()
+			.map(|in_state| {
+				let in_state_bytes = in_state.map(|b8| AESTowerField8b::from(b8).val());
+				let mut state = GroestlShortImpl::state_from_bytes(&in_state_bytes);
+				GroestlShortImpl::p_perm(&mut state);
+				let out_state_bytes = GroestlShortImpl::state_to_bytes(&state);
+				out_state_bytes.map(|byte| B8::from(AESTowerField8b::new(byte)))
+			})
+			.collect::<Vec<_>>();
 
+		let mut segment = table_witness.full_segment();
+		perm.populate_state_in(&mut segment, in_states.iter())
+			.unwrap();
 		perm.populate(&mut segment).unwrap();
+
+		for (expected_out, generated_out) in
+			iter::zip(out_states, perm.read_state_outs(&mut segment).unwrap())
+		{
+			assert_eq!(generated_out, expected_out);
+		}
 
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index(&statement);
@@ -510,14 +519,30 @@ mod tests {
 		let table_witness = witness.get_table(table_id).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut segment = table_witness.full_segment();
-		for i in 0..8 {
-			for in_j in &mut *segment.get_mut(input[i]).unwrap() {
-				*in_j = PackedField::random(&mut rng);
-			}
-		}
+		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+			.take(1 << 8)
+			.collect::<Vec<_>>();
+		let out_states = in_states
+			.iter()
+			.map(|in_state| {
+				let in_state_bytes = in_state.map(|b8| AESTowerField8b::from(b8).val());
+				let mut state = GroestlShortImpl::state_from_bytes(&in_state_bytes);
+				GroestlShortImpl::q_perm(&mut state);
+				let out_state_bytes = GroestlShortImpl::state_to_bytes(&state);
+				out_state_bytes.map(|byte| B8::from(AESTowerField8b::new(byte)))
+			})
+			.collect::<Vec<_>>();
 
+		let mut segment = table_witness.full_segment();
+		perm.populate_state_in(&mut segment, in_states.iter())
+			.unwrap();
 		perm.populate(&mut segment).unwrap();
+
+		for (expected_out, generated_out) in
+			iter::zip(out_states, perm.read_state_outs(&mut segment).unwrap())
+		{
+			assert_eq!(generated_out, expected_out);
+		}
 
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index(&statement);
