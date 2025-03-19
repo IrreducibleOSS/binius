@@ -7,6 +7,7 @@
 use std::{array, iter};
 
 use anyhow::Result;
+use array_util::ArrayExt;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
@@ -111,7 +112,7 @@ impl<const V: usize> SBox<V> {
 		// Decompose the inverse bits.
 		let mut inv_bits = self
 			.inv_bits
-			.try_map(|inv_bits_i| index.get_mut(inv_bits_i))?;
+			.try_map_ext(|inv_bits_i| index.get_mut(inv_bits_i))?;
 		for i in 0..index.size() {
 			let inv_val = get_packed_slice(&inv, i);
 			for (j, inv_bit_j) in ExtensionField::<B1>::iter_bases(&inv_val).enumerate() {

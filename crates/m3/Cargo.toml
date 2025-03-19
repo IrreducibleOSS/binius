@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+array-util.workspace = true
 binius_core = { path = "../core" }
 binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math" }
