@@ -37,13 +37,31 @@ pub enum HasherChallenger<H: Digest + BlockSizeUser> {
 
 impl<H> Default for HasherChallenger<H>
 where
-	H: Digest + BlockSizeUser,
+	H: Digest + BlockSizeUser + FixedOutputReset,
 {
 	fn default() -> Self {
-		Self::Observer(HasherObserver {
-			hasher: H::new(),
+		let mut hasher = H::new();
+		let initial_hash = {
+			let zeros = [0u8; 32];
+			Digest::update(&mut hasher, zeros);
+			hasher.finalize_reset()
+		};
+		Self::new(initial_hash)
+	}
+}
+
+impl<H> HasherChallenger<H>
+where
+	H: Digest + BlockSizeUser + FixedOutputReset,
+{
+	fn new(initial_digest: Output<H>) -> Self {
+		let mut hasher = H::new();
+		Digest::update(&mut hasher, &initial_digest);
+
+		Self::Sampler(HasherSampler {
+			hasher,
 			index: 0,
-			buffer: Block::<H>::default(),
+			buffer: initial_digest,
 		})
 	}
 }
@@ -82,9 +100,7 @@ impl<H> HasherSampler<H>
 where
 	H: Digest + Default + BlockSizeUser,
 {
-	fn into_observer(mut self) -> HasherObserver<H> {
-		Digest::update(&mut self.hasher, self.index.to_le_bytes());
-
+	fn into_observer(self) -> HasherObserver<H> {
 		HasherObserver {
 			hasher: self.hasher,
 			index: 0,
