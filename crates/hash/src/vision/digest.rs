@@ -9,7 +9,11 @@ use binius_field::{
 	PackedBinaryField32x8b, PackedBinaryField8x32b, PackedExtensionIndexable, PackedField,
 	PackedFieldIndexable,
 };
-use digest::{consts::U32, FixedOutput, HashMarker, OutputSizeUser, Update};
+use digest::{
+	consts::{U32, U96},
+	core_api::BlockSizeUser,
+	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
+};
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
 
@@ -76,6 +80,21 @@ impl VisionHasherDigest {
 
 		PERMUTATION.permute_mut(state);
 	}
+
+	fn finalize_into(&mut self, out: &mut digest::Output<Self>) {
+		if self.filled_bytes != 0 {
+			fill_padding(&mut self.buffer[self.filled_bytes..]);
+			Self::permute(&mut self.state, &self.buffer);
+		} else {
+			Self::permute(&mut self.state, &*PADDING_BLOCK);
+		}
+
+		let canonical_tower: PackedBinaryField8x32b =
+			TRANS_AES_TO_CANONICAL.transform(&self.state[0]);
+		out.copy_from_slice(BinaryField8b::to_underliers_ref(
+			PackedBinaryField8x32b::unpack_base_scalars(std::slice::from_ref(&canonical_tower)),
+		));
+	}
 }
 
 impl HashMarker for VisionHasherDigest {}
@@ -112,20 +131,28 @@ impl OutputSizeUser for VisionHasherDigest {
 	type OutputSize = U32;
 }
 
+impl BlockSizeUser for VisionHasherDigest {
+	type BlockSize = U96;
+}
+
 impl FixedOutput for VisionHasherDigest {
 	fn finalize_into(mut self, out: &mut digest::Output<Self>) {
-		if self.filled_bytes != 0 {
-			fill_padding(&mut self.buffer[self.filled_bytes..]);
-			Self::permute(&mut self.state, &self.buffer);
-		} else {
-			Self::permute(&mut self.state, &*PADDING_BLOCK);
-		}
+		Self::finalize_into(&mut self, out);
+	}
+}
 
-		let canonical_tower: PackedBinaryField8x32b =
-			TRANS_AES_TO_CANONICAL.transform(&self.state[0]);
-		out.copy_from_slice(BinaryField8b::to_underliers_ref(
-			PackedBinaryField8x32b::unpack_base_scalars(std::slice::from_ref(&canonical_tower)),
-		));
+impl Reset for VisionHasherDigest {
+	fn reset(&mut self) {
+		bytemuck::fill_zeroes(&mut self.state);
+		bytemuck::fill_zeroes(&mut self.buffer);
+		self.filled_bytes = 0;
+	}
+}
+
+impl FixedOutputReset for VisionHasherDigest {
+	fn finalize_into_reset(&mut self, out: &mut digest::Output<Self>) {
+		self.finalize_into(out);
+		self.reset();
 	}
 }
 
@@ -232,6 +259,10 @@ impl VisionHasherDigestByteSliced {
 
 impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteSliced {
 	type Digest = VisionHasherDigest;
+
+	fn new() -> Self {
+		Self::default()
+	}
 
 	fn update(&mut self, data: [&[u8]; HASHES_PER_BYTE_SLICED_PERMUTATION]) {
 		for row in 1..HASHES_PER_BYTE_SLICED_PERMUTATION {

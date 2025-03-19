@@ -19,7 +19,7 @@ type F = BinaryField128b;
 
 fn bench_binary_merkle_tree<H, C>(c: &mut Criterion, compression: C, hash_name: &str)
 where
-	H: Digest + BlockSizeUser + FixedOutputReset,
+	H: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
 {
 	let merkle_prover = BinaryMerkleTreeProver::<_, H, C>::new(compression);

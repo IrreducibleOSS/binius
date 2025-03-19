@@ -3,11 +3,15 @@
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
 use binius_field::TowerField;
-use binius_hash::{HashBuffer, PseudoCompressionFunction};
+use binius_hash::{
+	multi_digest::{ParallelDigest, ParallelDigestSource},
+	HashBuffer, PseudoCompressionFunction,
+};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
 use binius_utils::{
 	bail, checked_arithmetics::log2_strict_usize, SerializationMode, SerializeBytes,
 };
+use bytes::BufMut;
 use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
 use tracing::instrument;
 
@@ -30,11 +34,11 @@ pub fn build<F, H, C>(
 	compression: &C,
 	elements: &[F],
 	batch_size: usize,
-) -> Result<BinaryMerkleTree<Output<H>>, Error>
+) -> Result<BinaryMerkleTree<Output<H::Digest>>, Error>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset,
-	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
+	C: PseudoCompressionFunction<Output<H::Digest>, 2> + Sync,
 {
 	if elements.len() % batch_size != 0 {
 		bail!(Error::IncorrectBatchSize);
@@ -105,11 +109,11 @@ pub fn build_from_iterator<F, H, C, ParIter>(
 	compression: &C,
 	iterated_chunks: ParIter,
 	log_len: usize,
-) -> Result<BinaryMerkleTree<Output<H>>, Error>
+) -> Result<BinaryMerkleTree<Output<H::Digest>>, Error>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset,
-	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
+	C: PseudoCompressionFunction<Output<H::Digest>, 2> + Sync,
 	ParIter: IndexedParallelIterator<Item: IntoIterator<Item = F>>,
 {
 	internal_build(
@@ -177,38 +181,66 @@ where
 /// into N equal-sized chunks and hashes each chunks into the corresponding output digest. This
 /// returns the number of elements hashed into each digest.
 #[tracing::instrument("hash_interleaved", skip_all, level = "debug")]
-fn hash_interleaved<F, H>(elems: &[F], digests: &mut [MaybeUninit<Output<H>>]) -> Result<(), Error>
+fn hash_interleaved<F, H>(
+	elems: &[F],
+	digests: &mut [MaybeUninit<Output<H::Digest>>],
+) -> Result<(), Error>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
 {
 	if elems.len() % digests.len() != 0 {
 		return Err(Error::IncorrectVectorLen {
 			expected: digests.len(),
 		});
 	}
-	let batch_size = elems.len() / digests.len();
-	hash_iterated::<F, H, _>(
-		elems
-			.par_chunks(batch_size)
-			.map(|chunk| chunk.iter().copied()),
+
+	struct DataSource<'a, F: TowerField> {
+		elems: &'a [F],
+		n_digests: usize,
+	}
+
+	impl<'a, F: TowerField> ParallelDigestSource for DataSource<'a, F> {
+		fn n_chunks(&self) -> usize {
+			1
+		}
+
+		fn get_chunk(&self, hash: usize, _chunk: usize, mut buf: impl BufMut) {
+			debug_assert_eq!(_chunk, 0);
+
+			let mode = SerializationMode::CanonicalTower;
+			let hash_start = self.n_digests * hash;
+			for elem in &self.elems[hash_start..hash_start + self.n_digests] {
+				SerializeBytes::serialize(elem, &mut buf, mode)
+					.expect("buffer must have enough capacity");
+			}
+		}
+	}
+
+	let hasher = H::new();
+	hasher.digest(
+		&DataSource {
+			elems,
+			n_digests: elems.len() / digests.len(),
+		},
 		digests,
-	)
+	);
+
+	Ok(())
 }
 
 fn hash_iterated<F, H, ParIter>(
 	iterated_chunks: ParIter,
-	digests: &mut [MaybeUninit<Output<H>>],
+	digests: &mut [MaybeUninit<Output<H::Digest>>],
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
 	ParIter: IndexedParallelIterator<Item: IntoIterator<Item = F>>,
 {
-	digests
-		.par_iter_mut()
-		.zip(iterated_chunks)
-		.for_each_init(H::new, |hasher, (digest, elems)| {
+	digests.par_iter_mut().zip(iterated_chunks).for_each_init(
+		H::Digest::new,
+		|hasher, (digest, elems)| {
 			{
 				let mut hash_buffer = HashBuffer::new(hasher);
 				for elem in elems {
@@ -217,8 +249,10 @@ where
 						.expect("HashBuffer has infinite capacity");
 				}
 			}
-			digest.write(Digest::finalize_reset(hasher));
-		});
+
+			digest.write(hasher.finalize_reset());
+		},
+	);
 	Ok(())
 }
 
