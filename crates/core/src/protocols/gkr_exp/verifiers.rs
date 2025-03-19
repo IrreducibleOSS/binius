@@ -8,13 +8,13 @@ use binius_utils::bail;
 
 use super::{
 	common::{ExpClaim, LayerClaim},
-	compositions::{ExpCompositions, VerifierExpComposition},
+	compositions::{ExpCompositions, IndexedExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
-	protocols::sumcheck::{zerocheck::ExtraProduct, CompositeSumClaim},
+	protocols::sumcheck::CompositeSumClaim,
 };
 
 pub trait ExpVerifier<F: Field> {
@@ -35,8 +35,7 @@ pub trait ExpVerifier<F: Field> {
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error>;
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error>;
 
 	/// return a tuple of the number of multilinears used by this verifier for this layer.
 	fn layer_n_multilinears(&self, layer_no: usize) -> usize;
@@ -125,8 +124,7 @@ where
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error> {
 		if self.is_last_layer(layer_no) {
 			Ok(None)
 		} else {
@@ -140,17 +138,15 @@ where
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[this_layer_input_index, exponent_bit_index, eq_ind_index],
-				ExtraProduct {
-					inner: ExpCompositions::ConstantBase {
-						base_power_constant,
-					},
+				[this_layer_input_index, exponent_bit_index],
+				ExpCompositions::ConstantBase {
+					base_power_constant,
 				},
 			)?;
 
 			let this_round_composite_claim = CompositeSumClaim {
 				sum: self.0.eval,
-				composition: FixedDimIndexCompositions::Trivariate(composition),
+				composition: FixedDimIndexCompositions::Bivariate(composition),
 			};
 
 			Ok(Some(this_round_composite_claim))
@@ -253,21 +249,18 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error> {
 		let composition = if self.is_last_layer(layer_no) {
 			let base_index = multilinears_index;
 			let exponent_bit_index = multilinears_index + 1;
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[base_index, exponent_bit_index, eq_ind_index],
-				ExtraProduct {
-					inner: ExpCompositions::DynamicBaseLastLayer,
-				},
+				[base_index, exponent_bit_index],
+				ExpCompositions::DynamicBaseLastLayer,
 			)?;
 
-			FixedDimIndexCompositions::Trivariate(composition)
+			FixedDimIndexCompositions::Bivariate(composition)
 		} else {
 			let this_layer_input_index = multilinears_index;
 			let exponent_bit_index = multilinears_index + 1;
@@ -275,18 +268,11 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[
-					this_layer_input_index,
-					exponent_bit_index,
-					base_index,
-					eq_ind_index,
-				],
-				ExtraProduct {
-					inner: ExpCompositions::DynamicBase,
-				},
+				[this_layer_input_index, exponent_bit_index, base_index],
+				ExpCompositions::DynamicBase,
 			)?;
 
-			FixedDimIndexCompositions::Quadrivariate(composition)
+			FixedDimIndexCompositions::Trivariate(composition)
 		};
 
 		let this_round_composite_claim = CompositeSumClaim {

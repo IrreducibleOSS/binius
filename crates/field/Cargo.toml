@@ -95,3 +95,11 @@ harness = false
 [[bench]]
 name = "byte_iteration"
 harness = false
+
+[[bench]]
+name = "main_field_unary_ops"
+harness = false
+
+[[bench]]
+name = "main_field_binary_ops"
+harness = false

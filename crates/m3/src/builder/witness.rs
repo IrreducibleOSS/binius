@@ -265,17 +265,26 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			is_single_row: false,
 		}));
 
+		// The minimum segment size is chosen such that the segment of each column is at least one
+		// underlier in size.
+		let min_log_segment_size = U::LOG_BITS
+			- table
+				.columns
+				.iter()
+				.map(|col| col.shape.log_cell_size())
+				.fold(U::LOG_BITS, |a, b| a.min(b));
+
+		// But, in case the minimum segment size is larger than the capacity, we raise it so the
+		// caller can get the full witness index in one segment. This is OK because the extra field
+		// elements in the smallest columns are just padding.
+		let min_log_segment_size = min_log_segment_size.min(log_capacity);
+
 		Self {
 			table,
 			selector_log_values_per_rows: table.partitions.keys().collect(),
 			cols,
 			log_capacity,
-			min_log_segment_size: U::LOG_BITS
-				- table
-					.columns
-					.iter()
-					.map(|col| col.shape.log_cell_size())
-					.fold(U::LOG_BITS, |a, b| a.min(b)),
+			min_log_segment_size,
 			oracle_offset,
 		}
 	}
@@ -307,12 +316,18 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	}
 
 	/// Returns an iterator over segments of witness index rows.
+	///
+	/// This method clamps the segment size, requested as `log_size`, to a minimum of
+	/// `self.min_log_segment_size()` and a maximum of `self.log_capacity()`. The actual segment
+	/// size can be queried on the items yielded by the iterator.
 	pub fn segments(
 		&mut self,
 		log_size: usize,
-	) -> impl Iterator<Item = TableWitnessIndexSegment<'_, U, F>> + '_ {
-		assert!(log_size <= self.log_capacity);
-		assert!(log_size >= self.min_log_segment_size);
+	) -> impl Iterator<Item = TableWitnessIndexSegment<U, F>> + '_ {
+		// Clamp the segment size.
+		let log_size = log_size
+			.min(self.log_capacity)
+			.max(self.min_log_segment_size);
 
 		let self_ref = self as &Self;
 		(0..1 << (self.log_capacity - log_size)).map(move |i| {
@@ -326,7 +341,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 					}
 					WitnessDataMut::Owned(data) => {
 						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+						let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
 						RefCellData::Owned(RefCell::new(unsafe {
 							// Safety: The function borrows self mutably, so we have mutable access to
 							// all columns and thus none can be borrowed by anyone else. The loop is
@@ -771,5 +786,33 @@ mod tests {
 			let col2_val = B8::new(i as u8) + B8::new(0x80);
 			assert_eq!(eval_i, col0_val * col1_val - col2_val);
 		}
+	}
+
+	#[test]
+	fn test_small_tables() {
+		let table_id = 0;
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
+		let _col0 = table.add_committed::<B1, 8>("col0");
+		let _col1 = table.add_committed::<B1, 32>("col1");
+		let _col2 = table.add_committed::<B8, 1>("col2");
+		let _col3 = table.add_committed::<B32, 1>("col3");
+
+		let allocator = bumpalo::Bump::new();
+		let table_size = 7;
+		let mut index =
+			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
+
+		assert_eq!(index.min_log_segment_size(), 3);
+
+		let mut iter = index.segments(4);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
+		assert!(iter.next().is_none());
+		drop(iter);
+
+		let mut iter = index.segments(2);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
+		assert!(iter.next().is_none());
+		drop(iter);
 	}
 }

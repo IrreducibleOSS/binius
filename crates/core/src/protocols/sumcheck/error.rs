@@ -59,16 +59,22 @@ pub enum Error {
 	BaseAndExtensionFieldConstraintSetsMismatch,
 	#[error("some multilinear evals cannot be embedded into base field in the first round")]
 	MultilinearEvalsCannotBeEmbeddedInBaseField,
+	#[error("eq_ind sumcheck challenges number does not equal number of variables")]
+	IncorrectEqIndChallengesLength,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
 	#[error("number of specified multilinears and switchover rounds does not match")]
 	MultilinearSwitchoverSizeMismatch,
+	#[error("incorrect size of the equality indicator expansion in eq_ind sumcheck")]
+	IncorrectEqIndPartialEvalsSize,
 	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]
 	IncorrectZerocheckPartialEqIndSize,
 	#[error(
 		"the number of prime polynomial sums does not match the number of zerocheck compositions"
 	)]
 	IncorrectClaimedPrimeSumsLength,
+	#[error("the number of evaluations at 1 in the first round is of incorrect length")]
+	IncorrectFirstRoundEvalOnesLength,
 	#[error("batch proof shape does not conform to the provided indexed claims")]
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
@@ -111,6 +117,8 @@ pub enum VerificationError {
 	NumberOfRounds,
 	#[error("the number of final evaluations must match the number of instances")]
 	NumberOfFinalEvaluations,
+	#[error("the number of reduced multilinear evaluations should conform to the claim shape")]
+	NumberOfMultilinearEvals,
 	#[error("the final batch composite evaluation is incorrect")]
 	IncorrectBatchEvaluation,
 	#[error("the proof contains an incorrect evaluation of the eq indicator")]

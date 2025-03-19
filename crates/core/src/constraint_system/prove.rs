@@ -42,14 +42,13 @@ use crate::{
 	piop,
 	protocols::{
 		fri::CommitOutput,
-		gkr_gpa::{
-			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
-			GrandProductWitness, LayerClaim,
-		},
+		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			prove::{SumcheckProver, UnivariateZerocheckProver},
+			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
+			prove::{
+				eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, UnivariateZerocheckProver,
+			},
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
@@ -274,6 +273,8 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
+	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
+
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
 
@@ -309,7 +310,7 @@ where
 			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _, _> {
 				constraints,
 				multilinears,
-				domain_factory: &domain_factory,
+				domain_factory: domain_factory.clone(),
 				switchover_fn,
 				zerocheck_challenges: &zerocheck_challenges[skip_challenges..],
 				backend,
@@ -349,8 +350,8 @@ where
 		&mut transcript,
 	)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
+	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
@@ -381,7 +382,6 @@ where
 				reduced_multilinears,
 				univariatized_multilinear_evals,
 				univariate_challenge,
-				&domain_factory,
 				backend,
 			)?;
 
@@ -477,8 +477,8 @@ where
 	F: Field,
 	P: PackedFieldIndexable<Scalar = F>,
 	FDomain: TowerField,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
-	SwitchoverFn: Fn(usize) -> usize + Clone,
+	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
+	SwitchoverFn: Fn(usize) -> usize + Clone + 'a,
 	Backend: ComputationBackend,
 {
 	fn create<FBase>(
@@ -493,7 +493,7 @@ where
 		F: TowerField,
 	{
 		let univariate_prover =
-			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _>(
+			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _, _, _>(
 				self.constraints,
 				self.multilinears,
 				self.domain_factory,
@@ -720,14 +720,13 @@ where
 			multilinears.push(witness.get_multilin_poly(oracle_id)?);
 		}
 
-		let prover = GPAProver::new(
+		let prover = EqIndSumcheckProverBuilder::new(backend).build(
 			EvaluationOrder::LowToHigh,
 			multilinears,
-			None,
+			&eval_point,
 			composite_sum_claims,
 			domain_factory.clone(),
-			&eval_point,
-			backend,
+			immediate_switchover_heuristic,
 		)?;
 
 		provers.push(prover);

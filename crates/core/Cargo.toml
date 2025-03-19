@@ -20,7 +20,6 @@ binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
-derive_more.workspace = true
 digest.workspace = true
 either.workspace = true
 getset.workspace = true
@@ -36,7 +35,6 @@ transpose.workspace = true
 [dev-dependencies]
 binius_macros = { path = "../macros" }
 criterion.workspace = true
-groestl_crypto.workspace = true
 rand = { workspace = true, features = ["std"] }
 
 [lib]
@@ -60,6 +58,10 @@ harness = false
 
 [[bench]]
 name = "poly_commit"
+harness = false
+
+[[bench]]
+name = "sumcheck"
 harness = false
 
 [features]

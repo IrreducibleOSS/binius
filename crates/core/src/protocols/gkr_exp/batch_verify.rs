@@ -6,14 +6,14 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
 	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
-	compositions::VerifierExpComposition,
+	compositions::IndexedExpComposition,
 	error::{Error, VerificationError},
 	verifiers::{ExpDynamicVerifier, ExpVerifier, GeneratorExpVerifier},
 };
 use crate::{
 	fiat_shamir::Challenger,
 	polynomial::MultivariatePoly,
-	protocols::sumcheck::{self, BatchSumcheckOutput, SumcheckClaim},
+	protocols::sumcheck::{self, BatchSumcheckOutput, EqIndSumcheckClaim},
 	transcript::VerifierTranscript,
 	transparent::eq_ind::EqIndPartialEval,
 };
@@ -21,7 +21,7 @@ use crate::{
 /// Verify a batched GKR exponentiation protocol execution.
 ///
 /// The protocol can be batched over multiple instances by grouping consecutive verifiers over
-/// eval_points in [ExpClaim] into [SumcheckClaim]s. To achieve this, we use
+/// eval_points in [ExpClaim] into [EqIndSumcheckClaim]s. To achieve this, we use
 /// [crate::composition::IndexComposition], where eq indicator is always the last element. Since
 /// exponents can have different bit sizes, resulting in a varying number of layers, we group
 /// them starting from the first layer to maximize the opportunity to share the same evaluation point.
@@ -57,13 +57,16 @@ where
 		.unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
-		let SumcheckClaimsWithEvalPoints {
-			sumcheck_claims,
+		let EqIndSumcheckClaimsWithEvalPoints {
+			eq_ind_sumcheck_claims,
 			eval_points,
-		} = build_layer_gkr_sumcheck_claims(&verifiers, layer_no)?;
+		} = build_layer_eq_ind_sumcheck_claims(&verifiers, layer_no)?;
+
+		let regular_sumcheck_claims =
+			sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
 		let sumcheck_verification_output =
-			sumcheck::batch_verify(evaluation_order, &sumcheck_claims, transcript)?;
+			sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
 
 		let layer_exponent_claims = build_layer_exponent_bit_claims(
 			evaluation_order,
@@ -81,20 +84,20 @@ where
 	Ok(BaseExpReductionOutput { layers_claims })
 }
 
-struct SumcheckClaimsWithEvalPoints<F: Field> {
-	sumcheck_claims: Vec<SumcheckClaim<F, VerifierExpComposition<F>>>,
+struct EqIndSumcheckClaimsWithEvalPoints<F: Field> {
+	eq_ind_sumcheck_claims: Vec<EqIndSumcheckClaim<F, IndexedExpComposition<F>>>,
 	eval_points: Vec<Vec<F>>,
 }
 
 /// Groups consecutive verifier by their `eval_point` and reduces them to sumcheck claims.
-fn build_layer_gkr_sumcheck_claims<'a, F>(
+fn build_layer_eq_ind_sumcheck_claims<'a, F>(
 	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
-) -> Result<SumcheckClaimsWithEvalPoints<F>, Error>
+) -> Result<EqIndSumcheckClaimsWithEvalPoints<F>, Error>
 where
 	F: Field,
 {
-	let mut sumcheck_claims = Vec::new();
+	let mut eq_ind_sumcheck_claims = Vec::new();
 
 	let first_eval_point = verifiers[0].layer_claim_eval_point().to_vec();
 	let mut eval_points = vec![first_eval_point];
@@ -104,10 +107,11 @@ where
 	// group verifiers by evaluation points and build sumcheck claims.
 	for i in 0..verifiers.len() {
 		if verifiers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
-			let sumcheck_claim = build_eval_point_claims(&verifiers[active_index..i], layer_no)?;
+			let eq_ind_sumcheck_claim =
+				build_eval_point_claims(&verifiers[active_index..i], layer_no)?;
 
-			if let Some(sumcheck_claim) = sumcheck_claim {
-				sumcheck_claims.push(sumcheck_claim);
+			if let Some(eq_ind_sumcheck_claim) = eq_ind_sumcheck_claim {
+				eq_ind_sumcheck_claims.push(eq_ind_sumcheck_claim);
 			} else {
 				// extract the last point because verifiers with this point will not participate in the sumcheck.
 				eval_points.pop();
@@ -119,16 +123,17 @@ where
 		}
 
 		if i == verifiers.len() - 1 {
-			let sumcheck_claim = build_eval_point_claims(&verifiers[active_index..], layer_no)?;
+			let eq_ind_sumcheck_claim =
+				build_eval_point_claims(&verifiers[active_index..], layer_no)?;
 
-			if let Some(sumcheck_claim) = sumcheck_claim {
-				sumcheck_claims.push(sumcheck_claim);
+			if let Some(eq_ind_sumcheck_claim) = eq_ind_sumcheck_claim {
+				eq_ind_sumcheck_claims.push(eq_ind_sumcheck_claim);
 			}
 		}
 	}
 
-	Ok(SumcheckClaimsWithEvalPoints {
-		sumcheck_claims,
+	Ok(EqIndSumcheckClaimsWithEvalPoints {
+		eq_ind_sumcheck_claims,
 		eval_points,
 	})
 }
@@ -139,11 +144,11 @@ where
 fn build_eval_point_claims<'a, F>(
 	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
-) -> Result<Option<SumcheckClaim<F, VerifierExpComposition<F>>>, Error>
+) -> Result<Option<EqIndSumcheckClaim<F, IndexedExpComposition<F>>>, Error>
 where
 	F: Field,
 {
-	let (mut composite_claims_n_multilinears, n_claims) =
+	let (composite_claims_n_multilinears, n_claims) =
 		verifiers
 			.iter()
 			.fold((0, 0), |(n_multilinears, n_claims), verifier| {
@@ -159,11 +164,6 @@ where
 
 	let n_vars = verifiers[0].layer_claim_eval_point().len();
 
-	let eq_ind_index = composite_claims_n_multilinears;
-
-	// add eq_ind
-	composite_claims_n_multilinears += 1;
-
 	let mut multilinears_index = 0;
 
 	let mut composite_sums = Vec::with_capacity(n_claims);
@@ -173,7 +173,6 @@ where
 			layer_no,
 			composite_claims_n_multilinears,
 			multilinears_index,
-			eq_ind_index,
 		)?;
 
 		if let Some(composite_sum_claim) = composite_sum_claim {
@@ -183,9 +182,7 @@ where
 		multilinears_index += verifier.layer_n_multilinears(layer_no);
 	}
 
-	SumcheckClaim::new(n_vars, composite_claims_n_multilinears, composite_sums)
-		.map(Some)
-		.map_err(Error::from)
+	Ok(Some(EqIndSumcheckClaim::new(n_vars, composite_claims_n_multilinears, composite_sums)?))
 }
 
 /// Reduces the sumcheck output to [LayerClaim]s and updates the internal verifier [ExpClaim]s for the next layer.

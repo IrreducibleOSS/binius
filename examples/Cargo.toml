@@ -19,7 +19,6 @@ binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
-groestl_crypto.workspace = true
 itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
@@ -85,4 +84,5 @@ default = ["rayon"]
 aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
+perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
