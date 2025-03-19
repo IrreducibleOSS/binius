@@ -1,40 +1,38 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Range, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	util::{eq, powers},
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
-	TowerField,
+	util::powers, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	PackedSubfield, TowerField,
 };
-use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_hal::ComputationBackend;
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
-	MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
 use itertools::izip;
-use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
+	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		common::{determine_switchovers, equal_n_vars_check, get_nontrivial_evaluation_points},
+		common::{equal_n_vars_check, CompositeSumClaim},
 		prove::{
-			common::fold_partial_eq_ind,
+			eq_ind::EqIndSumcheckProverBuilder,
 			univariate::{
 				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
 				ZerocheckUnivariateFoldResult,
 			},
-			ProverState, SumcheckInterpolator, SumcheckProver, UnivariateZerocheckProver,
+			SumcheckProver, UnivariateZerocheckProver,
 		},
 		univariate::LagrangeRoundEvals,
 		univariate_zerocheck::domain_size,
-		Error, RoundCoeffs,
+		Error,
 	},
 	witness::MultilinearWitness,
 };
@@ -84,12 +82,22 @@ where
 ///
 /// This struct is an entrypoint to proving all zerochecks instances, univariatized and regular.
 /// "Regular" multilinear case is covered by calling [`Self::into_regular_zerocheck`] right away,
-/// producing a [`ZerocheckProver`]. Univariatized case is handled by using methods from a
+/// producing a `EqIndSumcheckProver`. Univariatized case is handled by using methods from a
 /// [`UnivariateZerocheckProver`] trait, where folding results in a reduced multilinear zerocheck
 /// prover for the remaining rounds.
 #[derive(Debug, Getters)]
-pub struct UnivariateZerocheck<'a, 'm, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
-where
+pub struct UnivariateZerocheck<
+	'a,
+	FDomain,
+	FBase,
+	P,
+	CompositionBase,
+	Composition,
+	M,
+	DomainFactory,
+	SwitchoverFn,
+	Backend,
+> where
 	FDomain: Field,
 	FBase: Field,
 	P: PackedField,
@@ -98,20 +106,43 @@ where
 	n_vars: usize,
 	#[getset(get = "pub")]
 	multilinears: Vec<M>,
-	switchover_rounds: Vec<usize>,
 	compositions: Vec<(String, CompositionBase, Composition)>,
 	zerocheck_challenges: Vec<P::Scalar>,
-	domains: Vec<InterpolationDomain<FDomain>>,
+	domain_factory: DomainFactory,
+	switchover_fn: SwitchoverFn,
 	backend: &'a Backend,
 	univariate_evals_output: Option<ZerocheckUnivariateEvalsOutput<P::Scalar, P, Backend>>,
 	_p_base_marker: PhantomData<FBase>,
-	_m_marker: PhantomData<&'m ()>,
+	_fdomain_marker: PhantomData<FDomain>,
 }
 
-impl<'a, 'm, F, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
-	UnivariateZerocheck<'a, 'm, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
+impl<
+		'a,
+		F,
+		FDomain,
+		FBase,
+		P,
+		CompositionBase,
+		Composition,
+		M,
+		DomainFactory,
+		SwitchoverFn,
+		Backend,
+	>
+	UnivariateZerocheck<
+		'a,
+		FDomain,
+		FBase,
+		P,
+		CompositionBase,
+		Composition,
+		M,
+		DomainFactory,
+		SwitchoverFn,
+		Backend,
+	>
 where
-	F: Field,
+	F: TowerField,
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -119,16 +150,18 @@ where
 		+ PackedExtension<FBase>
 		+ PackedExtension<FDomain>,
 	CompositionBase: CompositionPoly<<P as PackedExtension<FBase>>::PackedSubfield>,
-	Composition: CompositionPoly<P>,
-	M: MultilinearPoly<P> + Send + Sync + 'm,
+	Composition: CompositionPoly<P> + 'a,
+	M: MultilinearPoly<P> + Send + Sync + 'a,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
+	SwitchoverFn: Fn(usize) -> usize,
 	Backend: ComputationBackend,
 {
 	pub fn new(
 		multilinears: Vec<M>,
 		zero_claims: impl IntoIterator<Item = (String, CompositionBase, Composition)>,
 		zerocheck_challenges: &[F],
-		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-		switchover_fn: impl Fn(usize) -> usize,
+		domain_factory: DomainFactory,
+		switchover_fn: SwitchoverFn,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let n_vars = equal_n_vars_check(&multilinears)?;
@@ -154,55 +187,28 @@ where
 			validate_witness(&multilinears, &compositions)?;
 		}
 
-		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
 		let zerocheck_challenges = zerocheck_challenges.to_vec();
-
-		let domains = compositions
-			.iter()
-			.map(|(_, _, composition)| {
-				let degree = composition.degree();
-				let domain =
-					evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
-				Ok(domain.into())
-			})
-			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
-			.map_err(Error::MathError)?;
 
 		Ok(Self {
 			n_vars,
 			multilinears,
-			switchover_rounds,
 			compositions,
 			zerocheck_challenges,
-			domains,
+			domain_factory,
+			switchover_fn,
 			backend,
 			univariate_evals_output: None,
 			_p_base_marker: PhantomData,
-			_m_marker: PhantomData,
+			_fdomain_marker: PhantomData,
 		})
 	}
 
 	#[instrument(skip_all, level = "debug")]
 	#[allow(clippy::type_complexity)]
-	pub fn into_regular_zerocheck(
-		self,
-	) -> Result<
-		ZerocheckProver<'a, FDomain, P, Composition, MultilinearWitness<'m, P>, Backend>,
-		Error,
-	> {
+	pub fn into_regular_zerocheck(self) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error> {
 		if self.univariate_evals_output.is_some() {
 			bail!(Error::ExpectedFold);
 		}
-
-		// Type erase the multilinears
-		// REVIEW: this may result in "double boxing" if M is already a trait object;
-		//         consider implementing MultilinearPoly on an Either, or
-		//         supporting two different SumcheckProver<F> types in batch_prove
-		let multilinears = self
-			.multilinears
-			.into_iter()
-			.map(|multilinear| Arc::new(multilinear) as MultilinearWitness<'_, P>)
-			.collect::<Vec<_>>();
 
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
@@ -211,41 +217,60 @@ where
 				.iter()
 				.map(|(name, _, a)| (name.clone(), a))
 				.collect::<Vec<_>>();
-			validate_witness(&multilinears, &compositions)?;
+			validate_witness(&self.multilinears, &compositions)?;
 		}
 
-		let compositions = self
+		let composite_claims = self
 			.compositions
 			.into_iter()
-			.map(|(_, _, composition)| composition)
+			.map(|(_, _, composition)| CompositeSumClaim {
+				composition,
+				sum: F::ZERO,
+			})
 			.collect::<Vec<_>>();
 
-		// Evaluate zerocheck partial indicator in variables 1..n_vars
-		let start = self.n_vars.min(1);
-		let partial_eq_ind_evals = self
-			.backend
-			.tensor_product_full_query(&self.zerocheck_challenges[start..])?;
-		let claimed_sums = vec![F::ZERO; compositions.len()];
+		let first_round_eval_1s = composite_claims.iter().map(|_| F::ZERO).collect::<Vec<_>>();
 
-		// This is a regular multilinear zerocheck constructor, split over two creation stages.
-		ZerocheckProver::new(
-			EvaluationOrder::LowToHigh,
-			multilinears,
-			&self.switchover_rounds,
-			compositions,
-			partial_eq_ind_evals,
-			self.zerocheck_challenges,
-			claimed_sums,
-			self.domains,
-			RegularFirstRound::SkipCube,
-			self.backend,
-		)
+		let prover = EqIndSumcheckProverBuilder::new(self.backend)
+			.with_first_round_eval_1s(&first_round_eval_1s)
+			.build(
+				EvaluationOrder::LowToHigh,
+				self.multilinears,
+				&self.zerocheck_challenges,
+				composite_claims,
+				self.domain_factory,
+				self.switchover_fn,
+			)?;
+
+		Ok(Box::new(prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
 }
 
-impl<'a, 'm, F, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
-	UnivariateZerocheckProver<'a, F>
-	for UnivariateZerocheck<'a, 'm, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
+impl<
+		'a,
+		F,
+		FDomain,
+		FBase,
+		P,
+		CompositionBase,
+		Composition,
+		M,
+		InterpolationDomainFactory,
+		SwitchoverFn,
+		Backend,
+	> UnivariateZerocheckProver<'a, F>
+	for UnivariateZerocheck<
+		'a,
+		FDomain,
+		FBase,
+		P,
+		CompositionBase,
+		Composition,
+		M,
+		InterpolationDomainFactory,
+		SwitchoverFn,
+		Backend,
+	>
 where
 	F: TowerField,
 	FDomain: TowerField,
@@ -256,7 +281,9 @@ where
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 	CompositionBase: CompositionPoly<PackedSubfield<P, FBase>> + 'static,
 	Composition: CompositionPoly<P> + 'static,
-	M: MultilinearPoly<P> + Send + Sync + 'm,
+	M: MultilinearPoly<P> + Send + Sync + 'a,
+	InterpolationDomainFactory: EvaluationDomainFactory<FDomain>,
+	SwitchoverFn: Fn(usize) -> usize,
 	Backend: ComputationBackend,
 {
 	fn n_vars(&self) -> usize {
@@ -340,7 +367,7 @@ where
 		let ZerocheckUnivariateFoldResult {
 			skip_rounds,
 			subcube_lagrange_coeffs,
-			claimed_prime_sums,
+			claimed_sums,
 			partial_eq_ind_evals,
 		} = self
 			.univariate_evals_output
@@ -373,476 +400,25 @@ where
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		let switchover_rounds = self
-			.switchover_rounds
-			.into_iter()
-			.map(|switchover_round| switchover_round.saturating_sub(skip_rounds))
+		let composite_claims = izip!(self.compositions, claimed_sums)
+			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })
 			.collect::<Vec<_>>();
 
-		let zerocheck_challenges = self.zerocheck_challenges.clone();
-
-		let compositions = self
-			.compositions
-			.into_iter()
-			.map(|(_, _, composition)| composition)
-			.collect();
-
-		// This is also regular multilinear zerocheck constructor, but "jump started" in round
-		// `skip_rounds` while using witness with a projected univariate round.
-		// NB: first round evaluator has to be overridden due to issues proving
-		// `P: RepackedExtension<P>` relation in the generic context, as well as the need
-		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
-		let regular_prover = ZerocheckProver::new(
-			EvaluationOrder::LowToHigh,
-			partial_low_multilinears,
-			&switchover_rounds,
-			compositions,
-			partial_eq_ind_evals,
-			zerocheck_challenges,
-			claimed_prime_sums,
-			self.domains,
-			RegularFirstRound::LaterRound,
-			self.backend,
-		)?;
+		// The remaining non-univariate zerocheck rounds are an instance of EqIndSumcheck,
+		// due to the number of zerocheck challenges being equal to the number of remaining rounds.
+		let regular_prover = EqIndSumcheckProverBuilder::new(self.backend)
+			.with_eq_ind_partial_evals(partial_eq_ind_evals)
+			.build(
+				EvaluationOrder::LowToHigh,
+				partial_low_multilinears,
+				&self.zerocheck_challenges,
+				composite_claims,
+				self.domain_factory,
+				|extension_degree| {
+					(self.switchover_fn)(extension_degree).saturating_sub(skip_rounds)
+				},
+			)?;
 
 		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
-	}
-}
-
-#[derive(Debug, Clone, Copy)]
-enum RegularFirstRound {
-	SkipCube,
-	LaterRound,
-}
-
-/// A "regular" multilinear zerocheck prover.
-///
-/// The main difference of this prover from a regular sumcheck prover is that it computes
-/// round evaluations of a much simpler "prime" polynomial multiplied by a "higher" portion
-/// of the equality indicator. This "prime" polynomial has the same degree as the underlying
-/// composition, reducing the number of would-be evaluation points by one, and the tensor
-/// expansion of the zerocheck indicator doesn't have to be interpolated. Round evaluations
-/// for the "full" assumed zerocheck composition are computed in monomial form, out of hot loop.
-/// See [Gruen24] Section 3.2 for details.
-///
-/// When "jump starting" a zerocheck prover in a middle of zerocheck, pay attention that
-/// `claimed_prime_sums` are on "prime" polynomial, and not on full zerocheck polynomial.
-///
-/// [Gruen24]: <https://eprint.iacr.org/2024/108>
-#[derive(Debug)]
-pub struct ZerocheckProver<'a, FDomain, P, Composition, M, Backend>
-where
-	FDomain: Field,
-	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	n_vars: usize,
-	state: ProverState<'a, FDomain, P, M, Backend>,
-	eq_ind_eval: P::Scalar,
-	partial_eq_ind_evals: Backend::Vec<P>,
-	zerocheck_challenges: Vec<P::Scalar>,
-	compositions: Vec<Composition>,
-	domains: Vec<InterpolationDomain<FDomain>>,
-	first_round: RegularFirstRound,
-}
-
-impl<'a, F, FDomain, P, Composition, M, Backend>
-	ZerocheckProver<'a, FDomain, P, Composition, M, Backend>
-where
-	F: Field,
-	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	Composition: CompositionPoly<P>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	#[allow(clippy::too_many_arguments)]
-	fn new(
-		// REVIEW: given that high-to-low zerocheck may only be instantiated via
-		//         reduction from high-to-low univariate prover, actual implementation
-		//         of high-to-low zerocheck is deferred until the introduction of high-to-low
-		//         univariate skip.
-		evaluation_order: EvaluationOrder,
-		multilinears: Vec<M>,
-		switchover_rounds: &[usize],
-		compositions: Vec<Composition>,
-		partial_eq_ind_evals: Backend::Vec<P>,
-		zerocheck_challenges: Vec<F>,
-		claimed_prime_sums: Vec<F>,
-		domains: Vec<InterpolationDomain<FDomain>>,
-		first_round: RegularFirstRound,
-		backend: &'a Backend,
-	) -> Result<Self, Error> {
-		if claimed_prime_sums.len() != compositions.len() {
-			bail!(Error::IncorrectClaimedPrimeSumsLength);
-		}
-
-		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
-
-		let state = ProverState::new_with_switchover_rounds(
-			evaluation_order,
-			multilinears,
-			switchover_rounds,
-			claimed_prime_sums,
-			nontrivial_evaluation_points,
-			backend,
-		)?;
-		let n_vars = state.n_vars();
-
-		if zerocheck_challenges.len() != n_vars {
-			bail!(Error::IncorrectZerocheckChallengesLength);
-		}
-
-		// Only one value of the expanded zerocheck equality indicator is used per each
-		// 1-variable subcube, thus it should be twice smaller.
-		if partial_eq_ind_evals.len() != 1 << n_vars.saturating_sub(1 + P::LOG_WIDTH) {
-			bail!(Error::IncorrectZerocheckPartialEqIndSize);
-		}
-
-		let eq_ind_eval = F::ONE;
-
-		Ok(Self {
-			n_vars,
-			state,
-			eq_ind_eval,
-			partial_eq_ind_evals,
-			zerocheck_challenges,
-			compositions,
-			domains,
-			first_round,
-		})
-	}
-
-	fn round(&self) -> usize {
-		self.n_vars - self.n_rounds_remaining()
-	}
-
-	fn n_rounds_remaining(&self) -> usize {
-		self.state.n_vars()
-	}
-
-	fn update_eq_ind_eval(&mut self, challenge: F) {
-		// Update the running eq ind evaluation.
-		let alpha = self.zerocheck_challenges[self.round()];
-		self.eq_ind_eval *= eq(alpha, challenge);
-	}
-
-	#[instrument(skip_all, level = "debug")]
-	fn fold_partial_eq_ind(&mut self) {
-		fold_partial_eq_ind::<P, Backend>(
-			self.state.evaluation_order(),
-			self.n_rounds_remaining(),
-			&mut self.partial_eq_ind_evals,
-		);
-	}
-}
-
-impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for ZerocheckProver<'_, FDomain, P, Composition, M, Backend>
-where
-	F: TowerField + ExtensionField<FDomain>,
-	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	Composition: CompositionPoly<P>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	fn n_vars(&self) -> usize {
-		self.n_vars
-	}
-
-	fn evaluation_order(&self) -> EvaluationOrder {
-		self.state.evaluation_order()
-	}
-
-	#[instrument(skip_all, name = "ZerocheckProver::fold", level = "debug")]
-	fn fold(&mut self, challenge: F) -> Result<(), Error> {
-		self.update_eq_ind_eval(challenge);
-		self.state.fold(challenge)?;
-
-		// This must happen after state fold, which decrements n_rounds_remaining.
-		self.fold_partial_eq_ind();
-
-		Ok(())
-	}
-
-	#[instrument(skip_all, name = "ZerocheckProver::execute", level = "debug")]
-	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
-		let round = self.round();
-		let skip_cube_first_round =
-			round == 0 && matches!(self.first_round, RegularFirstRound::SkipCube);
-		let coeffs = if skip_cube_first_round {
-			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| {
-					let composition_at_infinity =
-						ArithCircuitPoly::new(composition.expression().leading_term());
-
-					ZerocheckFirstRoundEvaluator {
-						composition,
-						composition_at_infinity,
-						interpolation_domain,
-						partial_eq_ind_evals: &self.partial_eq_ind_evals,
-					}
-				})
-				.collect::<Vec<_>>();
-			let evals = self.state.calculate_round_evals(&evaluators)?;
-			self.state
-				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
-		} else {
-			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| {
-					let composition_at_infinity =
-						ArithCircuitPoly::new(composition.expression().leading_term());
-
-					ZerocheckLaterRoundEvaluator {
-						composition,
-						composition_at_infinity,
-						interpolation_domain,
-						partial_eq_ind_evals: &self.partial_eq_ind_evals,
-						round_zerocheck_challenge: self.zerocheck_challenges[round],
-					}
-				})
-				.collect::<Vec<_>>();
-			let evals = self.state.calculate_round_evals(&evaluators)?;
-			self.state
-				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
-		};
-
-		// Convert v' polynomial into v polynomial
-		let alpha = self.zerocheck_challenges[round];
-
-		// eq(X, α) = (1 − α) + (2 α − 1) X
-		// NB: In binary fields, this expression is simply  eq(X, α) = 1 + α + X
-		// However, we opt to keep this prover generic over all fields.
-		let constant_scalar = F::ONE - alpha;
-		let linear_scalar = alpha.double() - F::ONE;
-
-		let coeffs_scaled_by_constant_term = coeffs.clone() * constant_scalar;
-		let mut coeffs_scaled_by_linear_term = coeffs * linear_scalar;
-		coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply polynomial by X
-
-		let sumcheck_coeffs = coeffs_scaled_by_constant_term + &coeffs_scaled_by_linear_term;
-		Ok(sumcheck_coeffs * self.eq_ind_eval)
-	}
-
-	#[instrument(skip_all, name = "ZerocheckProver::finish", level = "debug")]
-	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
-		let mut evals = self.state.finish()?;
-		evals.push(self.eq_ind_eval);
-		Ok(evals)
-	}
-}
-
-struct ZerocheckFirstRoundEvaluator<'a, P, FDomain, Composition>
-where
-	P: PackedField,
-	FDomain: Field,
-{
-	composition: &'a Composition,
-	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
-	interpolation_domain: &'a InterpolationDomain<FDomain>,
-	partial_eq_ind_evals: &'a [P],
-}
-
-impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
-	for ZerocheckFirstRoundEvaluator<'_, P, FDomain, Composition>
-where
-	P: PackedField<Scalar: TowerField + ExtensionField<FDomain>>,
-	FDomain: Field,
-	Composition: CompositionPoly<P>,
-{
-	fn eval_point_indices(&self) -> Range<usize> {
-		// In the first round of zerocheck we can uniquely determine the degree d
-		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
-		// because we know r(0) = r(1) = 0
-		2..self.composition.degree() + 1
-	}
-
-	fn process_subcube_at_eval_point(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		is_infinity_point: bool,
-		batch_query: &[&[P]],
-	) -> P {
-		// If the composition is a linear polynomial, then the composite multivariate polynomial
-		// is multilinear. If the prover is honest, then this multilinear is identically zero,
-		// hence the sum over the subcube is zero.
-		if self.composition.degree() == 1 {
-			return P::zero();
-		}
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-
-		stackalloc_with_default(row_len, |evals| {
-			if is_infinity_point {
-				self.composition_at_infinity
-					.batch_evaluate(batch_query, evals)
-					.expect("correct by query construction invariant");
-			} else {
-				self.composition
-					.batch_evaluate(batch_query, evals)
-					.expect("correct by query construction invariant");
-			}
-
-			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
-			let partial_eq_ind_evals_slice = &self.partial_eq_ind_evals[subcube_start..];
-			let field_sum = PackedField::iter_slice(partial_eq_ind_evals_slice)
-				.zip(PackedField::iter_slice(evals))
-				.map(|(eq_ind_scalar, base_scalar)| eq_ind_scalar * base_scalar)
-				.sum();
-
-			P::set_single(field_sum)
-		})
-	}
-
-	fn composition(&self) -> &Composition {
-		self.composition
-	}
-
-	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		Some(self.partial_eq_ind_evals)
-	}
-}
-
-impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for ZerocheckFirstRoundEvaluator<'_, P, FDomain, Composition>
-where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F>,
-	FDomain: Field,
-{
-	fn round_evals_to_coeffs(
-		&self,
-		last_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		assert_eq!(last_round_sum, F::ZERO);
-
-		// We are given $r(2), \ldots, r(d)$.
-		// From context, we infer that $r(0) = r(1) = 0$.
-		round_evals.insert(0, P::Scalar::ZERO);
-		round_evals.insert(0, P::Scalar::ZERO);
-
-		if round_evals.len() > 3 {
-			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
-			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
-			// Putting "special" evaluation points at the beginning of domain allows benefitting from
-			// faster/skipped interpolation even in case of mixed degree compositions .
-			let infinity_round_eval = round_evals.remove(2);
-			round_evals.push(infinity_round_eval);
-		}
-
-		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
-		Ok(coeffs)
-	}
-}
-
-struct ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
-where
-	P: PackedField,
-	FDomain: Field,
-{
-	composition: &'a Composition,
-	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
-	interpolation_domain: &'a InterpolationDomain<FDomain>,
-	partial_eq_ind_evals: &'a [P],
-	round_zerocheck_challenge: P::Scalar,
-}
-
-impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
-	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
-where
-	P: PackedField<Scalar: TowerField + ExtensionField<FDomain>>,
-	FDomain: Field,
-	Composition: CompositionPoly<P>,
-{
-	fn eval_point_indices(&self) -> Range<usize> {
-		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
-		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
-		// round's claimed sum
-		1..self.composition.degree() + 1
-	}
-
-	fn process_subcube_at_eval_point(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		is_infinity_point: bool,
-		batch_query: &[&[P]],
-	) -> P {
-		// If the composition is a linear polynomial, then the composite multivariate polynomial
-		// is multilinear. If the prover is honest, then this multilinear is identically zero,
-		// hence the sum over the subcube is zero.
-		if self.composition.degree() == 1 {
-			return P::zero();
-		}
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-
-		stackalloc_with_default(row_len, |evals| {
-			if is_infinity_point {
-				self.composition_at_infinity
-					.batch_evaluate(batch_query, evals)
-					.expect("correct by query construction invariant");
-			} else {
-				self.composition
-					.batch_evaluate(batch_query, evals)
-					.expect("correct by query construction invariant");
-			}
-
-			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
-			for (i, eval) in evals.iter_mut().enumerate() {
-				*eval *= self.partial_eq_ind_evals[subcube_start + i];
-			}
-
-			evals.iter().copied().sum::<P>()
-		})
-	}
-
-	fn composition(&self) -> &Composition {
-		self.composition
-	}
-
-	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		Some(self.partial_eq_ind_evals)
-	}
-}
-
-impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
-where
-	F: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	FDomain: Field,
-{
-	fn round_evals_to_coeffs(
-		&self,
-		last_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d)$
-		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
-		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
-		// which allows us to compute the value of $r(0)$
-
-		let alpha = self.round_zerocheck_challenge;
-		let one_evaluation = round_evals[0]; // r(1)
-		let zero_evaluation_numerator = last_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = (F::ONE - alpha).invert_or_zero();
-		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
-
-		round_evals.insert(0, zero_evaluation);
-
-		if round_evals.len() > 3 {
-			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
-			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
-			// Putting "special" evaluation points at the beginning of domain allows benefitting from
-			// faster/skipped interpolation even in case of mixed degree compositions .
-			let infinity_round_eval = round_evals.remove(2);
-			round_evals.push(infinity_round_eval);
-		}
-
-		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
-		Ok(coeffs)
 	}
 }

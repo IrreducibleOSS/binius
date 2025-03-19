@@ -4,8 +4,7 @@ use core::slice;
 use std::iter::repeat_with;
 
 use binius_field::{BinaryField16b, Field};
-use binius_hash::compress::Groestl256ByteCompression;
-use groestl_crypto::Groestl256;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};

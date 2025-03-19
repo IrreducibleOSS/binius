@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use digest::{Digest, Output};
-use groestl_crypto::Groestl256;
 
+use super::digest::Groestl256;
 use crate::PseudoCompressionFunction;
 
 /// One-way compression function that compresses two 32-byte strings into a single 32-byte string.
