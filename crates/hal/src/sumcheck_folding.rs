@@ -63,12 +63,14 @@ where
 					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
 
 					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
-						let (subcube_vars, packed_len) = subcube_vars_for_bits::<P>(
+						let subcube_vars = subcube_vars_for_bits::<P>(
 							MAX_SRC_SUBCUBE_LOG_BITS,
 							log2_ceil_usize(nonzero_scalars_prefix),
 							tensor_query.n_vars(),
 							n_vars - 1,
 						);
+
+                        let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
 						let folded_scalars =
 							nonzero_scalars_prefix.div_ceil(1 << tensor_query.n_vars());
@@ -157,12 +159,14 @@ where
 					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
 
 					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
-						let (subcube_vars, packed_len) = subcube_vars_for_bits::<P>(
+						let subcube_vars = subcube_vars_for_bits::<P>(
 							MAX_SRC_SUBCUBE_LOG_BITS,
 							log2_ceil_usize(nonzero_scalars_prefix),
 							tensor_query.n_vars(),
 							n_vars - 1,
 						);
+
+                        let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
 						let folded_scalars =
 							nonzero_scalars_prefix.min(1 << (n_vars - tensor_query.n_vars()));
