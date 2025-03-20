@@ -255,7 +255,7 @@ pub(crate) fn transpose_128b_blocks_low_to_high<U: UnderlierWithBitOps, TL: Towe
 	transpose_128b_blocks_low_to_high::<_, TL::Base>(left, log_block_len);
 	transpose_128b_blocks_low_to_high::<_, TL::Base>(right, log_block_len);
 
-	let log_block_len = log_block_len + TL::LOG_WIDTH - 1;
+	let log_block_len = log_block_len + TL::LOG_WIDTH + 2;
 	for i in 0..TL::WIDTH / 2 {
 		pair_unpack_lo_hi_128b_lanes(values, i, i + TL::WIDTH / 2, log_block_len);
 	}
