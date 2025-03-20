@@ -12,7 +12,6 @@ use binius_core::{
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::rayon::adjust_thread_pool;
 use clap::{value_parser, Parser};
 use tracing_profile::init_tracing;
@@ -65,11 +64,9 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 
 	constraint_system::validate::validate_witness(&constraint_system, &boundaries, &witness)?;
 
-	let domain_factory = DefaultEvaluationDomainFactory::default();
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
@@ -80,7 +77,6 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 		SECURITY_BITS,
 		&boundaries,
 		witness,
-		&domain_factory,
 		&make_portable_backend(),
 	)?;
 

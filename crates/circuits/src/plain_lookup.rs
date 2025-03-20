@@ -288,7 +288,6 @@ mod tests {
 	use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-	use binius_math::DefaultEvaluationDomainFactory;
 
 	use super::test_plain_lookup;
 	use crate::builder::ConstraintSystemBuilder;
@@ -315,26 +314,16 @@ mod tests {
 			let constraint_system = builder.build().unwrap();
 			// validating witness with `validate_witness` is too slow for large transparents like the `table`
 
-			let domain_factory = DefaultEvaluationDomainFactory::default();
 			let backend = make_portable_backend();
 
 			binius_core::constraint_system::prove::<
 				crate::builder::types::U,
 				CanonicalTowerFamily,
-				_,
 				Groestl256,
 				Groestl256ByteCompression,
 				HasherChallenger<Groestl256>,
 				_,
-			>(
-				&constraint_system,
-				log_inv_rate,
-				security_bits,
-				&[],
-				witness,
-				&domain_factory,
-				&backend,
-			)
+			>(&constraint_system, log_inv_rate, security_bits, &[], witness, &backend)
 			.unwrap()
 		};
 
