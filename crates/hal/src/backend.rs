@@ -31,9 +31,9 @@ pub trait HalSlice<P: Debug + Send + Sync>:
 impl<P: Send + Sync + Debug + 'static> HalSlice<P> for Vec<P> {}
 
 pub struct SumcheckComputeRoundEvalsOutput<F: Field> {
-    pub subcube_vars: usize,
-    pub subcube_count: usize,
-    pub round_evals: Vec<RoundEvals<F>>,
+	pub subcube_vars: usize,
+	pub subcube_count: usize,
+	pub round_evals: Vec<RoundEvals<F>>,
 }
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
@@ -54,7 +54,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-        eval_prefix: Option<usize>,
+		eval_prefix: Option<usize>,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
@@ -111,7 +111,7 @@ where
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-        eval_prefix: Option<usize>,
+		eval_prefix: Option<usize>,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
@@ -128,7 +128,7 @@ where
 			self,
 			evaluation_order,
 			n_vars,
-            eval_prefix,
+			eval_prefix,
 			tensor_query,
 			multilinears,
 			evaluators,

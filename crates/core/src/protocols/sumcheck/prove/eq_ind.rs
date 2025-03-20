@@ -90,7 +90,9 @@ where
 	Backend: ComputationBackend,
 {
 	eq_ind_partial_evals: Option<Backend::Vec<P>>,
+	nonzero_scalars_prefixes: Option<Vec<usize>>,
 	first_round_eval_1s: Option<Vec<P::Scalar>>,
+	eval_prefix: Option<(usize, P::Scalar)>,
 	backend: &'a Backend,
 }
 
@@ -104,7 +106,9 @@ where
 		Self {
 			backend,
 			eq_ind_partial_evals: None,
+			nonzero_scalars_prefixes: None,
 			first_round_eval_1s: None,
+			eval_prefix: None,
 		}
 	}
 
@@ -121,6 +125,18 @@ where
 	/// to direct composite evaluation.
 	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
 		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
+		self
+	}
+
+	// TODO: document
+	pub fn with_nonzero_scalars_prefixes(mut self, nonzero_scalars_prefixes: &[usize]) -> Self {
+		self.nonzero_scalars_prefixes = Some(nonzero_scalars_prefixes.to_vec());
+		self
+	}
+
+	// TODO: document
+	pub fn with_eval_prefix(mut self, eval_prefix: usize, suffix_value: P::Scalar) -> Self {
+		self.eval_prefix = Some((eval_prefix, suffix_value));
 		self
 	}
 
@@ -159,6 +175,14 @@ where
 
 		if eq_ind_challenges.len() != n_vars {
 			bail!(Error::IncorrectEqIndChallengesLength);
+		}
+
+		let (eval_prefix, suffix_value) = self
+			.eval_prefix
+			.unwrap_or_else(|| (1 << n_vars.saturating_sub(1), P::Scalar::ZERO));
+
+		if eval_prefix > 1 << n_vars {
+			bail!(Error::EvalPrefixTooLong);
 		}
 
 		// Only one value of the expanded equality indicator is used per each
@@ -203,7 +227,7 @@ where
 		let state = ProverState::new(
 			evaluation_order,
 			multilinears,
-			None,
+			self.nonzero_scalars_prefixes,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,
@@ -216,6 +240,8 @@ where
 
 		Ok(EqIndSumcheckProver {
 			n_vars,
+			eval_prefix,
+			suffix_value,
 			state,
 			eq_ind_prefix_eval,
 			eq_ind_partial_evals,
@@ -237,6 +263,8 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
+	eval_prefix: usize,
+	suffix_value: P::Scalar,
 	state: ProverState<'a, FDomain, P, M, Backend>,
 	eq_ind_prefix_eval: P::Scalar,
 	eq_ind_partial_evals: Backend::Vec<P>,
@@ -355,10 +383,30 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.calculate_round_evals(None, &evaluators)?.round_evals;
-		let prime_coeffs =
-			self.state
-				.calculate_round_coeffs_from_evals(&interpolators, batch_coeff, evals)?;
+		let output = self
+			.state
+			.calculate_round_evals(Some(self.eval_prefix), &evaluators)?;
+		let mut prime_coeffs = self.state.calculate_round_coeffs_from_evals(
+			&interpolators,
+			batch_coeff,
+			output.round_evals,
+		)?;
+
+		// TODO: comment
+
+		let pivot = output.subcube_count << output.subcube_vars.saturating_sub(P::LOG_WIDTH);
+		let prime_constant_factor = prime_coeffs
+			.0
+			.first_mut()
+			.expect("constant term always present");
+
+		*prime_constant_factor += self.suffix_value
+			* eq_ind_partial_evals[pivot..]
+				.par_iter()
+				.copied()
+				.sum::<P>()
+				.iter()
+				.sum::<F>();
 
 		// Convert v' polynomial into v polynomial
 
@@ -389,8 +437,16 @@ where
 		let Self {
 			state,
 			eq_ind_partial_evals,
+			eval_prefix,
 			..
 		} = self;
+
+		*eval_prefix = match evaluation_order {
+			EvaluationOrder::LowToHigh => eval_prefix.div_ceil(2),
+			EvaluationOrder::HighToLow => {
+				(*eval_prefix).min(1 << n_rounds_remaining.saturating_sub(2))
+			}
+		};
 
 		binius_maybe_rayon::join(
 			|| state.fold(challenge),

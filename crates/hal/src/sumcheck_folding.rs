@@ -70,7 +70,7 @@ where
 							n_vars - 1,
 						);
 
-                        let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
+						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
 						let folded_scalars =
 							nonzero_scalars_prefix.div_ceil(1 << tensor_query.n_vars());
@@ -166,7 +166,7 @@ where
 							n_vars - 1,
 						);
 
-                        let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
+						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
 						let folded_scalars =
 							nonzero_scalars_prefix.min(1 << (n_vars - tensor_query.n_vars()));
