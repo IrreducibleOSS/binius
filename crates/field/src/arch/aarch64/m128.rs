@@ -394,19 +394,19 @@ impl UnderlierWithBitOps for M128 {
 
 		match TL::LOG_WIDTH {
 			1 => {
-				let shuffle = [15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0];
+				let shuffle = [0, 2, 4, 6, 8, 10, 12, 14, 1, 3, 5, 7, 9, 11, 13, 15];
 				for v in values.as_mut().iter_mut() {
 					*v = v.shuffle_u8(shuffle);
 				}
 			}
 			2 => {
-				let shuffle = [15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0];
+				let shuffle = [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15];
 				for v in values.as_mut().iter_mut() {
 					*v = v.shuffle_u8(shuffle);
 				}
 			}
 			3 => {
-				let shuffle = [15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0];
+				let shuffle = [0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15];
 				for v in values.as_mut().iter_mut() {
 					*v = v.shuffle_u8(shuffle);
 				}
