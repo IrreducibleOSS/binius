@@ -219,7 +219,7 @@ mod tests {
 
 		let mut hasher = {
 			let mut hasher = Groestl256::default();
-			Digest::update(&mut hasher, &empty_string_digest);
+			Digest::update(&mut hasher, empty_string_digest);
 			hasher
 		};
 
@@ -261,7 +261,7 @@ mod tests {
 
 		let mut hasher = {
 			let mut hasher = Groestl256::default();
-			Digest::update(&mut hasher, &empty_string_digest);
+			Digest::update(&mut hasher, empty_string_digest);
 			hasher
 		};
 
