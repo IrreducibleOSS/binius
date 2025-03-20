@@ -211,24 +211,38 @@ mod tests {
 
 	#[test]
 	fn test_starting_sampler() {
-		let mut hasher = Groestl256::default();
+		let empty_string_digest = {
+			let mut hasher = Groestl256::default();
+			Digest::update(&mut hasher, []);
+			hasher.finalize_reset()
+		};
+
+		let mut hasher = {
+			let mut hasher = Groestl256::default();
+			Digest::update(&mut hasher, &empty_string_digest);
+			hasher
+		};
+
 		let mut challenger = HasherChallenger::<Groestl256>::default();
+
+		// first sampling
 		let mut out = [0u8; 8];
 		challenger.sampler().copy_to_slice(&mut out);
 
-		let first_hash_out = hasher.finalize_reset();
-		hasher.update(first_hash_out);
+		let first_hash_out = empty_string_digest;
 
 		assert_eq!(first_hash_out[0..8], out);
 
+		// second sampling
 		let mut out = [0u8; 24];
 		challenger.sampler().copy_to_slice(&mut out);
 		assert_eq!(first_hash_out[8..], out);
 
+		// first observing
 		challenger.observer().put_slice(&[0x48, 0x55]);
-		hasher.update([32, 0, 0, 0, 0, 0, 0, 0]);
 		hasher.update([0x48, 0x55]);
 
+		// third sampling
 		let mut out_after_observe = [0u8; 2];
 		challenger.sampler().copy_to_slice(&mut out_after_observe);
 
@@ -239,8 +253,21 @@ mod tests {
 
 	#[test]
 	fn test_starting_observer() {
-		let mut hasher = Groestl256::default();
+		let empty_string_digest = {
+			let mut hasher = Groestl256::default();
+			Digest::update(&mut hasher, []);
+			hasher.finalize_reset()
+		};
+
+		let mut hasher = {
+			let mut hasher = Groestl256::default();
+			Digest::update(&mut hasher, &empty_string_digest);
+			hasher
+		};
+
 		let mut challenger = HasherChallenger::<Groestl256>::default();
+
+		// first observing
 		let mut observable = [0u8; 1019];
 		thread_rng().fill_bytes(&mut observable);
 		challenger.observer().put_slice(&observable[..39]);
@@ -249,6 +276,7 @@ mod tests {
 		challenger.observer().put_slice(&observable[987..]);
 		hasher.update(observable);
 
+		// first sampling
 		let mut out = [0u8; 7];
 		challenger.sampler().copy_to_slice(&mut out);
 
@@ -257,13 +285,13 @@ mod tests {
 
 		assert_eq!(first_hash_out[..7], out);
 
+		// second observing
 		thread_rng().fill_bytes(&mut observable);
 		challenger.observer().put_slice(&observable[..128]);
-		// updated with index of sampler first
-		hasher.update([7, 0, 0, 0, 0, 0, 0, 0]);
 
 		hasher.update(&observable[..128]);
 
+		// second sampling
 		let mut out = [0u8; 32];
 		challenger.sampler().copy_to_slice(&mut out);
 
@@ -273,7 +301,6 @@ mod tests {
 		assert_eq!(second_hasher_out[..], out);
 
 		challenger.observer().put_slice(&observable[128..]);
-		hasher.update([32, 0, 0, 0, 0, 0, 0, 0]);
 		hasher.update(&observable[128..]);
 
 		let mut out_again = [0u8; 7];
