@@ -189,7 +189,7 @@ where
 
 #[cfg(test)]
 mod tests {
-	use groestl_crypto::Groestl256;
+	use binius_hash::groestl::Groestl256;
 	use rand::{thread_rng, RngCore};
 
 	use super::*;

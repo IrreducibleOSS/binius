@@ -20,4 +20,4 @@ thiserror.workspace = true
 assert_matches.workspace = true
 binius_hal = { path = "../hal" }
 binius_hash = { path = "../hash" }
-groestl_crypto.workspace = true
+rand.workspace = true

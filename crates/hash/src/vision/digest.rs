@@ -1,27 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::marker::PhantomData;
-
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
-	packed::set_packed_slice,
-	underlier::{Divisible, WithUnderlier},
-	AESTowerField32b, AesToBinaryTransformation, BinaryField, BinaryField32b, BinaryField8b,
-	BinaryToAesTransformation, ExtensionField, Field, PackedAESBinaryField8x32b,
-	PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable, PackedField,
-	PackedFieldIndexable,
+	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
+	make_binary_to_aes_packed_transformer, underlier::WithUnderlier, AesToBinaryTransformation,
+	BinaryField8b, BinaryToAesTransformation, PackedAESBinaryField8x32b, PackedBinaryField8x32b,
+	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
+use digest::{consts::U32, FixedOutput, HashMarker, OutputSizeUser, Update};
 use lazy_static::lazy_static;
 
 use super::permutation::PERMUTATION;
-use crate::{permutation::Permutation, FixedLenHasher, HashError};
+use crate::permutation::Permutation;
 
 const RATE_AS_U32: usize = 16;
 const RATE_AS_U8: usize = RATE_AS_U32 * std::mem::size_of::<u32>();
 
-const PADDING_START: u8 = 0x01;
-const PADDING_END: u8 = 0x80;
+const PADDING_START: u8 = 0x80;
+const PADDING_END: u8 = 0x01;
 
 lazy_static! {
 	static ref TRANS_AES_TO_CANONICAL: AesToBinaryTransformation<PackedAESBinaryField8x32b, PackedBinaryField8x32b> =
@@ -38,306 +33,154 @@ lazy_static! {
 	};
 }
 
-/// The vision specialization over `BinaryField32b` as per [Vision Mark-32](https://eprint.iacr.org/2024/633)
-pub type Vision32b<P> = VisionHasher<BinaryField32b, P>;
-
-/// This is the struct that implements the Vision hash over `AESTowerField32b` and `BinaryField32b`
-/// isomorphically. Here the generic `P` represents the input type to the `update` function
 #[derive(Clone)]
-pub struct VisionHasher<F, P> {
+pub struct VisionHasherDigest {
 	// The hashed state
 	state: [PackedAESBinaryField8x32b; 3],
-	// The length that are committing to hash
-	committed_len: u64,
-	// Current length we have hashed so far
-	current_len: u64,
-	_p_marker: PhantomData<P>,
-	_f_marker: PhantomData<F>,
+	buffer: [u8; RATE_AS_U8],
+	filled_bytes: usize,
 }
 
-impl<U, F, P> FixedLenHasher<P> for VisionHasher<F, P>
-where
-	U: PackScalar<F> + Divisible<u32>,
-	F: BinaryField + From<AESTowerField32b> + Into<AESTowerField32b>,
-	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
-	PackedAESBinaryField8x32b: WithUnderlier<Underlier = U>,
-{
-	type Digest = PackedType<U, F>;
-
-	fn new(msg_len: u64) -> Self {
-		let mut this = Self {
+impl Default for VisionHasherDigest {
+	fn default() -> Self {
+		Self {
 			state: [PackedAESBinaryField8x32b::zero(); 3],
-			committed_len: msg_len,
-			current_len: 0,
-			_p_marker: PhantomData,
-			_f_marker: PhantomData,
-		};
-		this.reset();
-		this
+			buffer: [0; RATE_AS_U8],
+			filled_bytes: 0,
+		}
 	}
+}
 
-	fn update(&mut self, msg: impl AsRef<[P]>) {
-		let msg = msg.as_ref();
-		if msg.is_empty() {
-			return;
+impl VisionHasherDigest {
+	fn permute(state: &mut [PackedAESBinaryField8x32b; 3], data: &[u8]) {
+		debug_assert_eq!(data.len(), RATE_AS_U8);
+
+		let mut data_packed = [PackedBinaryField8x32b::zero(); 2];
+		for (i, value_32) in WithUnderlier::to_underliers_ref_mut(
+			PackedBinaryField8x32b::unpack_scalars_mut(&mut data_packed),
+		)
+		.iter_mut()
+		.enumerate()
+		{
+			*value_32 =
+				u32::from_le_bytes(data[i * 4..i * 4 + 4].try_into().expect("chunk is 4 bytes"));
 		}
 
-		let msg_scalars = P::unpack_base_scalars(msg).iter().copied().map(Into::into);
+		for i in 0..2 {
+			state[i] = TRANS_CANONICAL_TO_AES.transform(&data_packed[i]);
+		}
 
-		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
-		for (i, x) in msg_scalars.enumerate() {
-			let block_idx = (cur_block + i) % RATE_AS_U32;
-			let next_block = PackedAESBinaryField8x32b::unpack_scalars_mut(&mut self.state);
-			next_block[block_idx] = x;
-			if block_idx == RATE_AS_U32 - 1 {
-				self.state = PERMUTATION.permute(self.state);
+		PERMUTATION.permute_mut(state);
+	}
+}
+
+impl HashMarker for VisionHasherDigest {}
+
+impl Update for VisionHasherDigest {
+	fn update(&mut self, mut data: &[u8]) {
+		if self.filled_bytes != 0 {
+			let to_copy = std::cmp::min(data.len(), RATE_AS_U8 - self.filled_bytes);
+			self.buffer[self.filled_bytes..self.filled_bytes + to_copy]
+				.copy_from_slice(&data[..to_copy]);
+			data = &data[to_copy..];
+			self.filled_bytes += to_copy;
+
+			if self.filled_bytes == RATE_AS_U8 {
+				Self::permute(&mut self.state, &self.buffer);
+				self.filled_bytes = 0;
 			}
 		}
 
-		self.current_len = self
-			.current_len
-			.checked_add(msg.len() as u64)
-			.expect("Overflow on message length");
-	}
-
-	fn chain_update(mut self, msg: impl AsRef<[P]>) -> Self {
-		self.update(msg);
-		self
-	}
-
-	fn finalize(mut self) -> Result<Self::Digest, HashError> {
-		// Pad here and output the hash
-		if self.current_len < self.committed_len {
-			return Err(HashError::NotEnoughData {
-				committed: self.committed_len,
-				hashed: self.current_len,
-			});
+		let mut chunks = data.chunks_exact(RATE_AS_U8);
+		for chunk in &mut chunks {
+			Self::permute(&mut self.state, chunk);
 		}
 
-		if self.current_len > self.committed_len {
-			return Err(HashError::TooMuchData {
-				committed: self.committed_len,
-				received: self.current_len,
-			});
+		let remaining = chunks.remainder();
+		if !remaining.is_empty() {
+			self.buffer[..remaining.len()].copy_from_slice(remaining);
+			self.filled_bytes = remaining.len();
+		}
+	}
+}
+
+impl OutputSizeUser for VisionHasherDigest {
+	type OutputSize = U32;
+}
+
+impl FixedOutput for VisionHasherDigest {
+	fn finalize_into(mut self, out: &mut digest::Output<Self>) {
+		if self.filled_bytes != 0 {
+			fill_padding(&mut self.buffer[self.filled_bytes..]);
+			Self::permute(&mut self.state, &self.buffer);
+		} else {
+			Self::permute(&mut self.state, &*PADDING_BLOCK);
 		}
 
-		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
-		if cur_block != 0 {
-			// Pad and absorb
-			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
-			next_block[cur_block..].fill(AESTowerField32b::ZERO);
-			self.state = PERMUTATION.permute(self.state);
-		}
-
-		let out_native = self.state[0];
-		Ok(Self::Digest::from_fn(|i| F::from(out_native.get(i))))
+		let canonical_tower: PackedBinaryField8x32b =
+			TRANS_AES_TO_CANONICAL.transform(&self.state[0]);
+		out.copy_from_slice(BinaryField8b::to_underliers_ref(
+			PackedBinaryField8x32b::unpack_base_scalars(std::slice::from_ref(&canonical_tower)),
+		));
 	}
+}
 
-	fn reset(&mut self) {
-		self.state.fill(PackedAESBinaryField8x32b::zero());
+/// Fill the data using Keccak padding scheme.
+#[inline(always)]
+fn fill_padding(data: &mut [u8]) {
+	debug_assert!(!data.is_empty() && data.len() <= RATE_AS_U8);
 
-		// Write the byte-length of the message into the initial state
-		let bytes_per_elem = P::WIDTH
-			* P::Scalar::DEGREE
-			* <BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE;
-		let msg_len_bytes = self
-			.committed_len
-			.checked_mul(bytes_per_elem as u64)
-			.expect("Overflow on message length");
-		let msg_len_bytes_enc = msg_len_bytes.to_le_bytes();
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[0..4].try_into().unwrap(),
-			))),
-		);
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32 + 1,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[4..8].try_into().unwrap(),
-			))),
-		);
-	}
+	data.fill(0);
+	data[0] |= PADDING_START;
+	data[data.len() - 1] |= PADDING_END;
 }
 
 #[cfg(test)]
 mod tests {
-	use std::array;
-
-	use binius_field::{
-		linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-		make_binary_to_aes_packed_transformer, BinaryField64b, PackedAESBinaryField4x64b,
-		PackedBinaryField4x64b, PackedBinaryField8x32b,
-	};
+	use digest::Digest;
 	use hex_literal::hex;
-	use rand::thread_rng;
 
-	use super::*;
-	use crate::{FixedLenHasherDigest, HashDigest};
-
-	fn from_bytes_to_packed_256(elements: &[u8; 32]) -> PackedBinaryField8x32b {
-		PackedBinaryField8x32b::from_fn(|i| {
-			BinaryField32b::new(u32::from_le_bytes(elements[i * 4..i * 4 + 4].try_into().unwrap()))
-		})
-	}
-
-	#[test]
-	fn test_fixed_length_too_much_data() {
-		let mut hasher = Vision32b::new(20);
-		let data = [BinaryField32b::zero(); 30];
-		hasher.update(data);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::TooMuchData {
-				committed: 20,
-				received: 30,
-			}
-		);
-		assert!(successful_failure);
-	}
-
-	#[test]
-	fn test_fixed_length_not_enough_data() {
-		let mut hasher = Vision32b::new(20);
-		let data = [BinaryField32b::zero(); 3];
-		hasher.update(data);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 20,
-				hashed: 3,
-			}
-		);
-		assert!(successful_failure);
-	}
-
-	#[test]
-	fn test_empty_input_error() {
-		let hasher = Vision32b::<BinaryField32b>::new(0);
-		assert_eq!(hasher.finalize().unwrap(), PackedBinaryField8x32b::zero());
-
-		let hasher: Vision32b<BinaryField32b> = Vision32b::new(25);
-		let successful_failure = matches!(
-			hasher.chain_update([]).finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 25,
-				hashed: 0
-			}
-		);
-		assert!(successful_failure);
-
-		let hasher: Vision32b<BinaryField32b> = Vision32b::new(25);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 25,
-				hashed: 0,
-			}
-		);
-		assert!(successful_failure);
-	}
+	use super::VisionHasherDigest;
 
 	#[test]
 	fn test_simple_hash() {
-		let mut hasher: Vision32b<BinaryField32b> = Vision32b::new(1);
-		hasher.update([BinaryField32b::new(u32::from_le_bytes([
-			0xde, 0xad, 0xbe, 0xef,
-		]))]);
-		let out = hasher.finalize().unwrap();
-		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
-		let expected = from_bytes_to_packed_256(&hex!(
-			"69e1764144099730124ab8ef1414570895ae9de0b74dedf364c72d118851cf65"
-		));
-		assert_eq!(expected, out);
-	}
-
-	fn from_bytes_to_b32s(inp: &[u8]) -> Vec<BinaryField32b> {
-		inp.chunks_exact(4)
-			.map(|x| BinaryField32b::new(u32::from_le_bytes(x.try_into().unwrap())))
-			.collect::<Vec<_>>()
+		let mut hasher = VisionHasherDigest::default();
+		let data = [0xde, 0xad, 0xbe, 0xef];
+		hasher.update(data);
+		let out = hasher.finalize();
+		// This hash is retrieved from a modified python implementation with the Keccak padding scheme and the changed mds matrix.
+		let expected = &hex!("8ed389809fabe91cead4786eb08e2d32647a9ac69143040de500e4465c72f173");
+		assert_eq!(expected, &*out);
 	}
 
 	#[test]
 	fn test_multi_block_aligned() {
-		let mut hasher: Vision32b<BinaryField32b> = Vision32b::new(64);
+		let mut hasher = VisionHasherDigest::default();
 		let input = "One part of the mysterious existence of Captain Nemo had been unveiled and, if his identity had not been recognised, at least, the nations united against him were no longer hunting a chimerical creature, but a man who had vowed a deadly hatred against them";
-		hasher.update(from_bytes_to_b32s(input.as_bytes()));
-		let out = hasher.finalize().unwrap();
+		hasher.update(input.as_bytes());
+		let out = hasher.finalize();
 
-		let expected = from_bytes_to_packed_256(&hex!(
-			"6ade8ba2a45a070a3abaff6f1bf9483686c78d4afca2d0d8d3c7897fdfe2df91"
-		));
-		assert_eq!(expected, out);
+		let expected = &hex!("b615664d0249149b5655a86919169f0fd4b44fec83d4c43e4f1f124c3f9a82c3");
+		assert_eq!(expected, &*out);
 
-		let mut hasher = Vision32b::new(64);
-		let input_as_b = from_bytes_to_b32s(input.as_bytes());
-		hasher.update(&input_as_b[0..29]);
-		hasher.update(&input_as_b[29..31]);
-		hasher.update(&input_as_b[31..57]);
-		hasher.update(&input_as_b[57..]);
+		let mut hasher = VisionHasherDigest::default();
+		let input_as_b = input.as_bytes();
+		hasher.update(&input_as_b[0..63]);
+		hasher.update(&input_as_b[63..128]);
+		hasher.update(&input_as_b[128..163]);
+		hasher.update(&input_as_b[163..]);
 
-		assert_eq!(expected, hasher.finalize().unwrap());
-	}
-
-	#[test]
-	fn test_extensions_and_packings() {
-		let mut rng = thread_rng();
-		let data_to_hash: [BinaryField32b; 200] =
-			array::from_fn(|_| <BinaryField32b as Field>::random(&mut rng));
-		let expected = FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_to_hash);
-
-		let data_as_u64 = data_to_hash
-			.chunks_exact(2)
-			.map(|x| BinaryField64b::from_bases(x).unwrap())
-			.collect::<Vec<_>>();
-		assert_eq!(FixedLenHasherDigest::<_, Vision32b<_>>::hash(&data_as_u64), expected);
-
-		let l = data_as_u64.len();
-		let data_as_packedu64 = (0..(l / 4))
-			.map(|j| PackedBinaryField4x64b::from_fn(|i| data_as_u64[j * 4 + i]))
-			.collect::<Vec<_>>();
-		assert_eq!(FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_as_packedu64), expected);
+		assert_eq!(expected, &*hasher.finalize());
 	}
 
 	#[test]
 	fn test_multi_block_unaligned() {
-		let mut hasher = Vision32b::new(23);
+		let mut hasher = VisionHasherDigest::default();
 		let input = "You can prove anything you want by coldly logical reason--if you pick the proper postulates.";
-		hasher.update(from_bytes_to_b32s(input.as_bytes()));
+		hasher.update(input.as_bytes());
 
-		let expected = from_bytes_to_packed_256(&hex!(
-			"2819814fd9da83ab358533900adaf87f4c9e0f88657f572a9a6e83d95b88a9ea"
-		));
-		let out = hasher.finalize().unwrap();
-		assert_eq!(expected, out);
-	}
-
-	#[test]
-	fn test_aes_to_binary_hash() {
-		let mut rng = thread_rng();
-
-		let aes_transformer_1 = make_binary_to_aes_packed_transformer::<
-			PackedBinaryField4x64b,
-			PackedAESBinaryField4x64b,
-		>();
-		let aes_transformer_2 = make_aes_to_binary_packed_transformer::<
-			PackedAESBinaryField8x32b,
-			PackedBinaryField8x32b,
-		>();
-
-		let data_bin: [PackedBinaryField4x64b; 100] =
-			array::from_fn(|_| PackedBinaryField4x64b::random(&mut rng));
-		let data_aes: [PackedAESBinaryField4x64b; 100] =
-			array::from_fn(|i| aes_transformer_1.transform(&data_bin[i]));
-
-		let hasher_32b = Vision32b::new(100);
-		let hasher_aes32b = VisionHasher::<AESTowerField32b, _>::new(100);
-
-		let digest_as_bin = hasher_32b.chain_update(data_bin).finalize().unwrap();
-		let digest_as_aes = hasher_aes32b.chain_update(data_aes).finalize().unwrap();
-
-		assert_eq!(digest_as_bin, aes_transformer_2.transform(&digest_as_aes));
+		let expected = &hex!("0aa2879dcac953550ebe5d9da2a91d3c0356feca9044acf4edca87b28d9959e1");
+		let out = hasher.finalize();
+		assert_eq!(expected, &*out);
 	}
 }

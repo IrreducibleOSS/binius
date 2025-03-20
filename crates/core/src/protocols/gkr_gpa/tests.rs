@@ -10,9 +10,9 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
 };
+use binius_hash::groestl::Groestl256;
 use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::zeroed_vec;
-use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{GrandProductClaim, GrandProductWitness};

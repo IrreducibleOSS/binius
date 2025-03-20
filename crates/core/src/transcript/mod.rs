@@ -477,7 +477,7 @@ mod tests {
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField8b, BinaryField128b,
 		BinaryField128bPolyval, BinaryField32b, BinaryField64b, BinaryField8b,
 	};
-	use groestl_crypto::Groestl256;
+	use binius_hash::groestl::Groestl256;
 	use rand::{thread_rng, RngCore};
 
 	use super::*;

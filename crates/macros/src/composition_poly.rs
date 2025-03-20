@@ -79,9 +79,14 @@ impl ToTokens for CompositionPolyItem {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 
-					for col in 1..batch_query.len() {
-						if batch_query[col].len() != batch_query[0].len() {
-							return Err(binius_math::Error::BatchEvaluateSizeMismatch);
+					let row_len = evals.len();
+					for (i, row) in batch_query.iter().enumerate() {
+						if row.len() != row_len {
+							return Err(binius_math::Error::BatchEvaluateSizeMismatch {
+								index: i,
+								expected: row_len,
+								actual: row.len(),
+							});
 						}
 					}
 

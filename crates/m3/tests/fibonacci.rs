@@ -67,8 +67,8 @@ mod arithmetization {
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar};
 	use binius_m3::{
 		builder::{
-			upcast_col, Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller,
-			TableId, TableWitnessIndexSegment, B1, B128, B32,
+			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller, TableId,
+			TableWitnessIndexSegment, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -79,9 +79,9 @@ mod arithmetization {
 
 	pub struct FibonacciTable {
 		pub id: TableId,
-		pub f0: Col<B32>,
-		pub f1: Col<B32>,
-		pub f2: Col<B32>,
+		pub _f0: Col<B32>,
+		pub _f1: Col<B32>,
+		pub _f2: Col<B32>,
 		pub f0_bits: Col<B1, 32>,
 		pub f1_bits: Col<B1, 32>,
 		pub f2_bits: U32Add,
@@ -103,14 +103,14 @@ mod arithmetization {
 			let f1 = table.add_packed("f1", f1_bits);
 			let f2 = table.add_packed("f2", f2_bits.zout);
 
-			table.pull(fibonacci_pairs, [upcast_col(f0), upcast_col(f1)]);
-			table.push(fibonacci_pairs, [upcast_col(f1), upcast_col(f2)]);
+			table.pull(fibonacci_pairs, [f0, f1]);
+			table.push(fibonacci_pairs, [f1, f2]);
 
 			Self {
 				id: table.id(),
-				f0,
-				f1,
-				f2,
+				_f0: f0,
+				_f1: f1,
+				_f2: f2,
 				f0_bits,
 				f1_bits,
 				f2_bits,
@@ -124,7 +124,7 @@ mod arithmetization {
 	{
 		type Event = model::FibEvent;
 
-		fn id(&self) -> binius_m3::builder::TableId {
+		fn id(&self) -> TableId {
 			self.id
 		}
 
@@ -134,18 +134,12 @@ mod arithmetization {
 			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> anyhow::Result<()> {
 			{
-				let mut f0 = witness.get_mut_as(self.f0)?;
-				let mut f1 = witness.get_mut_as(self.f1)?;
-				let mut f2 = witness.get_mut_as(self.f2)?;
 				let mut f0_bits = witness.get_mut_as(self.f0_bits)?;
 				let mut f1_bits = witness.get_mut_as(self.f1_bits)?;
 
 				for (i, event) in rows.enumerate() {
 					f0_bits[i] = event.f0;
 					f1_bits[i] = event.f1;
-					f0[i] = event.f0;
-					f1[i] = event.f1;
-					f2[i] = event.f2;
 				}
 			}
 			self.f2_bits.populate(witness)?;
@@ -186,7 +180,7 @@ mod arithmetization {
 			.unwrap();
 
 		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index::<B128>(&statement);
+		let witness = witness.into_multilinear_extension_index(&statement);
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,

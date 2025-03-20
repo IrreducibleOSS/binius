@@ -202,7 +202,10 @@ impl Vision32MDSTransform {
 		FORWARD_FAST_TRANSFORM.forward(data);
 	}
 
-	pub fn transform_byte_sliced(&self, data: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
+	pub fn transform_byte_sliced(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
 		INVERSE_FAST_TRANSFORM_BYTE_SLICED.inverse(data);
 
 		for i in 0..32 {
@@ -718,27 +721,21 @@ mod tests {
 	#[test]
 	fn test_permutation_consistency() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut data: [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3] =
-			array::from_fn(|_| array::from_fn(|_| PackedAESBinaryField32x8b::random(&mut rng)));
+		let mut data: [ByteSlicedAES32x32b; 24] =
+			array::from_fn(|_| ByteSlicedAES32x32b::random(&mut rng));
 
-		let get_single_permutation =
-			|i, data: &[[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3]| {
-				array::from_fn(|j| {
-					PackedAESBinaryField8x32b::cast_ext(PackedAESBinaryField32x8b::from_fn(|k| {
-						data[j][k].get(i)
-					}))
-				})
-			};
+		let get_single_permutation = |i: usize, data: &[ByteSlicedAES32x32b; 24]| {
+			array::from_fn(|j| PackedAESBinaryField8x32b::from_fn(|k| data[8 * j + k].get(i)))
+		};
 
-		let single_permutations = array::from_fn::<_, 32, _>(|i| {
+		let single_permutations = array::from_fn::<_, HASHES_PER_BYTE_SLICED_PERMUTATION, _>(|i| {
 			let mut data = get_single_permutation(i, &data);
 
 			Vision32bPermutation::default().permute_mut(&mut data);
 			data
 		});
 
-		Vision32bPermutation::default()
-			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
+		Vision32bPermutation::default().permute_mut(&mut data);
 
 		for (i, single_permutation) in single_permutations
 			.iter()

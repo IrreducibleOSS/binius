@@ -12,6 +12,7 @@ binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 cfg-if.workspace = true
+concat-idents.workspace = true
 derive_more.workspace = true
 rand.workspace = true
 seq-macro.workspace = true
@@ -88,4 +89,16 @@ harness = false
 
 [[bench]]
 name = "packed_field_subfield_ops"
+harness = false
+
+[[bench]]
+name = "byte_iteration"
+harness = false
+
+[[bench]]
+name = "main_field_unary_ops"
+harness = false
+
+[[bench]]
+name = "main_field_binary_ops"
 harness = false

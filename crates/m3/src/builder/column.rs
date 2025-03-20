@@ -1,14 +1,18 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
+use binius_math::ArithExpr;
 
 use super::{table::TableId, types::B128};
 
 /// An index of a column within a table.
 pub type ColumnIndex = usize;
+
+/// An index of a column within a table.
+pub type ColumnPartitionIndex = usize;
 
 /// A typed identifier for a column in a table.
 ///
@@ -18,15 +22,21 @@ pub type ColumnIndex = usize;
 /// `Col<B1, 32>` will have 2^5 = 32 elements of `B1` packed into a single row.
 #[derive(Debug, Clone, Copy)]
 pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
-	pub id: ColumnId,
+	pub table_id: TableId,
+	pub table_index: TableId,
+	// Denormalized partition index so that we can use it to construct arithmetic expressions over
+	// the partition columns.
+	pub partition_index: ColumnPartitionIndex,
 	_marker: PhantomData<F>,
 }
 
 impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
-	pub fn new(id: ColumnId) -> Self {
+	pub fn new(id: ColumnId, partition_index: ColumnPartitionIndex) -> Self {
 		assert!(VALUES_PER_ROW.is_power_of_two());
 		Self {
-			id,
+			table_id: id.table_id,
+			table_index: id.table_index,
+			partition_index,
 			_marker: PhantomData,
 		}
 	}
@@ -34,26 +44,35 @@ impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 	pub fn shape(&self) -> ColumnShape {
 		ColumnShape {
 			tower_height: F::TOWER_LEVEL,
-			values_per_row: VALUES_PER_ROW,
+			log_values_per_row: VALUES_PER_ROW.ilog2() as usize,
 		}
 	}
 
 	pub fn id(&self) -> ColumnId {
-		self.id
+		ColumnId {
+			table_id: self.table_id,
+			table_index: self.table_index,
+		}
 	}
 }
 
-/// Upcast a columns from a subfield to an extension field..
-pub fn upcast_col<F, FSub, const VALUES_PER_ROW: usize>(
-	col: Col<FSub, VALUES_PER_ROW>,
-) -> Col<F, VALUES_PER_ROW>
+/// Upcast a column from a subfield to an extension field..
+pub fn upcast_col<F, FSub, const V: usize>(col: Col<FSub, V>) -> Col<F, V>
 where
 	FSub: TowerField,
 	F: TowerField + ExtensionField<FSub>,
 {
+	let Col {
+		table_id,
+		table_index,
+		partition_index,
+		_marker: _,
+	} = col;
 	// REVIEW: Maybe this should retain the info of the smallest tower level
 	Col {
-		id: col.id,
+		table_id,
+		table_index,
+		partition_index,
 		_marker: PhantomData,
 	}
 }
@@ -74,8 +93,14 @@ pub struct ColumnInfo<F: TowerField = B128> {
 pub struct ColumnShape {
 	/// The tower height of the field elements.
 	pub tower_height: usize,
-	/// The number of elements packed vertically per event row.
-	pub values_per_row: usize,
+	/// The binary logarithm of the number of elements packed vertically per event row.
+	pub log_values_per_row: usize,
+}
+
+impl ColumnShape {
+	pub fn log_cell_size(&self) -> usize {
+		self.tower_height + self.log_values_per_row
+	}
 }
 
 /// Unique identifier for a column within a constraint system.
@@ -86,10 +111,6 @@ pub struct ColumnShape {
 pub struct ColumnId {
 	pub table_id: TableId,
 	pub table_index: ColumnIndex,
-	// REVIEW: Does this strictly correspond to the packing factor?
-	// Should it be here or on columnInfo?
-	pub partition_id: usize,
-	pub partition_index: ColumnIndex,
 }
 
 /// A definition of a column in a table.
@@ -97,10 +118,6 @@ pub struct ColumnId {
 pub enum ColumnDef<F: TowerField = B128> {
 	Committed {
 		tower_level: usize,
-	},
-	LinearCombination {
-		offset: F,
-		col_scalars: Vec<(ColumnIndex, F)>,
 	},
 	Selected {
 		col: ColumnId,
@@ -116,5 +133,12 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Packed {
 		col: ColumnId,
 		log_degree: usize,
+	},
+	Computed {
+		cols: Vec<ColumnIndex>,
+		expr: ArithExpr<F>,
+	},
+	Constant {
+		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 }

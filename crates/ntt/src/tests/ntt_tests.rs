@@ -192,16 +192,16 @@ fn check_packed_extension_roundtrip_with_reference<F, PE>(
 	for coset in cosets {
 		let log_n = data.len().ilog2() as usize + PE::LOG_WIDTH;
 
-		ntt.forward_transform_ext(data, coset, log_n).unwrap();
+		ntt.forward_transform_ext(data, coset, 0, log_n).unwrap();
 		reference_ntt
-			.forward_transform_ext(&mut data_copy_2, coset, log_n)
+			.forward_transform_ext(&mut data_copy_2, coset, 0, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy_2);
 
-		ntt.inverse_transform_ext(data, coset, log_n).unwrap();
+		ntt.inverse_transform_ext(data, coset, 0, log_n).unwrap();
 		reference_ntt
-			.inverse_transform_ext(&mut data_copy_2, coset, log_n)
+			.inverse_transform_ext(&mut data_copy_2, coset, 0, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy);

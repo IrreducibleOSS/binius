@@ -7,12 +7,11 @@ use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField1b, BinaryField8b,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 const MIN_N_ADDITIONS: usize = 1 << (PackedType::<OptimalUnderlier, BinaryField1b>::LOG_WIDTH);

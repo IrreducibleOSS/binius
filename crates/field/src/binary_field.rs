@@ -587,20 +587,24 @@ macro_rules! impl_field_extension {
 
 			#[inline]
 			fn from_bases_sparse(
-				base_elems: &[$subfield_name],
+				base_elems: impl IntoIterator<Item = $subfield_name>,
 				log_stride: usize,
 			) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
-				if base_elems.len() << log_stride > 1 << $log_degree {
-					return Err(Error::ExtensionDegreeMismatch);
-				}
 				debug_assert!($name::N_BITS.is_power_of_two());
-				let shift = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
-				let value = base_elems
-					.iter()
-					.rev()
-					.fold(<$typ>::ZERO, |value, elem| value << shift | <$typ>::from(elem.val()));
+				let shift_step = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
+				let mut value = <$typ>::ZERO;
+				let mut shift = 0;
+
+				for elem in base_elems.into_iter() {
+					if shift >= $name::N_BITS {
+						return Err(Error::ExtensionDegreeMismatch);
+					}
+					value |= <$typ>::from(elem.val()) << shift;
+					shift += shift_step;
+				}
+
 				Ok(Self::new(value))
 			}
 
@@ -1125,14 +1129,14 @@ pub(crate) mod tests {
 		let c = BinaryField8b(0x03);
 		let d = BinaryField8b(0x04);
 		assert_eq!(
-			<BinaryField32b as ExtensionField<BinaryField8b>>::from_bases(&[]).unwrap(),
+			<BinaryField32b as ExtensionField<BinaryField8b>>::from_bases([]).unwrap(),
 			BinaryField32b(0)
 		);
-		assert_eq!(BinaryField32b::from_bases(&[a]).unwrap(), BinaryField32b(0x00000001));
-		assert_eq!(BinaryField32b::from_bases(&[a, b]).unwrap(), BinaryField32b(0x00000201));
-		assert_eq!(BinaryField32b::from_bases(&[a, b, c]).unwrap(), BinaryField32b(0x00030201));
-		assert_eq!(BinaryField32b::from_bases(&[a, b, c, d]).unwrap(), BinaryField32b(0x04030201));
-		assert!(BinaryField32b::from_bases(&[a, b, c, d, d]).is_err());
+		assert_eq!(BinaryField32b::from_bases([a]).unwrap(), BinaryField32b(0x00000001));
+		assert_eq!(BinaryField32b::from_bases([a, b]).unwrap(), BinaryField32b(0x00000201));
+		assert_eq!(BinaryField32b::from_bases([a, b, c]).unwrap(), BinaryField32b(0x00030201));
+		assert_eq!(BinaryField32b::from_bases([a, b, c, d]).unwrap(), BinaryField32b(0x04030201));
+		assert!(BinaryField32b::from_bases([a, b, c, d, d]).is_err());
 	}
 
 	#[test]

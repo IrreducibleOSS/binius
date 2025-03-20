@@ -24,7 +24,6 @@
 mod error;
 #[allow(clippy::module_inception)]
 mod gkr_gpa;
-pub mod gpa_sumcheck;
 mod oracles;
 mod packed_field_storage;
 mod prove;

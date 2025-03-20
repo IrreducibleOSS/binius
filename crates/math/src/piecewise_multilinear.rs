@@ -234,4 +234,59 @@ mod tests {
 		}
 		result
 	}
+
+	#[test]
+	fn test_fold_segment_basic() {
+		let s0 = BinaryField32b::from(2);
+		let s1 = BinaryField32b::from(4);
+		let s2 = BinaryField32b::from(6);
+		let s3 = BinaryField32b::from(8);
+
+		let mut segment = vec![s0, s1, s2, s3];
+		let z = BinaryField32b::from(3);
+
+		fold_segment(&mut segment, z);
+
+		assert_eq!(
+			segment,
+			vec![
+				extrapolate_line_scalar(s0, s1, z),
+				extrapolate_line_scalar(s2, s3, z),
+				s2,
+				s3
+			]
+		);
+	}
+
+	#[test]
+	fn test_fold_segment_single_element() {
+		let s0 = BinaryField32b::from(5);
+		let mut segment = vec![s0];
+		let z = BinaryField32b::from(3);
+
+		fold_segment(&mut segment, z);
+
+		assert_eq!(segment, vec![extrapolate_line_scalar(s0, BinaryField32b::ZERO, z),]);
+	}
+
+	#[test]
+	fn test_fold_segment_odd_length() {
+		let s0 = BinaryField32b::from(1);
+		let s1 = BinaryField32b::from(3);
+		let s2 = BinaryField32b::from(5);
+
+		let mut segment = vec![s0, s1, s2];
+		let z = BinaryField32b::from(2);
+
+		fold_segment(&mut segment, z);
+
+		assert_eq!(
+			segment,
+			vec![
+				extrapolate_line_scalar(s0, s1, z),
+				extrapolate_line_scalar(s2, BinaryField32b::ZERO, z),
+				s2
+			]
+		);
+	}
 }

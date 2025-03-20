@@ -15,15 +15,20 @@ pub enum Error {
 	MissingTable { table_id: TableId },
 	#[error("missing column with ID: {0:?}")]
 	MissingColumn(ColumnId),
+	#[error("missing partition with log_vals_per_row={log_vals_per_row} in table {table_id}")]
+	MissingPartition {
+		table_id: TableId,
+		log_vals_per_row: usize,
+	},
 	#[error("column is not in table; column table ID: {column_table_id}, witness table ID: {witness_table_id}")]
 	TableMismatch {
 		column_table_id: TableId,
 		witness_table_id: TableId,
 	},
 	// TODO: These should have column IDs
-	#[error("witness borrow error: {0}")]
+	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrow(#[source] BorrowError),
-	#[error("witness borrow error: {0}")]
+	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrowMut(#[source] BorrowMutError),
 	#[error("table fill error: {0}")]
 	TableFill(anyhow::Error),

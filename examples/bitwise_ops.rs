@@ -7,13 +7,12 @@ use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{BinaryField1b, BinaryField32b, TowerField};
 use binius_hal::make_portable_backend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_macros::arith_expr;
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Clone, Copy)]

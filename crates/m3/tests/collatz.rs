@@ -108,10 +108,10 @@ mod arithmetization {
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
-		underlier::UnderlierType,
+		underlier::{SmallU, UnderlierType},
 		Field, PackedField,
 	};
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
@@ -122,7 +122,6 @@ mod arithmetization {
 	use binius_math::DefaultEvaluationDomainFactory;
 	use bumpalo::Bump;
 	use bytemuck::Pod;
-	use groestl_crypto::Groestl256;
 
 	use super::model;
 
@@ -133,8 +132,8 @@ mod arithmetization {
 		even: Col<B1, 32>,
 		even_lsb: Col<B1>,
 		half: Col<B1, 32>,
-		even_packed: Col<B32>,
-		half_packed: Col<B32>,
+		_even_packed: Col<B32>,
+		_half_packed: Col<B32>,
 	}
 
 	impl EvensTable {
@@ -152,16 +151,16 @@ mod arithmetization {
 			let even_packed = table.add_packed::<_, 32, B32, 1>("even_packed", even);
 			let half_packed = table.add_packed::<_, 32, B32, 1>("half_packed", half);
 
-			table.pull_one(seq_chan, even_packed);
-			table.push_one(seq_chan, half_packed);
+			table.pull(seq_chan, [even_packed]);
+			table.push(seq_chan, [half_packed]);
 
 			Self {
 				id: table.id(),
 				even,
 				even_lsb,
 				half,
-				even_packed,
-				half_packed,
+				_even_packed: even_packed,
+				_half_packed: half_packed,
 			}
 		}
 	}
@@ -184,14 +183,10 @@ mod arithmetization {
 			let mut even = witness.get_mut_as(self.even)?;
 			let mut even_lsb = witness.get_mut(self.even_lsb)?;
 			let mut half = witness.get_mut_as(self.half)?;
-			let mut even_packed = witness.get_mut_as(self.even_packed)?;
-			let mut half_packed = witness.get_mut_as(self.half_packed)?;
 
 			for (i, event) in rows.enumerate() {
 				even[i] = event.val;
 				half[i] = event.val >> 1;
-				even_packed[i] = event.val;
-				half_packed[i] = event.val >> 1;
 			}
 
 			even_lsb.fill(<PackedType<U, B1>>::zero());
@@ -209,8 +204,8 @@ mod arithmetization {
 		double: Col<B1, 32>,
 		carry_bit: Col<B1, 32>,
 		triple_plus_one: U32Add,
-		odd_packed: Col<B32>,
-		triple_plus_one_packed: Col<B32>,
+		_odd_packed: Col<B32>,
+		_triple_plus_one_packed: Col<B32>,
 	}
 
 	impl OddsTable {
@@ -226,10 +221,7 @@ mod arithmetization {
 			let double =
 				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
-			// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
-			// multilinear extension of some constant vector, repeating for the number of rows.
-			// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-			let carry_bit = table.add_committed::<B1, 32>("carry_bit");
+			let carry_bit = table.add_constant("carry_bit", decomposed_u32_bits(1));
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
@@ -246,8 +238,8 @@ mod arithmetization {
 			let triple_plus_one_packed =
 				table.add_packed::<_, 32, B32, 1>("triple_plus_one_packed", triple_plus_one.zout);
 
-			table.pull_one(seq_chan, odd_packed);
-			table.push_one(seq_chan, triple_plus_one_packed);
+			table.pull(seq_chan, [odd_packed]);
+			table.push(seq_chan, [triple_plus_one_packed]);
 
 			Self {
 				id: table.id(),
@@ -256,10 +248,14 @@ mod arithmetization {
 				double,
 				carry_bit,
 				triple_plus_one,
-				odd_packed,
-				triple_plus_one_packed,
+				_odd_packed: odd_packed,
+				_triple_plus_one_packed: triple_plus_one_packed,
 			}
 		}
+	}
+
+	fn decomposed_u32_bits(bits: u32) -> [B1; 32] {
+		std::array::from_fn(|i| B1::new(SmallU::new(((bits >> i) & 1) as u8)))
 	}
 
 	impl<U: UnderlierType> TableFiller<U> for OddsTable
@@ -278,18 +274,12 @@ mod arithmetization {
 			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			{
-				let mut odd_packed = witness.get_mut_as(self.odd_packed)?;
-				let mut triple_plus_one_packed = witness.get_mut_as(self.triple_plus_one_packed)?;
-
 				let mut odd = witness.get_mut_as(self.odd)?;
 				let mut odd_lsb = witness.get_mut(self.odd_lsb)?;
 				let mut double = witness.get_mut_as(self.double)?;
 				let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
 				for (i, event) in rows.enumerate() {
-					odd_packed[i] = event.val;
-					triple_plus_one_packed[i] = 3 * event.val + 1;
-
 					odd[i] = event.val;
 					double[i] = event.val << 1;
 					carry_bit[i] = 1u32;
@@ -347,7 +337,7 @@ mod arithmetization {
 
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
-			witness: witness.into_multilinear_extension_index::<B128>(&statement),
+			witness: witness.into_multilinear_extension_index(&statement),
 			statement,
 		}
 	}

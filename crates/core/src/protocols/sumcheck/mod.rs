@@ -7,6 +7,7 @@
 //! polynomials.
 
 mod common;
+pub mod eq_ind;
 mod error;
 pub mod front_loaded;
 mod oracles;
@@ -19,6 +20,7 @@ pub mod verify;
 pub mod zerocheck;
 
 pub use common::*;
+pub use eq_ind::EqIndSumcheckClaim;
 pub use error::*;
 pub use oracles::*;
 pub use prove::batch_prove;

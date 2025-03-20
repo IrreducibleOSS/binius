@@ -12,6 +12,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
+use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bumpalo::Bump;
 
@@ -32,8 +33,6 @@ use crate::builder::expr::ArithExprNamedVars;
 pub struct ConstraintSystem<F: TowerField = B128> {
 	pub tables: Vec<Table<F>>,
 	pub channels: Vec<Channel>,
-	/// All valid channel IDs are strictly less than this bound.
-	pub channel_id_bound: ChannelId,
 }
 
 impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
@@ -82,8 +81,14 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			for col in table.columns.iter() {
+				if matches!(col.col, ColumnDef::Constant { .. }) {
+					oracle_id += 1;
+				}
+			}
+
+			for col in table.columns.iter() {
 				let name = col.name.clone();
-				let values_per_row = col.shape.values_per_row;
+				let log_values_per_row = col.shape.log_values_per_row;
 				let field = match col.shape.tower_height {
 					0 => "B1",
 					1 => "B2",
@@ -94,7 +99,8 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					6 => "B64",
 					_ => "B128",
 				};
-				let type_str = if values_per_row > 1 {
+				let type_str = if log_values_per_row > 0 {
+					let values_per_row = 1 << log_values_per_row;
 					format!("{field}x{values_per_row}")
 				} else {
 					field.to_string()
@@ -145,12 +151,12 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// The statement includes information about the tables sizes, which this requires in order to
 	/// allocate the column data correctly. The created witness index needs to be populated before
 	/// proving.
-	pub fn build_witness<'a, U: UnderlierType>(
-		&self,
-		allocator: &'a Bump,
+	pub fn build_witness<'cs, 'alloc, U: UnderlierType>(
+		&'cs self,
+		allocator: &'alloc Bump,
 		statement: &Statement,
-	) -> Result<WitnessIndex<'a, U>, Error> {
-		Ok(WitnessIndex::<U> {
+	) -> Result<WitnessIndex<'cs, 'alloc, U, F>, Error> {
+		Ok(WitnessIndex {
 			tables: self
 				.tables
 				.iter()
@@ -184,12 +190,28 @@ impl<F: TowerField> ConstraintSystem<F> {
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let mut oracle_lookup = Vec::new();
 
+			let mut transparent_single = vec![None; table.columns.len()];
+			for (table_index, info) in table.columns.iter().enumerate() {
+				if let ColumnDef::Constant { poly } = &info.col {
+					let oracle_id = oracles
+						.add_named(format!("{}_single", info.name))
+						.transparent(poly.clone())?;
+					transparent_single[table_index] = Some(oracle_id);
+				}
+			}
+
 			// Add multilinear oracles for all table columns.
-			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + log2_strict_usize(info.shape.values_per_row);
-				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
+			for column_info in table.columns.iter() {
+				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let oracle_id = add_oracle_for_column(
+					&mut oracles,
+					&oracle_lookup,
+					&transparent_single,
+					column_info,
+					n_vars,
+				)?;
 				oracle_lookup.push(oracle_id);
-				if info.is_nonzero {
+				if column_info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
 				}
 			}
@@ -223,7 +245,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| partition_oracle_ids[column_index])
+						.map(|&column_index| oracle_lookup[column_index])
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
@@ -259,7 +281,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 			table_constraints,
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
-			max_channel_id: self.channel_id_bound.saturating_sub(1),
+			max_channel_id: self.channels.len().saturating_sub(1),
+			exponents: Vec::new(),
 		})
 	}
 }
@@ -275,23 +298,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
+	transparent_single: &[Option<OracleId>],
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
-	let ColumnInfo { id, col, name, .. } = column_info;
-	let addition = oracles.add_named(name.clone());
+	let ColumnInfo {
+		id,
+		col,
+		name,
+		shape,
+		..
+	} = column_info;
+	let addition = oracles.add_named(name);
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		ColumnDef::LinearCombination {
-			offset,
-			col_scalars,
-		} => {
-			let inner_oracles = col_scalars
-				.iter()
-				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
-				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
-		}
 		ColumnDef::Selected {
 			col,
 			index,
@@ -318,12 +338,37 @@ fn add_oracle_for_column<F: TowerField>(
 			log_block_size,
 			variant,
 		} => {
-			assert_eq!(col.partition_id, id.partition_id);
+			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
 			addition.shifted(oracle_lookup[col.table_index], *offset, *log_block_size, *variant)?
 		}
 		ColumnDef::Packed { col, log_degree } => {
+			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
 			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
+		ColumnDef::Computed { cols, expr } => {
+			if let Ok(LinearNormalForm {
+				constant: offset,
+				var_coeffs,
+			}) = expr.linear_normal_form()
+			{
+				let col_scalars = cols
+					.iter()
+					.zip(var_coeffs)
+					.map(|(&col_index, coeff)| (oracle_lookup[col_index], coeff))
+					.collect::<Vec<_>>();
+				addition.linear_combination_with_offset(n_vars, offset, col_scalars)?
+			} else {
+				let inner_oracles = cols
+					.iter()
+					.map(|&col_index| oracle_lookup[col_index])
+					.collect::<Vec<_>>();
+				addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			}
+		}
+		ColumnDef::Constant { .. } => addition.repeating(
+			transparent_single[id.table_index].unwrap(),
+			n_vars - shape.log_values_per_row,
+		)?,
 	};
 	Ok(oracle_id)
 }

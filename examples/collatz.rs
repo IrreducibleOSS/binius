@@ -11,11 +11,10 @@ use binius_core::{
 	tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::rayon::adjust_thread_pool;
 use clap::{value_parser, Parser};
-use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

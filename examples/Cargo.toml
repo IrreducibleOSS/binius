@@ -18,7 +18,6 @@ binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
-groestl_crypto.workspace = true
 itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
@@ -65,6 +64,10 @@ name = "u32_mul"
 path = "u32_mul.rs"
 
 [[example]]
+name = "u64_mul"
+path = "u64_mul.rs"
+
+[[example]]
 name = "bitwise_ops"
 path = "bitwise_ops.rs"
 
@@ -81,4 +84,5 @@ default = ["rayon"]
 aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
+perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]

@@ -41,12 +41,11 @@ mod tests {
 		BinaryField128b, BinaryField64b, BinaryField8b, Field,
 	};
 	use binius_hal::make_portable_backend;
-	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	};
-	use groestl_crypto::Groestl256;
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;
@@ -372,9 +371,9 @@ mod tests {
 			OptimalUnderlier,
 			CanonicalTowerFamily,
 			_,
-			groestl_crypto::Groestl256,
+			Groestl256,
 			Groestl256ByteCompression,
-			HasherChallenger<groestl_crypto::Groestl256>,
+			HasherChallenger<Groestl256>,
 			_,
 		>(
 			&constraint_system,
@@ -390,9 +389,9 @@ mod tests {
 		binius_core::constraint_system::verify::<
 			OptimalUnderlier,
 			CanonicalTowerFamily,
-			groestl_crypto::Groestl256,
+			Groestl256,
 			Groestl256ByteCompression,
-			HasherChallenger<groestl_crypto::Groestl256>,
+			HasherChallenger<Groestl256>,
 		>(&constraint_system, log_inv_rate, security_bits, &[], proof)
 		.unwrap();
 	}

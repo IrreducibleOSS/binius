@@ -2,36 +2,19 @@
 
 use std::any::TypeId;
 
-use bytemuck::Pod;
+use bytemuck::{zeroed_vec, Pod};
 
 use crate::{
-	packed::get_packed_slice, AESTowerField128b, AESTowerField16b, AESTowerField32b,
-	AESTowerField64b, AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
-	BinaryField32b, BinaryField64b, BinaryField8b, ByteSlicedAES32x128b, ByteSlicedAES32x16b,
-	ByteSlicedAES32x32b, ByteSlicedAES32x64b, ByteSlicedAES32x8b, Field,
-	PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
-	PackedAESBinaryField1x128b, PackedAESBinaryField1x16b, PackedAESBinaryField1x32b,
-	PackedAESBinaryField1x64b, PackedAESBinaryField1x8b, PackedAESBinaryField2x128b,
-	PackedAESBinaryField2x16b, PackedAESBinaryField2x32b, PackedAESBinaryField2x64b,
-	PackedAESBinaryField2x8b, PackedAESBinaryField32x16b, PackedAESBinaryField32x8b,
-	PackedAESBinaryField4x128b, PackedAESBinaryField4x16b, PackedAESBinaryField4x32b,
-	PackedAESBinaryField4x64b, PackedAESBinaryField4x8b, PackedAESBinaryField64x8b,
-	PackedAESBinaryField8x16b, PackedAESBinaryField8x64b, PackedAESBinaryField8x8b,
-	PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField128x4b,
-	PackedBinaryField16x16b, PackedBinaryField16x1b, PackedBinaryField16x2b,
-	PackedBinaryField16x32b, PackedBinaryField16x4b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedBinaryField1x16b, PackedBinaryField1x32b,
-	PackedBinaryField1x64b, PackedBinaryField1x8b, PackedBinaryField256x1b,
-	PackedBinaryField256x2b, PackedBinaryField2x128b, PackedBinaryField2x16b,
-	PackedBinaryField2x32b, PackedBinaryField2x4b, PackedBinaryField2x64b, PackedBinaryField2x8b,
-	PackedBinaryField32x16b, PackedBinaryField32x1b, PackedBinaryField32x2b,
-	PackedBinaryField32x4b, PackedBinaryField32x8b, PackedBinaryField4x128b,
-	PackedBinaryField4x16b, PackedBinaryField4x2b, PackedBinaryField4x32b, PackedBinaryField4x4b,
-	PackedBinaryField4x64b, PackedBinaryField4x8b, PackedBinaryField512x1b, PackedBinaryField64x1b,
-	PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField8x16b,
-	PackedBinaryField8x1b, PackedBinaryField8x2b, PackedBinaryField8x32b, PackedBinaryField8x4b,
-	PackedBinaryField8x64b, PackedBinaryField8x8b, PackedBinaryPolyval1x128b,
-	PackedBinaryPolyval2x128b, PackedBinaryPolyval4x128b, PackedField,
+	arch::{
+		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
+		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*,
+		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
+		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
+	},
+	packed::get_packed_slice,
+	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
+	BinaryField8b, Field, PackedField,
 };
 
 /// A marker trait that the slice of packed values can be iterated as a sequence of bytes.
@@ -168,6 +151,7 @@ pub fn is_sequential_bytes<T>() -> bool {
 }
 
 /// Returns if we can iterate over bytes, each representing 8 1-bit values.
+#[inline(always)]
 pub fn can_iterate_bytes<P: PackedField>() -> bool {
 	// Packed fields with sequential byte order
 	if is_sequential_bytes::<P>() {
@@ -177,11 +161,33 @@ pub fn can_iterate_bytes<P: PackedField>() -> bool {
 	// Byte-sliced fields
 	// Note: add more byte sliced types here as soon as they are added
 	match TypeId::of::<P>() {
+		x if x == TypeId::of::<ByteSlicedAES16x128b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES2x16x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES4x16x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES8x16x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x16x8b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES32x128b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES32x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES2x32x64b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES32x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES4x32x32b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES32x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES8x32x16b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES32x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x32x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x128b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES2x64x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES4x64x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES8x64x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x64x8b>() => true,
 		_ => false,
 	}
 }
@@ -224,21 +230,88 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 	} else {
 		// Note: add more byte sliced types here as soon as they are added
 		match TypeId::of::<P>() {
+			x if x == TypeId::of::<ByteSlicedAES16x128b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x128b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x64b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES2x16x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES2x16x64b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x32b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES4x16x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES4x16x32b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x16b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES8x16x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES8x16x16b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x8b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x16x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x16x8b, data, callback);
+			}
 			x if x == TypeId::of::<ByteSlicedAES32x128b>() => {
 				iterate_byte_sliced!(ByteSlicedAES32x128b, data, callback);
 			}
 			x if x == TypeId::of::<ByteSlicedAES32x64b>() => {
 				iterate_byte_sliced!(ByteSlicedAES32x64b, data, callback);
 			}
+			x if x == TypeId::of::<ByteSlicedAES2x32x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES2x32x64b, data, callback);
+			}
 			x if x == TypeId::of::<ByteSlicedAES32x32b>() => {
 				iterate_byte_sliced!(ByteSlicedAES32x32b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES4x32x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES4x32x32b, data, callback);
 			}
 			x if x == TypeId::of::<ByteSlicedAES32x16b>() => {
 				iterate_byte_sliced!(ByteSlicedAES32x16b, data, callback);
 			}
+			x if x == TypeId::of::<ByteSlicedAES8x32x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES8x32x16b, data, callback);
+			}
 			x if x == TypeId::of::<ByteSlicedAES32x8b>() => {
 				iterate_byte_sliced!(ByteSlicedAES32x8b, data, callback);
 			}
+			x if x == TypeId::of::<ByteSlicedAES16x32x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x32x8b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES64x128b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x128b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES64x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x64b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES2x64x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES2x64x64b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES64x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x32b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES4x64x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES4x64x32b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES64x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x16b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES8x64x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES8x64x16b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES64x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x8b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSlicedAES16x64x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x64x8b, data, callback);
+			}
+
 			_ => unreachable!("packed field doesn't support byte iteration"),
 		}
 	}
@@ -266,6 +339,7 @@ impl<F: Field> ScalarsCollection<F> for &[F] {
 	}
 }
 
+#[derive(Clone)]
 pub struct PackedSlice<'a, P: PackedField> {
 	slice: &'a [P],
 	len: usize,
@@ -303,17 +377,19 @@ pub fn create_partial_sums_lookup_tables<P: PackedField>(
 	let len = values.len();
 	assert!(len % 8 == 0);
 
-	let mut result = Vec::with_capacity(len * 256 / 8);
-	for chunk_i in 0..len / 8 {
-		let offset = chunk_i * 8;
-		for i in 0..256 {
-			let mut sum = P::zero();
-			for j in 0..8 {
-				if i & (1 << j) != 0 {
-					sum += values.get(offset + j);
+	let mut result = zeroed_vec(len * 32);
+
+	for (chunk_idx, chunk_start) in (0..len).step_by(8).enumerate() {
+		let sums = &mut result[chunk_idx * 256..(chunk_idx + 1) * 256];
+
+		for j in 0..8 {
+			let value = values.get(chunk_start + j);
+			let mask = 1 << j;
+			for i in (mask..256).step_by(mask * 2) {
+				for k in 0..mask {
+					sums[i + k] += value;
 				}
 			}
-			result.push(sum);
 		}
 	}
 
@@ -431,10 +507,90 @@ mod tests {
 		assert!(!is_sequential_bytes::<PackedBinaryField1x1b>());
 		assert!(!is_sequential_bytes::<PackedBinaryField2x1b>());
 		assert!(!is_sequential_bytes::<PackedBinaryField4x1b>());
+
 		assert!(!is_sequential_bytes::<ByteSlicedAES32x128b>());
-		assert!(!is_sequential_bytes::<ByteSlicedAES32x64b>());
-		assert!(!is_sequential_bytes::<ByteSlicedAES32x32b>());
-		assert!(!is_sequential_bytes::<ByteSlicedAES32x16b>());
-		assert!(!is_sequential_bytes::<ByteSlicedAES32x8b>());
+		assert!(!is_sequential_bytes::<ByteSlicedAES64x8b>());
+	}
+
+	#[test]
+	fn test_partial_sums_basic() {
+		let v1 = BinaryField32b::from(1);
+		let v2 = BinaryField32b::from(2);
+		let v3 = BinaryField32b::from(3);
+		let v4 = BinaryField32b::from(4);
+		let v5 = BinaryField32b::from(5);
+		let v6 = BinaryField32b::from(6);
+		let v7 = BinaryField32b::from(7);
+		let v8 = BinaryField32b::from(8);
+
+		let values = vec![v1, v2, v3, v4, v5, v6, v7, v8];
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Check specific precomputed sums
+		assert_eq!(lookup_table[0b0000_0000], BinaryField32b::from(0));
+		assert_eq!(lookup_table[0b0000_0001], v1);
+		assert_eq!(lookup_table[0b0000_0011], v1 + v2);
+		assert_eq!(lookup_table[0b0000_0111], v1 + v2 + v3);
+		assert_eq!(lookup_table[0b0000_1111], v1 + v2 + v3 + v4);
+		assert_eq!(lookup_table[0b0001_1111], v1 + v2 + v3 + v4 + v5);
+		assert_eq!(lookup_table[0b0011_1111], v1 + v2 + v3 + v4 + v5 + v6);
+		assert_eq!(lookup_table[0b0111_1111], v1 + v2 + v3 + v4 + v5 + v6 + v7);
+		assert_eq!(lookup_table[0b1111_1111], v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8);
+	}
+
+	#[test]
+	fn test_partial_sums_all_zeros() {
+		let values = vec![BinaryField32b::from(0); 8];
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		for &l in lookup_table.iter().take(256) {
+			assert_eq!(l, BinaryField32b::from(0));
+		}
+	}
+
+	#[test]
+	fn test_partial_sums_single_element() {
+		let mut values = vec![BinaryField32b::from(0); 8];
+		// Set only the fourth element (index 3)
+		values[3] = BinaryField32b::from(10);
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Only cases where the 4th bit is set should have non-zero sums
+		assert_eq!(lookup_table[0b0000_0000], BinaryField32b::from(0));
+		assert_eq!(lookup_table[0b0000_1000], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b0000_1100], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b0001_1000], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b1111_1111], BinaryField32b::from(10));
+	}
+
+	#[test]
+	fn test_partial_sums_alternating_values() {
+		let v1 = BinaryField32b::from(10);
+		let v2 = BinaryField32b::from(20);
+		let v3 = BinaryField32b::from(30);
+		let v4 = BinaryField32b::from(40);
+
+		let zero = BinaryField32b::from(0);
+
+		let values = vec![v1, zero, v2, zero, v3, zero, v4, zero];
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Expect only the even indexed elements to contribute to the sum
+		assert_eq!(lookup_table[0b0000_0000], zero);
+		assert_eq!(lookup_table[0b0000_0001], v1);
+		assert_eq!(lookup_table[0b0000_0101], v1 + v2);
+		assert_eq!(lookup_table[0b0000_1111], v1 + v2);
+		assert_eq!(lookup_table[0b1111_1111], v1 + v2 + v3 + v4);
 	}
 }
