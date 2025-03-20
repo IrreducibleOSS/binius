@@ -6,10 +6,12 @@
 
 use std::iter;
 
-use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
+use binius_field::{
+	packed::get_packed_slice_checked, Field, PackedExtension, PackedField, PackedSubfield,
+};
 use binius_math::{
-	extrapolate_lines, CompositionPoly, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
-	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
+	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
@@ -146,8 +148,6 @@ where
 	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	println!("prefix {} n_vars {}", eval_prefix, n_vars);
-
 	assert!(eval_prefix <= 1 << (n_vars - 1));
 	assert!(subcube_vars <= n_vars - 1);
 
@@ -414,17 +414,30 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+				large_field_folded_evals: evals,
 			} => {
-				let multilinear =
-					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
+				if subcube_vars + 1 >= P::LOG_WIDTH {
+					let packed_log_size = subcube_vars + 1 - P::LOG_WIDTH;
+					let offset = subcube_index << packed_log_size;
+					let packed_len = (1 << packed_log_size).min(evals.len().saturating_sub(offset));
+					if packed_len > 0 {
+						scratch_space[..packed_len]
+							.copy_from_slice(&evals[offset..offset + packed_len]);
+					}
+					scratch_space[packed_len..].fill(P::zero());
+				} else {
+					let mut only_packed = P::zero();
 
-				MLEDirectAdapter::from(multilinear).subcube_evals(
-					subcube_vars + 1,
-					subcube_index,
-					0,
-					scratch_space,
-				)?
+					for i in 0..1 << (subcube_vars + 1) {
+						let index = subcube_index << (subcube_vars + 1) | i;
+						only_packed.set(
+							i,
+							get_packed_slice_checked(evals, index).unwrap_or(P::Scalar::ZERO),
+						);
+					}
+
+					*scratch_space.first_mut().expect("non-empty scratch space") = only_packed;
+				}
 			}
 		}
 
@@ -507,13 +520,47 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+				large_field_folded_evals: evals,
 			} => {
-				let multilinear =
-					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
-				let adapter = MLEDirectAdapter::from(multilinear);
-				adapter.subcube_evals(subcube_vars, subcube_index, 0, evals_0)?;
-				adapter.subcube_evals(subcube_vars, subcube_index | 1 << index_vars, 0, evals_1)?;
+				if subcube_vars >= P::LOG_WIDTH {
+					let packed_log_size = subcube_vars - P::LOG_WIDTH;
+					let offset_0 = subcube_index << packed_log_size;
+					let offset_1 = offset_0 | 1 << (index_vars + packed_log_size);
+					let packed_len_0 =
+						(1 << packed_log_size).min(evals.len().saturating_sub(offset_0));
+					let packed_len_1 =
+						(1 << packed_log_size).min(evals.len().saturating_sub(offset_1));
+
+					if packed_len_0 > 0 {
+						evals_0[..packed_len_0].copy_from_slice(&evals[offset_0..][..packed_len_0]);
+					}
+
+					if packed_len_1 > 0 {
+						evals_1[..packed_len_1].copy_from_slice(&evals[offset_1..][..packed_len_1]);
+					}
+
+					evals_0[packed_len_0..].fill(P::zero());
+					evals_1[packed_len_1..].fill(P::zero());
+				} else {
+					let mut evals_0_packed = P::zero();
+					let mut evals_1_packed = P::zero();
+
+					for i in 0..1 << subcube_vars {
+						let index_0 = subcube_index << subcube_vars | i;
+						let index_1 = index_0 | 1 << (index_vars + subcube_vars);
+						evals_0_packed.set(
+							i,
+							get_packed_slice_checked(evals, index_0).unwrap_or(P::Scalar::ZERO),
+						);
+						evals_1_packed.set(
+							i,
+							get_packed_slice_checked(evals, index_1).unwrap_or(P::Scalar::ZERO),
+						);
+					}
+
+					*evals_0.first_mut().expect("non-empty evals_0") = evals_0_packed;
+					*evals_1.first_mut().expect("non-empty evals_1") = evals_1_packed;
+				}
 			}
 		}
 
