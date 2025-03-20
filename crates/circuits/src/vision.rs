@@ -88,7 +88,7 @@ pub fn vision_permutation(
 			for (out, expected) in
 				PackedAESBinaryField8x32b::iter_slice(&in_out).zip(expected_out.iter())
 			{
-				assert_eq!(out, AESTowerField32b::from(*expected));
+				assert_eq!(out, binius_field::AESTowerField32b::from(*expected));
 			}
 		}
 	}
