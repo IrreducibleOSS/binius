@@ -17,7 +17,6 @@ use binius_m3::{
 	},
 	gadgets::hash::groestl,
 };
-use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::Pod;
 use bytesize::ByteSize;
@@ -118,7 +117,6 @@ fn main() -> Result<()> {
 	let proof = binius_core::constraint_system::prove::<
 		_,
 		CanonicalTowerFamily,
-		_,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
@@ -129,7 +127,6 @@ fn main() -> Result<()> {
 		SECURITY_BITS,
 		&statement.boundaries,
 		witness,
-		&DefaultEvaluationDomainFactory::default(),
 		&binius_hal::make_portable_backend(),
 	)
 	.unwrap();
