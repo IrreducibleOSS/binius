@@ -195,7 +195,6 @@ mod tests {
 	use binius_field::{BinaryField1b, BinaryField8b};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-	use binius_math::DefaultEvaluationDomainFactory;
 
 	use super::mul;
 	use crate::{
@@ -231,18 +230,16 @@ mod tests {
 
 		let constraint_system = builder.build().unwrap();
 
-		let domain_factory = DefaultEvaluationDomainFactory::default();
 		let backend = make_portable_backend();
 
 		let proof = constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
-			_,
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, &[], witness, &domain_factory, &backend)
+		>(&constraint_system, 1, 10, &[], witness, &backend)
 		.unwrap();
 
 		constraint_system::verify::<
