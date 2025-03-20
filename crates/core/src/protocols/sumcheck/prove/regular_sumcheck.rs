@@ -146,6 +146,7 @@ where
 		let state = ProverState::new(
 			evaluation_order,
 			multilinears,
+			None,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,

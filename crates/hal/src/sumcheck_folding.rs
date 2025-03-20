@@ -5,6 +5,7 @@ use binius_math::{
 	fold_left_lerp_inplace, fold_right_lerp, EvaluationOrder, MultilinearPoly, MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::zeroed_vec;
 
 use crate::{
@@ -59,39 +60,41 @@ where
 
 					assert!(tensor_query.n_vars() > 0);
 
-					let large_field_folded_evals =
-						if let Some(nonzero_scalars_prefix) = nonzero_scalars_prefix {
-							let (subcube_vars, packed_len) = subcube_vars_for_bits::<P>(
-								MAX_SRC_SUBCUBE_LOG_BITS,
-								tensor_query.n_vars(),
-								n_vars - 1,
-							);
+					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
 
-							let folded_scalars =
-								nonzero_scalars_prefix.div_ceil(1 << tensor_query.n_vars());
+					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
+						let (subcube_vars, packed_len) = subcube_vars_for_bits::<P>(
+							MAX_SRC_SUBCUBE_LOG_BITS,
+							log2_ceil_usize(nonzero_scalars_prefix),
+							tensor_query.n_vars(),
+							n_vars - 1,
+						);
 
-							let mut folded =
-								zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);
+						let folded_scalars =
+							nonzero_scalars_prefix.div_ceil(1 << tensor_query.n_vars());
 
-							// REVIEW: no lerp optimization in subcube_partial_low_evals currently
-							for (subcube_index, subcube_evals) in
-								folded.chunks_exact_mut(packed_len).enumerate()
-							{
-								multilinear.subcube_partial_low_evals(
-									*tensor_query,
-									subcube_vars,
-									subcube_index,
-									subcube_evals,
-								)?;
-							}
+						let mut folded =
+							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);
 
-							folded.truncate(folded_scalars.div_ceil(P::WIDTH));
-							folded
-						} else {
-							multilinear
-								.evaluate_partial_low(*tensor_query)?
-								.into_evals()
-						};
+						// REVIEW: no lerp optimization in subcube_partial_low_evals currently
+						for (subcube_index, subcube_evals) in
+							folded.chunks_exact_mut(packed_len).enumerate()
+						{
+							multilinear.subcube_partial_low_evals(
+								*tensor_query,
+								subcube_vars,
+								subcube_index,
+								subcube_evals,
+							)?;
+						}
+
+						folded.truncate(folded_scalars.div_ceil(P::WIDTH));
+						folded
+					} else {
+						multilinear
+							.evaluate_partial_low(*tensor_query)?
+							.into_evals()
+					};
 
 					*sumcheck_multilinear = SumcheckMultilinear::Folded {
 						large_field_folded_evals,
@@ -115,7 +118,8 @@ where
 
 				fold_right_lerp(
 					large_field_folded_evals.as_slice(),
-					1 << n_vars,
+					// TODO comment
+					large_field_folded_evals.len() * P::WIDTH,
 					challenge,
 					&mut new_large_field_folded_evals,
 				)?;
@@ -142,7 +146,7 @@ where
 			SumcheckMultilinear::Transparent {
 				multilinear,
 				switchover_round,
-				..
+				nonzero_scalars_prefix,
 			} => {
 				if *switchover_round == 0 {
 					// At switchover we partially evaluate the multilinear at an expanded tensor query.
@@ -150,9 +154,41 @@ where
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
 
-					let large_field_folded_evals = multilinear
-						.evaluate_partial_high(*tensor_query)?
-						.into_evals();
+					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
+
+					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
+						let (subcube_vars, packed_len) = subcube_vars_for_bits::<P>(
+							MAX_SRC_SUBCUBE_LOG_BITS,
+							log2_ceil_usize(nonzero_scalars_prefix),
+							tensor_query.n_vars(),
+							n_vars - 1,
+						);
+
+						let folded_scalars =
+							nonzero_scalars_prefix.min(1 << (n_vars - tensor_query.n_vars()));
+
+						let mut folded =
+							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);
+
+						// REVIEW: no lerp optimization in subcube_partial_high_evals currently
+						for (subcube_index, subcube_evals) in
+							folded.chunks_exact_mut(packed_len).enumerate()
+						{
+							multilinear.subcube_partial_low_evals(
+								*tensor_query,
+								subcube_vars,
+								subcube_index,
+								subcube_evals,
+							)?;
+						}
+
+						folded.truncate(folded_scalars.div_ceil(P::WIDTH));
+						folded
+					} else {
+						multilinear
+							.evaluate_partial_high(*tensor_query)?
+							.into_evals()
+					};
 
 					*sumcheck_multilinear = SumcheckMultilinear::Folded {
 						large_field_folded_evals,
@@ -170,7 +206,12 @@ where
 			} => {
 				// REVIEW: note that this method is currently _not_ multithreaded, as
 				//         traces are usually sufficiently wide
-				fold_left_lerp_inplace(large_field_folded_evals, 1 << n_vars, n_vars, challenge)?;
+				fold_left_lerp_inplace(
+					large_field_folded_evals,
+					(large_field_folded_evals.len() * P::WIDTH).min(1 << n_vars),
+					n_vars,
+					challenge,
+				)?;
 				Ok(false)
 			}
 		}

@@ -10,7 +10,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use getset::CopyGetters;
-use itertools::izip;
+use itertools::{izip, Either};
 use tracing::instrument;
 
 use crate::{
@@ -75,52 +75,42 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
+	#[instrument(skip_all, level = "debug", name = "ProverState::new")]
 	pub fn new(
 		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
+		nonzero_scalars_prefixes: Option<Vec<usize>>,
 		claimed_sums: Vec<F>,
 		nontrivial_evaluation_points: Vec<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
-		Self::new_with_switchover_rounds(
-			evaluation_order,
-			multilinears,
-			&switchover_rounds,
-			claimed_sums,
-			nontrivial_evaluation_points,
-			backend,
-		)
-	}
-
-	#[instrument(
-		skip_all,
-		level = "debug",
-		name = "ProverState::new_with_switchover_rounds"
-	)]
-	pub fn new_with_switchover_rounds(
-		evaluation_order: EvaluationOrder,
-		multilinears: Vec<M>,
-		switchover_rounds: &[usize],
-		claimed_sums: Vec<F>,
-		nontrivial_evaluation_points: Vec<FDomain>,
-		backend: &'a Backend,
-	) -> Result<Self, Error> {
 		let n_vars = equal_n_vars_check(&multilinears)?;
-
-		if multilinears.len() != switchover_rounds.len() {
-			bail!(Error::MultilinearSwitchoverSizeMismatch);
-		}
-
+		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
 		let max_switchover_round = switchover_rounds.iter().copied().max().unwrap_or_default();
 
-		let multilinears = iter::zip(multilinears, switchover_rounds)
-			.map(|(multilinear, &switchover_round)| SumcheckMultilinear::Transparent {
-				multilinear,
-				switchover_round,
-				// REVIEW: find a way to specify this
-				nonzero_scalars_prefix: None,
+		let nonzero_scalars_prefixes =
+			if let Some(nonzero_scalars_prefixes) = nonzero_scalars_prefixes {
+				if nonzero_scalars_prefixes.len() != multilinears.len()
+					|| nonzero_scalars_prefixes
+						.iter()
+						.any(|&prefix| prefix > 1 << n_vars)
+				{
+					bail!(Error::IncorrectNonzeroScalarPrefixes);
+				}
+
+				Either::Right(nonzero_scalars_prefixes.into_iter().map(Some))
+			} else {
+				Either::Left(iter::repeat(None))
+			};
+
+		let multilinears = izip!(multilinears, switchover_rounds, nonzero_scalars_prefixes)
+			.map(|(multilinear, switchover_round, nonzero_scalars_prefix)| {
+				SumcheckMultilinear::Transparent {
+					multilinear,
+					switchover_round,
+					nonzero_scalars_prefix,
+				}
 			})
 			.collect();
 
