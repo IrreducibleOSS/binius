@@ -63,8 +63,8 @@ pub enum Error {
 	IncorrectEqIndChallengesLength,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
-	#[error("number of specified multilinears and switchover rounds does not match")]
-	MultilinearSwitchoverSizeMismatch,
+	#[error("nonzero prefixes length does not equal multilinear count, or prefix longer than multilinear")]
+	IncorrectNonzeroScalarPrefixes,
 	#[error("incorrect size of the equality indicator expansion in eq_ind sumcheck")]
 	IncorrectEqIndPartialEvalsSize,
 	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]

@@ -464,19 +464,26 @@ where
 	check_left_lerp_fold_arguments::<_, P, _>(evals, nonzero_scalars_prefix, log_evals_size, out)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let (evals_0, evals_1) = evals.split_at(packed_len);
-
 		let pivot = nonzero_scalars_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
-		for (out, eval_0, eval_1) in izip!(&mut out[..pivot], evals_0, evals_1) {
-			out.write(*eval_0 + (*eval_1 - *eval_0) * lerp_query);
+		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
+		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+
+		if pivot > 0 {
+			let (evals_0, evals_1) = evals.split_at(packed_len);
+			for (out, eval_0, eval_1) in izip!(&mut out[..pivot], evals_0, evals_1) {
+				out.write(*eval_0 + (*eval_1 - *eval_0) * lerp_query);
+			}
 		}
 
-		for (out, eval_0) in izip!(&mut out[pivot..], &evals_0[pivot..]) {
-			out.write(*eval_0 * (P::Scalar::ONE - lerp_query));
+		for (out, eval) in izip!(&mut out[pivot..upper_bound], &evals[pivot..]) {
+			out.write(*eval * (P::Scalar::ONE - lerp_query));
+		}
+
+		for out in &mut out[upper_bound..] {
+			out.write(P::zero());
 		}
 	} else {
 		let only_packed = *evals.first().expect("log_evals_size > 0");
@@ -517,22 +524,25 @@ where
 	)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let (evals_0, evals_1) = evals.split_at_mut(packed_len);
-
 		let pivot = nonzero_scalars_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
-		for (eval_0, eval_1) in izip!(&mut evals_0[..pivot], evals_1) {
-			*eval_0 += (*eval_1 - *eval_0) * lerp_query;
+		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
+		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+
+		if pivot > 0 {
+			let (evals_0, evals_1) = evals.split_at_mut(packed_len);
+			for (eval_0, eval_1) in izip!(&mut evals_0[..pivot], evals_1) {
+				*eval_0 += (*eval_1 - *eval_0) * lerp_query;
+			}
 		}
 
-		for eval_0 in &mut evals_0[pivot..] {
-			*eval_0 *= P::Scalar::ONE - lerp_query;
+		for eval in &mut evals[pivot..upper_bound] {
+			*eval *= P::Scalar::ONE - lerp_query;
 		}
 
-		evals.truncate(evals.len() >> 1);
+		evals.truncate(upper_bound);
 	} else {
 		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
