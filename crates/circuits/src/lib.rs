@@ -43,9 +43,7 @@ mod tests {
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
-	use binius_math::{
-		CompositionPoly, DefaultEvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	};
+	use binius_math::CompositionPoly;
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;
@@ -146,18 +144,16 @@ mod tests {
 
 		let constraint_system = builder.build().unwrap();
 
-		let domain_factory = DefaultEvaluationDomainFactory::default();
 		let backend = make_portable_backend();
 
 		let proof = constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
-			_,
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, &boundaries, witness, &domain_factory, &backend)
+		>(&constraint_system, 1, 10, &boundaries, witness, &backend)
 		.unwrap();
 
 		constraint_system::verify::<
@@ -366,24 +362,14 @@ mod tests {
 
 		validate_witness(&witness, &[], &[], 1).unwrap();
 
-		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 		let proof = binius_core::constraint_system::prove::<
 			OptimalUnderlier,
 			CanonicalTowerFamily,
-			_,
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(
-			&constraint_system,
-			log_inv_rate,
-			security_bits,
-			&[],
-			witness,
-			&domain_factory,
-			&backend,
-		)
+		>(&constraint_system, log_inv_rate, security_bits, &[], witness, &backend)
 		.unwrap();
 
 		binius_core::constraint_system::verify::<
