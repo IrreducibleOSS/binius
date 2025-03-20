@@ -2,6 +2,7 @@
 
 #![feature(array_try_map)]
 #![feature(array_try_from_fn)]
+
 //! A library for building Binius constraint systems and instances using M3 arithmetization.
 //!
 //! ## M3

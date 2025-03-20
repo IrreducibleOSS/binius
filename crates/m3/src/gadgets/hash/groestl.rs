@@ -49,9 +49,13 @@ const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 ///
 /// The Grøstl hash function involves two permutations, P and Q, which are closely related. This
 /// gadget verifies one permutation, depending on the variant given as a constructor argument.
+///
+/// The state is represented as an array of 64 B8 elements, which is  isomorphic to the
+/// standard representation of bytes in a Grøstl state. This isomorphic representation is
+/// cheaper to verify with a Binius M3 constrant system.
 #[derive(Debug, Clone)]
 pub struct Permutation {
-	rounds: [PermutationRound; 1],
+	rounds: [PermutationRound; 10],
 }
 
 impl Permutation {
@@ -73,12 +77,14 @@ impl Permutation {
 		Self { rounds }
 	}
 
+	/// Returns the input state columns.
 	pub fn state_in(&self) -> [Col<B8, 8>; 8] {
 		self.rounds[0].state_in
 	}
 
+	/// Returns the output state columns.
 	pub fn state_out(&self) -> [Col<B8, 8>; 8] {
-		self.rounds[0].state_out
+		self.rounds[9].state_out
 	}
 
 	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
@@ -93,13 +99,9 @@ impl Permutation {
 	}
 
 	/// Populate the input column of the witness with a full permutation state.
-	///
-	/// The state is represented as an array of 64 B8 elements, which is  isomorphic to the
-	/// standard representation of bytes in a Grøstl state. This isomorphic representation is
-	/// cheaper to verify with a Binius M3 constrant system.
 	pub fn populate_state_in<'a, U>(
-		&'a self,
-		index: &'a mut TableWitnessIndexSegment<U>,
+		&self,
+		index: &mut TableWitnessIndexSegment<U>,
 		states: impl IntoIterator<Item = &'a [B8; 64]>,
 	) -> Result<()>
 	where
@@ -174,7 +176,7 @@ fn round_consts(round: usize) -> [B8; 8] {
 
 /// A single round of a Grøstl permutation.
 #[derive(Debug, Clone)]
-pub struct PermutationRound {
+struct PermutationRound {
 	pq: PermutationVariant,
 	round: usize,
 	// Inputs
@@ -313,7 +315,7 @@ impl PermutationRound {
 ///
 /// [Rijndael S-box]: <https://en.wikipedia.org/wiki/Rijndael_S-box>
 #[derive(Debug, Clone)]
-pub struct SBox<const V: usize> {
+struct SBox<const V: usize> {
 	input: Expr<B8, V>,
 	/// Bits of the inverse of the input, in AES basis.
 	inv_bits: [Col<B1, V>; 8],

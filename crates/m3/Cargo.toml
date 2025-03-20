@@ -15,7 +15,6 @@ bumpalo.workspace = true
 bytemuck.workspace = true
 derive_more.workspace = true
 getset.workspace = true
-itertools.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
