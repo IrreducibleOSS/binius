@@ -74,7 +74,6 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	DomainFactory: EvaluationDomainFactory<FDomain<Tower>>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
