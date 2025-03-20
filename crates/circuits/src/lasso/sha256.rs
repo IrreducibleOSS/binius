@@ -114,14 +114,13 @@ impl SeveralBitwise {
 			{
 				*res = (self.f)(*x, *y, *z);
 
-				#[allow(clippy::needless_range_loop)]
-				for i in 0..8 {
+				for (i, lookup) in lookup_u.iter_mut().enumerate().take(8) {
 					let x = ((*x >> (4 * i)) & 15) as u16;
 					let y = ((*y >> (4 * i)) & 15) as u16;
 					let z = ((*z >> (4 * i)) & 15) as u16;
 					let res = ((*res >> (4 * i)) & 15) as u16;
 					let lookup_index = (((x << 4) | y) << 4) | z;
-					lookup_u[i] = B16::new((lookup_index << 4) | res);
+					*lookup = B16::new((lookup_index << 4) | res);
 					u_to_t_mapping_witness.push(lookup_index as usize)
 				}
 			}
