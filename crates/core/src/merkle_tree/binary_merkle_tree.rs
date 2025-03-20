@@ -200,7 +200,7 @@ where
 		n_digests: usize,
 	}
 
-	impl<'a, F: TowerField> ParallelDigestSource for DataSource<'a, F> {
+	impl<F: TowerField> ParallelDigestSource for DataSource<'_, F> {
 		fn n_chunks(&self) -> usize {
 			1
 		}

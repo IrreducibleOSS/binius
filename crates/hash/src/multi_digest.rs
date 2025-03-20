@@ -150,7 +150,7 @@ impl<D: MultiDigest<N, Digest: Send> + Send + Sync, const N: usize> ParallelDige
 			let mut result = array::from_fn::<_, N, _>(|_| MaybeUninit::uninit());
 			hasher.finalize_into(&mut result);
 			for (res, out) in out[offset..].iter_mut().zip(&result[0..remainder]) {
-				res.write(Output::<Self::Digest>::clone_from_slice(&unsafe {
+				res.write(Output::<Self::Digest>::clone_from_slice(unsafe {
 					out.assume_init_ref()
 				}));
 			}
