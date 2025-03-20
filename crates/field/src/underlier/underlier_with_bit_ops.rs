@@ -8,6 +8,7 @@ use super::{
 	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
 };
+use crate::tower_levels::TowerLevel;
 
 /// Underlier type that supports bit arithmetic.
 pub trait UnderlierWithBitOps:
@@ -150,6 +151,63 @@ pub trait UnderlierWithBitOps:
 	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		unpack_hi_128b_fallback(self, other, log_block_len)
 	}
+
+	/// Transpose bytes from byte-sliced representation to a packed "normal one".
+	///
+	/// For example for tower level 1, having the following bytes:
+	///     [a0, b0, c1, d1]
+	///     [a1, b1, c2, d2]
+	///
+	/// The result will be:
+	///     [a0, a1, b0, b1]
+	///     [c1, c2, d1, d2]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		assert!(TL::LOG_WIDTH <= 4);
+
+		let result = TL::from_fn(|row| {
+			Self::from_fn(|col| {
+				let index = row * (Self::BITS / 8) + col;
+
+				// Safety: `index` is always less than `N * byte_count`.
+				unsafe { values[index % TL::WIDTH].get_subvalue::<u8>(index / TL::WIDTH) }
+			})
+		});
+
+		*values = result;
+	}
+
+	/// Transpose bytes from `ordinal` packed representation to a byte-sliced one.
+	///
+	/// For example for tower level 1, having the following bytes:
+	///    [a0, a1, b0, b1]
+	///    [c0, c1, d0, d1]
+	///
+	/// The result will be:
+	///   [a0, b0, c0, d0]
+	///   [a1, b1, c1, d1]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		assert!(TL::LOG_WIDTH <= 4);
+
+		let bytes = Self::BITS / 8;
+		let result = TL::from_fn(|row| {
+			Self::from_fn(|col| {
+				let index = row + col * TL::WIDTH;
+
+				// Safety: `index` is always less than `N * byte_count`.
+				unsafe { values[index / bytes].get_subvalue::<u8>(index % bytes) }
+			})
+		});
+
+		*values = result;
+	}
 }
 
 /// Returns a bit mask for a single `T` element inside underlier type.
@@ -160,6 +218,81 @@ where
 	T: UnderlierWithBitOps,
 {
 	single_element_mask_bits(T::BITS)
+}
+
+/// A helper function to apply unpack_lo/hi_128b_lanes for two values in an array
+#[allow(dead_code)]
+#[inline(always)]
+pub(crate) fn pair_unpack_lo_hi_128b_lanes<U: UnderlierWithBitOps>(
+	values: &mut impl AsMut<[U]>,
+	i: usize,
+	j: usize,
+	log_block_len: usize,
+) {
+	let values = values.as_mut();
+
+	(values[i], values[j]) = (
+		values[i].unpack_lo_128b_lanes(values[j], log_block_len),
+		values[i].unpack_hi_128b_lanes(values[j], log_block_len),
+	);
+}
+
+/// A helper function used as a building block for efficient SIMD types transposition implementation.
+/// This function actually may reorder the elements.
+#[allow(dead_code)]
+#[inline(always)]
+pub(crate) fn transpose_128b_blocks_low_to_high<U: UnderlierWithBitOps, TL: TowerLevel>(
+	values: &mut TL::Data<U>,
+	log_block_len: usize,
+) {
+	assert!(TL::WIDTH <= 16);
+
+	if TL::WIDTH == 1 {
+		return;
+	}
+
+	let (left, right) = TL::split_mut(values);
+	transpose_128b_blocks_low_to_high::<_, TL::Base>(left, log_block_len);
+	transpose_128b_blocks_low_to_high::<_, TL::Base>(right, log_block_len);
+
+	let log_block_len = log_block_len + TL::LOG_WIDTH + 2;
+	for i in 0..TL::WIDTH / 2 {
+		pair_unpack_lo_hi_128b_lanes(values, i, i + TL::WIDTH / 2, log_block_len);
+	}
+}
+
+/// Transposition implementation for 128-bit SIMD types.
+/// This implementations is used for NEON and SSE2.
+#[allow(dead_code)]
+#[inline(always)]
+pub(crate) fn transpose_128b_values<U: UnderlierWithBitOps, TL: TowerLevel>(
+	values: &mut TL::Data<U>,
+	log_block_len: usize,
+) {
+	assert!(U::BITS == 128);
+
+	transpose_128b_blocks_low_to_high::<U, TL>(values, log_block_len);
+
+	// Elements are transposed, but we need to reorder them
+	match TL::LOG_WIDTH {
+		0 | 1 => {}
+		2 => {
+			values.as_mut().swap(1, 2);
+		}
+		3 => {
+			values.as_mut().swap(1, 4);
+			values.as_mut().swap(3, 6);
+		}
+		4 => {
+			values.as_mut().swap(1, 8);
+			values.as_mut().swap(2, 4);
+			values.as_mut().swap(3, 12);
+			values.as_mut().swap(5, 10);
+			values.as_mut().swap(7, 14);
+			values.as_mut().swap(11, 13);
+		}
+		_ => panic!("unsupported tower level"),
+	}
 }
 
 /// Fallback implementation of `spread` method.
@@ -340,6 +473,7 @@ mod tests {
 		super::small_uint::{U1, U2, U4},
 		*,
 	};
+	use crate::tower_levels::{TowerLevel1, TowerLevel2};
 
 	#[test]
 	fn test_from_fn() {
@@ -444,5 +578,27 @@ mod tests {
 				assert_eq!(init_val.get_subvalue::<u8>(i), val);
 			}
 		}
+	}
+
+	#[test]
+	fn test_transpose_from_byte_sliced() {
+		let mut value = [0x01234567u32];
+		u32::transpose_bytes_from_byte_sliced::<TowerLevel1>(&mut value);
+		assert_eq!(value, [0x01234567u32]);
+
+		let mut value = [0x67452301u32, 0xefcdab89u32];
+		u32::transpose_bytes_from_byte_sliced::<TowerLevel2>(&mut value);
+		assert_eq!(value, [0xab238901u32, 0xef67cd45u32]);
+	}
+
+	#[test]
+	fn test_transpose_to_byte_sliced() {
+		let mut value = [0x01234567u32];
+		u32::transpose_bytes_to_byte_sliced::<TowerLevel1>(&mut value);
+		assert_eq!(value, [0x01234567u32]);
+
+		let mut value = [0x67452301u32, 0xefcdab89u32];
+		u32::transpose_bytes_to_byte_sliced::<TowerLevel2>(&mut value);
+		assert_eq!(value, [0xcd894501u32, 0xefab6723u32]);
 	}
 }
