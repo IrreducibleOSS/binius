@@ -7,7 +7,7 @@ use binius_field::{BinaryField128b, Field};
 use binius_hash::{
 	groestl::{Groestl256, Groestl256ByteCompression},
 	multi_digest::ParallelDigest,
-	PseudoCompressionFunction,
+	PseudoCompressionFunction, Vision32Compression, Vision32ParallelDigest, VisionHasherDigest,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
@@ -46,5 +46,14 @@ fn bench_groestl_merkle_tree(c: &mut Criterion) {
 	bench_binary_merkle_tree::<Groestl256, _>(c, Groestl256ByteCompression, "Grøstl-256");
 }
 
+fn bench_vision_merkle_tree(c: &mut Criterion) {
+	bench_binary_merkle_tree::<VisionHasherDigest, _>(c, Vision32Compression, "Vision-32");
+	bench_binary_merkle_tree::<Vision32ParallelDigest, _>(
+		c,
+		Vision32Compression,
+		"Vision-32-Parallel",
+	);
+}
+
 criterion_main!(binary_merkle_tree);
-criterion_group!(binary_merkle_tree, bench_groestl_merkle_tree);
+criterion_group!(binary_merkle_tree, bench_groestl_merkle_tree, bench_vision_merkle_tree);
