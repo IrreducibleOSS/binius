@@ -1,10 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::TowerField;
-use binius_hash::PseudoCompressionFunction;
+use binius_hash::{multi_digest::ParallelDigest, PseudoCompressionFunction};
 use binius_maybe_rayon::iter::IndexedParallelIterator;
 use bytes::BufMut;
-use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
+use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
 use getset::Getters;
 use tracing::instrument;
 
@@ -17,12 +17,12 @@ use super::{
 use crate::transcript::TranscriptWriter;
 
 #[derive(Debug, Getters)]
-pub struct BinaryMerkleTreeProver<T, H, C> {
+pub struct BinaryMerkleTreeProver<T, H: ParallelDigest, C> {
 	#[getset(get = "pub")]
-	scheme: BinaryMerkleTreeScheme<T, H, C>,
+	scheme: BinaryMerkleTreeScheme<T, H::Digest, C>,
 }
 
-impl<T, C, H> BinaryMerkleTreeProver<T, H, C> {
+impl<T, C, H: ParallelDigest> BinaryMerkleTreeProver<T, H, C> {
 	pub fn new(compression: C) -> Self {
 		Self {
 			scheme: BinaryMerkleTreeScheme::new(compression),
@@ -33,11 +33,11 @@ impl<T, C, H> BinaryMerkleTreeProver<T, H, C> {
 impl<F, H, C> MerkleTreeProver<F> for BinaryMerkleTreeProver<F, H, C>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset,
-	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
+	C: PseudoCompressionFunction<Output<H::Digest>, 2> + Sync,
 {
-	type Scheme = BinaryMerkleTreeScheme<F, H, C>;
-	type Committed = BinaryMerkleTree<Output<H>>;
+	type Scheme = BinaryMerkleTreeScheme<F, H::Digest, C>;
+	type Committed = BinaryMerkleTree<Output<H::Digest>>;
 
 	fn scheme(&self) -> &Self::Scheme {
 		&self.scheme
@@ -47,7 +47,7 @@ where
 		&self,
 		data: &[F],
 		batch_size: usize,
-	) -> Result<(Commitment<Output<H>>, Self::Committed), Error> {
+	) -> Result<(Commitment<Output<H::Digest>>, Self::Committed), Error> {
 		let tree =
 			binary_merkle_tree::build::<_, H, _>(self.scheme.compression(), data, batch_size)?;
 
@@ -63,7 +63,7 @@ where
 		&self,
 		committed: &'a Self::Committed,
 		depth: usize,
-	) -> Result<&'a [Output<H>], Error> {
+	) -> Result<&'a [Output<H::Digest>], Error> {
 		committed.layer(depth)
 	}
 
