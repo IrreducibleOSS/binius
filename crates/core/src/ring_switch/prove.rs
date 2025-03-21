@@ -134,15 +134,13 @@ where
 	Tower: TowerFamily<B128 = F>,
 	Backend: ComputationBackend,
 {
-	let eval_points = system
+	let suffixes = system
 		.suffix_descs
 		.par_iter()
 		.map(|desc| Arc::as_ref(&desc.suffix))
 		.collect::<Vec<_>>();
 
-	memoized_queries
-		.memoize_query_par(&eval_points, backend)
-		.unwrap();
+	memoized_queries.memoize_query_par(&suffixes, backend)?;
 
 	let tensor_elems = system
 		.sumcheck_claim_descs
