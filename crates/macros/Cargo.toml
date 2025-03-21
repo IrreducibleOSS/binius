@@ -16,7 +16,7 @@ proc-macro2.workspace = true
 binius_core = { path = "../core" }
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
-binius_utils = { path = "../utils" }
+binius_utils = { path = "../utils", default-features = false }
 paste.workspace = true
 rand.workspace = true
 
