@@ -14,8 +14,6 @@
 	feature(stdarch_x86_avx512)
 )]
 
-// #![feature(stdarch_x86_avx512)]
-
 pub mod aes_field;
 pub mod arch;
 pub mod arithmetic_traits;
