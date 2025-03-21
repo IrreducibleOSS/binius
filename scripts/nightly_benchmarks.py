@@ -15,6 +15,7 @@ ENV_VARS = {
 SAMPLE_SIZE = 5
 
 KECCAKF_PERMS = 1 << 13
+GROESTL_PERMS = 1 << 14
 VISION32B_PERMS = 1 << 14
 SHA256_PERMS = 1 << 14
 NUM_BINARY_OPS = 1 << 22
@@ -31,6 +32,13 @@ EXAMPLES_TO_RUN = {
         "export": "keccakf-report.csv",
         "args": ["keccakf_circuit", "--", "--n-permutations"],
         "n_ops": KECCAKF_PERMS,
+    },
+    "groestl": {
+        "single_threaded": True,
+        "display": "Grøstl-256",
+        "export": "groestl-report.csv",
+        "args": ["groestl", "--", "--n-permutations"],
+        "n_ops": GROESTL_PERMS,
     },
     "vision32b": {
         "single_threaded": True,
