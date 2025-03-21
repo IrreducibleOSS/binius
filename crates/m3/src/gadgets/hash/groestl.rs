@@ -8,19 +8,23 @@ use std::{array, iter};
 
 use anyhow::Result;
 use array_util::ArrayExt;
+use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
-	packed::{get_packed_slice, set_packed_slice},
-	ExtensionField, PackedField,
+	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
+	AESTowerField8b, ExtensionField, PackedField,
 };
 use bytemuck::Pod;
 
 use crate::builder::{
 	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessIndexSegment, B1, B8,
 };
+
+/// The first row of the circulant matrix defining the MixBytes step in Grøstl.
+const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
 
 /// The affine transformation matrix for the Rijndael S-box, isomorphically converted to the
 /// canonical tower basis.
@@ -42,6 +46,266 @@ const S_BOX_TOWER_MATRIX_COLS: [B8; 8] = [
 /// canonical tower basis.
 const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 
+/// A Grøstl 512-bit state permutation.
+///
+/// The Grøstl hash function involves two permutations, P and Q, which are closely related. This
+/// gadget verifies one permutation, depending on the variant given as a constructor argument.
+///
+/// The state is represented as an array of 64 B8 elements, which is  isomorphic to the
+/// standard representation of bytes in a Grøstl state. This isomorphic representation is
+/// cheaper to verify with a Binius M3 constrant system.
+#[derive(Debug, Clone)]
+pub struct Permutation {
+	rounds: [PermutationRound; 10],
+}
+
+impl Permutation {
+	pub fn new(
+		table: &mut TableBuilder,
+		pq: PermutationVariant,
+		mut state_in: [Col<B8, 8>; 8],
+	) -> Self {
+		let rounds = array::from_fn(|i| {
+			let round = PermutationRound::new(
+				&mut table.with_namespace(format!("round[{}]", i)),
+				pq,
+				state_in,
+				i,
+			);
+			state_in = round.state_out;
+			round
+		});
+		Self { rounds }
+	}
+
+	/// Returns the input state columns.
+	pub fn state_in(&self) -> [Col<B8, 8>; 8] {
+		self.rounds[0].state_in
+	}
+
+	/// Returns the output state columns.
+	pub fn state_out(&self) -> [Col<B8, 8>; 8] {
+		self.rounds[9].state_out
+	}
+
+	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	where
+		U: Pod + PackScalar<B1> + PackScalar<B8>,
+		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
+	{
+		for round in &self.rounds {
+			round.populate(index)?;
+		}
+		Ok(())
+	}
+
+	/// Populate the input column of the witness with a full permutation state.
+	pub fn populate_state_in<'a, U>(
+		&self,
+		index: &mut TableWitnessIndexSegment<U>,
+		states: impl IntoIterator<Item = &'a [B8; 64]>,
+	) -> Result<()>
+	where
+		U: PackScalar<B8>,
+	{
+		let mut state_in = self
+			.state_in()
+			.try_map_ext(|state_in_i| index.get_mut(state_in_i))?;
+		for (k, state_k) in states.into_iter().enumerate() {
+			for (i, state_in_i) in state_in.iter_mut().enumerate() {
+				for j in 0..8 {
+					set_packed_slice(state_in_i, k * 8 + j, state_k[j * 8 + i]);
+				}
+			}
+		}
+		Ok(())
+	}
+
+	/// Reads the state outputs from the witness index.
+	///
+	/// This is currently only used for testing.
+	pub fn read_state_outs<'a, U>(
+		&'a self,
+		index: &'a mut TableWitnessIndexSegment<'a, U>,
+	) -> Result<impl Iterator<Item = [B8; 64]> + 'a>
+	where
+		U: PackScalar<B8>,
+	{
+		let state_out = self
+			.state_out()
+			.try_map_ext(|state_out_i| index.get(state_out_i))?;
+		let iter = (0..index.log_size()).map(move |k| {
+			array::from_fn(|ij| {
+				let i = ij % 8;
+				let j = ij / 8;
+				get_packed_slice(&state_out[i], k * 8 + j)
+			})
+		});
+		Ok(iter)
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum PermutationVariant {
+	P,
+	Q,
+}
+
+impl PermutationVariant {
+	/// Returns the number of bytes to shift column `i` by in the ShiftBytes step.
+	///
+	/// The Grøstl specification presents the ShiftBytes step as a circular shift of the rows of
+	/// the state; in this gadget, the state is transposed so that we shift columns instead.
+	fn shift_bytes_offset(self, i: usize) -> usize {
+		const P_SHIFTS: [usize; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+		const Q_SHIFTS: [usize; 8] = [1, 3, 5, 7, 0, 2, 4, 6];
+		let right_shift = match self {
+			PermutationVariant::P => P_SHIFTS[i],
+			PermutationVariant::Q => Q_SHIFTS[i],
+		};
+		// Left rotation amount
+		(8 - right_shift) % 8
+	}
+}
+
+fn round_consts(round: usize) -> [B8; 8] {
+	array::from_fn(|i| {
+		let val = (i * 0x10) ^ round;
+		B8::from(AESTowerField8b::new(val as u8))
+	})
+}
+
+/// A single round of a Grøstl permutation.
+#[derive(Debug, Clone)]
+struct PermutationRound {
+	pq: PermutationVariant,
+	round: usize,
+	// Inputs
+	pub state_in: [Col<B8, 8>; 8],
+	// Private
+	round_const: Col<B8, 8>,
+	sbox: [SBox<8>; 8],
+	shift: [Col<B8, 8>; 8],
+	// Outputs
+	pub state_out: [Col<B8, 8>; 8],
+}
+
+impl PermutationRound {
+	pub fn new(
+		table: &mut TableBuilder,
+		pq: PermutationVariant,
+		state_in: [Col<B8, 8>; 8],
+		round: usize,
+	) -> Self {
+		let round_const = table.add_constant("RoundConstant", round_consts(round));
+
+		// AddRoundConstant + SubBytes
+		let sbox = array::from_fn(|i| {
+			let sbox_in = match (i, pq) {
+				(0, PermutationVariant::P) => state_in[0] + round_const,
+				(_, PermutationVariant::P) => state_in[i].into(),
+				(7, PermutationVariant::Q) => {
+					state_in[7] + round_const + B8::from(AESTowerField8b::new(0xFF))
+				}
+				(_, PermutationVariant::Q) => state_in[i] + B8::from(AESTowerField8b::new(0xFF)),
+			};
+			SBox::new(&mut table.with_namespace(format!("SubBytes[{i}]")), sbox_in)
+		});
+
+		// ShiftBytes
+		let shift = array::from_fn(|i| {
+			let offset = pq.shift_bytes_offset(i);
+			if offset == 0 {
+				sbox[i].output
+			} else {
+				table.add_shifted(
+					format!("ShiftBytes[{i}]"),
+					sbox[i].output,
+					3,
+					offset,
+					ShiftVariant::CircularLeft,
+				)
+			}
+		});
+
+		// MixBytes
+		let mix_bytes_scalars = MIX_BYTES_VEC.map(|byte| B8::from(AESTowerField8b::new(byte)));
+		let state_out = array::from_fn(|j| {
+			let mix_bytes: [_; 8] =
+				array::from_fn(|i| shift[i] * mix_bytes_scalars[(8 + i - j) % 8]);
+			table.add_computed(
+				format!("MixBytes[{j}]"),
+				mix_bytes
+					.into_iter()
+					.reduce(|a, b| a + b)
+					.expect("mix_bytes has length 8"),
+			)
+		});
+
+		Self {
+			pq,
+			round,
+			state_in,
+			round_const,
+			sbox,
+			shift,
+			state_out,
+		}
+	}
+
+	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	where
+		U: Pod + PackScalar<B1> + PackScalar<B8>,
+		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
+	{
+		{
+			let mut round_const = index.get_mut(self.round_const)?;
+			let round_consts = round_consts(self.round);
+			for k in 0..len_packed_slice(&round_const) {
+				set_packed_slice(&mut round_const, k, round_consts[k % 8]);
+			}
+		}
+
+		// AddRoundConstant + SubBytes
+		for sbox in &self.sbox {
+			sbox.populate(index)?;
+		}
+
+		// ShiftBytes
+		for (i, (sbox, shift)) in iter::zip(&self.sbox, self.shift).enumerate() {
+			if sbox.output == shift {
+				continue;
+			}
+
+			let sbox_out = index.get_as::<u64, _, 8>(sbox.output)?;
+			let mut shift = index.get_mut_as::<u64, _, 8>(shift)?;
+
+			// TODO: Annoying that this is duplicated. We could inspect the column definitions to
+			// figure this out.
+			let offset = self.pq.shift_bytes_offset(i);
+			for (sbox_out_j, shift_j) in iter::zip(&*sbox_out, &mut *shift) {
+				*shift_j = sbox_out_j.rotate_left((offset * 8) as u32);
+			}
+		}
+
+		// MixBytes
+		// TODO: Do the fancy trick from the Groestl implementation guide to reduce
+		// multiplications.
+		let mix_bytes_scalars = MIX_BYTES_VEC.map(|byte| B8::from(AESTowerField8b::new(byte)));
+		let shift: [_; 8] = array_util::try_from_fn(|i| index.get(self.shift[i]))?;
+		for j in 0..8 {
+			let mut mix_bytes_out = index.get_mut(self.state_out[j])?;
+			for (k, mix_bytes_out_k) in mix_bytes_out.iter_mut().enumerate() {
+				*mix_bytes_out_k = (0..8)
+					.map(|i| shift[i][k] * mix_bytes_scalars[(8 + i - j) % 8])
+					.sum();
+			}
+		}
+
+		Ok(())
+	}
+}
+
 /// A gadget for the [Rijndael S-box].
 ///
 /// The Rijndael S-box, used in the AES block cipher, is a non-linear substitution box that is
@@ -51,8 +315,8 @@ const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 /// can translate the S-box to a transformation on [`B8`] elements, which are isomorphic.
 ///
 /// [Rijndael S-box]: <https://en.wikipedia.org/wiki/Rijndael_S-box>
-#[derive(Debug)]
-pub struct SBox<const V: usize> {
+#[derive(Debug, Clone)]
+struct SBox<const V: usize> {
 	input: Expr<B8, V>,
 	/// Bits of the inverse of the input, in AES basis.
 	inv_bits: [Col<B1, V>; 8],
@@ -113,7 +377,7 @@ impl<const V: usize> SBox<V> {
 		let mut inv_bits = self
 			.inv_bits
 			.try_map_ext(|inv_bits_i| index.get_mut(inv_bits_i))?;
-		for i in 0..index.size() {
+		for i in 0..index.size() * V {
 			let inv_val = get_packed_slice(&inv, i);
 			for (j, inv_bit_j) in ExtensionField::<B1>::iter_bases(&inv_val).enumerate() {
 				set_packed_slice(&mut inv_bits[j], i, inv_bit_j);
@@ -135,9 +399,10 @@ impl<const V: usize> SBox<V> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{
-		arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero, AESTowerField8b,
-	};
+	use std::iter::repeat_with;
+
+	use binius_field::{arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero};
+	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use bumpalo::Bump;
 	use rand::{prelude::StdRng, SeedableRng};
 
@@ -149,8 +414,8 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let mut table = cs.add_table("sbox test");
 
-		let input = table.add_committed::<B8, 1>("input");
-		let sbox = SBox::new(&mut table, input.into());
+		let input = table.add_committed::<B8, 2>("input");
+		let sbox = SBox::new(&mut table, input + B8::new(0xFF));
 
 		let table_id = table.id();
 
@@ -173,6 +438,114 @@ mod tests {
 		}
 
 		sbox.populate(&mut segment).unwrap();
+
+		let ccs = cs.compile(&statement).unwrap();
+		let witness = witness.into_multilinear_extension_index(&statement);
+
+		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+	}
+
+	#[test]
+	fn test_p_permutation() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("P-permutation test");
+
+		let input = table.add_committed_multiple::<B8, 8, 8>("state_in");
+		let perm = Permutation::new(&mut table, PermutationVariant::P, input);
+
+		let table_id = table.id();
+
+		let allocator = Bump::new();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![1 << 8],
+		};
+		let mut witness = cs
+			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.unwrap();
+
+		let table_witness = witness.get_table(table_id).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+			.take(1 << 8)
+			.collect::<Vec<_>>();
+		let out_states = in_states
+			.iter()
+			.map(|in_state| {
+				let in_state_bytes = in_state.map(|b8| AESTowerField8b::from(b8).val());
+				let mut state = GroestlShortImpl::state_from_bytes(&in_state_bytes);
+				GroestlShortImpl::p_perm(&mut state);
+				let out_state_bytes = GroestlShortImpl::state_to_bytes(&state);
+				out_state_bytes.map(|byte| B8::from(AESTowerField8b::new(byte)))
+			})
+			.collect::<Vec<_>>();
+
+		let mut segment = table_witness.full_segment();
+		perm.populate_state_in(&mut segment, in_states.iter())
+			.unwrap();
+		perm.populate(&mut segment).unwrap();
+
+		for (expected_out, generated_out) in
+			iter::zip(out_states, perm.read_state_outs(&mut segment).unwrap())
+		{
+			assert_eq!(generated_out, expected_out);
+		}
+
+		let ccs = cs.compile(&statement).unwrap();
+		let witness = witness.into_multilinear_extension_index(&statement);
+
+		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+	}
+
+	#[test]
+	fn test_q_permutation() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("Q-permutation test");
+
+		let input = table.add_committed_multiple::<B8, 8, 8>("state_in");
+		let perm = Permutation::new(&mut table, PermutationVariant::Q, input);
+
+		let table_id = table.id();
+
+		let allocator = Bump::new();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![1 << 8],
+		};
+		let mut witness = cs
+			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.unwrap();
+
+		let table_witness = witness.get_table(table_id).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+			.take(1 << 8)
+			.collect::<Vec<_>>();
+		let out_states = in_states
+			.iter()
+			.map(|in_state| {
+				let in_state_bytes = in_state.map(|b8| AESTowerField8b::from(b8).val());
+				let mut state = GroestlShortImpl::state_from_bytes(&in_state_bytes);
+				GroestlShortImpl::q_perm(&mut state);
+				let out_state_bytes = GroestlShortImpl::state_to_bytes(&state);
+				out_state_bytes.map(|byte| B8::from(AESTowerField8b::new(byte)))
+			})
+			.collect::<Vec<_>>();
+
+		let mut segment = table_witness.full_segment();
+		perm.populate_state_in(&mut segment, in_states.iter())
+			.unwrap();
+		perm.populate(&mut segment).unwrap();
+
+		for (expected_out, generated_out) in
+			iter::zip(out_states, perm.read_state_outs(&mut segment).unwrap())
+		{
+			assert_eq!(generated_out, expected_out);
+		}
 
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index(&statement);

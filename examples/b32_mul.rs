@@ -7,7 +7,6 @@ use binius_field::{BinaryField32b, TowerField};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_macros::arith_expr;
-use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
@@ -88,26 +87,17 @@ fn main() -> Result<()> {
 		.expect("builder created with witness");
 	let constraint_system = builder.build()?;
 
-	let domain_factory = DefaultEvaluationDomainFactory::default();
 	let backend = make_portable_backend();
 
-	let proof = constraint_system::prove::<
-		U,
-		CanonicalTowerFamily,
-		_,
-		Groestl256,
-		Groestl256ByteCompression,
-		HasherChallenger<Groestl256>,
-		_,
-	>(
-		&constraint_system,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&[],
-		witness,
-		&domain_factory,
-		&backend,
-	)?;
+	let proof =
+		constraint_system::prove::<
+			U,
+			CanonicalTowerFamily,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+			_,
+		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 

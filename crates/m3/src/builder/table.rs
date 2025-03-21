@@ -236,6 +236,18 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.assert_zero(name, expr)
 	}
 
+	/// Constrains that all values contained in this column are non-zero.
+	pub fn assert_nonzero<FSub, const V: usize>(&mut self, expr: Col<FSub, V>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert_eq!(expr.table_id, self.id());
+		assert!(expr.table_index < self.table.columns.len());
+
+		self.table.columns[expr.table_index].is_nonzero = true;
+	}
+
 	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,

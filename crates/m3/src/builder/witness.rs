@@ -207,10 +207,10 @@ pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
 	pub is_single_row: bool,
 }
 
-fn immutable_witness_index_columns<'a, U: UnderlierType>(
-	cols: Vec<WitnessIndexColumn<'a, U>>,
-) -> Vec<ImmutableWitnessIndexColumn<'a, U>> {
-	let mut result: Vec<ImmutableWitnessIndexColumn<'a, U>> = Vec::with_capacity(cols.len());
+fn immutable_witness_index_columns<U: UnderlierType>(
+	cols: Vec<WitnessIndexColumn<U>>,
+) -> Vec<ImmutableWitnessIndexColumn<U>> {
+	let mut result = Vec::<ImmutableWitnessIndexColumn<_>>::with_capacity(cols.len());
 	for col in cols {
 		result.push(ImmutableWitnessIndexColumn {
 			shape: col.shape,

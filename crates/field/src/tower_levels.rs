@@ -5,6 +5,8 @@ use std::{
 	ops::{Add, AddAssign, Index, IndexMut},
 };
 
+use binius_utils::checked_arithmetics::checked_log_2;
+
 /// Public API for recursive algorithms over data represented as an array of its limbs
 /// E.g. an F_{2^128} element expressed as 8 chunks of 2 bytes
 /// or a 256-bit integer represented as 32 individual bytes
@@ -19,6 +21,7 @@ use std::{
 pub trait TowerLevel: 'static {
 	// WIDTH is ALWAYS a power of 2
 	const WIDTH: usize;
+	const LOG_WIDTH: usize = checked_log_2(Self::WIDTH);
 
 	// The underlying Data should ALWAYS be a fixed-width array of T's
 	type Data<T>: AsMut<[T]>
