@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::{array, mem::MaybeUninit};
 
@@ -53,6 +53,10 @@ pub trait MultiDigest<const N: usize>: Clone {
 	fn reset(&mut self);
 
 	/// Compute hash of `data`.
+	/// All slices in the `data` must have the same length.
+	///
+	/// # Panics
+	/// Panics if data contains slices of different lengths.
 	fn digest(data: [&[u8]; N], out: &mut [MaybeUninit<Output<Self::Digest>>; N]);
 }
 
@@ -80,7 +84,8 @@ pub trait ParallelDigest: Send {
 	/// Create new hasher instance which has processed the provided data.
 	fn new_with_prefix(data: impl AsRef<[u8]>) -> Self;
 
-	/// Calculate the digest of multiple hashes of data chunks of the same length
+	/// Calculate the digest of multiple hashes where each of them is serialized into
+	/// the same number of bytes.
 	fn digest(
 		&self,
 		source: impl IndexedParallelIterator<Item: Serializable>,
