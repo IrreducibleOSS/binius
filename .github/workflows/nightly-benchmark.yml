@@ -1,0 +1,63 @@
+name: Nightly Benchmark
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:  # Allows manual trigger
+
+permissions:
+  contents: write
+  checks: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Benchmark for ${{ matrix.os }}
+    if: github.ref_name == 'main'
+    container: rustlang/rust:nightly
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ c7a-2xlarge, c8g-2xlarge, supermicro ]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: "-D warnings -C target-cpu=native"
+      - name: Setup Bencher
+        uses: bencherdev/bencher@v0.4.37 # Fix to specific version to avoid breaking changes
+      - name: Execute Single Thread Benchmark Tests
+        env:
+          RAYON_NUM_THREADS: 1
+        run: |
+          bencher run \
+          --project binius \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch ${{ github.ref_name }} \
+          --testbed single-micro-${{ matrix.os }} \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          --adapter rust_criterion \
+          'cargo bench --bench main_field_binary_ops \
+          --bench main_field_unary_ops \
+          --bench sumcheck \
+          --bench large_transform \
+          --bench binary_merkle_tree'
+      - name: Execute Multi Thread Benchmark Tests
+        env:
+          RAYON_NUM_THREADS: 0
+        run: |
+          bencher run \
+          --project binius \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch ${{ github.ref_name }} \
+          --testbed multi-micro-${{ matrix.os }} \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          --adapter rust_criterion \
+          'cargo bench --bench sumcheck \
+          --bench large_transform \
+          --bench binary_merkle_tree'

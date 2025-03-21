@@ -13,9 +13,8 @@ use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, AESTowerField32b, BinaryField1b, BinaryField32b, ExtensionField,
-	Field, PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField,
-	TowerField,
+	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
@@ -89,7 +88,7 @@ pub fn vision_permutation(
 			for (out, expected) in
 				PackedAESBinaryField8x32b::iter_slice(&in_out).zip(expected_out.iter())
 			{
-				assert_eq!(out, AESTowerField32b::from(*expected));
+				assert_eq!(out, binius_field::AESTowerField32b::from(*expected));
 			}
 		}
 	}

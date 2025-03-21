@@ -83,6 +83,6 @@ pub fn p(h: &mut [u64; COLS]) {
 
 pub fn q(h: &mut [u64; COLS]) {
 	for i in 0..ROUNDS {
-		*h = rndp(*h, i);
+		*h = rndq(*h, i);
 	}
 }

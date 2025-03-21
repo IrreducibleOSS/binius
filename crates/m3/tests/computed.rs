@@ -6,7 +6,6 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
 	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B64,
 };
-use binius_math::DefaultEvaluationDomainFactory;
 use bumpalo::Bump;
 use bytemuck::Pod;
 
@@ -116,7 +115,6 @@ fn test_m3_computed_col() {
 	let proof = binius_core::constraint_system::prove::<
 		_,
 		CanonicalTowerFamily,
-		_,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
@@ -127,7 +125,6 @@ fn test_m3_computed_col() {
 		SECURITY_BITS,
 		&statement.boundaries,
 		witness,
-		&DefaultEvaluationDomainFactory::default(),
 		&binius_hal::make_portable_backend(),
 	)
 	.unwrap();

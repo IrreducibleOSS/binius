@@ -12,10 +12,12 @@ binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
 binius_hal = { path = "../crates/hal" }
 binius_hash = { path = "../crates/hash" }
+binius_m3 = { path = "../crates/m3" }
 binius_macros = { path = "../crates/macros" }
 binius_math = { path = "../crates/math" }
 binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
+bytemuck.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 itertools.workspace = true
@@ -38,6 +40,10 @@ path = "u32add_with_lookup.rs"
 [[example]]
 name = "modular_mul"
 path = "modular_mul.rs"
+
+[[example]]
+name = "groestl"
+path = "groestl.rs"
 
 [[example]]
 name = "vision32b_circuit"
@@ -78,6 +84,10 @@ path = "b32_mul.rs"
 [[example]]
 name = "blake3_circuit"
 path = "blake3_circuit.rs"
+
+[[example]]
+name = "u32_mul_gkr_exp_lookups"
+path = "u32_mul_gkr_exp_lookups.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"

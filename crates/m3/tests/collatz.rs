@@ -119,7 +119,6 @@ mod arithmetization {
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
-	use binius_math::DefaultEvaluationDomainFactory;
 	use bumpalo::Bump;
 	use bytemuck::Pod;
 
@@ -374,7 +373,6 @@ mod arithmetization {
 		let proof = binius_core::constraint_system::prove::<
 			_,
 			CanonicalTowerFamily,
-			_,
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
@@ -385,7 +383,6 @@ mod arithmetization {
 			SECURITY_BITS,
 			&statement.boundaries,
 			witness,
-			&DefaultEvaluationDomainFactory::default(),
 			&binius_hal::make_portable_backend(),
 		)
 		.unwrap();

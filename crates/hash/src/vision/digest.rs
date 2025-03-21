@@ -154,8 +154,8 @@ impl Reset for VisionHasherDigest {
 
 impl FixedOutputReset for VisionHasherDigest {
 	fn finalize_into_reset(&mut self, out: &mut digest::Output<Self>) {
-		self.finalize_into(out);
-		self.reset();
+		Self::finalize_into(self, out);
+		Reset::reset(self);
 	}
 }
 

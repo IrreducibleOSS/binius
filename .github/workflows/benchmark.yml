@@ -1,4 +1,4 @@
-name: Nightly Benchmark
+name: Benchmark
 
 on:
   push:
@@ -37,6 +37,11 @@ jobs:
         with:
           name: gh-pages
           path: output/
+      - name: Upload Perfetto Trace
+        uses: actions/upload-artifact@v4
+        with:
+          name: perfetto-trace-${{ matrix.os }}
+          path: examples/*.perfetto-trace
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
