@@ -329,9 +329,9 @@ mod tests {
 		let mut prover_builder = EqIndSumcheckProverBuilder::new(&backend);
 
 		if let Some(nonzero_prefix) = nonzero_prefix {
-			prover_builder =
-				prover_builder.with_nonzero_scalars_prefixes(&[nonzero_prefix, nonzero_prefix]);
-			//				.with_eval_prefix(nonzero_prefix, F::ONE);
+			prover_builder = prover_builder
+				.with_nonzero_scalars_prefixes(&[nonzero_prefix, nonzero_prefix])
+				.with_eval_prefix(nonzero_prefix, F::ONE, F::ZERO);
 		}
 
 		let prover = prover_builder
