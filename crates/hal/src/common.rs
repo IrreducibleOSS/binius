@@ -5,9 +5,20 @@ use binius_field::{
 	PackedField,
 };
 
+// A kibibyte per multilinear seems like a reasonable compromise.
 pub(crate) const MAX_SRC_SUBCUBE_LOG_BITS: usize = 13;
 
-// TODO: document
+// A heuristic to determine the optimal subcube size for sumcheck calc / fold stages.
+//
+// Rough idea is as follows: we want subcubes small enough to create parallelization
+// opportunities, while big enough to amortize dynamic dispatch and leverage L1 caches.
+//
+// Top to bottom, heuristics are:
+//   - keep working set at constant bit size ...
+//   - accounting for pre-switchover rounds reading from a larger working set (inner_product_vars)
+//   - try to minimize wasted effort (max_subcube_src_vars)
+//   - do not allow subcubes to be smaller than packing width (P::LOG_WIDTH) ...
+//   - unless the multilinear is smaller than a single packed field (max_total_vars)
 pub(crate) fn subcube_vars_for_bits<P: PackedField>(
 	max_subcube_src_bits: usize,
 	max_subcube_src_vars: usize,

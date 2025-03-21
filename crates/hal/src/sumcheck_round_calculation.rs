@@ -80,7 +80,6 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	evaluation_order: EvaluationOrder,
 	n_vars: usize,
-	// TODO: document
 	eval_prefix: Option<usize>,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
@@ -149,7 +148,7 @@ where
 	Composition: CompositionPoly<P>,
 {
 	assert!(eval_prefix <= 1 << (n_vars - 1));
-	assert!(subcube_vars <= n_vars - 1);
+	assert!(subcube_vars < n_vars);
 
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators
