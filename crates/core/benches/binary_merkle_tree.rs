@@ -7,7 +7,7 @@ use binius_field::{BinaryField128b, Field};
 use binius_hash::{
 	groestl::{Groestl256, Groestl256ByteCompression},
 	multi_digest::ParallelDigest,
-	PseudoCompressionFunction,
+	PseudoCompressionFunction, Vision32Compression, Vision32ParallelDigest, VisionHasherDigest,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
