@@ -128,13 +128,22 @@ where
 		self
 	}
 
-	// TODO: document
+	/// Specify the nonzero scalar prefixes for multilinears.
+	///
+	/// The provided array specifies the nonzero scalars at the beginning of each multilinear.
+	/// Prover is able to reduce multilinear storage and compute using this information.
 	pub fn with_nonzero_scalars_prefixes(mut self, nonzero_scalars_prefixes: &[usize]) -> Self {
 		self.nonzero_scalars_prefixes = Some(nonzero_scalars_prefixes.to_vec());
 		self
 	}
 
-	// TODO: document
+	/// Specifies evaluation prefix for the composite.
+	///
+	/// ## Arguments
+	///
+	/// * `eval_prefix`         - number of trace rows which are not guaranteed to yield constant evaluations
+	/// * `suffix_value`        - constant value of the composite at the trace suffix in finite domain points
+	/// * `suffix_value_at_inf` - constant value of the composite at Karatsuba infinity point
 	pub fn with_eval_prefix(
 		mut self,
 		eval_prefix: usize,
@@ -430,7 +439,8 @@ where
 			.state
 			.calculate_round_evals(Some(self.eval_prefix), &evaluators)?;
 
-		// TODO: comment
+		// Evaluate equality indicator suffix sum succinctly, multiply by constant suffix value
+		// and add to evals.
 		for evals in &mut output.round_evals {
 			for (i, eval) in evals.0.iter_mut().enumerate() {
 				*eval += self.eq_ind_suffix_sum(output.subcube_count << output.subcube_vars)

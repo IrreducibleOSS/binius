@@ -119,7 +119,7 @@ where
 
 				fold_right_lerp(
 					evals.as_slice(),
-					// TODO comment
+					// evals is optimally truncated, upper bound on nonzero scalars is quite tight
 					evals.len() * P::WIDTH,
 					challenge,
 					&mut new_evals,
