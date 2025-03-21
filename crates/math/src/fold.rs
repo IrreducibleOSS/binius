@@ -490,7 +490,7 @@ where
 		for out in &mut out[upper_bound..] {
 			out.write(P::zero());
 		}
-	} else {
+	} else if nonzero_scalars_prefix > 0 {
 		let only_packed = *evals.first().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 
@@ -548,7 +548,7 @@ where
 		}
 
 		evals.truncate(upper_bound);
-	} else {
+	} else if nonzero_scalars_prefix > 0 {
 		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 		let half_size = 1 << (log_evals_size - 1);

@@ -252,7 +252,7 @@ mod tests {
 		PackedType<U, F>: PackedFieldIndexable,
 	{
 		let max_nonzero_prefix = 1 << n_vars;
-		let mut nonzero_prefixes = vec![None];
+		let mut nonzero_prefixes = vec![None, Some(0)];
 
 		for i in 1..=n_vars {
 			nonzero_prefixes.push(Some(1 << i));
@@ -376,7 +376,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_eq_ind_sumcheck_prove_verify_256() {
+	fn test_eq_ind_sumcheck_prove_verify_256b() {
 		let n_vars = 8;
 
 		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a

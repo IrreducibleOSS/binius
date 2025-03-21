@@ -313,6 +313,35 @@ where
 		// Update the running eq ind evaluation.
 		self.eq_ind_prefix_eval *= eq(self.eq_ind_round_challenge(), challenge);
 	}
+
+	fn eq_ind_suffix_sum(&self, mut pivot: usize) -> F {
+		assert_eq!(self.n_vars, self.eq_ind_challenges.len());
+		let (n_vars, round) = (self.n_vars, self.round());
+		let challenges = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => &self.eq_ind_challenges[(round + 1).min(n_vars)..],
+			EvaluationOrder::HighToLow => {
+				&self.eq_ind_challenges[..n_vars.saturating_sub(round + 1)]
+			}
+		};
+
+		let (mut sum, mut running_product) = (F::ZERO, F::ONE);
+
+		for (i, &alpha) in challenges.iter().enumerate().rev() {
+			if pivot < 1 << i {
+				sum += running_product * alpha;
+				running_product *= F::ONE - alpha;
+			} else {
+				running_product *= alpha;
+				pivot -= 1 << i;
+			}
+		}
+
+		if pivot == 0 {
+			sum += running_product;
+		}
+
+		sum
+	}
 }
 
 pub fn eq_ind_expand<P, Backend>(
@@ -403,16 +432,8 @@ where
 
 		// TODO: comment
 		for evals in &mut output.round_evals {
-			let pivot = output.subcube_count << output.subcube_vars.saturating_sub(P::LOG_WIDTH);
-			let eq_ind_suffix_sum = eq_ind_partial_evals[pivot..]
-				.par_iter()
-				.copied()
-				.sum::<P>()
-				.iter()
-				.sum::<F>();
-
 			for (i, eval) in evals.0.iter_mut().enumerate() {
-				*eval += eq_ind_suffix_sum
+				*eval += self.eq_ind_suffix_sum(output.subcube_count << output.subcube_vars)
 					* if i == 1 {
 						self.suffix_value_at_inf
 					} else {
