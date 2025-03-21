@@ -110,23 +110,22 @@ where
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+				large_field_folded_evals: evals,
 			} => {
 				// Post-switchover, we perform single variable folding (linear interpolation).
 				// NB: Lerp folding in low-to-high evaluation order can be made inplace, but not
 				// easily so if multithreading is desired.
-				let mut new_large_field_folded_evals =
-					zeroed_vec(1 << n_vars.saturating_sub(1 + P::LOG_WIDTH));
+				let mut new_evals = zeroed_vec(evals.len().div_ceil(2));
 
 				fold_right_lerp(
-					large_field_folded_evals.as_slice(),
+					evals.as_slice(),
 					// TODO comment
-					large_field_folded_evals.len() * P::WIDTH,
+					evals.len() * P::WIDTH,
 					challenge,
-					&mut new_large_field_folded_evals,
+					&mut new_evals,
 				)?;
 
-				*large_field_folded_evals = new_large_field_folded_evals;
+				*evals = new_evals;
 				Ok(false)
 			}
 		}
@@ -178,7 +177,7 @@ where
 						for (subcube_index, subcube_evals) in
 							folded.chunks_exact_mut(packed_len).enumerate()
 						{
-							multilinear.subcube_partial_low_evals(
+							multilinear.subcube_partial_high_evals(
 								*tensor_query,
 								subcube_vars,
 								subcube_index,

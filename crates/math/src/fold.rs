@@ -166,10 +166,6 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	if evals_size & 1 != 0 {
-		bail!(Error::IncorrectQuerySize { expected: 1 });
-	}
-
 	if P::WIDTH * evals.len() < evals_size {
 		bail!(Error::IncorrectArgumentLength {
 			arg: "evals".into(),
@@ -435,6 +431,15 @@ where
 				}
 			}
 		});
+
+	if evals_size % 2 == 1 {
+		let idx = folded_evals_size;
+		let (packed, i) = (&mut out[idx / PE::WIDTH], idx % PE::WIDTH);
+		packed.set(
+			i,
+			PE::Scalar::from(get_packed_slice(evals, idx << 1)) * (PE::Scalar::ONE - lerp_query),
+		);
+	}
 
 	Ok(())
 }
