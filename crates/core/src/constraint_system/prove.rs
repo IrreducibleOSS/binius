@@ -45,7 +45,7 @@ use crate::{
 		fri::CommitOutput,
 		gkr_exp,
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
-		greedy_evalcheck,
+		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
 			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
 			prove::{
@@ -445,7 +445,11 @@ where
 		sumcheck::make_eval_claims(zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Prove evaluation claims
-	let eval_claims = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
+	let GreedyEvalcheckProveOutput {
+		eval_claims,
+		memoized_queries,
+		memoized_partial_evals,
+	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
@@ -474,6 +478,8 @@ where
 		&system,
 		&committed_multilins,
 		&mut transcript,
+		memoized_queries,
+		memoized_partial_evals,
 		backend,
 	)?;
 
