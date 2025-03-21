@@ -3,16 +3,10 @@
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
 use binius_field::TowerField;
-use binius_hash::{
-	multi_digest::{ParallelDigest, ParallelDigestSource},
-	HashBuffer, PseudoCompressionFunction,
-};
+use binius_hash::{multi_digest::ParallelDigest, PseudoCompressionFunction};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
-use binius_utils::{
-	bail, checked_arithmetics::log2_strict_usize, SerializationMode, SerializeBytes,
-};
-use bytes::BufMut;
-use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
+use digest::{crypto_common::BlockSizeUser, FixedOutputReset, Output};
 use tracing::instrument;
 
 use super::errors::Error;
@@ -195,38 +189,10 @@ where
 		});
 	}
 
-	struct DataSource<'a, F: TowerField> {
-		elems: &'a [F],
-		n_digests: usize,
-	}
-
-	impl<F: TowerField> ParallelDigestSource for DataSource<'_, F> {
-		fn n_chunks(&self) -> usize {
-			1
-		}
-
-		fn get_chunk(&self, hash: usize, _chunk: usize, mut buf: impl BufMut) {
-			debug_assert_eq!(_chunk, 0);
-
-			let mode = SerializationMode::CanonicalTower;
-			let hash_start = self.n_digests * hash;
-			for elem in &self.elems[hash_start..hash_start + self.n_digests] {
-				SerializeBytes::serialize(elem, &mut buf, mode)
-					.expect("buffer must have enough capacity");
-			}
-		}
-	}
-
-	let hasher = H::new();
-	hasher.digest(
-		&DataSource {
-			elems,
-			n_digests: elems.len() / digests.len(),
-		},
-		digests,
-	);
-
-	Ok(())
+	let hash_data_iter = elems
+		.par_chunks(elems.len() / digests.len())
+		.map(|s| s.iter().copied());
+	hash_iterated::<_, H, _>(hash_data_iter, digests)
 }
 
 fn hash_iterated<F, H, ParIter>(
@@ -238,21 +204,9 @@ where
 	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
 	ParIter: IndexedParallelIterator<Item: IntoIterator<Item = F>>,
 {
-	digests.par_iter_mut().zip(iterated_chunks).for_each_init(
-		H::Digest::new,
-		|hasher, (digest, elems)| {
-			{
-				let mut hash_buffer = HashBuffer::new(hasher);
-				for elem in elems {
-					let mode = SerializationMode::CanonicalTower;
-					SerializeBytes::serialize(&elem, &mut hash_buffer, mode)
-						.expect("HashBuffer has infinite capacity");
-				}
-			}
+	let hasher = H::new();
+	hasher.digest(iterated_chunks, digests);
 
-			digest.write(hasher.finalize_reset());
-		},
-	);
 	Ok(())
 }
 

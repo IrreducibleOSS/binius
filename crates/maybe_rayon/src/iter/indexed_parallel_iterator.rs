@@ -53,7 +53,44 @@ pub(crate) trait IndexedParallelIteratorInner: ParallelIteratorInner {
 	{
 		Iterator::step_by(self, step)
 	}
+
+	#[inline]
+	fn chunks(self, chunk_size: usize) -> impl IndexedParallelIteratorInner<Item = Vec<Self::Item>>
+	where
+		Self: Sized,
+	{
+		Chunks {
+			inner: self,
+			chunk_size,
+		}
+	}
 }
+
+struct Chunks<I> {
+	inner: I,
+	chunk_size: usize,
+}
+
+impl<I: Iterator> Iterator for Chunks<I> {
+	type Item = Vec<I::Item>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let mut chunk = Vec::with_capacity(self.chunk_size);
+		for _ in 0..self.chunk_size {
+			match self.inner.next() {
+				Some(item) => chunk.push(item),
+				None => break,
+			}
+		}
+		if chunk.is_empty() {
+			None
+		} else {
+			Some(chunk)
+		}
+	}
+}
+
+impl<I: Iterator> IndexedParallelIteratorInner for Chunks<I> {}
 
 // Implement `IndexedParallelIteratorInner` for different `std::iter::Iterator` types.
 // Unfortunately, we can't implement it for all `std::iter::Iterator` types because of the collisions
@@ -130,6 +167,13 @@ pub trait IndexedParallelIterator: ParallelIterator {
 			IndexedParallelIterator::into_inner(self),
 			step,
 		))
+	}
+
+	#[inline]
+	fn chunks(self, chunk_size: usize) -> impl IndexedParallelIterator<Item = Vec<Self::Item>> {
+		assert!(chunk_size != 0, "chunk_size must not be zero");
+
+		ParallelWrapper::new(IndexedParallelIterator::into_inner(self).chunks(chunk_size))
 	}
 }
 
