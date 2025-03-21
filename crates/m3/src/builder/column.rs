@@ -20,7 +20,7 @@ pub type ColumnPartitionIndex = usize;
 /// from the canonical tower (B1, B8, B16, B32, B64, B128). The second constant represents how many
 /// elements are packed vertically into a single logical row. For example, a column of type
 /// `Col<B1, 32>` will have 2^5 = 32 elements of `B1` packed into a single row.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
 	pub table_id: TableId,
 	pub table_index: TableId,
