@@ -45,6 +45,7 @@ jobs:
           --bench main_field_unary_ops \
           --bench sumcheck \
           --bench large_transform \
+          --bench nightly_prodcheck \
           --bench binary_merkle_tree'
       - name: Execute Multi Thread Benchmark Tests
         env:
@@ -60,4 +61,5 @@ jobs:
           --adapter rust_criterion \
           'cargo bench --bench sumcheck \
           --bench large_transform \
+          --bench nightly_prodcheck \
           --bench binary_merkle_tree'
