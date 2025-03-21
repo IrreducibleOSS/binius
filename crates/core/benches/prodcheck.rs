@@ -41,7 +41,7 @@ fn apply_transformation<IP, OP>(
 
 const N_VARS: [usize; 4] = [12, 16, 20, 24];
 
-const N_CLAIMS: usize = 10;
+const N_CLAIMS: usize = 1;
 type FDomain = BinaryField128b;
 
 fn bench_gpa_generic<P, FDomain, R, BenchFn>(name: &str, c: &mut Criterion, bench_fn: &BenchFn)
@@ -204,7 +204,6 @@ fn bench_binary_128b(c: &mut Criterion) {
 }
 
 fn bench_byte_sliced_aes_128b(c: &mut Criterion) {
-	// TODO: this benchmarks should account for the byte sliced transposition time
 	bench_gpa::<ByteSlicedAES16x128b, AESTowerField8b>(
 		"gpa_byte_sliced_aes_128b",
 		EvaluationOrder::HighToLow,
@@ -213,7 +212,6 @@ fn bench_byte_sliced_aes_128b(c: &mut Criterion) {
 }
 
 fn bench_byte_sliced_aes_256b(c: &mut Criterion) {
-	// TODO: this benchmarks should account for the byte sliced transposition time
 	bench_gpa::<ByteSlicedAES32x128b, AESTowerField8b>(
 		"gpa_byte_sliced_aes_256b",
 		EvaluationOrder::HighToLow,
@@ -222,7 +220,6 @@ fn bench_byte_sliced_aes_256b(c: &mut Criterion) {
 }
 
 fn bench_byte_sliced_aes_512b(c: &mut Criterion) {
-	// TODO: this benchmarks should account for the byte sliced transposition time
 	bench_gpa::<ByteSlicedAES64x128b, AESTowerField8b>(
 		"gpa_byte_sliced_aes_512b",
 		EvaluationOrder::HighToLow,
