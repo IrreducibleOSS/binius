@@ -212,7 +212,7 @@ where
 						large_field_folded_evals,
 					} => Ok(large_field_folded_evals
 						.first()
-						.expect("exactly one packed field element left after folding")
+						.map_or(F::ZERO, |packed| packed.get(0))
 						.get(0)),
 				}
 				.map_err(Error::MathError)
