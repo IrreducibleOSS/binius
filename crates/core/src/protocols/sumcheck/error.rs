@@ -63,8 +63,8 @@ pub enum Error {
 	IncorrectEqIndChallengesLength,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
-	#[error("number of specified multilinears and switchover rounds does not match")]
-	MultilinearSwitchoverSizeMismatch,
+	#[error("nonzero prefixes length does not equal multilinear count, or prefix longer than multilinear")]
+	IncorrectNonzeroScalarPrefixes,
 	#[error("incorrect size of the equality indicator expansion in eq_ind sumcheck")]
 	IncorrectEqIndPartialEvalsSize,
 	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]
@@ -73,6 +73,8 @@ pub enum Error {
 		"the number of prime polynomial sums does not match the number of zerocheck compositions"
 	)]
 	IncorrectClaimedPrimeSumsLength,
+	#[error("evaluation prefix longer than trace size")]
+	EvalPrefixTooLong,
 	#[error("the number of evaluations at 1 in the first round is of incorrect length")]
 	IncorrectFirstRoundEvalOnesLength,
 	#[error("batch proof shape does not conform to the provided indexed claims")]

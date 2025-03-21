@@ -6,18 +6,23 @@
 
 use std::iter;
 
-use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
+use binius_field::{
+	packed::get_packed_slice_checked, Field, PackedExtension, PackedField, PackedSubfield,
+};
 use binius_math::{
-	extrapolate_lines, CompositionPoly, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
-	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
+	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use itertools::{izip, Either, Itertools};
 use stackalloc::stackalloc_with_iter;
 
-use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
+use crate::{
+	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
+	Error, RoundEvals, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator, SumcheckMultilinear,
+};
 
 trait SumcheckMultilinearAccess<P: PackedField> {
 	/// The size of `Vec<P>` scratchspace used by [`subcube_evaluations`], if any.
@@ -75,11 +80,12 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	evaluation_order: EvaluationOrder,
 	n_vars: usize,
+	eval_prefix: Option<usize>,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	finite_evaluation_points: &[FDomain],
-) -> Result<Vec<RoundEvals<F>>, Error>
+) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -88,12 +94,24 @@ where
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Composition: CompositionPoly<P>,
 {
+	assert!(n_vars > 0, "Computing round evaluations requires at least a single variable.");
+
+	let eval_prefix = eval_prefix.unwrap_or(1 << (n_vars - 1));
+
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
+	let subcube_vars = subcube_vars_for_bits::<P>(
+		MAX_SRC_SUBCUBE_LOG_BITS,
+		log2_ceil_usize(eval_prefix),
+		tensor_query.n_vars(),
+		n_vars - 1,
+	);
 
 	match evaluation_order {
 		EvaluationOrder::LowToHigh => calculate_round_evals_with_access(
 			n_vars,
+			eval_prefix,
+			subcube_vars,
 			&LowToHighAccess { tensor_query },
 			multilinears,
 			evaluators,
@@ -101,6 +119,8 @@ where
 		),
 		EvaluationOrder::HighToLow => calculate_round_evals_with_access(
 			n_vars,
+			eval_prefix,
+			subcube_vars,
 			&HighToLowAccess { tensor_query },
 			multilinears,
 			evaluators,
@@ -111,11 +131,13 @@ where
 
 fn calculate_round_evals_with_access<FDomain, F, P, M, Evaluator, Access, Composition>(
 	n_vars: usize,
+	eval_prefix: usize,
+	subcube_vars: usize,
 	access: &Access,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	nontrivial_evaluation_points: &[FDomain],
-) -> Result<Vec<RoundEvals<F>>, Error>
+) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -125,16 +147,13 @@ where
 	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	assert!(n_vars > 0, "Computing round evaluations requires at least a single variable.");
+	assert!(eval_prefix <= 1 << (n_vars - 1));
+	assert!(subcube_vars < n_vars);
 
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators
 		.iter()
 		.map(|evaluator| evaluator.eval_point_indices().len());
-
-	/// Process batches of vertices in parallel, accumulating the round evaluations.
-	const MAX_SUBCUBE_VARS: usize = 6;
-	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars - 1);
 
 	// Compute the union of all evaluation point index ranges.
 	let eval_point_indices = evaluators
@@ -149,7 +168,8 @@ where
 	}
 
 	let index_vars = n_vars - 1 - subcube_vars;
-	let packed_accumulators = (0..1 << index_vars)
+	let subcube_count = eval_prefix.div_ceil(1 << subcube_vars);
+	let packed_accumulators = (0..subcube_count)
 		.into_par_iter()
 		.try_fold(
 			|| ParFoldStates::new(access, n_multilinears, n_round_evals.clone(), subcube_vars),
@@ -271,7 +291,7 @@ where
 			},
 		)?;
 
-	let evals = packed_accumulators
+	let round_evals = packed_accumulators
 		.into_iter()
 		.map(|vals| {
 			RoundEvals(
@@ -283,7 +303,11 @@ where
 		})
 		.collect();
 
-	Ok(evals)
+	Ok(SumcheckComputeRoundEvalsOutput {
+		subcube_vars,
+		subcube_count,
+		round_evals,
+	})
 }
 
 // Evals of a single multilinear over a subcube, at 0/1 and some interpolated point.
@@ -389,17 +413,30 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+				large_field_folded_evals: evals,
 			} => {
-				let multilinear =
-					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
+				if subcube_vars + 1 >= P::LOG_WIDTH {
+					let packed_log_size = subcube_vars + 1 - P::LOG_WIDTH;
+					let offset = subcube_index << packed_log_size;
+					let packed_len = (1 << packed_log_size).min(evals.len().saturating_sub(offset));
+					if packed_len > 0 {
+						scratch_space[..packed_len]
+							.copy_from_slice(&evals[offset..offset + packed_len]);
+					}
+					scratch_space[packed_len..].fill(P::zero());
+				} else {
+					let mut only_packed = P::zero();
 
-				MLEDirectAdapter::from(multilinear).subcube_evals(
-					subcube_vars + 1,
-					subcube_index,
-					0,
-					scratch_space,
-				)?
+					for i in 0..1 << (subcube_vars + 1) {
+						let index = subcube_index << (subcube_vars + 1) | i;
+						only_packed.set(
+							i,
+							get_packed_slice_checked(evals, index).unwrap_or(P::Scalar::ZERO),
+						);
+					}
+
+					*scratch_space.first_mut().expect("non-empty scratch space") = only_packed;
+				}
 			}
 		}
 
@@ -482,13 +519,47 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+				large_field_folded_evals: evals,
 			} => {
-				let multilinear =
-					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
-				let adapter = MLEDirectAdapter::from(multilinear);
-				adapter.subcube_evals(subcube_vars, subcube_index, 0, evals_0)?;
-				adapter.subcube_evals(subcube_vars, subcube_index | 1 << index_vars, 0, evals_1)?;
+				if subcube_vars >= P::LOG_WIDTH {
+					let packed_log_size = subcube_vars - P::LOG_WIDTH;
+					let offset_0 = subcube_index << packed_log_size;
+					let offset_1 = offset_0 | 1 << (index_vars + packed_log_size);
+					let packed_len_0 =
+						(1 << packed_log_size).min(evals.len().saturating_sub(offset_0));
+					let packed_len_1 =
+						(1 << packed_log_size).min(evals.len().saturating_sub(offset_1));
+
+					if packed_len_0 > 0 {
+						evals_0[..packed_len_0].copy_from_slice(&evals[offset_0..][..packed_len_0]);
+					}
+
+					if packed_len_1 > 0 {
+						evals_1[..packed_len_1].copy_from_slice(&evals[offset_1..][..packed_len_1]);
+					}
+
+					evals_0[packed_len_0..].fill(P::zero());
+					evals_1[packed_len_1..].fill(P::zero());
+				} else {
+					let mut evals_0_packed = P::zero();
+					let mut evals_1_packed = P::zero();
+
+					for i in 0..1 << subcube_vars {
+						let index_0 = subcube_index << subcube_vars | i;
+						let index_1 = index_0 | 1 << (index_vars + subcube_vars);
+						evals_0_packed.set(
+							i,
+							get_packed_slice_checked(evals, index_0).unwrap_or(P::Scalar::ZERO),
+						);
+						evals_1_packed.set(
+							i,
+							get_packed_slice_checked(evals, index_1).unwrap_or(P::Scalar::ZERO),
+						);
+					}
+
+					*evals_0.first_mut().expect("non-empty evals_0") = evals_0_packed;
+					*evals_1.first_mut().expect("non-empty evals_1") = evals_1_packed;
+				}
 			}
 		}
 

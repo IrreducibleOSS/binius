@@ -90,7 +90,9 @@ where
 	Backend: ComputationBackend,
 {
 	eq_ind_partial_evals: Option<Backend::Vec<P>>,
+	nonzero_scalars_prefixes: Option<Vec<usize>>,
 	first_round_eval_1s: Option<Vec<P::Scalar>>,
+	eval_prefix: Option<(usize, P::Scalar, P::Scalar)>,
 	backend: &'a Backend,
 }
 
@@ -104,7 +106,9 @@ where
 		Self {
 			backend,
 			eq_ind_partial_evals: None,
+			nonzero_scalars_prefixes: None,
 			first_round_eval_1s: None,
+			eval_prefix: None,
 		}
 	}
 
@@ -121,6 +125,32 @@ where
 	/// to direct composite evaluation.
 	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
 		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
+		self
+	}
+
+	/// Specify the nonzero scalar prefixes for multilinears.
+	///
+	/// The provided array specifies the nonzero scalars at the beginning of each multilinear.
+	/// Prover is able to reduce multilinear storage and compute using this information.
+	pub fn with_nonzero_scalars_prefixes(mut self, nonzero_scalars_prefixes: &[usize]) -> Self {
+		self.nonzero_scalars_prefixes = Some(nonzero_scalars_prefixes.to_vec());
+		self
+	}
+
+	/// Specifies evaluation prefix for the composite.
+	///
+	/// ## Arguments
+	///
+	/// * `eval_prefix`         - number of trace rows which are not guaranteed to yield constant evaluations
+	/// * `suffix_value`        - constant value of the composite at the trace suffix in finite domain points
+	/// * `suffix_value_at_inf` - constant value of the composite at Karatsuba infinity point
+	pub fn with_eval_prefix(
+		mut self,
+		eval_prefix: usize,
+		suffix_value: P::Scalar,
+		suffix_value_at_inf: P::Scalar,
+	) -> Self {
+		self.eval_prefix = Some((eval_prefix, suffix_value, suffix_value_at_inf));
 		self
 	}
 
@@ -159,6 +189,14 @@ where
 
 		if eq_ind_challenges.len() != n_vars {
 			bail!(Error::IncorrectEqIndChallengesLength);
+		}
+
+		let (eval_prefix, suffix_value, suffix_value_at_inf) = self
+			.eval_prefix
+			.unwrap_or_else(|| (1 << n_vars, P::Scalar::ZERO, P::Scalar::ZERO));
+
+		if eval_prefix > 1 << n_vars {
+			bail!(Error::EvalPrefixTooLong);
 		}
 
 		// Only one value of the expanded equality indicator is used per each
@@ -203,6 +241,7 @@ where
 		let state = ProverState::new(
 			evaluation_order,
 			multilinears,
+			self.nonzero_scalars_prefixes,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,
@@ -215,6 +254,9 @@ where
 
 		Ok(EqIndSumcheckProver {
 			n_vars,
+			eval_prefix,
+			suffix_value,
+			suffix_value_at_inf,
 			state,
 			eq_ind_prefix_eval,
 			eq_ind_partial_evals,
@@ -236,6 +278,9 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
+	eval_prefix: usize,
+	suffix_value: P::Scalar,
+	suffix_value_at_inf: P::Scalar,
 	state: ProverState<'a, FDomain, P, M, Backend>,
 	eq_ind_prefix_eval: P::Scalar,
 	eq_ind_partial_evals: Backend::Vec<P>,
@@ -276,6 +321,35 @@ where
 	fn update_eq_ind_prefix_eval(&mut self, challenge: F) {
 		// Update the running eq ind evaluation.
 		self.eq_ind_prefix_eval *= eq(self.eq_ind_round_challenge(), challenge);
+	}
+
+	fn eq_ind_suffix_sum(&self, mut pivot: usize) -> F {
+		assert_eq!(self.n_vars, self.eq_ind_challenges.len());
+		let (n_vars, round) = (self.n_vars, self.round());
+		let challenges = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => &self.eq_ind_challenges[(round + 1).min(n_vars)..],
+			EvaluationOrder::HighToLow => {
+				&self.eq_ind_challenges[..n_vars.saturating_sub(round + 1)]
+			}
+		};
+
+		let (mut sum, mut running_product) = (F::ZERO, F::ONE);
+
+		for (i, &alpha) in challenges.iter().enumerate().rev() {
+			if pivot < 1 << i {
+				sum += running_product * alpha;
+				running_product *= F::ONE - alpha;
+			} else {
+				running_product *= alpha;
+				pivot -= 1 << i;
+			}
+		}
+
+		if pivot == 0 {
+			sum += running_product;
+		}
+
+		sum
 	}
 }
 
@@ -354,10 +428,35 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.calculate_round_evals(&evaluators)?;
-		let prime_coeffs =
-			self.state
-				.calculate_round_coeffs_from_evals(&interpolators, batch_coeff, evals)?;
+		self.eval_prefix = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => self.eval_prefix.div_ceil(2),
+			EvaluationOrder::HighToLow => self
+				.eval_prefix
+				.min(1 << self.n_rounds_remaining().saturating_sub(1)),
+		};
+
+		let mut output = self
+			.state
+			.calculate_round_evals(Some(self.eval_prefix), &evaluators)?;
+
+		// Evaluate equality indicator suffix sum succinctly, multiply by constant suffix value
+		// and add to evals.
+		for evals in &mut output.round_evals {
+			for (i, eval) in evals.0.iter_mut().enumerate() {
+				*eval += self.eq_ind_suffix_sum(output.subcube_count << output.subcube_vars)
+					* if i == 1 {
+						self.suffix_value_at_inf
+					} else {
+						self.suffix_value
+					};
+			}
+		}
+
+		let prime_coeffs = self.state.calculate_round_coeffs_from_evals(
+			&interpolators,
+			batch_coeff,
+			output.round_evals,
+		)?;
 
 		// Convert v' polynomial into v polynomial
 

@@ -14,6 +14,7 @@ where
 	Transparent {
 		multilinear: M,
 		switchover_round: usize,
+		nonzero_scalars_prefix: Option<usize>,
 	},
 	/// Large field multilinear - halved in size each round
 	Folded { large_field_folded_evals: Vec<P> },

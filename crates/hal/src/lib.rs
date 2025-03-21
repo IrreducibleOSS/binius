@@ -9,11 +9,13 @@
 //! [`crate::make_portable_backend`].
 
 mod backend;
+mod common;
 mod cpu;
 mod error;
 mod sumcheck_evaluator;
+mod sumcheck_folding;
 mod sumcheck_multilinear;
-mod sumcheck_round_calculator;
+mod sumcheck_round_calculation;
 
 pub use backend::*;
 pub use cpu::*;

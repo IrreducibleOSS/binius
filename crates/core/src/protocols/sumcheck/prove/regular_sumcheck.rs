@@ -146,6 +146,7 @@ where
 		let state = ProverState::new(
 			evaluation_order,
 			multilinears,
+			None,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,
@@ -202,7 +203,10 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.calculate_round_evals(&evaluators)?;
+		let evals = self
+			.state
+			.calculate_round_evals(None, &evaluators)?
+			.round_evals;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}
