@@ -2,8 +2,6 @@
 
 //! Utility modules used in Binius.
 
-#![cfg_attr(not(feature = "stable_only"), feature(iter_advance_by))]
-
 pub mod array_2d;
 pub mod checked_arithmetics;
 pub mod env;

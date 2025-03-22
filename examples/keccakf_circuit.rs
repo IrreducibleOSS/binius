@@ -1,7 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-#![feature(array_try_from_fn)]
-
 use std::vec;
 
 use anyhow::Result;

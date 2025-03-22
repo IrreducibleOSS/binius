@@ -37,7 +37,7 @@ pub fn keccakf(
 ) -> Result<KeccakfOracles, anyhow::Error> {
 	let internal_log_size = log_size + LOG_BIT_ROWS_PER_PERMUTATION;
 	let round_consts_single: [OracleId; ROUNDS_PER_STATE_ROW] =
-		array::try_from_fn(|round_within_row| {
+		array_util::try_from_fn(|round_within_row| {
 			let round_within_row_rc: [_; STATE_ROWS_PER_PERMUTATION] =
 				array::from_fn(|row_within_perm| {
 					KECCAKF_RC[ROUNDS_PER_STATE_ROW * row_within_perm + round_within_row]
@@ -49,13 +49,14 @@ pub fn keccakf(
 			builder.add_transparent("round_consts_single", rc_single_mle)
 		})?;
 
-	let round_consts: [OracleId; ROUNDS_PER_STATE_ROW] = array::try_from_fn(|round_within_row| {
-		builder.add_repeating(
-			"round_consts",
-			round_consts_single[round_within_row],
-			internal_log_size - LOG_BIT_ROWS_PER_PERMUTATION,
-		)
-	})?;
+	let round_consts: [OracleId; ROUNDS_PER_STATE_ROW] =
+		array_util::try_from_fn(|round_within_row| {
+			builder.add_repeating(
+				"round_consts",
+				round_consts_single[round_within_row],
+				internal_log_size - LOG_BIT_ROWS_PER_PERMUTATION,
+			)
+		})?;
 
 	if let Some(witness) = builder.witness() {
 		let mut round_consts_single =
@@ -104,11 +105,11 @@ pub fn keccakf(
 
 	let state_out = state[ROUNDS_PER_STATE_ROW];
 
-	let packed_state_in: [OracleId; STATE_SIZE] = array::try_from_fn(|xy| {
+	let packed_state_in: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
 		builder.add_packed("packed state input", state_in[xy], LOG_BIT_ROWS_PER_STATE_ROW)
 	})?;
 
-	let input: [OracleId; STATE_SIZE] = array::try_from_fn(|xy| {
+	let input: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
 		builder.add_projected(
 			"packed projected state input",
 			packed_state_in[xy],
@@ -117,11 +118,11 @@ pub fn keccakf(
 		)
 	})?;
 
-	let packed_state_out: [OracleId; STATE_SIZE] = array::try_from_fn(|xy| {
+	let packed_state_out: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
 		builder.add_packed("packed state output", state_out[xy], LOG_BIT_ROWS_PER_STATE_ROW)
 	})?;
 
-	let output: [OracleId; STATE_SIZE] = array::try_from_fn(|xy| {
+	let output: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
 		builder.add_projected(
 			"output",
 			packed_state_out[xy],
@@ -130,8 +131,8 @@ pub fn keccakf(
 		)
 	})?;
 
-	let c: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] = array::try_from_fn(|round_within_row| {
-		array::try_from_fn(|x| {
+	let c: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] = array_util::try_from_fn(|round_within_row| {
+		array_util::try_from_fn(|x| {
 			builder.add_linear_combination(
 				"c",
 				internal_log_size,
@@ -142,20 +143,21 @@ pub fn keccakf(
 		})
 	})?;
 
-	let c_shift: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] = array::try_from_fn(|round_within_row| {
-		array::try_from_fn(|x| {
-			builder.add_shifted(
-				format!("c[{x}]"),
-				c[round_within_row][x],
-				1,
-				6,
-				ShiftVariant::CircularLeft,
-			)
-		})
-	})?;
+	let c_shift: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] =
+		array_util::try_from_fn(|round_within_row| {
+			array_util::try_from_fn(|x| {
+				builder.add_shifted(
+					format!("c[{x}]"),
+					c[round_within_row][x],
+					1,
+					6,
+					ShiftVariant::CircularLeft,
+				)
+			})
+		})?;
 
-	let d: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] = array::try_from_fn(|round_within_row| {
-		array::try_from_fn(|x| {
+	let d: [[OracleId; 5]; ROUNDS_PER_STATE_ROW] = array_util::try_from_fn(|round_within_row| {
+		array_util::try_from_fn(|x| {
 			builder.add_linear_combination(
 				"d",
 				internal_log_size,
@@ -168,8 +170,8 @@ pub fn keccakf(
 	})?;
 
 	let a_theta: [[OracleId; STATE_SIZE]; ROUNDS_PER_STATE_ROW] =
-		array::try_from_fn(|round_within_row| {
-			array::try_from_fn(|xy| {
+		array_util::try_from_fn(|round_within_row| {
+			array_util::try_from_fn(|xy| {
 				let x = xy % 5;
 				builder.add_linear_combination(
 					format!("a_theta[{xy}]"),
@@ -183,8 +185,8 @@ pub fn keccakf(
 		})?;
 
 	let b: [[OracleId; STATE_SIZE]; ROUNDS_PER_STATE_ROW] =
-		array::try_from_fn(|round_within_row| {
-			array::try_from_fn(|xy| {
+		array_util::try_from_fn(|round_within_row| {
+			array_util::try_from_fn(|xy| {
 				if xy == 0 {
 					Ok(a_theta[round_within_row][0])
 				} else {
@@ -199,7 +201,7 @@ pub fn keccakf(
 			})
 		})?;
 
-	let next_state_in: [OracleId; STATE_SIZE] = array::try_from_fn(|xy| {
+	let next_state_in: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
 		builder.add_shifted(
 			format!("next_state_in[{xy}]"),
 			state_in[xy],

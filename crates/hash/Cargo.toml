@@ -8,7 +8,7 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-binius_field = { path = "../field" }
+binius_field = { path = "../field", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_ntt = { path = "../ntt" }
 binius_utils = { path = "../utils", default-features = false }
@@ -30,7 +30,8 @@ proptest.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 
 [features]
-stable_only = ["binius_utils/stable_only", "binius_field/stable_only"]
+default = ["nightly_features"]
+nightly_features = ["binius_field/nightly_features"]
 
 [lib]
 bench = false

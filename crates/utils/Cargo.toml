@@ -24,5 +24,4 @@ rand.workspace = true
 [features]
 default = ["rayon"]
 bail_panic = []
-stable_only = []
 rayon = ["binius_maybe_rayon/rayon"]
