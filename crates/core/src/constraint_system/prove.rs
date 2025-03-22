@@ -12,8 +12,8 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter,
-	MultilinearExtension, MultilinearPoly,
+	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -62,21 +62,19 @@ use crate::{
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, DomainFactory, Hash, Compress, Challenger_, Backend>(
+pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	boundaries: &[Boundary<FExt<Tower>>],
 	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
-	domain_factory: DomainFactory,
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	DomainFactory: EvaluationDomainFactory<FDomain<Tower>>,
-	Hash: Digest + BlockSizeUser + FixedOutputReset,
+	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
@@ -102,6 +100,7 @@ where
 		"using computation backend: {backend:?}"
 	);
 
+	let domain_factory = DefaultEvaluationDomainFactory::<FDomain<Tower>>::default();
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();

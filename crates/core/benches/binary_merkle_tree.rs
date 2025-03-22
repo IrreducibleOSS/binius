@@ -6,10 +6,11 @@ use binius_core::merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver};
 use binius_field::{BinaryField128b, Field};
 use binius_hash::{
 	groestl::{Groestl256, Groestl256ByteCompression},
+	multi_digest::ParallelDigest,
 	PseudoCompressionFunction,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
+use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
 use rand::thread_rng;
 
 const LOG_ELEMS: usize = 17;
@@ -19,8 +20,8 @@ type F = BinaryField128b;
 
 fn bench_binary_merkle_tree<H, C>(c: &mut Criterion, compression: C, hash_name: &str)
 where
-	H: Digest + BlockSizeUser + FixedOutputReset,
-	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
+	H: ParallelDigest<Digest: BlockSizeUser + FixedOutputReset>,
+	C: PseudoCompressionFunction<Output<H::Digest>, 2> + Sync,
 {
 	let merkle_prover = BinaryMerkleTreeProver::<_, H, C>::new(compression);
 	let mut rng = thread_rng();

@@ -233,7 +233,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let selector =
+				let step_down =
 					oracles.add_transparent(StepDown::new(n_vars, count * values_per_row)?)?;
 
 				// Translate flushes for the compiled constraint system.
@@ -241,6 +241,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					column_indices,
 					channel_id,
 					direction,
+					selector,
 				} in flushes
 				{
 					let flush_oracles = column_indices
@@ -251,7 +252,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
-						selector,
+						selector: selector.unwrap_or(step_down),
 						multiplicity: 1,
 					});
 				}

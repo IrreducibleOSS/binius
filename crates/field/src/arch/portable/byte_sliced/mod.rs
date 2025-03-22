@@ -10,17 +10,27 @@ pub use packed_byte_sliced::*;
 #[cfg(test)]
 pub mod tests {
 	use super::*;
+	use crate::{
+		packed::{get_packed_slice, set_packed_slice},
+		PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
+		PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
+		PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
+		PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
+		PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
+	};
 
 	macro_rules! define_byte_sliced_test {
-		($module_name:ident, $name:ident, $scalar_type:ty) => {
-			mod $module_name{
-				use super::*;
-
+		($module_name:ident, $name:ident, $scalar_type:ty, $associated_packed:ty) => {
+			mod $module_name {
 				use proptest::prelude::*;
-				use crate::{$scalar_type, underlier::WithUnderlier, packed::PackedField};
 
-				fn scalar_array_strategy() -> impl Strategy<Value = [$scalar_type; <$name>::WIDTH]> {
-					any::<[<$scalar_type as WithUnderlier>::Underlier; <$name>::WIDTH]>().prop_map(|arr| arr.map(<$scalar_type>::from_underlier))
+				use super::*;
+				use crate::{packed::PackedField, underlier::WithUnderlier, $scalar_type};
+
+				fn scalar_array_strategy() -> impl Strategy<Value = [$scalar_type; <$name>::WIDTH]>
+				{
+					any::<[<$scalar_type as WithUnderlier>::Underlier; <$name>::WIDTH]>()
+						.prop_map(|arr| arr.map(<$scalar_type>::from_underlier))
 				}
 
 				proptest! {
@@ -155,41 +165,201 @@ pub mod tests {
 							}
 						}
 					}
+
+					#[test]
+					fn check_transpose_to(scalar_elems in scalar_array_strategy()) {
+						let bytesliced = <$name>::from_scalars(scalar_elems);
+						let mut destination = [<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
+						bytesliced.transpose_to(&mut destination);
+
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], get_packed_slice(&destination, i));
+						}
+					}
+
+					#[test]
+					fn check_transpose_from(scalar_elems in scalar_array_strategy()) {
+						let mut destination = [<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
+						for i in 0..<$name>::WIDTH {
+							set_packed_slice(&mut destination, i, scalar_elems[i]);
+						}
+
+						let bytesliced = <$name>::transpose_from(&destination);
+
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(get_packed_slice(&destination, i), bytesliced.get(i));
+						}
+					}
 				}
 			}
 		};
 	}
 
 	// 128-bit byte-sliced
-	define_byte_sliced_test!(tests_3d_16x128, ByteSlicedAES16x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_16x64, ByteSlicedAES16x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_2x16x64, ByteSlicedAES2x16x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_16x32, ByteSlicedAES16x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_4x16x32, ByteSlicedAES4x16x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_16x16, ByteSlicedAES16x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_8x16x16, ByteSlicedAES8x16x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_16x8, ByteSlicedAES16x8b, AESTowerField8b);
-	define_byte_sliced_test!(tests_3d_16x16x8, ByteSlicedAES16x16x8b, AESTowerField8b);
+	define_byte_sliced_test!(
+		tests_3d_16x128,
+		ByteSlicedAES16x128b,
+		AESTowerField128b,
+		PackedAESBinaryField1x128b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x64,
+		ByteSlicedAES16x64b,
+		AESTowerField64b,
+		PackedAESBinaryField2x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_2x16x64,
+		ByteSlicedAES2x16x64b,
+		AESTowerField64b,
+		PackedAESBinaryField2x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x32,
+		ByteSlicedAES16x32b,
+		AESTowerField32b,
+		PackedAESBinaryField4x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_4x16x32,
+		ByteSlicedAES4x16x32b,
+		AESTowerField32b,
+		PackedAESBinaryField4x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x16,
+		ByteSlicedAES16x16b,
+		AESTowerField16b,
+		PackedAESBinaryField8x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_8x16x16,
+		ByteSlicedAES8x16x16b,
+		AESTowerField16b,
+		PackedAESBinaryField8x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x8,
+		ByteSlicedAES16x8b,
+		AESTowerField8b,
+		PackedAESBinaryField16x8b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x16x8,
+		ByteSlicedAES16x16x8b,
+		AESTowerField8b,
+		PackedAESBinaryField16x8b
+	);
 
 	// 256-bit byte-sliced
-	define_byte_sliced_test!(tests_3d_32x128, ByteSlicedAES32x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_32x64, ByteSlicedAES32x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_2x32x64, ByteSlicedAES2x32x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_32x32, ByteSlicedAES32x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_4x32x32, ByteSlicedAES4x32x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_32x16, ByteSlicedAES32x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_8x32x16, ByteSlicedAES8x32x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_32x8, ByteSlicedAES32x8b, AESTowerField8b);
-	define_byte_sliced_test!(tests_3d_16x32x8, ByteSlicedAES16x32x8b, AESTowerField8b);
+	define_byte_sliced_test!(
+		tests_3d_32x128,
+		ByteSlicedAES32x128b,
+		AESTowerField128b,
+		PackedAESBinaryField2x128b
+	);
+	define_byte_sliced_test!(
+		tests_3d_32x64,
+		ByteSlicedAES32x64b,
+		AESTowerField64b,
+		PackedAESBinaryField4x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_2x32x64,
+		ByteSlicedAES2x32x64b,
+		AESTowerField64b,
+		PackedAESBinaryField4x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_32x32,
+		ByteSlicedAES32x32b,
+		AESTowerField32b,
+		PackedAESBinaryField8x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_4x32x32,
+		ByteSlicedAES4x32x32b,
+		AESTowerField32b,
+		PackedAESBinaryField8x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_32x16,
+		ByteSlicedAES32x16b,
+		AESTowerField16b,
+		PackedAESBinaryField16x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_8x32x16,
+		ByteSlicedAES8x32x16b,
+		AESTowerField16b,
+		PackedAESBinaryField16x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_32x8,
+		ByteSlicedAES32x8b,
+		AESTowerField8b,
+		PackedAESBinaryField32x8b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x32x8,
+		ByteSlicedAES16x32x8b,
+		AESTowerField8b,
+		PackedAESBinaryField32x8b
+	);
 
 	// 512-bit byte-sliced
-	define_byte_sliced_test!(tests_3d_64x128, ByteSlicedAES64x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_64x64, ByteSlicedAES64x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_2x64x64, ByteSlicedAES2x64x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_64x32, ByteSlicedAES64x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_4x64x32, ByteSlicedAES4x64x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_64x16, ByteSlicedAES64x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_8x64x16, ByteSlicedAES8x64x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_64x8, ByteSlicedAES64x8b, AESTowerField8b);
-	define_byte_sliced_test!(tests_3d_16x64x8, ByteSlicedAES16x64x8b, AESTowerField8b);
+	define_byte_sliced_test!(
+		tests_3d_64x128,
+		ByteSlicedAES64x128b,
+		AESTowerField128b,
+		PackedAESBinaryField4x128b
+	);
+	define_byte_sliced_test!(
+		tests_3d_64x64,
+		ByteSlicedAES64x64b,
+		AESTowerField64b,
+		PackedAESBinaryField8x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_2x64x64,
+		ByteSlicedAES2x64x64b,
+		AESTowerField64b,
+		PackedAESBinaryField8x64b
+	);
+	define_byte_sliced_test!(
+		tests_3d_64x32,
+		ByteSlicedAES64x32b,
+		AESTowerField32b,
+		PackedAESBinaryField16x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_4x64x32,
+		ByteSlicedAES4x64x32b,
+		AESTowerField32b,
+		PackedAESBinaryField16x32b
+	);
+	define_byte_sliced_test!(
+		tests_3d_64x16,
+		ByteSlicedAES64x16b,
+		AESTowerField16b,
+		PackedAESBinaryField32x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_8x64x16,
+		ByteSlicedAES8x64x16b,
+		AESTowerField16b,
+		PackedAESBinaryField32x16b
+	);
+	define_byte_sliced_test!(
+		tests_3d_64x8,
+		ByteSlicedAES64x8b,
+		AESTowerField8b,
+		PackedAESBinaryField64x8b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x64x8,
+		ByteSlicedAES16x64x8b,
+		AESTowerField8b,
+		PackedAESBinaryField64x8b
+	);
 }

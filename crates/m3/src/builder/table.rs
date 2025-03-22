@@ -236,6 +236,18 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.assert_zero(name, expr)
 	}
 
+	/// Constrains that all values contained in this column are non-zero.
+	pub fn assert_nonzero<FSub, const V: usize>(&mut self, expr: Col<FSub, V>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert_eq!(expr.table_id, self.id());
+		assert!(expr.table_index < self.table.columns.len());
+
+		self.table.columns[expr.table_index].is_nonzero = true;
+	}
+
 	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
@@ -250,6 +262,34 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		self.table.partition_mut(1).push(channel, cols);
+	}
+
+	pub fn pull_selected<FSub>(
+		&mut self,
+		channel: ChannelId,
+		cols: impl IntoIterator<Item = Col<FSub>>,
+		selector: Col<FSub>,
+	) where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table
+			.partition_mut(1)
+			.pull_selected(channel, cols, selector);
+	}
+
+	pub fn push_selected<FSub>(
+		&mut self,
+		channel: ChannelId,
+		cols: impl IntoIterator<Item = Col<FSub>>,
+		selector: Col<FSub>,
+	) where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table
+			.partition_mut(1)
+			.push_selected(channel, cols, selector);
 	}
 
 	fn namespaced_name(&self, name: impl ToString) -> String {
@@ -322,7 +362,7 @@ impl<F: TowerField> TablePartition<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.flush(channel, FlushDirection::Pull, cols.into_iter().map(upcast_col))
+		self.flush(channel, FlushDirection::Pull, cols.into_iter().map(upcast_col), None)
 	}
 
 	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
@@ -330,7 +370,41 @@ impl<F: TowerField> TablePartition<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.flush(channel, FlushDirection::Push, cols.into_iter().map(upcast_col))
+		self.flush(channel, FlushDirection::Push, cols.into_iter().map(upcast_col), None);
+	}
+
+	pub fn pull_selected<FSub>(
+		&mut self,
+		channel: ChannelId,
+		cols: impl IntoIterator<Item = Col<FSub>>,
+		selector: Col<FSub>,
+	) where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.flush(
+			channel,
+			FlushDirection::Pull,
+			cols.into_iter().map(upcast_col),
+			Some(upcast_col(selector)),
+		)
+	}
+
+	pub fn push_selected<FSub>(
+		&mut self,
+		channel: ChannelId,
+		cols: impl IntoIterator<Item = Col<FSub>>,
+		selector: Col<FSub>,
+	) where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.flush(
+			channel,
+			FlushDirection::Push,
+			cols.into_iter().map(upcast_col),
+			Some(upcast_col(selector)),
+		)
 	}
 
 	fn flush(
@@ -338,6 +412,7 @@ impl<F: TowerField> TablePartition<F> {
 		channel_id: ChannelId,
 		direction: FlushDirection,
 		cols: impl IntoIterator<Item = Col<F>>,
+		selector: Option<Col<F>>,
 	) {
 		let column_indices = cols
 			.into_iter()
@@ -346,10 +421,12 @@ impl<F: TowerField> TablePartition<F> {
 				col.table_index
 			})
 			.collect();
+		let selector = selector.map(|c| c.table_index);
 		self.flushes.push(Flush {
 			column_indices,
 			channel_id,
 			direction,
+			selector,
 		});
 	}
 }

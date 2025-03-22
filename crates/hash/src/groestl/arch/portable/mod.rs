@@ -5,7 +5,7 @@ use super::super::GroestlShortInternal;
 mod compress512;
 mod table;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GroestlShortImpl;
 
 impl GroestlShortInternal for GroestlShortImpl {

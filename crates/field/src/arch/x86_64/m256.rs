@@ -24,8 +24,10 @@ use crate::{
 		x86_64::m128::bitshift_128b,
 	},
 	arithmetic_traits::Broadcast,
+	tower_levels::TowerLevel,
 	underlier::{
-		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
+		get_block_values, get_spread_bytes, impl_divisible, impl_iteration,
+		pair_unpack_lo_hi_128b_lanes, spread_fallback, transpose_128b_blocks_low_to_high,
 		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
 		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
@@ -889,6 +891,134 @@ impl UnderlierWithBitOps for M256 {
 			_ => panic!("unsupported block length"),
 		}
 	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		transpose_128b_blocks_low_to_high::<Self, TL>(values, 0);
+
+		// reorder lanes
+		for i in 0..TL::WIDTH / 2 {
+			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 2);
+		}
+
+		// reorder rows
+		match TL::LOG_WIDTH {
+			0..=2 => {}
+			3 => {
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
+			}
+			4 => {
+				values.as_mut().swap(1, 4);
+				values.as_mut().swap(3, 6);
+				values.as_mut().swap(9, 12);
+				values.as_mut().swap(11, 14);
+			}
+			_ => panic!("unsupported tower level"),
+		}
+	}
+
+	#[inline]
+	fn transpose_bytes_to_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		if TL::LOG_WIDTH == 0 {
+			return;
+		}
+
+		match TL::LOG_WIDTH {
+			1 => unsafe {
+				let shuffle = _mm256_set_epi8(
+					15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3,
+					1, 14, 12, 10, 8, 6, 4, 2, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm256_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			2 => unsafe {
+				let shuffle = _mm256_set_epi8(
+					15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0, 15, 11, 7, 3, 14, 10, 6,
+					2, 13, 9, 5, 1, 12, 8, 4, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm256_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			3 => unsafe {
+				let shuffle = _mm256_set_epi8(
+					15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0, 15, 7, 14, 6, 13, 5, 12,
+					4, 11, 3, 10, 2, 9, 1, 8, 0,
+				);
+				for v in values.as_mut().iter_mut() {
+					*v = _mm256_shuffle_epi8(v.0, shuffle).into();
+				}
+			},
+			4 => {}
+			_ => unreachable!("Log width must be less than 5"),
+		}
+
+		for i in 0..TL::WIDTH / 2 {
+			unpack_128b_lo_hi(values, i, i + TL::WIDTH / 2);
+		}
+
+		match TL::LOG_WIDTH {
+			1 => {
+				transpose_128b_blocks_low_to_high::<_, TL>(values, 4 - TL::LOG_WIDTH);
+			}
+			2 => {
+				for i in 0..2 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+				}
+				for i in 0..2 {
+					pair_unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 6);
+				}
+			}
+			3 => {
+				for i in 0..4 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 4);
+				}
+				for i in 0..4 {
+					pair_unpack_lo_hi_128b_lanes(values, 2 * i, 2 * i + 1, 5);
+				}
+				for i in 0..2 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i + 4, i + 6, 6);
+				}
+
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
+			}
+			4 => {
+				for i in 0..8 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 8, 3);
+				}
+				for i in (0..16).step_by(2) {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 1, 4);
+				}
+				for i in (0..16).step_by(4) {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 2, 5);
+					pair_unpack_lo_hi_128b_lanes(values, i + 1, i + 3, 5);
+				}
+				for i in 0..4 {
+					pair_unpack_lo_hi_128b_lanes(values, i, i + 4, 6);
+					pair_unpack_lo_hi_128b_lanes(values, i + 8, i + 12, 6);
+				}
+
+				for i in 0..2 {
+					values.as_mut().swap(2 * i + 1, 2 * i + 4);
+					values.as_mut().swap(2 * i + 9, 2 * i + 12);
+				}
+			}
+			_ => unreachable!("Log width must be less than 5"),
+		}
+	}
 }
 
 unsafe impl Zeroable for M256 {}
@@ -971,6 +1101,15 @@ impl UnderlierWithBitConstants for M256 {
 		other.0 = b;
 		(self, other)
 	}
+}
+
+#[inline(always)]
+fn unpack_128b_lo_hi(data: &mut (impl AsMut<[M256]> + AsRef<[M256]>), i: usize, j: usize) {
+	let new_i = unsafe { _mm256_permute2x128_si256(data.as_ref()[i].0, data.as_ref()[j].0, 0x20) };
+	let new_j = unsafe { _mm256_permute2x128_si256(data.as_ref()[i].0, data.as_ref()[j].0, 0x31) };
+
+	data.as_mut()[i] = M256(new_i);
+	data.as_mut()[j] = M256(new_j);
 }
 
 #[inline]
