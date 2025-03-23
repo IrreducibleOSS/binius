@@ -36,4 +36,8 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 	/// In case of zerocheck returns eq_ind that the results should be folded with.
 	/// In case of sumcheck returns None.
 	fn eq_ind_partial_eval(&self) -> Option<&[P]>;
+
+	fn eval_prefix(&self) -> Option<usize> {
+		None
+	}
 }

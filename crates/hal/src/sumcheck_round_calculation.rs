@@ -14,14 +14,14 @@ use binius_math::{
 	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::{izip, Either, Itertools};
 use stackalloc::stackalloc_with_iter;
 
 use crate::{
 	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
-	Error, RoundEvals, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator, SumcheckMultilinear,
+	Error, RoundEvals, RoundEvalsOnPrefix, SumcheckEvaluator, SumcheckMultilinear,
 };
 
 trait SumcheckMultilinearAccess<P: PackedField> {
@@ -80,12 +80,11 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	evaluation_order: EvaluationOrder,
 	n_vars: usize,
-	eval_prefix: Option<usize>,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	finite_evaluation_points: &[FDomain],
-) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+) -> Result<Vec<RoundEvalsOnPrefix<F>>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -96,13 +95,11 @@ where
 {
 	assert!(n_vars > 0, "Computing round evaluations requires at least a single variable.");
 
-	let eval_prefix = eval_prefix.unwrap_or(1 << (n_vars - 1));
-
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
 	let subcube_vars = subcube_vars_for_bits::<P>(
 		MAX_SRC_SUBCUBE_LOG_BITS,
-		log2_ceil_usize(eval_prefix),
+		n_vars - 1,
 		tensor_query.n_vars(),
 		n_vars - 1,
 	);
@@ -110,7 +107,6 @@ where
 	match evaluation_order {
 		EvaluationOrder::LowToHigh => calculate_round_evals_with_access(
 			n_vars,
-			eval_prefix,
 			subcube_vars,
 			&LowToHighAccess { tensor_query },
 			multilinears,
@@ -119,7 +115,6 @@ where
 		),
 		EvaluationOrder::HighToLow => calculate_round_evals_with_access(
 			n_vars,
-			eval_prefix,
 			subcube_vars,
 			&HighToLowAccess { tensor_query },
 			multilinears,
@@ -131,13 +126,12 @@ where
 
 fn calculate_round_evals_with_access<FDomain, F, P, M, Evaluator, Access, Composition>(
 	n_vars: usize,
-	eval_prefix: usize,
 	subcube_vars: usize,
 	access: &Access,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	nontrivial_evaluation_points: &[FDomain],
-) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+) -> Result<Vec<RoundEvalsOnPrefix<F>>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -147,7 +141,7 @@ where
 	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	assert!(eval_prefix <= 1 << (n_vars - 1));
+	assert!(n_vars > 0);
 	assert!(subcube_vars < n_vars);
 
 	let n_multilinears = multilinears.len();
@@ -167,9 +161,30 @@ where
 		bail!(Error::IncorrectNontrivialEvalPointsLength);
 	}
 
+	let subcube_count_by_evaluator = evaluators
+		.iter()
+		.map(|evaluator| {
+			let eval_prefix = evaluator.eval_prefix().unwrap_or_else(|| 1 << (n_vars - 1));
+			eval_prefix.div_ceil(1 << subcube_vars)
+		})
+		.collect::<Vec<_>>();
+
+	let mut subcube_count_by_multilinear = vec![0usize; n_multilinears];
+	for (&evaluator_subcube_count, evaluator) in izip!(&subcube_count_by_evaluator, evaluators) {
+		let used_vars = evaluator.composition().expression().vars_usage();
+
+		for (multilinear_subcube_count, usage_flag) in
+			izip!(&mut subcube_count_by_multilinear, used_vars)
+		{
+			if usage_flag {
+				*multilinear_subcube_count =
+					(*multilinear_subcube_count).max(evaluator_subcube_count);
+			}
+		}
+	}
+
 	let index_vars = n_vars - 1 - subcube_vars;
-	let subcube_count = eval_prefix.div_ceil(1 << subcube_vars);
-	let packed_accumulators = (0..subcube_count)
+	let packed_accumulators = (0..(1 << index_vars))
 		.into_par_iter()
 		.try_fold(
 			|| ParFoldStates::new(access, n_multilinears, n_round_evals.clone(), subcube_vars),
@@ -180,16 +195,20 @@ where
 					round_evals,
 				} = &mut par_fold_states;
 
-				for (multilinear, evals) in izip!(multilinears, multilinear_evals.iter_mut()) {
-					access.subcube_evaluations(
-						multilinear,
-						subcube_vars,
-						subcube_index,
-						index_vars,
-						scratch_space.as_deref_mut(),
-						&mut evals.evals_0,
-						&mut evals.evals_1,
-					)?;
+				for (multilinear, evals, &subcube_count) in
+					izip!(multilinears, multilinear_evals.iter_mut(), &subcube_count_by_multilinear)
+				{
+					if subcube_index < subcube_count {
+						access.subcube_evaluations(
+							multilinear,
+							subcube_vars,
+							subcube_index,
+							index_vars,
+							scratch_space.as_deref_mut(),
+							&mut evals.evals_0,
+							&mut evals.evals_1,
+						)?;
+					}
 				}
 
 				// Proceed by evaluation point first to share interpolation work between evaluators.
@@ -206,9 +225,10 @@ where
 					//                                   = f(1, xs) - f(0, xs)
 					//   index 3 and above - remaining finite evaluation points
 					let evals_z_iter =
-						multilinear_evals
-							.iter_mut()
-							.map(|evals| match eval_point_index {
+						izip!(multilinear_evals.iter_mut(), &subcube_count_by_multilinear).map(
+							|(evals, &subcube_count)| match eval_point_index {
+								// This multilinear is not accessed, return arbitrary slice
+								_ if subcube_index >= subcube_count => evals.evals_0.as_slice(),
 								0 => evals.evals_0.as_slice(),
 								1 => evals.evals_1.as_slice(),
 								2 => {
@@ -242,7 +262,8 @@ where
 
 									evals.evals_z.as_slice()
 								}
-							});
+							},
+						);
 
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
 						for (evaluator, round_evals) in
@@ -291,23 +312,25 @@ where
 			},
 		)?;
 
-	let round_evals = packed_accumulators
-		.into_iter()
-		.map(|vals| {
-			RoundEvals(
+	let round_evals_on_prefixes = izip!(packed_accumulators, subcube_count_by_evaluator)
+		.map(|(vals, subcube_count)| {
+			let round_evals = RoundEvals(
 				vals.into_iter()
 					// Truncate subcubes smaller than packing width.
 					.map(|packed_val| packed_val.iter().take(1 << subcube_vars).sum())
 					.collect(),
-			)
+			);
+
+			// Round up to the full subcube
+			let eval_prefix = subcube_count << subcube_vars;
+			RoundEvalsOnPrefix {
+				eval_prefix,
+				round_evals,
+			}
 		})
 		.collect();
 
-	Ok(SumcheckComputeRoundEvalsOutput {
-		subcube_vars,
-		subcube_count,
-		round_evals,
-	})
+	Ok(round_evals_on_prefixes)
 }
 
 // Evals of a single multilinear over a subcube, at 0/1 and some interpolated point.

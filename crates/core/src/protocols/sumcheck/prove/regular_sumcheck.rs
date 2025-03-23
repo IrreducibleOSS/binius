@@ -205,8 +205,10 @@ where
 
 		let evals = self
 			.state
-			.calculate_round_evals(None, &evaluators)?
-			.round_evals;
+			.calculate_round_evals(&evaluators)?
+			.into_iter()
+			.map(|round_evals_on_prefix| round_evals_on_prefix.round_evals)
+			.collect();
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}

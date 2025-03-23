@@ -30,10 +30,9 @@ pub trait HalSlice<P: Debug + Send + Sync>:
 
 impl<P: Send + Sync + Debug + 'static> HalSlice<P> for Vec<P> {}
 
-pub struct SumcheckComputeRoundEvalsOutput<F: Field> {
-	pub subcube_vars: usize,
-	pub subcube_count: usize,
-	pub round_evals: Vec<RoundEvals<F>>,
+pub struct RoundEvalsOnPrefix<F: Field> {
+	pub eval_prefix: usize,
+	pub round_evals: RoundEvals<F>,
 }
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
@@ -50,17 +49,15 @@ pub trait ComputationBackend: Send + Sync + Debug {
 	) -> Result<Self::Vec<P>, Error>;
 
 	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck.
-	#[allow(clippy::too_many_arguments)]
 	fn sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		eval_prefix: Option<usize>,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
 		nontrivial_evaluation_points: &[FDomain],
-	) -> Result<SumcheckComputeRoundEvalsOutput<P::Scalar>, Error>
+	) -> Result<Vec<RoundEvalsOnPrefix<P::Scalar>>, Error>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
@@ -112,12 +109,11 @@ where
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		eval_prefix: Option<usize>,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
 		nontrivial_evaluation_points: &[FDomain],
-	) -> Result<SumcheckComputeRoundEvalsOutput<P::Scalar>, Error>
+	) -> Result<Vec<RoundEvalsOnPrefix<P::Scalar>>, Error>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
@@ -129,7 +125,6 @@ where
 			self,
 			evaluation_order,
 			n_vars,
-			eval_prefix,
 			tensor_query,
 			multilinears,
 			evaluators,

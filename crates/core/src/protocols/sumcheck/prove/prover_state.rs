@@ -4,8 +4,7 @@ use std::iter;
 
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{
-	ComputationBackend, RoundEvals, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator,
-	SumcheckMultilinear,
+	ComputationBackend, RoundEvals, RoundEvalsOnPrefix, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_math::{
 	evaluate_univariate, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
@@ -224,9 +223,8 @@ where
 	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_round_evals<Evaluator, Composition>(
 		&self,
-		eval_prefix: Option<usize>,
 		evaluators: &[Evaluator],
-	) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+	) -> Result<Vec<RoundEvalsOnPrefix<F>>, Error>
 	where
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPoly<P>,
@@ -234,7 +232,6 @@ where
 		Ok(self.backend.sumcheck_compute_round_evals(
 			self.evaluation_order,
 			self.n_vars,
-			eval_prefix,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
 			evaluators,

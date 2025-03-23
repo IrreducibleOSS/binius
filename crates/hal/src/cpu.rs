@@ -11,8 +11,7 @@ use tracing::instrument;
 
 use crate::{
 	sumcheck_folding::fold_multilinears, sumcheck_round_calculation::calculate_round_evals,
-	ComputationBackend, Error, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator,
-	SumcheckMultilinear,
+	ComputationBackend, Error, RoundEvalsOnPrefix, SumcheckEvaluator, SumcheckMultilinear,
 };
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
@@ -42,12 +41,11 @@ impl ComputationBackend for CpuBackend {
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		eval_prefix: Option<usize>,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
 		nontrivial_evaluation_points: &[FDomain],
-	) -> Result<SumcheckComputeRoundEvalsOutput<P::Scalar>, Error>
+	) -> Result<Vec<RoundEvalsOnPrefix<P::Scalar>>, Error>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
@@ -58,7 +56,6 @@ impl ComputationBackend for CpuBackend {
 		calculate_round_evals(
 			evaluation_order,
 			n_vars,
-			eval_prefix,
 			tensor_query,
 			multilinears,
 			evaluators,

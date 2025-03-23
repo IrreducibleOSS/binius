@@ -3,7 +3,10 @@
 use std::{marker::PhantomData, ops::Range};
 
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
+use binius_hal::{
+	make_portable_backend, ComputationBackend, Error as HalError, RoundEvalsOnPrefix,
+	SumcheckEvaluator,
+};
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
 };
@@ -435,15 +438,17 @@ where
 				.min(1 << self.n_rounds_remaining().saturating_sub(1)),
 		};
 
-		let mut output = self
-			.state
-			.calculate_round_evals(Some(self.eval_prefix), &evaluators)?;
+		let mut round_evals_on_prefixes = self.state.calculate_round_evals(&evaluators)?;
 
 		// Evaluate equality indicator suffix sum succinctly, multiply by constant suffix value
 		// and add to evals.
-		for evals in &mut output.round_evals {
-			for (i, eval) in evals.0.iter_mut().enumerate() {
-				*eval += self.eq_ind_suffix_sum(output.subcube_count << output.subcube_vars)
+		for RoundEvalsOnPrefix {
+			eval_prefix,
+			round_evals,
+		} in &mut round_evals_on_prefixes
+		{
+			for (i, eval) in round_evals.0.iter_mut().enumerate() {
+				*eval += self.eq_ind_suffix_sum(*eval_prefix)
 					* if i == 1 {
 						self.suffix_value_at_inf
 					} else {
@@ -455,7 +460,10 @@ where
 		let prime_coeffs = self.state.calculate_round_coeffs_from_evals(
 			&interpolators,
 			batch_coeff,
-			output.round_evals,
+			round_evals_on_prefixes
+				.into_iter()
+				.map(|round_evals_on_prefix| round_evals_on_prefix.round_evals)
+				.collect(),
 		)?;
 
 		// Convert v' polynomial into v polynomial
