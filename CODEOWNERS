@@ -1,8 +1,8 @@
 # Code owners for the entire repository
-* @jimpo-ulvt @onesk
+* @jimpo @onesk
 
 # Code owners for specific crates
-/crates/m3 @jimpo-ulvt @bergkvist
+/crates/m3 @jimpo @bergkvist
 
 # Code owners for the .github path
 /.github/ @IrreducibleOSS/Infrastructure
