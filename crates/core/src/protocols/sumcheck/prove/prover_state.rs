@@ -3,10 +3,7 @@
 use std::iter;
 
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
-use binius_hal::{
-	ComputationBackend, RoundEvals, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator,
-	SumcheckMultilinear,
-};
+use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
 	evaluate_univariate, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
 };
@@ -226,7 +223,7 @@ where
 		&self,
 		eval_prefix: Option<usize>,
 		evaluators: &[Evaluator],
-	) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPoly<P>,

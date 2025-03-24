@@ -21,7 +21,7 @@ use stackalloc::stackalloc_with_iter;
 
 use crate::{
 	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
-	Error, RoundEvals, SumcheckComputeRoundEvalsOutput, SumcheckEvaluator, SumcheckMultilinear,
+	Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 
 trait SumcheckMultilinearAccess<P: PackedField> {
@@ -85,7 +85,7 @@ pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	finite_evaluation_points: &[FDomain],
-) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -137,7 +137,7 @@ fn calculate_round_evals_with_access<FDomain, F, P, M, Evaluator, Access, Compos
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	nontrivial_evaluation_points: &[FDomain],
-) -> Result<SumcheckComputeRoundEvalsOutput<F>, Error>
+) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
 	F: Field,
@@ -291,23 +291,28 @@ where
 			},
 		)?;
 
-	let round_evals = packed_accumulators
-		.into_iter()
-		.map(|vals| {
-			RoundEvals(
-				vals.into_iter()
-					// Truncate subcubes smaller than packing width.
-					.map(|packed_val| packed_val.iter().take(1 << subcube_vars).sum())
-					.collect(),
-			)
+	let round_evals = izip!(packed_accumulators, evaluators)
+		.map(|(packed_round_evals, evaluator)| {
+			let mut round_evals = packed_round_evals
+				.into_iter()
+				// Truncate subcubes smaller than packing width.
+				.map(|packed_round_eval| packed_round_eval.iter().take(1 << subcube_vars).sum())
+				.collect::<Vec<F>>();
+
+			let eval_prefix = subcube_count << subcube_vars;
+			for (eval_point_index, round_eval) in
+				izip!(eval_point_indices.clone(), &mut round_evals)
+			{
+				let is_infinity_point = eval_point_index == 2;
+				*round_eval +=
+					evaluator.process_constant_eval_suffix(eval_prefix, is_infinity_point);
+			}
+
+			RoundEvals(round_evals)
 		})
 		.collect();
 
-	Ok(SumcheckComputeRoundEvalsOutput {
-		subcube_vars,
-		subcube_count,
-		round_evals,
-	})
+	Ok(round_evals)
 }
 
 // Evals of a single multilinear over a subcube, at 0/1 and some interpolated point.

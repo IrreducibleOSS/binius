@@ -203,12 +203,9 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self
-			.state
-			.calculate_round_evals(None, &evaluators)?
-			.round_evals;
+		let round_evals = self.state.calculate_round_evals(None, &evaluators)?;
 		self.state
-			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
+			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, round_evals)
 	}
 
 	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {

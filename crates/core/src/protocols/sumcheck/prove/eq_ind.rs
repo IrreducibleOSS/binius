@@ -13,7 +13,9 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
+	polynomial::{
+		ArithCircuitPoly, Error as PolynomialError, MultilinearComposite, MultivariatePoly,
+	},
 	protocols::sumcheck::{
 		common::{
 			equal_n_vars_check, get_nontrivial_evaluation_points,
@@ -22,7 +24,7 @@ use crate::{
 		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
 		CompositeSumClaim, Error,
 	},
-	transparent::eq_ind::EqIndPartialEval,
+	transparent::{eq_ind::EqIndPartialEval, step_up::StepUp},
 };
 
 pub fn validate_witness<F, P, M, Composition>(
@@ -322,35 +324,6 @@ where
 		// Update the running eq ind evaluation.
 		self.eq_ind_prefix_eval *= eq(self.eq_ind_round_challenge(), challenge);
 	}
-
-	fn eq_ind_suffix_sum(&self, mut pivot: usize) -> F {
-		assert_eq!(self.n_vars, self.eq_ind_challenges.len());
-		let (n_vars, round) = (self.n_vars, self.round());
-		let challenges = match self.state.evaluation_order() {
-			EvaluationOrder::LowToHigh => &self.eq_ind_challenges[(round + 1).min(n_vars)..],
-			EvaluationOrder::HighToLow => {
-				&self.eq_ind_challenges[..n_vars.saturating_sub(round + 1)]
-			}
-		};
-
-		let (mut sum, mut running_product) = (F::ZERO, F::ONE);
-
-		for (i, &alpha) in challenges.iter().enumerate().rev() {
-			if pivot < 1 << i {
-				sum += running_product * alpha;
-				running_product *= F::ONE - alpha;
-			} else {
-				running_product *= alpha;
-				pivot -= 1 << i;
-			}
-		}
-
-		if pivot == 0 {
-			sum += running_product;
-		}
-
-		sum
-	}
 }
 
 pub fn eq_ind_expand<P, Backend>(
@@ -393,11 +366,23 @@ where
 
 	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		let round = self.round();
+
 		let alpha = self.eq_ind_round_challenge();
 		let eq_ind_partial_evals = &self.eq_ind_partial_evals;
 
 		let first_round_eval_1s = self.first_round_eval_1s.take();
 		let have_first_round_eval_1s = first_round_eval_1s.is_some();
+
+		let suffix_value = self.suffix_value;
+		let suffix_value_at_inf = self.suffix_value_at_inf;
+
+		let eq_ind_challenges = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => &self.eq_ind_challenges[self.n_vars.min(round + 1)..],
+			EvaluationOrder::HighToLow => {
+				&self.eq_ind_challenges[..self.n_vars.saturating_sub(round + 1)]
+			}
+		};
 
 		let evaluators = self
 			.compositions
@@ -410,7 +395,10 @@ where
 					composition,
 					composition_at_infinity,
 					have_first_round_eval_1s,
+					eq_ind_challenges,
 					eq_ind_partial_evals,
+					suffix_value,
+					suffix_value_at_inf,
 				}
 			})
 			.collect::<Vec<_>>();
@@ -435,27 +423,14 @@ where
 				.min(1 << self.n_rounds_remaining().saturating_sub(1)),
 		};
 
-		let mut output = self
+		let round_evals = self
 			.state
 			.calculate_round_evals(Some(self.eval_prefix), &evaluators)?;
-
-		// Evaluate equality indicator suffix sum succinctly, multiply by constant suffix value
-		// and add to evals.
-		for evals in &mut output.round_evals {
-			for (i, eval) in evals.0.iter_mut().enumerate() {
-				*eval += self.eq_ind_suffix_sum(output.subcube_count << output.subcube_vars)
-					* if i == 1 {
-						self.suffix_value_at_inf
-					} else {
-						self.suffix_value
-					};
-			}
-		}
 
 		let prime_coeffs = self.state.calculate_round_coeffs_from_evals(
 			&interpolators,
 			batch_coeff,
-			output.round_evals,
+			round_evals,
 		)?;
 
 		// Convert v' polynomial into v polynomial
@@ -517,8 +492,11 @@ where
 {
 	composition: &'a Composition,
 	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
-	eq_ind_partial_evals: &'a [P],
 	have_first_round_eval_1s: bool,
+	eq_ind_challenges: &'a [P::Scalar],
+	eq_ind_partial_evals: &'a [P],
+	suffix_value: P::Scalar,
+	suffix_value_at_inf: P::Scalar,
 }
 
 impl<P, Composition> SumcheckEvaluator<P, Composition> for Evaluator<'_, P, Composition>
@@ -562,6 +540,24 @@ where
 
 			evals.iter().copied().sum::<P>()
 		})
+	}
+
+	fn process_constant_eval_suffix(
+		&self,
+		eval_prefix: usize,
+		is_infinity_point: bool,
+	) -> P::Scalar {
+		let eq_ind_suffix_sum = StepUp::new(self.eq_ind_challenges.len(), eval_prefix)
+			.expect("eval_prefix does not exceed the equality indicator size")
+			.evaluate(self.eq_ind_challenges)
+			.expect("StepUp is initialized with eq_ind_challenges.len()");
+
+		eq_ind_suffix_sum
+			* if is_infinity_point {
+				self.suffix_value_at_inf
+			} else {
+				self.suffix_value
+			}
 	}
 
 	fn composition(&self) -> &Composition {
