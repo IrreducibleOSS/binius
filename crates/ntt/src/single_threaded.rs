@@ -243,8 +243,9 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	// packed base field elements.
 	let cutoff = log_w.saturating_sub(log_b);
 
-	for (i, s_eval) in s_evals.iter().enumerate().take(cutoff.min(log_n)) {
-		let coset_twiddle = s_eval.coset(log_domain_size - log_n, coset as usize);
+	#[allow(clippy::needless_range_loop)]
+	for i in 0..cutoff.min(log_n) {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
 		// A block is a block of butterfly units that all have the same twiddle factor. Since we
 		// are below the cutoff round, the block length is less than the packing width, and
