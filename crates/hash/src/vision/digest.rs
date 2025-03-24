@@ -6,8 +6,7 @@ use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
 	make_binary_to_aes_packed_transformer, underlier::WithUnderlier, AesToBinaryTransformation,
 	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, PackedAESBinaryField8x32b,
-	PackedBinaryField32x8b, PackedBinaryField8x32b, PackedExtensionIndexable, PackedField,
-	PackedFieldIndexable,
+	PackedBinaryField8x32b, PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
 use digest::{
 	consts::{U32, U96},
@@ -34,6 +33,7 @@ lazy_static! {
 		make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
 	static ref TRANS_CANONICAL_TO_AES: BinaryToAesTransformation<PackedBinaryField8x32b, PackedAESBinaryField8x32b> =
 		make_binary_to_aes_packed_transformer::<PackedBinaryField8x32b, PackedAESBinaryField8x32b>();
+
 
 	// Padding block for the case when the input is a multiple of the rate.
 	static ref PADDING_BLOCK: [u8; RATE_AS_U8] = {
@@ -200,25 +200,24 @@ impl VisionHasherDigestByteSliced {
 		for state_element_index in 0..2 {
 			let data_offset = state_element_index * HASHES_PER_BYTE_SLICED_PERMUTATION;
 
-			// Transpose the data to have the byte-sliced order
-			// TODO: Use transposition function here as soon as it is merged in.
-			let mut canonical_data =
-				[PackedBinaryField32x8b::zero(); HASHES_PER_BYTE_SLICED_PERMUTATION];
-			for (i, row) in data.iter().enumerate() {
-				for (j, byte) in row[data_offset..data_offset + 32].iter().enumerate() {
-					canonical_data[j].set(i, (*byte).into());
-				}
-			}
-
-			for (state_element, canonical_data) in state
-				[state_element_index * 8..state_element_index * 8 + 8]
+			for (i, state_element) in state[state_element_index * 8..state_element_index * 8 + 8]
 				.iter_mut()
-				.flat_map(|x| {
-					bytemuck::must_cast_mut::<_, [PackedAESBinaryField8x32b; 4]>(x).iter_mut()
-				})
-				.zip(canonical_data.into_iter())
+				.enumerate()
 			{
-				*state_element = TRANS_CANONICAL_TO_AES.transform(&canonical_data);
+				let ordinary_range_data: [PackedAESBinaryField8x32b; 4] = array::from_fn(|j| {
+					let canonical = PackedBinaryField8x32b::from_fn(|k| {
+						u32::from_le_bytes(
+							(data[j * 8 + k][data_offset + 4 * i..data_offset + 4 * i + 4])
+								.try_into()
+								.expect("chunk is 4 bytes"),
+						)
+						.into()
+					});
+
+					TRANS_CANONICAL_TO_AES.transform(&canonical)
+				});
+
+				*state_element = ByteSlicedAES32x32b::transpose_from(&ordinary_range_data);
 			}
 		}
 
@@ -241,20 +240,21 @@ impl VisionHasherDigestByteSliced {
 		}
 
 		// TODO: Use transposition function here as soon as it is merged in.
-
 		let out: &mut [digest::Output<VisionHasherDigest>; HASHES_PER_BYTE_SLICED_PERMUTATION] =
 			unsafe { slice_assume_init_mut(out) }
 				.try_into()
 				.expect("array is 32 elements");
-		for (i, state_data) in self.state[0..8]
-			.iter()
-			.flat_map(|x| bytemuck::must_cast_ref::<_, [PackedAESBinaryField8x32b; 4]>(x).iter())
-			.enumerate()
-		{
-			let bytes_canonical: PackedBinaryField32x8b =
-				TRANS_AES_TO_CANONICAL.transform(state_data);
-			for (j, byte) in bytes_canonical.into_iter().enumerate() {
-				out[j][i] = byte.to_underlier();
+		for (i, state_data) in self.state[0..8].iter().enumerate() {
+			let mut transposed_aes = Default::default();
+			state_data.transpose_to(&mut transposed_aes);
+
+			for (j, transposed_aes) in transposed_aes.iter().enumerate() {
+				let transposed_canonical: PackedBinaryField8x32b =
+					TRANS_AES_TO_CANONICAL.transform(transposed_aes);
+				for (k, scalar) in transposed_canonical.iter().enumerate() {
+					out[j * 8 + k][i * 4..i * 4 + 4]
+						.copy_from_slice(&scalar.to_underlier().to_le_bytes());
+				}
 			}
 		}
 	}
