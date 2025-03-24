@@ -50,7 +50,7 @@ where
 			SumcheckMultilinear::Transparent {
 				multilinear,
 				switchover_round,
-				nonzero_scalars_prefix,
+				zero_scalars_suffix,
 			} => {
 				if *switchover_round == 0 {
 					// At switchover we partially evaluate the multilinear at an expanded tensor query.
@@ -60,7 +60,7 @@ where
 
 					assert!(tensor_query.n_vars() > 0);
 
-					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
+					let nonzero_scalars_prefix = (1 << n_vars) - *zero_scalars_suffix;
 
 					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(
@@ -147,7 +147,7 @@ where
 			SumcheckMultilinear::Transparent {
 				multilinear,
 				switchover_round,
-				nonzero_scalars_prefix,
+				zero_scalars_suffix,
 			} => {
 				if *switchover_round == 0 {
 					// At switchover we partially evaluate the multilinear at an expanded tensor query.
@@ -155,7 +155,7 @@ where
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
 
-					let nonzero_scalars_prefix = nonzero_scalars_prefix.unwrap_or(1 << n_vars);
+					let nonzero_scalars_prefix = (1 << n_vars) - *zero_scalars_suffix;
 
 					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(

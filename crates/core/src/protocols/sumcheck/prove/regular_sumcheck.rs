@@ -13,7 +13,6 @@ use itertools::izip;
 use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
-use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
@@ -22,7 +21,7 @@ use crate::{
 			CompositeSumClaim, RoundCoeffs,
 		},
 		error::Error,
-		prove::prover_state::SumcheckInterpolator,
+		prove::{MultilinearInput, ProverState, SumcheckInterpolator, SumcheckProver},
 	},
 };
 
@@ -143,10 +142,17 @@ where
 
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
+		let multilinears_input = multilinears
+			.into_iter()
+			.map(|multilinear| MultilinearInput {
+				multilinear,
+				zero_scalars_suffix: 0,
+			})
+			.collect();
+
 		let state = ProverState::new(
 			evaluation_order,
-			multilinears,
-			None,
+			multilinears_input,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,
@@ -203,7 +209,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let round_evals = self.state.calculate_round_evals(None, &evaluators)?;
+		let round_evals = self.state.calculate_round_evals(0, &evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, round_evals)
 	}

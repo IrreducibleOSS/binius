@@ -1,7 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter;
-
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
@@ -10,13 +8,13 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use getset::CopyGetters;
-use itertools::{izip, Either};
+use itertools::izip;
 use tracing::instrument;
 
 use crate::{
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck::{
-		common::{determine_switchovers, equal_n_vars_check, RoundCoeffs},
+		common::{equal_n_vars_check, RoundCoeffs},
 		error::Error,
 	},
 };
@@ -38,6 +36,11 @@ pub trait SumcheckInterpolator<F: Field> {
 enum ProverStateCoeffsOrSums<F: Field> {
 	Coeffs(Vec<RoundCoeffs<F>>),
 	Sums(Vec<F>),
+}
+
+pub struct MultilinearInput<M> {
+	pub multilinear: M,
+	pub zero_scalars_suffix: usize,
 }
 
 /// The stored state of a sumcheck prover, which encapsulates common implementation logic.
@@ -78,41 +81,40 @@ where
 	#[instrument(skip_all, level = "debug", name = "ProverState::new")]
 	pub fn new(
 		evaluation_order: EvaluationOrder,
-		multilinears: Vec<M>,
-		nonzero_scalars_prefixes: Option<Vec<usize>>,
+		multilinears: Vec<MultilinearInput<M>>,
 		claimed_sums: Vec<F>,
 		nontrivial_evaluation_points: Vec<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let n_vars = equal_n_vars_check(&multilinears)?;
-		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
+		let n_vars = equal_n_vars_check(multilinears.iter().map(|input| &input.multilinear))?;
+
+		if multilinears
+			.iter()
+			.any(|input| input.zero_scalars_suffix > 1 << n_vars)
+		{
+			bail!(Error::IncorrectZeroScalarsSuffixes);
+		}
+
+		let switchover_rounds = multilinears
+			.iter()
+			.map(|input| switchover_fn(1 << input.multilinear.log_extension_degree()))
+			.collect::<Vec<_>>();
 		let max_switchover_round = switchover_rounds.iter().copied().max().unwrap_or_default();
 
-		let nonzero_scalars_prefixes =
-			if let Some(nonzero_scalars_prefixes) = nonzero_scalars_prefixes {
-				if nonzero_scalars_prefixes.len() != multilinears.len()
-					|| nonzero_scalars_prefixes
-						.iter()
-						.any(|&prefix| prefix > 1 << n_vars)
-				{
-					bail!(Error::IncorrectNonzeroScalarPrefixes);
-				}
-
-				Either::Right(nonzero_scalars_prefixes.into_iter().map(Some))
-			} else {
-				Either::Left(iter::repeat(None))
-			};
-
-		let multilinears = izip!(multilinears, switchover_rounds, nonzero_scalars_prefixes)
-			.map(|(multilinear, switchover_round, nonzero_scalars_prefix)| {
+		let multilinears = izip!(multilinears, switchover_rounds)
+			.map(|(input, switchover_round)| {
+				let MultilinearInput {
+					multilinear,
+					zero_scalars_suffix,
+				} = input;
 				SumcheckMultilinear::Transparent {
 					multilinear,
 					switchover_round,
-					nonzero_scalars_prefix,
+					zero_scalars_suffix,
 				}
 			})
-			.collect();
+			.collect::<Vec<_>>();
 
 		let tensor_query = MultilinearQuery::with_capacity(max_switchover_round + 1);
 
@@ -221,7 +223,7 @@ where
 	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_round_evals<Evaluator, Composition>(
 		&self,
-		eval_prefix: Option<usize>,
+		const_eval_suffix: usize,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
@@ -231,7 +233,7 @@ where
 		Ok(self.backend.sumcheck_compute_round_evals(
 			self.evaluation_order,
 			self.n_vars,
-			eval_prefix,
+			const_eval_suffix,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
 			evaluators,

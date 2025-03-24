@@ -252,15 +252,15 @@ mod tests {
 		PackedType<U, F>: PackedFieldIndexable,
 	{
 		let max_nonzero_prefix = 1 << n_vars;
-		let mut nonzero_prefixes = vec![None, Some(0)];
+		let mut nonzero_prefixes = vec![0];
 
 		for i in 1..=n_vars {
-			nonzero_prefixes.push(Some(1 << i));
+			nonzero_prefixes.push(1 << i);
 		}
 
 		let mut rng = StdRng::seed_from_u64(0);
 		for _ in 0..n_vars + 5 {
-			nonzero_prefixes.push(Some(rng.gen_range(1..max_nonzero_prefix)));
+			nonzero_prefixes.push(rng.gen_range(1..max_nonzero_prefix));
 		}
 
 		for nonzero_prefix in nonzero_prefixes {
@@ -277,7 +277,7 @@ mod tests {
 	fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDomain>(
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		nonzero_prefix: Option<usize>,
+		nonzero_prefix: usize,
 	) where
 		U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
 		F: TowerField + ExtensionField<FDomain>,
@@ -297,12 +297,10 @@ mod tests {
 			.map(|(&a, &b)| a * b + PackedType::<U, F>::one())
 			.collect::<Vec<_>>();
 
-		if let Some(nonzero_prefix) = nonzero_prefix {
-			for i in nonzero_prefix..1 << n_vars {
-				set_packed_slice(&mut a_column, i, F::ZERO);
-				set_packed_slice(&mut b_column, i, F::ZERO);
-				set_packed_slice(&mut ab1_column, i, F::ONE);
-			}
+		for i in nonzero_prefix..1 << n_vars {
+			set_packed_slice(&mut a_column, i, F::ZERO);
+			set_packed_slice(&mut b_column, i, F::ZERO);
+			set_packed_slice(&mut ab1_column, i, F::ONE);
 		}
 
 		let a_mle =
@@ -328,11 +326,9 @@ mod tests {
 
 		let mut prover_builder = EqIndSumcheckProverBuilder::new(&backend);
 
-		if let Some(nonzero_prefix) = nonzero_prefix {
-			prover_builder = prover_builder
-				.with_nonzero_scalars_prefixes(&[nonzero_prefix, nonzero_prefix])
-				.with_eval_prefix(nonzero_prefix, F::ONE, F::ZERO);
-		}
+		prover_builder = prover_builder
+			.with_nonzero_scalars_prefixes(&[nonzero_prefix, nonzero_prefix])
+			.with_const_eval_suffix((1 << n_vars) - nonzero_prefix, F::ONE, F::ZERO);
 
 		let prover = prover_builder
 			.build(

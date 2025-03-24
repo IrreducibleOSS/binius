@@ -9,7 +9,9 @@ use binius_field::{
 		can_iterate_bytes, create_partial_sums_lookup_tables, is_sequential_bytes, iterate_bytes,
 		ByteIteratorCallback, PackedSlice,
 	},
-	packed::{get_packed_slice, get_packed_slice_unchecked, set_packed_slice_unchecked},
+	packed::{
+		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
+	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
 	Field, PackedField,
@@ -433,11 +435,11 @@ where
 		});
 
 	if evals_size % 2 == 1 {
-		let idx = folded_evals_size;
-		let (packed, i) = (&mut out[idx / PE::WIDTH], idx % PE::WIDTH);
-		packed.set(
-			i,
-			PE::Scalar::from(get_packed_slice(evals, idx << 1)) * (PE::Scalar::ONE - lerp_query),
+		set_packed_slice(
+			out,
+			folded_evals_size,
+			PE::Scalar::from(get_packed_slice(evals, folded_evals_size << 1))
+				* (PE::Scalar::ONE - lerp_query),
 		);
 	}
 

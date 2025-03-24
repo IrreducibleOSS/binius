@@ -80,7 +80,7 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	evaluation_order: EvaluationOrder,
 	n_vars: usize,
-	eval_prefix: Option<usize>,
+	const_eval_suffix: usize,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
@@ -96,13 +96,11 @@ where
 {
 	assert!(n_vars > 0, "Computing round evaluations requires at least a single variable.");
 
-	let eval_prefix = eval_prefix.unwrap_or(1 << (n_vars - 1));
-
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
 	let subcube_vars = subcube_vars_for_bits::<P>(
 		MAX_SRC_SUBCUBE_LOG_BITS,
-		log2_ceil_usize(eval_prefix),
+		log2_ceil_usize((1 << (n_vars - 1)) - const_eval_suffix),
 		tensor_query.n_vars(),
 		n_vars - 1,
 	);
@@ -110,7 +108,7 @@ where
 	match evaluation_order {
 		EvaluationOrder::LowToHigh => calculate_round_evals_with_access(
 			n_vars,
-			eval_prefix,
+			const_eval_suffix,
 			subcube_vars,
 			&LowToHighAccess { tensor_query },
 			multilinears,
@@ -119,7 +117,7 @@ where
 		),
 		EvaluationOrder::HighToLow => calculate_round_evals_with_access(
 			n_vars,
-			eval_prefix,
+			const_eval_suffix,
 			subcube_vars,
 			&HighToLowAccess { tensor_query },
 			multilinears,
@@ -131,7 +129,7 @@ where
 
 fn calculate_round_evals_with_access<FDomain, F, P, M, Evaluator, Access, Composition>(
 	n_vars: usize,
-	eval_prefix: usize,
+	const_eval_suffix: usize,
 	subcube_vars: usize,
 	access: &Access,
 	multilinears: &[SumcheckMultilinear<P, M>],
@@ -147,7 +145,7 @@ where
 	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	assert!(eval_prefix <= 1 << (n_vars - 1));
+	assert!(const_eval_suffix <= 1 << (n_vars - 1));
 	assert!(subcube_vars < n_vars);
 
 	let n_multilinears = multilinears.len();
@@ -168,7 +166,7 @@ where
 	}
 
 	let index_vars = n_vars - 1 - subcube_vars;
-	let subcube_count = eval_prefix.div_ceil(1 << subcube_vars);
+	let subcube_count = ((1 << (n_vars - 1)) - const_eval_suffix).div_ceil(1 << subcube_vars);
 	let packed_accumulators = (0..subcube_count)
 		.into_par_iter()
 		.try_fold(
@@ -299,13 +297,13 @@ where
 				.map(|packed_round_eval| packed_round_eval.iter().take(1 << subcube_vars).sum())
 				.collect::<Vec<F>>();
 
-			let eval_prefix = subcube_count << subcube_vars;
+			let const_eval_suffix = (1 << n_vars) - (subcube_count << subcube_vars);
 			for (eval_point_index, round_eval) in
 				izip!(eval_point_indices.clone(), &mut round_evals)
 			{
 				let is_infinity_point = eval_point_index == 2;
 				*round_eval +=
-					evaluator.process_constant_eval_suffix(eval_prefix, is_infinity_point);
+					evaluator.process_constant_eval_suffix(const_eval_suffix, is_infinity_point);
 			}
 
 			RoundEvals(round_evals)
