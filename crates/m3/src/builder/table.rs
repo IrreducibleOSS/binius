@@ -20,10 +20,10 @@ use binius_utils::{
 
 use super::{
 	channel::Flush,
-	column::{upcast_col, Col, ColumnDef, ColumnInfo, ColumnShape},
+	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
-	ColumnIndex,
+	upcast_col, ColumnIndex, FlushOpts,
 };
 use crate::builder::column::ColumnId;
 
@@ -253,7 +253,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.partition_mut(1).pull(channel, cols);
+		self.pull_with_opts(channel, cols, FlushOpts::default());
 	}
 
 	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
@@ -261,35 +261,41 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.partition_mut(1).push(channel, cols);
+		self.push_with_opts(channel, cols, FlushOpts::default());
 	}
 
-	pub fn pull_selected<FSub>(
+	pub fn pull_with_opts<FSub>(
 		&mut self,
 		channel: ChannelId,
 		cols: impl IntoIterator<Item = Col<FSub>>,
-		selector: Col<FSub>,
+		opts: FlushOpts,
 	) where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table
-			.partition_mut(1)
-			.pull_selected(channel, cols, selector);
+		self.table.partition_mut(1).flush(
+			channel,
+			FlushDirection::Pull,
+			cols.into_iter().map(upcast_col),
+			opts,
+		);
 	}
 
-	pub fn push_selected<FSub>(
+	pub fn push_with_opts<FSub>(
 		&mut self,
 		channel: ChannelId,
 		cols: impl IntoIterator<Item = Col<FSub>>,
-		selector: Col<FSub>,
+		opts: FlushOpts,
 	) where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table
-			.partition_mut(1)
-			.push_selected(channel, cols, selector);
+		self.table.partition_mut(1).flush(
+			channel,
+			FlushDirection::Push,
+			cols.into_iter().map(upcast_col),
+			opts,
+		);
 	}
 
 	fn namespaced_name(&self, name: impl ToString) -> String {
@@ -331,7 +337,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 }
 
 impl<F: TowerField> TablePartition<F> {
-	pub fn new(table_id: TableId, values_per_row: usize) -> Self {
+	fn new(table_id: TableId, values_per_row: usize) -> Self {
 		Self {
 			table_id,
 			values_per_row,
@@ -341,7 +347,7 @@ impl<F: TowerField> TablePartition<F> {
 		}
 	}
 
-	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
+	fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
 		expr: Expr<FSub, VALUES_PER_ROW>,
@@ -357,62 +363,12 @@ impl<F: TowerField> TablePartition<F> {
 		});
 	}
 
-	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.flush(channel, FlushDirection::Pull, cols.into_iter().map(upcast_col), None)
-	}
-
-	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.flush(channel, FlushDirection::Push, cols.into_iter().map(upcast_col), None);
-	}
-
-	pub fn pull_selected<FSub>(
-		&mut self,
-		channel: ChannelId,
-		cols: impl IntoIterator<Item = Col<FSub>>,
-		selector: Col<FSub>,
-	) where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.flush(
-			channel,
-			FlushDirection::Pull,
-			cols.into_iter().map(upcast_col),
-			Some(upcast_col(selector)),
-		)
-	}
-
-	pub fn push_selected<FSub>(
-		&mut self,
-		channel: ChannelId,
-		cols: impl IntoIterator<Item = Col<FSub>>,
-		selector: Col<FSub>,
-	) where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.flush(
-			channel,
-			FlushDirection::Push,
-			cols.into_iter().map(upcast_col),
-			Some(upcast_col(selector)),
-		)
-	}
-
 	fn flush(
 		&mut self,
 		channel_id: ChannelId,
 		direction: FlushDirection,
 		cols: impl IntoIterator<Item = Col<F>>,
-		selector: Option<Col<F>>,
+		opts: FlushOpts,
 	) {
 		let column_indices = cols
 			.into_iter()
@@ -421,11 +377,15 @@ impl<F: TowerField> TablePartition<F> {
 				col.table_index
 			})
 			.collect();
-		let selector = selector.map(|c| c.table_index);
+		let selector = opts.selector.map(|selector| {
+			assert_eq!(selector.table_id, self.table_id);
+			selector.table_index
+		});
 		self.flushes.push(Flush {
 			column_indices,
 			channel_id,
 			direction,
+			multiplicity: opts.multiplicity,
 			selector,
 		});
 	}

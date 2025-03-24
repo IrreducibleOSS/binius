@@ -251,6 +251,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					column_indices,
 					channel_id,
 					direction,
+					multiplicity,
 					selector,
 				} in flushes
 				{
@@ -263,7 +264,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						channel_id: *channel_id,
 						direction: *direction,
 						selector: selector.unwrap_or(step_down),
-						multiplicity: 1,
+						multiplicity: *multiplicity as u64,
 					});
 				}
 
