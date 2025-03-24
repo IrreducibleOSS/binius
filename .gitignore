@@ -3,5 +3,5 @@
 /.vscode
 /.idea
 **/.DS_Store
-/tracing.perfetto-trace
+/*.perfetto-trace
 **/rustc-ice-*.txt
