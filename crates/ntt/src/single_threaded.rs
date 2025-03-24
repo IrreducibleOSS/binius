@@ -253,8 +253,10 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
-		let block_twiddle =
-			calculate_twiddle::<P>(&s_eval.coset(log_domain_size - 1 - cutoff, 0), log_block_len);
+		let block_twiddle = calculate_twiddle::<P>(
+			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
+			log_block_len,
+		);
 
 		for j in 0..data.len() / 2 {
 			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
