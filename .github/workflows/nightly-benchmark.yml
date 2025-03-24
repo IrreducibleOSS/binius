@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:  # Allows manual trigger
+  push:
+    branches:
+      - anexj/gpa_micro_benchmarks
 
 permissions:
   contents: write
@@ -13,7 +16,6 @@ permissions:
 jobs:
   benchmark:
     name: Benchmark for ${{ matrix.os }}
-    if: github.ref_name == 'main'
     container: rustlang/rust:nightly
     runs-on: ${{ matrix.os }}
     continue-on-error: true
