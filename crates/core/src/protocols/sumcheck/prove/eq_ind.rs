@@ -441,7 +441,7 @@ where
 		is_infinity_point: bool,
 		batch_query: &RowsBatchRef<P>,
 	) -> P {
-		let row_len = batch_query.n_cols();
+		let row_len = batch_query.row_len();
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {

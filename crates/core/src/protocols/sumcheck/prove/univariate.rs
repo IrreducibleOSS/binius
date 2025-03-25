@@ -507,8 +507,7 @@ where
 						.map(|evals| &evals[..pbase_prefix_len]);
 
 					stackalloc_with_iter(n_multilinears, extrapolated_evals_iter, |batch_query| {
-						let batch_query =
-							RowsBatchRef::new_from_data(batch_query, pbase_prefix_len);
+						let batch_query = RowsBatchRef::new(batch_query, pbase_prefix_len);
 
 						// Evaluate the small field composition
 						composition.batch_evaluate(

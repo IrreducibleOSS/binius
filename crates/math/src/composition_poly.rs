@@ -48,10 +48,10 @@ where
 	/// This method has a default implementation.
 	fn batch_evaluate(&self, batch_query: &RowsBatchRef<P>, evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		if batch_query.n_cols() != row_len {
+		if batch_query.row_len() != row_len {
 			bail!(Error::BatchEvaluateSizeMismatch {
 				expected: row_len,
-				actual: batch_query.n_cols(),
+				actual: batch_query.row_len(),
 			});
 		}
 

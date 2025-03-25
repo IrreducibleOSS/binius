@@ -294,10 +294,10 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 
 	fn batch_evaluate(&self, batch_query: &RowsBatchRef<P>, evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		if batch_query.n_cols() != row_len {
+		if batch_query.row_len() != row_len {
 			bail!(Error::BatchEvaluateSizeMismatch {
 				expected: row_len,
-				actual: batch_query.n_cols(),
+				actual: batch_query.row_len(),
 			});
 		}
 
@@ -494,7 +494,7 @@ mod tests {
 
 		let mut evals = [P::default()];
 		typed_circuit
-			.batch_evaluate(&RowsBatchRef::new_from_data(&vec![], 1), &mut evals)
+			.batch_evaluate(&RowsBatchRef::new(&vec![], 1), &mut evals)
 			.unwrap();
 		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
 	}

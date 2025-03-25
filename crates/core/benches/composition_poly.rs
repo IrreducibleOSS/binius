@@ -48,17 +48,17 @@ fn benchmark_evaluate(c: &mut Criterion) {
 
 	let query128x1b = generate_input_data(&mut rng);
 	let query128x1b = query128x1b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
-	let batch_query128x1b = RowsBatchRef::new_from_data(&query128x1b, BATCH_SIZE);
+	let batch_query128x1b = RowsBatchRef::new(&query128x1b, BATCH_SIZE);
 	let mut results128x1b = vec![PackedBinaryField128x1b::zero(); BATCH_SIZE];
 
 	let query16x8b = generate_input_data(&mut rng);
 	let query16x8b = query16x8b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
-	let batch_query16x8b = RowsBatchRef::new_from_data(&query16x8b, BATCH_SIZE);
+	let batch_query16x8b = RowsBatchRef::new(&query16x8b, BATCH_SIZE);
 	let mut results16x8b = vec![PackedBinaryField16x8b::zero(); BATCH_SIZE];
 
 	let query1x128b = generate_input_data(&mut rng);
 	let query1x128b = query1x128b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
-	let batch_query1x128b = RowsBatchRef::new_from_data(&query1x128b, BATCH_SIZE);
+	let batch_query1x128b = RowsBatchRef::new(&query1x128b, BATCH_SIZE);
 	let mut results1x128b = vec![PackedBinaryField1x128b::zero(); BATCH_SIZE];
 
 	let arith_circuit_poly = ArithCircuitPoly::new(

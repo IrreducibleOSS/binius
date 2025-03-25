@@ -40,7 +40,7 @@ macro_rules! test_arithmetic_poly {
                 }
 
                 let mut batch_result = vec![<$packed>::zero(); BATCH_SIZE];
-                circuit.batch_evaluate(&RowsBatchRef::new_from_data(&query_data, BATCH_SIZE), &mut batch_result).unwrap();
+                circuit.batch_evaluate(&RowsBatchRef::new(&query_data, BATCH_SIZE), &mut batch_result).unwrap();
                 assert_eq!(&batch_result, &expected);
             }
         }

@@ -225,7 +225,7 @@ where
 							});
 
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
-						let evals_z = RowsBatchRef::new_from_data(evals_z, evals_z[0].len());
+						let evals_z = RowsBatchRef::new(evals_z, evals_z[0].len());
 
 						for (evaluator, round_evals) in
 							iter::zip(evaluators, round_evals.iter_mut())

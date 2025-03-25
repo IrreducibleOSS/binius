@@ -562,7 +562,7 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 			.iter()
 			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&dummy_col))
 			.collect::<Vec<_>>();
-		let cols = RowsBatchRef::new_from_data(&cols, 1 << log_packed_elems);
+		let cols = RowsBatchRef::new(&cols, 1 << log_packed_elems);
 
 		// REVIEW: This could be inefficient with very large segments because batch evaluation
 		// allocates more memory, proportional to the size of the segment. Because of how segments
