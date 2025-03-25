@@ -44,7 +44,6 @@ pub trait TowerLevel: 'static {
 	) -> (&mut <Self::Base as TowerLevel>::Data<T>, &mut <Self::Base as TowerLevel>::Data<T>);
 
 	// Join two equal-length arrays (the reverse of split)
-	#[allow(clippy::type_complexity)]
 	fn join<T: Copy + Default>(
 		first: &<Self::Base as TowerLevel>::Data<T>,
 		second: &<Self::Base as TowerLevel>::Data<T>,
@@ -369,5 +368,137 @@ impl TowerLevel for TowerLevel1 {
 	#[inline(always)]
 	fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self::Data<T> {
 		array::from_fn(f)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_split_join() {
+		fn check_split_and_join<TL: TowerLevel>() {
+			let data = TL::from_fn(|i| i as u32);
+			let (left, right) = TL::split(&data);
+			assert_eq!(left.as_ref(), &data.as_ref()[..TL::WIDTH / 2]);
+			assert_eq!(right.as_ref(), &data.as_ref()[TL::WIDTH / 2..]);
+
+			let joined = TL::join(left, right);
+			assert_eq!(joined.as_ref(), data.as_ref());
+		}
+
+		check_split_and_join::<TowerLevel64>();
+		check_split_and_join::<TowerLevel32>();
+		check_split_and_join::<TowerLevel16>();
+		check_split_and_join::<TowerLevel8>();
+		check_split_and_join::<TowerLevel4>();
+		check_split_and_join::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_split_mut_join() {
+		fn check_mut_and_join<TL: TowerLevel>() {
+			let mut data = TL::from_fn(|i| i as u32);
+			let expected_left = data.as_ref()[..TL::WIDTH / 2].to_vec();
+			let expected_right = data.as_ref()[TL::WIDTH / 2..].to_vec();
+			let (left, right) = TL::split_mut(&mut data);
+
+			assert_eq!(left.as_mut(), expected_left);
+			assert_eq!(right.as_mut(), expected_right);
+
+			let joined = TL::join(left, right);
+			assert_eq!(joined.as_ref(), data.as_ref());
+		}
+
+		check_mut_and_join::<TowerLevel64>();
+		check_mut_and_join::<TowerLevel32>();
+		check_mut_and_join::<TowerLevel16>();
+		check_mut_and_join::<TowerLevel8>();
+		check_mut_and_join::<TowerLevel4>();
+		check_mut_and_join::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_from_fn() {
+		fn check_from_fn<TL: TowerLevel>() {
+			let data = TL::from_fn(|i| i as u32);
+			let expected = (0..TL::WIDTH).map(|i| i as u32).collect::<Vec<_>>();
+			assert_eq!(data.as_ref(), expected.as_slice());
+		}
+
+		check_from_fn::<TowerLevel64>();
+		check_from_fn::<TowerLevel32>();
+		check_from_fn::<TowerLevel16>();
+		check_from_fn::<TowerLevel8>();
+		check_from_fn::<TowerLevel4>();
+		check_from_fn::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_default() {
+		fn check_default<TL: TowerLevel>() {
+			let data = TL::default::<u32>();
+			let expected = vec![0u32; TL::WIDTH];
+			assert_eq!(data.as_ref(), expected);
+		}
+
+		check_default::<TowerLevel64>();
+		check_default::<TowerLevel32>();
+		check_default::<TowerLevel16>();
+		check_default::<TowerLevel8>();
+		check_default::<TowerLevel4>();
+		check_default::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_add_into() {
+		fn check_add_into<TL: TowerLevel>() {
+			let a = TL::from_fn(|i| i as u32);
+			let mut b = TL::default::<u32>();
+			TL::add_into(&a, &mut b);
+			assert_eq!(b.as_ref(), a.as_ref());
+		}
+
+		check_add_into::<TowerLevel64>();
+		check_add_into::<TowerLevel32>();
+		check_add_into::<TowerLevel16>();
+		check_add_into::<TowerLevel8>();
+		check_add_into::<TowerLevel4>();
+		check_add_into::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_copy_into() {
+		fn check_copy_into<TL: TowerLevel>() {
+			let a = TL::from_fn(|i| i as u32);
+			let mut b = TL::default::<u32>();
+			TL::copy_into(&a, &mut b);
+			assert_eq!(b.as_ref(), a.as_ref());
+		}
+
+		check_copy_into::<TowerLevel64>();
+		check_copy_into::<TowerLevel32>();
+		check_copy_into::<TowerLevel16>();
+		check_copy_into::<TowerLevel8>();
+		check_copy_into::<TowerLevel4>();
+		check_copy_into::<TowerLevel2>();
+	}
+
+	#[test]
+	fn test_sum() {
+		fn check_sum<TL: TowerLevel>() {
+			let a = TL::from_fn(|i| i as u32);
+			let b = TL::from_fn(|i| i as u32);
+			let sum_result = TL::sum(&a, &b);
+			let expected = TL::from_fn(|i| 2 * (i as u32));
+			assert_eq!(sum_result.as_ref(), expected.as_ref());
+		}
+
+		check_sum::<TowerLevel64>();
+		check_sum::<TowerLevel32>();
+		check_sum::<TowerLevel16>();
+		check_sum::<TowerLevel8>();
+		check_sum::<TowerLevel4>();
+		check_sum::<TowerLevel2>();
 	}
 }
