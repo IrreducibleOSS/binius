@@ -8,29 +8,30 @@ pub struct RowsBatch<'a, T> {
 
 impl<'a, T> RowsBatch<'a, T> {
 	/// Create a new `RowsBatch` from a vector of rows and the given row length
+	///
+	/// # Panics
+	/// In case if any of the rows has a length different from `row_len`.
 	#[inline]
-	pub fn new(rows: Vec<&'a [T]>, cols: usize) -> Self {
+	pub fn new(rows: Vec<&'a [T]>, row_len: usize) -> Self {
 		for row in &rows {
-			assert_eq!(row.len(), cols);
+			assert_eq!(row.len(), row_len);
 		}
 
-		Self {
-			rows,
-			row_len: cols,
-		}
+		Self { rows, row_len }
 	}
 
+	/// Create a new `RowsBatch` from an iterator of rows and the given row length.
+	///
+	/// # Panics
+	/// In case if any of the rows has a length less than `row_len`.
 	#[inline]
-	pub fn new_from_iter(rows: impl IntoIterator<Item = &'a [T]>, n_cols: usize) -> Self {
-		let rows = rows.into_iter().map(|x| &x[..n_cols]).collect();
-		Self {
-			rows,
-			row_len: n_cols,
-		}
+	pub fn new_from_iter(rows: impl IntoIterator<Item = &'a [T]>, row_len: usize) -> Self {
+		let rows = rows.into_iter().map(|x| &x[..row_len]).collect();
+		Self { rows, row_len }
 	}
 
 	#[inline(always)]
-	pub fn as_ref(&self) -> RowsBatchRef<'a, '_, T> {
+	pub fn get_ref(&self) -> RowsBatchRef<'a, '_, T> {
 		RowsBatchRef {
 			rows: self.rows.as_slice(),
 			row_len: self.row_len,
@@ -50,15 +51,18 @@ pub struct RowsBatchRef<'a, 'b, T> {
 
 impl<'a, 'b, T> RowsBatchRef<'a, 'b, T> {
 	/// Create a new `RowsBatchRef` from a slice of rows and the given row length.
+	///
+	/// # Panics
+	/// In case if any of the rows has a length different from `n_cols`.
 	#[inline]
-	pub fn new(rows: &'a [&'b [T]], n_cols: usize) -> Self {
+	pub fn new(rows: &'a [&'b [T]], row_len: usize) -> Self {
 		for row in rows {
-			assert_eq!(row.len(), n_cols);
+			assert_eq!(row.len(), row_len);
 		}
 
 		Self {
 			rows,
-			row_len: n_cols,
+			row_len,
 			_pd: std::marker::PhantomData,
 		}
 	}
@@ -70,7 +74,7 @@ impl<'a, 'b, T> RowsBatchRef<'a, 'b, T> {
 
 	#[inline(always)]
 	pub fn rows(&self) -> &[&'a [T]] {
-		self.rows.as_ref()
+		self.rows
 	}
 
 	#[inline(always)]
@@ -89,11 +93,7 @@ impl<'a, 'b, T> RowsBatchRef<'a, 'b, T> {
 	}
 
 	pub fn map(&self, indices: impl AsRef<[usize]>) -> RowsBatch<'a, T> {
-		let rows = indices
-			.as_ref()
-			.iter()
-			.map(|&i| self.rows.as_ref()[i])
-			.collect();
+		let rows = indices.as_ref().iter().map(|&i| self.rows[i]).collect();
 
 		RowsBatch {
 			rows,

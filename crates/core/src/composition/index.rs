@@ -88,9 +88,9 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		batch_query: &RowsBatchRef<P>,
 		evals: &mut [P],
 	) -> Result<(), binius_math::Error> {
-		let batch_subquery = batch_query.map(&self.indices);
+		let batch_subquery = batch_query.map(self.indices);
 		self.composition
-			.batch_evaluate(&batch_subquery.as_ref(), evals)
+			.batch_evaluate(&batch_subquery.get_ref(), evals)
 	}
 }
 

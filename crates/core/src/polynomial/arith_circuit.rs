@@ -494,7 +494,7 @@ mod tests {
 
 		let mut evals = [P::default()];
 		typed_circuit
-			.batch_evaluate(&RowsBatchRef::new(&vec![], 1), &mut evals)
+			.batch_evaluate(&RowsBatchRef::new(&[], 1), &mut evals)
 			.unwrap();
 		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
 	}
@@ -521,10 +521,10 @@ mod tests {
 		);
 
 		let mut evals = [P::default()];
-		let batch_query = vec![[P::broadcast(F::new(123).into())]; 1];
+		let batch_query = [[P::broadcast(F::new(123).into())]; 1];
 		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 1);
 		typed_circuit
-			.batch_evaluate(&batch_query.as_ref(), &mut evals)
+			.batch_evaluate(&batch_query.get_ref(), &mut evals)
 			.unwrap();
 		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
 	}
@@ -653,7 +653,7 @@ mod tests {
 		];
 		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 3);
 
-		CompositionPoly::batch_evaluate(&circuit, &batch_query.as_ref(), &mut batch_result)
+		CompositionPoly::batch_evaluate(&circuit, &batch_query.get_ref(), &mut batch_result)
 			.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}
@@ -713,7 +713,7 @@ mod tests {
 			&[query1[1], query2[1], query3[1]],
 		];
 		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 3);
-		CompositionPoly::batch_evaluate(&circuit, &batch_query.as_ref(), &mut batch_result)
+		CompositionPoly::batch_evaluate(&circuit, &batch_query.get_ref(), &mut batch_result)
 			.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}

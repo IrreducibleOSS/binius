@@ -224,8 +224,9 @@ where
 								}
 							});
 
+					let row_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
-						let evals_z = RowsBatchRef::new(evals_z, evals_z[0].len());
+						let evals_z = RowsBatchRef::new(evals_z, row_len);
 
 						for (evaluator, round_evals) in
 							iter::zip(evaluators, round_evals.iter_mut())
