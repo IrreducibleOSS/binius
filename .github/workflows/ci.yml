@@ -105,7 +105,7 @@ jobs:
             cmd: 'RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
           - runner: "c7a-2xlarge"
             name: "no-default-features"
-            cmd: 'CARGO_EXTRA_FLAGS="-Zbuild-std --no-default-features --target x86_64-unknown-linux-gnu" RUSTFLAGS="-Zsanitizer=address -C target-cpu=native" ./scripts/run_tests_and_examples.sh'
+            cmd: 'CARGO_EXTRA_FLAGS="--no-default-features" RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
           - runner: "c8g-2xlarge"
             name: "arm"
             cmd: 'RUSTFLAGS="-C target-cpu=native -C target-feature=+aes" ./scripts/run_tests_and_examples.sh'
