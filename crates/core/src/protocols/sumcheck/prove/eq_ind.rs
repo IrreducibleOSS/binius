@@ -13,16 +13,21 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
+	polynomial::{
+		ArithCircuitPoly, Error as PolynomialError, MultilinearComposite, MultivariatePoly,
+	},
 	protocols::sumcheck::{
 		common::{
 			equal_n_vars_check, get_nontrivial_evaluation_points,
 			interpolation_domains_for_composition_degrees, RoundCoeffs,
 		},
-		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
+		prove::{
+			common::fold_partial_eq_ind, MultilinearInput, ProverState, SumcheckInterpolator,
+			SumcheckProver,
+		},
 		CompositeSumClaim, Error,
 	},
-	transparent::eq_ind::EqIndPartialEval,
+	transparent::{eq_ind::EqIndPartialEval, step_up::StepUp},
 };
 
 pub fn validate_witness<F, P, M, Composition>(
@@ -90,7 +95,9 @@ where
 	Backend: ComputationBackend,
 {
 	eq_ind_partial_evals: Option<Backend::Vec<P>>,
+	nonzero_scalars_prefixes: Option<Vec<usize>>,
 	first_round_eval_1s: Option<Vec<P::Scalar>>,
+	const_eval_suffix: (usize, P::Scalar, P::Scalar),
 	backend: &'a Backend,
 }
 
@@ -104,7 +111,9 @@ where
 		Self {
 			backend,
 			eq_ind_partial_evals: None,
+			nonzero_scalars_prefixes: None,
 			first_round_eval_1s: None,
+			const_eval_suffix: Default::default(),
 		}
 	}
 
@@ -121,6 +130,33 @@ where
 	/// to direct composite evaluation.
 	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
 		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
+		self
+	}
+
+	/// Specify the nonzero scalar prefixes for multilinears.
+	///
+	/// The provided array specifies the nonzero scalars at the beginning of each multilinear.
+	/// Prover is able to reduce multilinear storage and compute using this information.
+	pub fn with_nonzero_scalars_prefixes(mut self, nonzero_scalars_prefixes: &[usize]) -> Self {
+		self.nonzero_scalars_prefixes = Some(nonzero_scalars_prefixes.to_vec());
+		self
+	}
+
+	/// Specifies constant evaluation suffix for the composite.
+	///
+	/// ## Arguments
+	///
+	/// * `const_eval_suffix`  - number of rows at the end of trace which are guaranteed to yield constant values
+	/// * `value`              - constant value of the composite at the trace suffix in finite domain points
+	/// * `value_at_inf`       - constant value of the composite at Karatsuba infinity point
+	pub fn with_const_eval_suffix(
+		mut self,
+		const_eval_suffix: usize,
+		value: P::Scalar,
+		value_at_inf: P::Scalar,
+	) -> Self {
+		// REVIEW: compute these values symbolically from the composition ArithExpr and zero_scalars_suffixes
+		self.const_eval_suffix = (const_eval_suffix, value, value_at_inf);
 		self
 	}
 
@@ -159,6 +195,13 @@ where
 
 		if eq_ind_challenges.len() != n_vars {
 			bail!(Error::IncorrectEqIndChallengesLength);
+		}
+
+		let (const_eval_suffix, suffix_value, suffix_value_at_inf) = self.const_eval_suffix;
+		let eval_prefix = (1 << n_vars) - const_eval_suffix;
+
+		if const_eval_suffix > 1 << n_vars {
+			bail!(Error::ConstEvalSuffixTooLong);
 		}
 
 		// Only one value of the expanded equality indicator is used per each
@@ -200,9 +243,20 @@ where
 
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
+		let multilinears_input = self
+			.nonzero_scalars_prefixes
+			.unwrap_or_else(|| vec![1 << n_vars; multilinears.len()])
+			.into_iter()
+			.zip(multilinears)
+			.map(|(nonzero_scalars_prefix, multilinear)| MultilinearInput {
+				multilinear,
+				zero_scalars_suffix: (1 << n_vars) - nonzero_scalars_prefix,
+			})
+			.collect();
+
 		let state = ProverState::new(
 			evaluation_order,
-			multilinears,
+			multilinears_input,
 			claimed_sums,
 			nontrivial_evaluation_points,
 			switchover_fn,
@@ -215,6 +269,9 @@ where
 
 		Ok(EqIndSumcheckProver {
 			n_vars,
+			eval_prefix,
+			suffix_value,
+			suffix_value_at_inf,
 			state,
 			eq_ind_prefix_eval,
 			eq_ind_partial_evals,
@@ -236,6 +293,9 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
+	eval_prefix: usize,
+	suffix_value: P::Scalar,
+	suffix_value_at_inf: P::Scalar,
 	state: ProverState<'a, FDomain, P, M, Backend>,
 	eq_ind_prefix_eval: P::Scalar,
 	eq_ind_partial_evals: Backend::Vec<P>,
@@ -319,11 +379,24 @@ where
 
 	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		let round = self.round();
+		let n_rounds_remaining = self.n_rounds_remaining();
+
 		let alpha = self.eq_ind_round_challenge();
 		let eq_ind_partial_evals = &self.eq_ind_partial_evals;
 
 		let first_round_eval_1s = self.first_round_eval_1s.take();
 		let have_first_round_eval_1s = first_round_eval_1s.is_some();
+
+		let suffix_value = self.suffix_value;
+		let suffix_value_at_inf = self.suffix_value_at_inf;
+
+		let eq_ind_challenges = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => &self.eq_ind_challenges[self.n_vars.min(round + 1)..],
+			EvaluationOrder::HighToLow => {
+				&self.eq_ind_challenges[..self.n_vars.saturating_sub(round + 1)]
+			}
+		};
 
 		let evaluators = self
 			.compositions
@@ -333,10 +406,14 @@ where
 					ArithCircuitPoly::new(composition.expression().leading_term());
 
 				Evaluator {
+					n_rounds_remaining,
 					composition,
 					composition_at_infinity,
 					have_first_round_eval_1s,
+					eq_ind_challenges,
 					eq_ind_partial_evals,
+					suffix_value,
+					suffix_value_at_inf,
 				}
 			})
 			.collect::<Vec<_>>();
@@ -354,10 +431,23 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.calculate_round_evals(&evaluators)?;
-		let prime_coeffs =
-			self.state
-				.calculate_round_coeffs_from_evals(&interpolators, batch_coeff, evals)?;
+		self.eval_prefix = match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => self.eval_prefix.div_ceil(2),
+			EvaluationOrder::HighToLow => self
+				.eval_prefix
+				.min(1 << n_rounds_remaining.saturating_sub(1)),
+		};
+
+		let round_evals = self.state.calculate_round_evals(
+			(1 << n_rounds_remaining.saturating_sub(1)) - self.eval_prefix,
+			&evaluators,
+		)?;
+
+		let prime_coeffs = self.state.calculate_round_coeffs_from_evals(
+			&interpolators,
+			batch_coeff,
+			round_evals,
+		)?;
 
 		// Convert v' polynomial into v polynomial
 
@@ -416,10 +506,14 @@ struct Evaluator<'a, P, Composition>
 where
 	P: PackedField,
 {
+	n_rounds_remaining: usize,
 	composition: &'a Composition,
 	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
-	eq_ind_partial_evals: &'a [P],
 	have_first_round_eval_1s: bool,
+	eq_ind_challenges: &'a [P::Scalar],
+	eq_ind_partial_evals: &'a [P],
+	suffix_value: P::Scalar,
+	suffix_value_at_inf: P::Scalar,
 }
 
 impl<P, Composition> SumcheckEvaluator<P, Composition> for Evaluator<'_, P, Composition>
@@ -463,6 +557,25 @@ where
 
 			evals.iter().copied().sum::<P>()
 		})
+	}
+
+	fn process_constant_eval_suffix(
+		&self,
+		const_eval_suffix: usize,
+		is_infinity_point: bool,
+	) -> P::Scalar {
+		let eval_prefix = (1 << self.n_rounds_remaining) - const_eval_suffix;
+		let eq_ind_suffix_sum = StepUp::new(self.eq_ind_challenges.len(), eval_prefix)
+			.expect("eval_prefix does not exceed the equality indicator size")
+			.evaluate(self.eq_ind_challenges)
+			.expect("StepUp is initialized with eq_ind_challenges.len()");
+
+		eq_ind_suffix_sum
+			* if is_infinity_point {
+				self.suffix_value_at_inf
+			} else {
+				self.suffix_value
+			}
 	}
 
 	fn composition(&self) -> &Composition {

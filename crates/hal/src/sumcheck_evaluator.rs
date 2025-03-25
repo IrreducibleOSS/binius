@@ -30,6 +30,21 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 		batch_query: &[&[P]],
 	) -> P;
 
+	/// Compute sum of evals over the suffix where the composite is guaranteed to evaluate to a constant.
+	///
+	/// It is assumed that all required inputs are known at the evaluator creation time, as `const_eval_suffix` is
+	/// determined dynamically by the sumcheck round calculator.
+	///
+	/// See doc comments to [EvaluationDomain](binius_math::EvaluationDomain) for the intuition
+	/// behind `is_infinity_point`.
+	fn process_constant_eval_suffix(
+		&self,
+		_const_eval_suffix: usize,
+		_is_infinity_point: bool,
+	) -> P::Scalar {
+		P::Scalar::ZERO
+	}
+
 	/// Returns the composition evaluated by this object.
 	fn composition(&self) -> &Composition;
 
