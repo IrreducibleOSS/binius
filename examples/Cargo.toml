@@ -90,9 +90,6 @@ path = "blake3_circuit.rs"
 name = "u32_mul_gkr_exp_lookups"
 path = "u32_mul_gkr_exp_lookups.rs"
 
-[lints.clippy]
-needless_range_loop = "allow"
-
 [features]
 default = ["rayon", "nightly_features"]
 aes-tower = []
