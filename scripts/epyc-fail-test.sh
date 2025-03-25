@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # This test case will fail on EPYC AWS instances due to improper inlining when
-# compiling with target-cpu=native.  See test.env and test-lld.env for
-# test setup.
+# compiling with target-cpu=native.  See epyc-fail.env and epyc-fail-lld.env
+# for test setup.
 
 set -e
 set -x
