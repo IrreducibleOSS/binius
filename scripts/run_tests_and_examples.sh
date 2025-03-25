@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Report limits
-echo "### LIMITS"
-ulimit -a
-
-# Start script
-echo "### Run tests and examples"
-
 export RUST_BACKTRACE=full
 CARGO_PROFILE="${CARGO_PROFILE:-test}"
 CARGO_EXTRA_FLAGS="${CARGO_EXTRA_FLAGS:-}"
