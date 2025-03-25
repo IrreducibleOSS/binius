@@ -3,7 +3,7 @@
 use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{ArithExpr, CompositionPoly, Error};
+use binius_math::{ArithExpr, CompositionPoly, Error, RowsBatchRef};
 use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
@@ -87,12 +87,12 @@ impl CircuitNode {
 	/// This method is used for batch evaluation.
 	fn get_sparse_chunk<'a, P: PackedField>(
 		&self,
-		inputs: &[&'a [P]],
+		inputs: &RowsBatchRef<'_, 'a, P>,
 		evals: &'a [P],
 		row_len: usize,
 	) -> &'a [P] {
 		match self {
-			Self::Var(index) => inputs[*index],
+			Self::Var(index) => inputs.rows()[*index],
 			Self::Slot(slot) => &evals[slot * row_len..(slot + 1) * row_len],
 		}
 	}
@@ -292,16 +292,13 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		})
 	}
 
-	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
+	fn batch_evaluate(&self, batch_query: &RowsBatchRef<P>, evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		for (i, row) in batch_query.iter().enumerate() {
-			if row.len() != row_len {
-				bail!(Error::BatchEvaluateSizeMismatch {
-					index: i,
-					expected: row_len,
-					actual: row.len(),
-				});
-			}
+		if batch_query.n_cols() != row_len {
+			bail!(Error::BatchEvaluateSizeMismatch {
+				expected: row_len,
+				actual: batch_query.n_cols(),
+			});
 		}
 
 		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
@@ -409,7 +406,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 	left: &CircuitStepArgument<F>,
 	right: &CircuitStepArgument<F>,
-	batch_query: &[&[P]],
+	batch_query: &RowsBatchRef<P>,
 	evals_before: &[P],
 	current_evals: &mut [MaybeUninit<P>],
 	op: impl Fn(P, P, &mut MaybeUninit<P>),
@@ -475,7 +472,7 @@ mod tests {
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
-	use binius_math::CompositionPoly;
+	use binius_math::{CompositionPoly, RowsBatch};
 	use binius_utils::felts;
 
 	use super::*;
@@ -496,7 +493,9 @@ mod tests {
 		assert_eq!(typed_circuit.evaluate(&[]).unwrap(), P::broadcast(F::new(123).into()));
 
 		let mut evals = [P::default()];
-		typed_circuit.batch_evaluate(&[], &mut evals).unwrap();
+		typed_circuit
+			.batch_evaluate(&RowsBatchRef::new_from_data(&vec![], 1), &mut evals)
+			.unwrap();
 		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
 	}
 
@@ -522,8 +521,10 @@ mod tests {
 		);
 
 		let mut evals = [P::default()];
+		let batch_query = vec![[P::broadcast(F::new(123).into())]; 1];
+		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 1);
 		typed_circuit
-			.batch_evaluate(&[&[P::broadcast(F::new(123).into())]], &mut evals)
+			.batch_evaluate(&batch_query.as_ref(), &mut evals)
 			.unwrap();
 		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
 	}
@@ -646,15 +647,14 @@ mod tests {
 		let expected3 = P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176]));
 
 		let mut batch_result = vec![P::zero(); 3];
-		CompositionPoly::batch_evaluate(
-			&circuit,
-			&[
-				&[query1[0], query2[0], query3[0]],
-				&[query1[1], query2[1], query3[1]],
-			],
-			&mut batch_result,
-		)
-		.unwrap();
+		let batch_query = &[
+			&[query1[0], query2[0], query3[0]],
+			&[query1[1], query2[1], query3[1]],
+		];
+		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 3);
+
+		CompositionPoly::batch_evaluate(&circuit, &batch_query.as_ref(), &mut batch_result)
+			.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}
 
@@ -708,15 +708,13 @@ mod tests {
 			P::from_scalars(felts!(BinaryField16b[100, 49, 206, 155, 177, 228, 27, 78]));
 
 		let mut batch_result = vec![P::zero(); 3];
-		CompositionPoly::batch_evaluate(
-			&circuit,
-			&[
-				&[query1[0], query2[0], query3[0]],
-				&[query1[1], query2[1], query3[1]],
-			],
-			&mut batch_result,
-		)
-		.unwrap();
+		let batch_query = &[
+			&[query1[0], query2[0], query3[0]],
+			&[query1[1], query2[1], query3[1]],
+		];
+		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 3);
+		CompositionPoly::batch_evaluate(&circuit, &batch_query.as_ref(), &mut batch_result)
+			.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}
 

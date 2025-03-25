@@ -9,7 +9,7 @@ use binius_field::{
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, EvaluationOrder,
-	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
+	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
@@ -507,9 +507,14 @@ where
 						.map(|evals| &evals[..pbase_prefix_len]);
 
 					stackalloc_with_iter(n_multilinears, extrapolated_evals_iter, |batch_query| {
+						let batch_query =
+							RowsBatchRef::new_from_data(batch_query, pbase_prefix_len);
+
 						// Evaluate the small field composition
-						composition
-							.batch_evaluate(batch_query, &mut composition_evals[..pbase_prefix_len])
+						composition.batch_evaluate(
+							&batch_query,
+							&mut composition_evals[..pbase_prefix_len],
+						)
 					})?;
 
 					// Accumulate round evals and multiply by the constant part of the

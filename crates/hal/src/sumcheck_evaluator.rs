@@ -3,6 +3,7 @@
 use std::ops::Range;
 
 use binius_field::{Field, PackedField};
+use binius_math::RowsBatchRef;
 
 /// Evaluations of a polynomial at a set of evaluation points.
 #[derive(Debug, Clone)]
@@ -27,7 +28,7 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 		subcube_vars: usize,
 		subcube_index: usize,
 		is_infinity_point: bool,
-		batch_query: &[&[P]],
+		batch_query: &RowsBatchRef<P>,
 	) -> P;
 
 	/// Returns the composition evaluated by this object.

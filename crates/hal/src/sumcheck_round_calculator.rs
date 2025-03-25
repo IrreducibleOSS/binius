@@ -9,7 +9,7 @@ use std::iter;
 use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
 use binius_math::{
 	extrapolate_lines, CompositionPoly, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
-	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	MultilinearPoly, MultilinearQuery, MultilinearQueryRef, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -225,6 +225,8 @@ where
 							});
 
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
+						let evals_z = RowsBatchRef::new_from_data(evals_z, evals_z[0].len());
+
 						for (evaluator, round_evals) in
 							iter::zip(evaluators, round_evals.iter_mut())
 						{
@@ -238,7 +240,7 @@ where
 									subcube_vars,
 									subcube_index,
 									is_infinity_point,
-									evals_z,
+									&evals_z,
 								);
 						}
 					});

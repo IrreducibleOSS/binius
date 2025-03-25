@@ -5,7 +5,8 @@ use std::{marker::PhantomData, ops::Range};
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
+	MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -438,9 +439,9 @@ where
 		subcube_vars: usize,
 		subcube_index: usize,
 		is_infinity_point: bool,
-		batch_query: &[&[P]],
+		batch_query: &RowsBatchRef<P>,
 	) -> P {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
+		let row_len = batch_query.n_cols();
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {
