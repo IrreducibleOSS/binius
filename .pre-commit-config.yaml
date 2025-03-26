@@ -2,10 +2,10 @@ repos:
 - repo: local
   hooks:
   - id: rustfmt
-    name: Run `rustfmt`
+    name: Run `cargo fmt`
     language: rust
     types: [rust]
-    entry: rustfmt
+    entry: cargo fmt --
     stages: [commit]
   - id: clippy
     name: Run cargo clippy

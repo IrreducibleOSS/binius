@@ -19,6 +19,7 @@ rand.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+trait-variant.workspace = true
 
 [dev-dependencies]
 rand = { workspace = true, features = ["std_rng"] }
