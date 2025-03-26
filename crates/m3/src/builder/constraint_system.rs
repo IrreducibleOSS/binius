@@ -188,6 +188,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut non_zero_oracle_ids = Vec::new();
 
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
+			if count == 0 {
+				continue;
+			}
 			let mut oracle_lookup = Vec::new();
 
 			let mut transparent_single = vec![None; table.columns.len()];
