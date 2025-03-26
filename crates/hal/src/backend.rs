@@ -44,12 +44,10 @@ pub trait ComputationBackend: Send + Sync + Debug {
 	) -> Result<Self::Vec<P>, Error>;
 
 	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck.
-	#[allow(clippy::too_many_arguments)]
 	fn sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		const_eval_suffix: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
@@ -106,7 +104,6 @@ where
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		const_eval_suffix: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
@@ -123,7 +120,6 @@ where
 			self,
 			evaluation_order,
 			n_vars,
-			const_eval_suffix,
 			tensor_query,
 			multilinears,
 			evaluators,

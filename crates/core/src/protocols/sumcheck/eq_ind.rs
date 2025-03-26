@@ -236,7 +236,8 @@ mod tests {
 		fiat_shamir::HasherChallenger,
 		protocols::{
 			sumcheck::{
-				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProverBuilder,
+				self, immediate_switchover_heuristic,
+				prove::eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 				CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::AddOneComposition,
@@ -290,7 +291,7 @@ mod tests {
 		let mut a_column = (0..packed_len)
 			.map(|_| PackedType::<U, F>::random(&mut rng))
 			.collect::<Vec<_>>();
-		let mut b_column = (0..packed_len)
+		let b_column = (0..packed_len)
 			.map(|_| PackedType::<U, F>::random(&mut rng))
 			.collect::<Vec<_>>();
 		let mut ab1_column = iter::zip(&a_column, &b_column)
@@ -299,7 +300,6 @@ mod tests {
 
 		for i in nonzero_prefix..1 << n_vars {
 			set_packed_slice(&mut a_column, i, F::ZERO);
-			set_packed_slice(&mut b_column, i, F::ZERO);
 			set_packed_slice(&mut ab1_column, i, F::ONE);
 		}
 
@@ -324,13 +324,8 @@ mod tests {
 
 		let composite_claim = CompositeSumClaim { sum, composition };
 
-		let mut prover_builder = EqIndSumcheckProverBuilder::new(&backend);
-
-		prover_builder = prover_builder
-			.with_nonzero_scalars_prefixes(&[nonzero_prefix, nonzero_prefix])
-			.with_const_eval_suffix((1 << n_vars) - nonzero_prefix, F::ONE, F::ZERO);
-
-		let prover = prover_builder
+		let prover = EqIndSumcheckProverBuilder::new(&backend)
+			.with_nonzero_scalars_prefixes(&[nonzero_prefix, 1 << n_vars])
 			.build(
 				evaluation_order,
 				vec![a_mle, b_mle],
@@ -340,6 +335,16 @@ mod tests {
 				immediate_switchover_heuristic,
 			)
 			.unwrap();
+
+		let (_, const_eval_suffix) = prover.compositions().first().unwrap();
+		assert_eq!(
+			*const_eval_suffix,
+			ConstEvalSuffix {
+				suffix: (1 << n_vars) - nonzero_prefix,
+				value: F::ONE,
+				value_at_inf: F::ZERO
+			}
+		);
 
 		let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
 

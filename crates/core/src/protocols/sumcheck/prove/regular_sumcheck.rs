@@ -209,7 +209,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let round_evals = self.state.calculate_round_evals(0, &evaluators)?;
+		let round_evals = self.state.calculate_round_evals(&evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, round_evals)
 	}
