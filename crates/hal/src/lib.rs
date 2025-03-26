@@ -16,6 +16,7 @@ mod sumcheck_evaluator;
 mod sumcheck_folding;
 mod sumcheck_multilinear;
 mod sumcheck_round_calculation;
+mod v2;
 
 pub use backend::*;
 pub use cpu::*;

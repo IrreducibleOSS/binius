@@ -119,6 +119,7 @@ thiserror = "2.0.3"
 thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 trait-set = "0.3.0"
+trait-variant = "0.1.2"
 tracing = "0.1.38"
 tracing-profile = "0.10.3"
 transpose = "0.2.2"

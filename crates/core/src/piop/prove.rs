@@ -126,7 +126,7 @@ where
 ///     defined over subfields of `F`. They must be in ascending order by the number of variables
 ///     in the packed multilinear (ie. number of variables minus log extension degree).
 #[tracing::instrument("piop::commit", skip_all)]
-pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
+pub fn commit<F, FEncode, P, M, MTScheme, MTProver, HAL>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
 	multilins: &[M],
@@ -138,6 +138,7 @@ where
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	HAL: HAL<F>,
 {
 	for (i, multilin) in multilins.iter().enumerate() {
 		if multilin.n_vars() < multilin.log_extension_degree() {
