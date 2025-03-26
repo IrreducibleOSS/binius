@@ -35,7 +35,7 @@ use super::{
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
-	pub tables: Vec<TableWitnessIndex<'cs, 'alloc, U, F>>,
+	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, U, F>>>,
 }
 
 impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, F> {
@@ -43,7 +43,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		&mut self,
 		table_id: TableId,
 	) -> Option<&mut TableWitnessIndex<'cs, 'alloc, U, F>> {
-		self.tables.get_mut(table_id)
+		self.tables
+			.get_mut(table_id)
+			.and_then(|inner| inner.as_mut())
 	}
 
 	pub fn fill_table_sequential<T: TableFiller<U, F>>(
@@ -51,11 +53,13 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		table: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		let table_id = table.id();
-		let witness = self
-			.get_table(table_id)
-			.ok_or(Error::MissingTable { table_id })?;
-		fill_table_sequential(table, rows, witness).map_err(Error::TableFill)?;
+		if rows.len() > 0 {
+			let table_id = table.id();
+			let witness = self
+				.get_table(table_id)
+				.ok_or(Error::MissingTable { table_id })?;
+			fill_table_sequential(table, rows, witness).map_err(Error::TableFill)?;
+		}
 		Ok(())
 	}
 
@@ -74,6 +78,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table in self.tables {
+			let Some(table) = table else {
+				continue;
+			};
 			let table_id = table.table_id();
 			let cols = immutable_witness_index_columns(table.cols);
 
@@ -609,7 +616,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 	/// Fill the table witness with data derived from the given rows.
 	fn fill<'a>(
 		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event>,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
 		witness: &'a mut TableWitnessIndexSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
