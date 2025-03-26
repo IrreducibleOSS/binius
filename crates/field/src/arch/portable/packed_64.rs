@@ -49,7 +49,7 @@ impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 impl_mul_with!(PackedBinaryField32x2b @ PackedStrategy);
 impl_mul_with!(PackedBinaryField16x4b @ PackedStrategy);
 cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
 		impl_mul_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
 		impl_mul_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
 		impl_mul_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
@@ -66,7 +66,7 @@ cfg_if! {
 impl_square_with!(PackedBinaryField32x2b @ PackedStrategy);
 impl_square_with!(PackedBinaryField16x4b @ PackedStrategy);
 cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
 		impl_square_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
 		impl_square_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
 		impl_square_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
@@ -83,7 +83,7 @@ cfg_if! {
 impl_invert_with!(PackedBinaryField32x2b @ PackedStrategy);
 impl_invert_with!(PackedBinaryField16x4b @ PackedStrategy);
 cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
 		impl_invert_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
 		impl_invert_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
 		impl_invert_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);

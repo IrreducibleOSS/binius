@@ -55,7 +55,7 @@ jobs:
             cmd: "cargo build --tests --benches --examples --no-default-features"
           - runner: "c7a-2xlarge"
             name: "debug-amd-stable"
-            cmd: "cargo +$RUST_VERSION build --tests --benches --examples -p binius_core --features stable_only"
+            cmd: "cargo +$RUST_VERSION build --tests --benches --examples --no-default-features --features rayon"
           - runner: "c8g-2xlarge"
             name: "debug-arm"
             cmd: "cargo build --tests --benches --examples"
