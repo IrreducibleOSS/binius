@@ -18,7 +18,7 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
-	protocols::evalcheck::{subclaims::MemoizedQueries, EvalPointOracleIdMap},
+	protocols::evalcheck::subclaims::MemoizedData,
 	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
 	tower::{PackedTop, TowerFamily},
 	transcript::ProverTranscript,
@@ -38,8 +38,7 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
-	memoized_queries: MemoizedQueries<P, Backend>,
-	memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<P>, F>,
+	memoized_data: MemoizedData<P, Backend>,
 	backend: &Backend,
 ) -> Result<ReducedWitness<P>, Error>
 where
@@ -64,13 +63,8 @@ where
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
-	let tensor_elems = compute_partial_evals::<_, _, _, Tower, _>(
-		system,
-		witnesses,
-		memoized_queries,
-		memoized_partial_evals,
-		backend,
-	)?;
+	let tensor_elems =
+		compute_partial_evals::<_, _, _, Tower, _>(system, witnesses, memoized_data, backend)?;
 	let scaled_tensor_elems = scale_tensor_elems(tensor_elems, &mixing_coeffs);
 	let mixed_tensor_elems = mix_tensor_elems_for_prefixes(
 		&scaled_tensor_elems,
@@ -123,8 +117,7 @@ where
 fn compute_partial_evals<F, P, M, Tower, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
-	mut memoized_queries: MemoizedQueries<P, Backend>,
-	memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<P>, F>,
+	mut memoized_data: MemoizedData<P, Backend>,
 	backend: &Backend,
 ) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
 where
@@ -140,7 +133,7 @@ where
 		.map(|desc| Arc::as_ref(&desc.suffix))
 		.collect::<Vec<_>>();
 
-	memoized_queries.memoize_query_par(&suffixes, backend)?;
+	memoized_data.memoize_query_par(&suffixes, backend)?;
 
 	let tensor_elems = system
 		.sumcheck_claim_descs
@@ -154,7 +147,7 @@ where
 				let suffix_desc = &system.suffix_descs[*suffix_desc_idx];
 
 				let elems = if let Some(partial_eval) =
-					memoized_partial_evals.get(eval_claim.id, Arc::as_ref(&suffix_desc.suffix))
+					memoized_data.partial_eval(eval_claim.id, Arc::as_ref(&suffix_desc.suffix))
 				{
 					PackedField::iter_slice(
 						partial_eval.packed_evals().expect("packed_evals exist"),
@@ -162,7 +155,7 @@ where
 					.take(1 << suffix_desc.kappa)
 					.collect()
 				} else {
-					let suffix_query = memoized_queries
+					let suffix_query = memoized_data
 						.full_query_readonly(&suffix_desc.suffix)
 						.expect("memoized above");
 					let partial_eval =
