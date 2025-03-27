@@ -15,17 +15,16 @@ use crate::{
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
 		serialize_evalcheck_proof,
-		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedQueries},
-		EvalPointOracleIdMap, EvalcheckMultilinearClaim, EvalcheckProver,
+		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
+		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, ProverTranscript},
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::MultilinearExtensionIndex,
 };
 
 pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
 	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	pub memoized_queries: MemoizedQueries<P, Backend>,
-	pub memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<'a, P>, F>,
+	pub memoized_data: MemoizedData<'a, P, Backend>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -92,7 +91,6 @@ where
 
 	Ok(GreedyEvalcheckProveOutput {
 		eval_claims: committed_claims,
-		memoized_queries: evalcheck_prover.memoized_queries,
-		memoized_partial_evals: evalcheck_prover.memoized_partial_evals,
+		memoized_data: evalcheck_prover.memoized_data,
 	})
 }

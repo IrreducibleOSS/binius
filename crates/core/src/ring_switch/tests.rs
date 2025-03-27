@@ -28,7 +28,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
 	protocols::{
-		evalcheck::{subclaims::MemoizedQueries, EvalPointOracleIdMap, EvalcheckMultilinearClaim},
+		evalcheck::{subclaims::MemoizedData, EvalcheckMultilinearClaim},
 		fri::CommitOutput,
 	},
 	ring_switch::prove::ReducedWitness,
@@ -247,8 +247,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 			&system,
 			&witnesses,
 			&mut proof,
-			MemoizedQueries::new(),
-			EvalPointOracleIdMap::new(),
+			MemoizedData::new(),
 			&backend,
 		)
 		.unwrap();
@@ -328,8 +327,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		&system,
 		&committed_multilins,
 		&mut proof,
-		MemoizedQueries::new(),
-		EvalPointOracleIdMap::new(),
+		MemoizedData::new(),
 		&backend,
 	)
 	.unwrap();

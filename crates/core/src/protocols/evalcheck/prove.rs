@@ -17,7 +17,7 @@ use super::{
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
-		fill_eq_witness_for_composites, memoize_partial_evals, MemoizedQueries,
+		fill_eq_witness_for_composites, memoize_partial_evals, MemoizedData,
 		ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
@@ -31,7 +31,7 @@ use crate::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
 		shifted_sumcheck_meta,
 	},
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::MultilinearExtensionIndex,
 };
 
 /// A mutable prover state.
@@ -62,8 +62,7 @@ where
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
-	pub memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
-	pub memoized_partial_evals: EvalPointOracleIdMap<MultilinearWitness<'b, PackedType<U, F>>, F>,
+	pub memoized_data: MemoizedData<'b, PackedType<U, F>, Backend>,
 	backend: &'a Backend,
 }
 
@@ -92,8 +91,7 @@ where
 			claims_without_evals: Vec::new(),
 			claims_without_evals_dedup: EvalPointOracleIdMap::new(),
 			projected_bivariate_claims: Vec::new(),
-			memoized_queries: MemoizedQueries::new(),
-			memoized_partial_evals: EvalPointOracleIdMap::new(),
+			memoized_data: MemoizedData::new(),
 			backend,
 			incomplete_proof_claims: EvalPointOracleIdMap::new(),
 		}
@@ -172,7 +170,7 @@ where
 				.map(|(_, eval_point)| eval_point.as_ref())
 				.collect::<Vec<_>>();
 
-			self.memoized_queries
+			self.memoized_data
 				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
 
 			// Make new evaluation claims in parallel.
@@ -183,7 +181,7 @@ where
 						poly.id(),
 						eval_point,
 						self.witness_index,
-						&self.memoized_queries,
+						&self.memoized_data,
 					)
 				})
 				.collect::<Result<Vec<_>, Error>>()?;
@@ -225,7 +223,7 @@ where
 
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
-			&mut self.memoized_queries,
+			&mut self.memoized_data,
 			&self.projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
@@ -233,7 +231,7 @@ where
 
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
-			&mut self.memoized_queries,
+			&mut self.memoized_data,
 			&self.projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
@@ -241,7 +239,7 @@ where
 
 		for (claim, meta, projected) in izip!(
 			std::mem::take(&mut self.projected_bivariate_claims),
-			projected_bivariate_metas.clone(),
+			&projected_bivariate_metas,
 			projected_mles
 		) {
 			self.process_sumcheck(claim, meta, projected)?;
@@ -252,7 +250,7 @@ where
 			&self.projected_bivariate_claims,
 			self.oracles,
 			self.witness_index,
-			&mut self.memoized_partial_evals,
+			&mut self.memoized_data.partial_evals,
 		);
 
 		// Step 4: Find and return the proofs of the original claims.
@@ -605,7 +603,7 @@ where
 	fn process_sumcheck(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-		meta: ProjectedBivariateMeta,
+		meta: &ProjectedBivariateMeta,
 		projected: Option<MultilinearExtension<PackedType<U, F>>>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
@@ -654,7 +652,7 @@ where
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
 		witness_index: &MultilinearExtensionIndex<U, F>,
-		memoized_queries: &MemoizedQueries<PackedType<U, F>, Backend>,
+		memoized_queries: &MemoizedData<PackedType<U, F>, Backend>,
 	) -> Result<EvalcheckMultilinearClaim<F>, Error> {
 		let eval_query = memoized_queries
 			.full_query_readonly(&eval_point)

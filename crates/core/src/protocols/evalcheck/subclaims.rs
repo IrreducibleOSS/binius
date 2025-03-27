@@ -72,7 +72,7 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 #[allow(clippy::too_many_arguments)]
 pub fn process_shifted_sumcheck<U, F>(
 	shifted: &Shifted,
-	meta: ProjectedBivariateMeta,
+	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
@@ -137,12 +137,13 @@ pub fn composite_sumcheck_meta<F: TowerField>(
 		multiplier_id: oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?,
 		inner_id: None,
 		projected_id: None,
+		// not used in case of composite
 		projected_n_vars: 0,
 	})
 }
 
 pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
-	meta: ProjectedBivariateMeta,
+	meta: &ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	n_vars: usize,
 	eval: F,
@@ -155,7 +156,7 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
-	meta: ProjectedBivariateMeta,
+	meta: &ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	comp: &CompositeMLE<F>,
 	eval: F,
@@ -177,7 +178,7 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 pub fn process_packed_sumcheck<U, F>(
 	oracles: &MultilinearOracleSet<F>,
 	packed: &Packed,
-	meta: ProjectedBivariateMeta,
+	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
@@ -266,7 +267,7 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 
 fn process_projected_bivariate_witness<'a, U, F>(
 	witness_index: &mut MultilinearExtensionIndex<'a, U, F>,
-	meta: ProjectedBivariateMeta,
+	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, PackedType<U, F>>, Error>,
 	projected: Option<MultilinearExtension<PackedType<U, F>>>,
@@ -275,7 +276,7 @@ where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
 {
-	let ProjectedBivariateMeta {
+	let &ProjectedBivariateMeta {
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
@@ -309,7 +310,7 @@ where
 #[allow(clippy::type_complexity)]
 pub fn calculate_projected_mles<U, F, Backend>(
 	metas: &[ProjectedBivariateMeta],
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	memoized_queries: &mut MemoizedData<PackedType<U, F>, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &MultilinearExtensionIndex<U, F>,
 	backend: &Backend,
@@ -349,40 +350,10 @@ where
 		.collect::<Result<Vec<Option<_>>, Error>>()
 }
 
-pub fn memoize_partial_evals<'a, U, F>(
-	metas: &[ProjectedBivariateMeta],
-	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
-	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &MultilinearExtensionIndex<'a, U, F>,
-	memoized_partial_evals: &mut EvalPointOracleIdMap<MultilinearWitness<'a, PackedType<U, F>>, F>,
-) where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-{
-	projected_bivariate_claims
-		.iter()
-		.zip(metas)
-		.filter(|(_, meta)| meta.inner_id.is_some())
-		.for_each(|(claim, meta)| {
-			let inner_id = meta.inner_id.unwrap();
-			if matches!(oracles.oracle(inner_id).variant, MultilinearPolyVariant::Committed)
-				&& meta.projected_id.is_some()
-			{
-				let eval_point = claim.eval_point[meta.projected_n_vars..].to_vec().into();
-
-				let projected_id = meta.projected_id.expect("checked above");
-
-				let projected = witness_index.get_multilin_poly(projected_id).unwrap();
-
-				memoized_partial_evals.insert(inner_id, eval_point, projected);
-			}
-		});
-}
-
 /// Each composite oracle induces a new eq oracle, for which we need to fill the witness
 pub fn fill_eq_witness_for_composites<U, F, Backend>(
 	metas: &[ProjectedBivariateMeta],
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	memoized_queries: &mut MemoizedData<PackedType<U, F>, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	backend: &Backend,
@@ -433,24 +404,18 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
-	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
+pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
+	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
+	pub partial_evals: EvalPointOracleIdMap<MultilinearWitness<'a, P>, P::Scalar>,
 }
 
-impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
+impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backend> {
 	#[allow(clippy::new_without_default)]
-	pub const fn new() -> Self {
-		Self { memo: Vec::new() }
-	}
-
-	/// Constructs `MemoizedQueries` from a list of eval_points and corresponding MultilinearQueries.
-	/// Assumes that each `eval_point` is given at most once.
-	/// Does not check that the input is valid.
-	#[allow(clippy::type_complexity)]
-	pub const fn new_from_known_queries(
-		data: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
-	) -> Self {
-		Self { memo: data }
+	pub fn new() -> Self {
+		Self {
+			query: Vec::new(),
+			partial_evals: EvalPointOracleIdMap::new(),
+		}
 	}
 
 	pub fn full_query(
@@ -459,18 +424,18 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		backend: &Backend,
 	) -> Result<&MultilinearQuery<P, Backend::Vec<P>>, Error> {
 		if let Some(index) = self
-			.memo
+			.query
 			.iter()
 			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
 		{
-			let (_, ref query) = &self.memo[index];
+			let (_, ref query) = &self.query[index];
 			return Ok(query);
 		}
 
 		let query = backend.multilinear_query(eval_point)?;
-		self.memo.push((eval_point.to_vec(), query));
+		self.query.push((eval_point.to_vec(), query));
 
-		let (_, ref query) = self.memo.last().expect("pushed query immediately above");
+		let (_, ref query) = self.query.last().expect("pushed query immediately above");
 		Ok(query)
 	}
 
@@ -479,11 +444,11 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		&self,
 		eval_point: &[P::Scalar],
 	) -> Option<&MultilinearQuery<P, Backend::Vec<P>>> {
-		self.memo
+		self.query
 			.iter()
 			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
 			.map(|index| {
-				let (_, ref query) = &self.memo[index];
+				let (_, ref query) = &self.query[index];
 				query
 			})
 	}
@@ -505,10 +470,50 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 			})
 			.collect::<Result<Vec<_>, binius_hal::Error>>()?;
 
-		self.memo.extend(new_queries);
+		self.query.extend(new_queries);
 
 		Ok(())
 	}
+
+	pub fn partial_eval(
+		&self,
+		id: OracleId,
+		eval_point: &[P::Scalar],
+	) -> Option<&MultilinearWitness<'a, P>> {
+		self.partial_evals.get(id, eval_point)
+	}
+}
+
+pub fn memoize_partial_evals<'a, U, F>(
+	metas: &[ProjectedBivariateMeta],
+	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	oracles: &mut MultilinearOracleSet<F>,
+	witness_index: &MultilinearExtensionIndex<'a, U, F>,
+	memoized_partial_evals: &mut EvalPointOracleIdMap<MultilinearWitness<'a, PackedType<U, F>>, F>,
+) where
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+{
+	projected_bivariate_claims
+		.iter()
+		.zip(metas)
+		.filter(|(_, meta)| meta.inner_id.is_some())
+		.for_each(|(claim, meta)| {
+			let inner_id = meta.inner_id.expect("filtered by Some");
+			if matches!(oracles.oracle(inner_id).variant, MultilinearPolyVariant::Committed)
+				&& meta.projected_id.is_some()
+			{
+				let eval_point = claim.eval_point[meta.projected_n_vars..].to_vec().into();
+
+				let projected_id = meta.projected_id.expect("checked above");
+
+				let projected = witness_index
+					.get_multilin_poly(projected_id)
+					.expect("witness_index contains projected if projected_id exist");
+
+				memoized_partial_evals.insert(inner_id, eval_point, projected);
+			}
+		});
 }
 
 type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;

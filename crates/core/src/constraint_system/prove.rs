@@ -447,8 +447,7 @@ where
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
 		eval_claims,
-		memoized_queries,
-		memoized_partial_evals,
+		memoized_data,
 	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
@@ -478,8 +477,7 @@ where
 		&system,
 		&committed_multilins,
 		&mut transcript,
-		memoized_queries,
-		memoized_partial_evals,
+		memoized_data,
 		backend,
 	)?;
 
