@@ -5,7 +5,7 @@ use std::{fmt::Debug, sync::Arc};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedExtension, TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_math::{MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly};
 use binius_utils::bail;
@@ -13,6 +13,12 @@ use binius_utils::bail;
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
+
+#[derive(Clone, Debug)]
+pub struct IndexEntry<'a, P: PackedField> {
+	pub multilin_poly: MultilinearWitness<'a, P>,
+	pub nonzero_scalars_prefix: usize,
+}
 
 /// Data structure that indexes multilinear extensions by oracle ID.
 ///
@@ -26,7 +32,7 @@ where
 	U: UnderlierType + PackScalar<FW>,
 	FW: Field,
 {
-	entries: Vec<Option<MultilinearWitness<'a, PackedType<U, FW>>>>,
+	entries: Vec<Option<IndexEntry<'a, PackedType<U, FW>>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,10 +64,10 @@ where
 		Self::default()
 	}
 
-	pub fn get_multilin_poly(
+	pub fn get_index_entry(
 		&self,
 		id: OracleId,
-	) -> Result<MultilinearWitness<'a, PackedType<U, FW>>, Error> {
+	) -> Result<IndexEntry<'a, PackedType<U, FW>>, Error> {
 		let entry = self
 			.entries
 			.get(id)
@@ -69,6 +75,13 @@ where
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
 		Ok(entry.clone())
+	}
+
+	pub fn get_multilin_poly(
+		&self,
+		id: OracleId,
+	) -> Result<MultilinearWitness<'a, PackedType<U, FW>>, Error> {
+		Ok(self.get_index_entry(id)?.multilin_poly)
 	}
 
 	/// Whether has data for the given oracle id.
@@ -80,11 +93,29 @@ where
 		&mut self,
 		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>)>,
 	) -> Result<(), Error> {
-		for (id, witness) in witnesses {
+		self.update_multilin_poly_with_nonzero_scalars_prefixes(witnesses.into_iter().map(
+			|(id, multilin_poly)| {
+				let nonzero_scalars_prefix = 1 << multilin_poly.n_vars();
+				(id, multilin_poly, nonzero_scalars_prefix)
+			},
+		))
+	}
+
+	pub fn update_multilin_poly_with_nonzero_scalars_prefixes(
+		&mut self,
+		witnesses: impl IntoIterator<
+			Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>, usize),
+		>,
+	) -> Result<(), Error> {
+		for (id, multilin_poly, nonzero_scalars_prefix) in witnesses {
 			if id >= self.entries.len() {
 				self.entries.resize_with(id + 1, || None);
 			}
-			self.entries[id] = Some(witness);
+			// TODO: validate nonzero_scalars_prefix
+			self.entries[id] = Some(IndexEntry {
+				multilin_poly,
+				nonzero_scalars_prefix,
+			});
 		}
 		Ok(())
 	}
@@ -106,15 +137,17 @@ where
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
 
-		if entry.log_extension_degree() != FW::LOG_DEGREE {
+		let log_extension_degree = entry.multilin_poly.log_extension_degree();
+		if log_extension_degree != FW::LOG_DEGREE {
 			bail!(Error::OracleExtensionDegreeMismatch {
 				oracle_id: id,
 				field_log_extension_degree: FW::LOG_DEGREE,
-				entry_log_extension_degree: entry.log_extension_degree()
+				entry_log_extension_degree: log_extension_degree
 			})
 		}
 
 		let evals = entry
+			.multilin_poly
 			.packed_evals()
 			.map(<PackedType<U, FW>>::cast_bases)
 			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
