@@ -53,7 +53,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		table: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		if rows.is_empty() {
+		if !rows.is_empty() {
 			let table_id = table.id();
 			let witness = self
 				.get_table(table_id)
