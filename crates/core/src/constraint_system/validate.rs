@@ -15,7 +15,7 @@ use super::{
 use crate::{
 	oracle::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
-		ProjectionVariant, ShiftVariant,
+		ShiftVariant,
 	},
 	polynomial::{
 		test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly, MultilinearComposite,
@@ -206,14 +206,9 @@ where
 			let unprojected_poly = witness.get_multilin_poly(projected.id())?;
 			let partial_query =
 				binius_hal::make_portable_backend().multilinear_query(projected.values())?;
-			let projected_poly = match projected.projection_variant() {
-				ProjectionVariant::FirstVars => {
-					unprojected_poly.evaluate_partial_low(partial_query.to_ref())?
-				}
-				ProjectionVariant::LastVars => {
-					unprojected_poly.evaluate_partial_high(partial_query.to_ref())?
-				}
-			};
+			let projected_poly = unprojected_poly
+				.evaluate_partial(partial_query.to_ref(), projected.start_index())?;
+
 			for i in 0..1 << n_vars {
 				check_eval(
 					oracle_label,

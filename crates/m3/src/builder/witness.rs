@@ -585,7 +585,7 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 		oracle_id: OracleId,
 	) -> Option<&RefCell<&'alloc mut [U]>> {
 		match self.cols.get(oracle_id) {
-			Some(RefCellData::Owned(data)) => Some(data),
+			Some(RefCellData::Owned(data)) => Some(&data),
 			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
@@ -609,7 +609,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 	/// Fill the table witness with data derived from the given rows.
 	fn fill<'a>(
 		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event>,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
 		witness: &'a mut TableWitnessIndexSegment<U, F>,
 	) -> anyhow::Result<()>;
 }

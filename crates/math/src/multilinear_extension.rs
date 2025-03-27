@@ -183,6 +183,46 @@ where
 		}
 	}
 
+	#[instrument(
+		"MultilinearExtension::evaluate_partial_high",
+		skip_all,
+		level = "debug"
+	)]
+	pub fn evaluate_partial<'a, PE>(
+		&self,
+		query: impl Into<MultilinearQueryRef<'a, PE>>,
+		start_index: usize,
+	) -> Result<MultilinearExtension<PE>, Error>
+	where
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		let query = query.into();
+
+		if start_index == 0 {
+			return self.evaluate_partial_low(query);
+		} else if start_index + query.n_vars() == self.mu {
+			return self.evaluate_partial_high(query);
+		}
+
+		let new_n_vars = self.mu.saturating_sub(query.n_vars());
+		let result_evals_len = 1 << (new_n_vars.saturating_sub(PE::LOG_WIDTH));
+		let mut result_evals = Vec::with_capacity(result_evals_len);
+
+		fold_left(
+			self.evals(),
+			self.mu,
+			query.expansion(),
+			query.n_vars(),
+			result_evals.spare_capacity_mut(),
+		)?;
+		unsafe {
+			result_evals.set_len(result_evals_len);
+		}
+
+		MultilinearExtension::new(new_n_vars, result_evals)
+	}
+
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	///
 	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1})$. Given a query

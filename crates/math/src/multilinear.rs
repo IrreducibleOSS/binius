@@ -57,6 +57,12 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error>;
 
+	fn evaluate_partial(
+		&self,
+		query: MultilinearQueryRef<P>,
+		start_index: usize,
+	) -> Result<MultilinearExtension<P>, Error>;
+
 	/// Get a subcube of the boolean hypercube after `evaluate_partial_low`.
 	///
 	/// Equivalent computation is `evaluate_partial_low(query)` followed by a `subcube_evals`
@@ -152,6 +158,15 @@ where
 
 	fn evaluate(&self, query: MultilinearQueryRef<P>) -> Result<P::Scalar, Error> {
 		either::for_both!(self, inner => inner.evaluate(query))
+	}
+
+	// TODO: Properly implement this method.
+	fn evaluate_partial(
+		&self,
+		query: MultilinearQueryRef<P>,
+		start_index: usize,
+	) -> Result<MultilinearExtension<P>, Error> {
+		either::for_both!(self, inner => inner.evaluate_partial_low(query))
 	}
 
 	fn evaluate_partial_low(
