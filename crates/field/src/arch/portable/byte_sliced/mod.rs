@@ -7,6 +7,8 @@ mod square;
 
 pub use packed_byte_sliced::*;
 
+pub use crate::PackedBinaryField128x1b;
+
 #[cfg(test)]
 pub mod tests {
 	use super::*;
@@ -249,6 +251,12 @@ pub mod tests {
 		ByteSlicedAES16x16x8b,
 		AESTowerField8b,
 		PackedAESBinaryField16x8b
+	);
+	define_byte_sliced_test!(
+		tests_3d_16x128x1,
+		ByteSlicedAES16x128x1b,
+		BinaryField1b,
+		PackedBinaryField128x1b
 	);
 
 	// 256-bit byte-sliced
