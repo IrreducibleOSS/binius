@@ -160,8 +160,17 @@ impl<F: TowerField> ConstraintSystem<F> {
 			tables: self
 				.tables
 				.iter()
-				.map(|table| {
-					TableWitnessIndex::new(allocator, table, statement.table_sizes[table.id])
+				.zip(&statement.table_sizes)
+				.map(|(table, &table_size)| {
+					if table_size > 0 {
+						Some(TableWitnessIndex::new(
+							allocator,
+							table,
+							statement.table_sizes[table.id],
+						))
+					} else {
+						None
+					}
 				})
 				.collect(),
 		})
