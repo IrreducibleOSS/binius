@@ -1,6 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_hash::{groestl::Groestl256, VisionHasherDigest};
+use std::{array, mem::MaybeUninit};
+
+use binius_hash::{
+	groestl::Groestl256, multi_digest::MultiDigest, VisionHasherDigest,
+	VisionHasherDigestByteSliced,
+};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use digest::Digest;
 use rand::{thread_rng, RngCore};
@@ -35,7 +40,19 @@ fn bench_vision32(c: &mut Criterion) {
 	rng.fill_bytes(&mut data);
 
 	group.throughput(Throughput::Bytes(N as u64));
-	group.bench_function("Vision32", |bench| bench.iter(|| VisionHasherDigest::digest(data)));
+	group.bench_function("Vision-Single", |bench| bench.iter(|| VisionHasherDigest::digest(data)));
+
+	group.bench_function("Vision-Parallel32", |bench| {
+		bench.iter(|| {
+			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 32];
+			VisionHasherDigestByteSliced::digest(
+				array::from_fn(|i| &data[i * N / 32..(i + 1) * N / 32]),
+				&mut out,
+			);
+
+			out
+		})
+	});
 
 	group.finish()
 }

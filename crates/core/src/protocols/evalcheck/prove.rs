@@ -55,7 +55,6 @@ where
 
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
 	incomplete_proof_claims: EvalPointOracleIdMap<EvalcheckMultilinearClaim<F>, F>,
-	#[allow(clippy::type_complexity)]
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
 	claims_without_evals_dedup: EvalPointOracleIdMap<(), F>,
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,

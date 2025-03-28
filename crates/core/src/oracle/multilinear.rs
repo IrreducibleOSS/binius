@@ -218,9 +218,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 
 		let tower_level = inner
 			.iter()
-			.map(|(oracle, _)| oracle.binary_tower_level())
+			.map(|(oracle, coeff)| oracle.binary_tower_level().max(coeff.min_tower_level()))
 			.max()
-			.unwrap_or(0);
+			.unwrap_or(0)
+			.max(offset.min_tower_level());
 
 		let linear_combination = LinearCombination::new(n_vars, offset, inner)?;
 

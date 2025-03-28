@@ -60,6 +60,19 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPoly<P>;
 
+	/// Sumcheck round
+	fn sumcheck_fold_multilinears<P, M>(
+		&self,
+		evaluation_order: EvaluationOrder,
+		n_vars: usize,
+		multilinears: &mut [SumcheckMultilinear<P, M>],
+		challenge: P::Scalar,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+	) -> Result<bool, Error>
+	where
+		P: PackedField,
+		M: MultilinearPoly<P> + Send + Sync;
+
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	fn evaluate_partial_high<P: PackedField>(
 		&self,
@@ -111,6 +124,28 @@ where
 			multilinears,
 			evaluators,
 			nontrivial_evaluation_points,
+		)
+	}
+
+	fn sumcheck_fold_multilinears<P, M>(
+		&self,
+		evaluation_order: EvaluationOrder,
+		n_vars: usize,
+		multilinears: &mut [SumcheckMultilinear<P, M>],
+		challenge: P::Scalar,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+	) -> Result<bool, Error>
+	where
+		P: PackedField,
+		M: MultilinearPoly<P> + Send + Sync,
+	{
+		T::sumcheck_fold_multilinears(
+			self,
+			evaluation_order,
+			n_vars,
+			multilinears,
+			challenge,
+			tensor_query,
 		)
 	}
 

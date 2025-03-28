@@ -6,11 +6,12 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-binius_core = { path = "../core" }
-binius_field = { path = "../field" }
-binius_math = { path = "../math" }
-binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
-binius_utils = { path = "../utils", default-features = false }
+array-util.workspace = true
+binius_core = { path = "../core", default-features = false }
+binius_field = { path = "../field", default-features = false }
+binius_math = { path = "../math", default-features = false }
+binius_maybe_rayon = { path = "../maybe_rayon" }
+binius_utils = { path = "../utils" }
 bumpalo.workspace = true
 bytemuck.workspace = true
 derive_more.workspace = true
@@ -19,6 +20,13 @@ thiserror.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
-binius_hal = { path = "../hal" }
-binius_hash = { path = "../hash" }
+binius_hal = { path = "../hal", default-features = false }
+binius_hash = { path = "../hash", default-features = false }
 rand.workspace = true
+
+[features]
+default = ["nightly_features"]
+nightly_features = [
+    "binius_core/nightly_features",
+    "binius_hal/nightly_features",
+]

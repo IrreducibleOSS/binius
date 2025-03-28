@@ -3,6 +3,7 @@
 use std::array;
 
 use anyhow::Result;
+use array_util::ArrayExt;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -24,7 +25,7 @@ where
 	F: TowerField + ExtensionField<AESTowerField8b>,
 	PackedType<U, F>: Pod,
 {
-	let p_in = array::try_from_fn(|i| {
+	let p_in = array_util::try_from_fn(|i| {
 		unconstrained::<U, F, AESTowerField8b>(builder, format!("p_in[{i}]"), log_size)
 	})?;
 	let multiples_16: [_; 8] = array::from_fn(|i| {
@@ -59,10 +60,10 @@ where
 		use binius_hash::Groestl256Core;
 
 		let inputs = p_in
-			.try_map(|id| witness.get::<AESTowerField8b>(id))?
+			.try_map_ext(|id| witness.get::<AESTowerField8b>(id))?
 			.map(|col| col.as_slice::<AESTowerField8b>());
 		let outputs = p_out
-			.try_map(|id| witness.get::<AESTowerField8b>(id))?
+			.try_map_ext(|id| witness.get::<AESTowerField8b>(id))?
 			.map(|col| col.as_slice::<AESTowerField8b>());
 
 		for z in 0..1 << log_size {
@@ -76,7 +77,6 @@ where
 	Ok(p_out)
 }
 
-#[allow(clippy::needless_range_loop)]
 fn groestl_p_permutation_round<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
@@ -90,7 +90,7 @@ where
 {
 	builder.push_namespace(name);
 
-	let p_sub_bytes_out: [OracleId; STATE_SIZE] = array::try_from_fn(|i| {
+	let p_sub_bytes_out: [OracleId; STATE_SIZE] = array_util::try_from_fn(|i| {
 		groestl_p_permutation_sbox(
 			builder,
 			format!("s_box[{i}]"),
@@ -107,7 +107,8 @@ where
 	let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
-		let p_sub_bytes_out = p_sub_bytes_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+		let p_sub_bytes_out =
+			p_sub_bytes_out.try_map_ext(|id| witness.get::<AESTowerField8b>(id))?;
 		let mut output = output.map(|id| witness.new_column::<AESTowerField8b>(id));
 		let mut output = output
 			.iter_mut()
@@ -242,7 +243,7 @@ where
 		AESTowerField8b::new(round_index as u8),
 	)?;
 
-	let round_consts: [OracleId; 8] = array::try_from_fn(|i| {
+	let round_consts: [OracleId; 8] = array_util::try_from_fn(|i| {
 		builder.add_linear_combination(
 			format!("round_consts[{i}]"),
 			log_size,
@@ -257,9 +258,9 @@ where
 		let mut round_consts_witness: [_; 8] =
 			round_consts.map(|id| witness.new_column::<AESTowerField8b>(id));
 		{
-			let input = input.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+			let input = input.try_map_ext(|id| witness.get::<AESTowerField8b>(id))?;
 			let round = witness.get::<AESTowerField8b>(round)?;
-			let multiples_16 = multiples_16.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+			let multiples_16 = multiples_16.try_map_ext(|id| witness.get::<AESTowerField8b>(id))?;
 
 			round_consts_witness
 				.each_mut()

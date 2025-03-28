@@ -146,6 +146,7 @@ pub mod test_utils {
 
 			struct TestInvert<T>(std::marker::PhantomData<T>);
 
+			#[allow(unused)]
 			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier> TestInvert<T> {
 				fn test_invert(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
 					use crate::Field;

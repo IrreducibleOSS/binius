@@ -218,6 +218,7 @@ mod tests {
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
+		packed::set_packed_slice,
 		underlier::UnderlierType,
 		BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
 		TowerField,
@@ -228,14 +229,15 @@ mod tests {
 		DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
 		MultilinearPoly, MultilinearQuery,
 	};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use crate::{
 		composition::BivariateProduct,
 		fiat_shamir::HasherChallenger,
 		protocols::{
 			sumcheck::{
-				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProverBuilder,
+				self, immediate_switchover_heuristic,
+				prove::eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 				CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::AddOneComposition,
@@ -250,17 +252,33 @@ mod tests {
 		FDomain: TowerField,
 		PackedType<U, F>: PackedFieldIndexable,
 	{
-		for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
-			test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
-				evaluation_order,
-				n_vars,
-			);
+		let max_nonzero_prefix = 1 << n_vars;
+		let mut nonzero_prefixes = vec![0];
+
+		for i in 1..=n_vars {
+			nonzero_prefixes.push(1 << i);
+		}
+
+		let mut rng = StdRng::seed_from_u64(0);
+		for _ in 0..n_vars + 5 {
+			nonzero_prefixes.push(rng.gen_range(1..max_nonzero_prefix));
+		}
+
+		for nonzero_prefix in nonzero_prefixes {
+			for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+				test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
+					evaluation_order,
+					n_vars,
+					nonzero_prefix,
+				);
+			}
 		}
 	}
 
 	fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDomain>(
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
+		nonzero_prefix: usize,
 	) where
 		U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
 		F: TowerField + ExtensionField<FDomain>,
@@ -270,15 +288,20 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let packed_len = 1 << n_vars.saturating_sub(PackedType::<U, F>::LOG_WIDTH);
-		let a_column = (0..packed_len)
+		let mut a_column = (0..packed_len)
 			.map(|_| PackedType::<U, F>::random(&mut rng))
 			.collect::<Vec<_>>();
 		let b_column = (0..packed_len)
 			.map(|_| PackedType::<U, F>::random(&mut rng))
 			.collect::<Vec<_>>();
-		let ab1_column = iter::zip(&a_column, &b_column)
+		let mut ab1_column = iter::zip(&a_column, &b_column)
 			.map(|(&a, &b)| a * b + PackedType::<U, F>::one())
 			.collect::<Vec<_>>();
+
+		for i in nonzero_prefix..1 << n_vars {
+			set_packed_slice(&mut a_column, i, F::ZERO);
+			set_packed_slice(&mut ab1_column, i, F::ONE);
+		}
 
 		let a_mle =
 			MLEDirectAdapter::from(MultilinearExtension::from_values_slice(&a_column).unwrap());
@@ -302,6 +325,7 @@ mod tests {
 		let composite_claim = CompositeSumClaim { sum, composition };
 
 		let prover = EqIndSumcheckProverBuilder::new(&backend)
+			.with_nonzero_scalars_prefixes(&[nonzero_prefix, 1 << n_vars])
 			.build(
 				evaluation_order,
 				vec![a_mle, b_mle],
@@ -311,6 +335,16 @@ mod tests {
 				immediate_switchover_heuristic,
 			)
 			.unwrap();
+
+		let (_, const_eval_suffix) = prover.compositions().first().unwrap();
+		assert_eq!(
+			*const_eval_suffix,
+			ConstEvalSuffix {
+				suffix: (1 << n_vars) - nonzero_prefix,
+				value: F::ONE,
+				value_at_inf: F::ZERO
+			}
+		);
 
 		let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
 
@@ -343,7 +377,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_eq_ind_sumcheck_prove_verify_256() {
+	fn test_eq_ind_sumcheck_prove_verify_256b() {
 		let n_vars = 8;
 
 		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a

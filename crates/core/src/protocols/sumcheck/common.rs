@@ -9,7 +9,6 @@ use binius_field::{
 use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use tracing::instrument;
 
 use super::error::Error;
 
@@ -242,31 +241,17 @@ pub const fn immediate_switchover_heuristic(_extension_degree: usize) -> usize {
 	0
 }
 
-/// Determine switchover rounds for a slice of multilinears.
-#[instrument(skip_all, level = "debug")]
-pub fn determine_switchovers<P, M>(
-	multilinears: &[M],
-	switchover_fn: impl Fn(usize) -> usize,
-) -> Vec<usize>
-where
-	P: PackedField,
-	M: MultilinearPoly<P>,
-{
-	// TODO: This can be computed in parallel.
-	multilinears
-		.iter()
-		.map(|multilinear| switchover_fn(1 << multilinear.log_extension_degree()))
-		.collect()
-}
-
 /// Check that all multilinears in a slice are of the same size.
-pub fn equal_n_vars_check<P, M>(multilinears: &[M]) -> Result<usize, Error>
+pub fn equal_n_vars_check<'a, P, M>(
+	multilinears: impl IntoIterator<Item = &'a M>,
+) -> Result<usize, Error>
 where
 	P: PackedField,
-	M: MultilinearPoly<P>,
+	M: MultilinearPoly<P> + 'a,
 {
+	let mut multilinears = multilinears.into_iter();
 	let n_vars = multilinears
-		.first()
+		.next()
 		.map(|multilinear| multilinear.n_vars())
 		.unwrap_or_default();
 	for multilinear in multilinears {

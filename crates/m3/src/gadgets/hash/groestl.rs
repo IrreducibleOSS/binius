@@ -7,6 +7,7 @@
 use std::{array, iter};
 
 use anyhow::Result;
+use array_util::ArrayExt;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -109,7 +110,7 @@ impl Permutation {
 	{
 		let mut state_in = self
 			.state_in()
-			.try_map(|state_in_i| index.get_mut(state_in_i))?;
+			.try_map_ext(|state_in_i| index.get_mut(state_in_i))?;
 		for (k, state_k) in states.into_iter().enumerate() {
 			for (i, state_in_i) in state_in.iter_mut().enumerate() {
 				for j in 0..8 {
@@ -132,7 +133,7 @@ impl Permutation {
 	{
 		let state_out = self
 			.state_out()
-			.try_map(|state_out_i| index.get(state_out_i))?;
+			.try_map_ext(|state_out_i| index.get(state_out_i))?;
 		let iter = (0..index.log_size()).map(move |k| {
 			array::from_fn(|ij| {
 				let i = ij % 8;
@@ -291,7 +292,7 @@ impl PermutationRound {
 		// TODO: Do the fancy trick from the Groestl implementation guide to reduce
 		// multiplications.
 		let mix_bytes_scalars = MIX_BYTES_VEC.map(|byte| B8::from(AESTowerField8b::new(byte)));
-		let shift: [_; 8] = array::try_from_fn(|i| index.get(self.shift[i]))?;
+		let shift: [_; 8] = array_util::try_from_fn(|i| index.get(self.shift[i]))?;
 		for j in 0..8 {
 			let mut mix_bytes_out = index.get_mut(self.state_out[j])?;
 			for (k, mix_bytes_out_k) in mix_bytes_out.iter_mut().enumerate() {
@@ -375,7 +376,7 @@ impl<const V: usize> SBox<V> {
 		// Decompose the inverse bits.
 		let mut inv_bits = self
 			.inv_bits
-			.try_map(|inv_bits_i| index.get_mut(inv_bits_i))?;
+			.try_map_ext(|inv_bits_i| index.get_mut(inv_bits_i))?;
 		for i in 0..index.size() * V {
 			let inv_val = get_packed_slice(&inv, i);
 			for (j, inv_bit_j) in ExtensionField::<B1>::iter_bases(&inv_val).enumerate() {

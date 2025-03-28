@@ -46,6 +46,20 @@ jobs:
           --bench sumcheck \
           --bench large_transform \
           --bench binary_merkle_tree'
+      - name: Execute Single Thread GPA Benchmark Tests
+        env:
+          RAYON_NUM_THREADS: 1
+        run: |
+          bencher run \
+          --project binius \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch ${{ github.ref_name }} \
+          --testbed single-micro-${{ matrix.os }} \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          --adapter rust_criterion \
+          'cargo bench --bench prodcheck \
+          -- "gpa_(polyval_128b|binary_128b|byte_sliced_aes_256b)/.*=20"'
       - name: Execute Multi Thread Benchmark Tests
         env:
           RAYON_NUM_THREADS: 0
@@ -61,3 +75,17 @@ jobs:
           'cargo bench --bench sumcheck \
           --bench large_transform \
           --bench binary_merkle_tree'
+      - name: Execute Multi Thread GPA Benchmark Tests
+        env:
+          RAYON_NUM_THREADS: 0
+        run: |
+          bencher run \
+          --project binius \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch ${{ github.ref_name }} \
+          --testbed multi-micro-${{ matrix.os }} \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          --adapter rust_criterion \
+          'cargo bench --bench prodcheck \
+          -- "gpa_(polyval_128b|binary_128b|byte_sliced_aes_256b)/.*=20"'
