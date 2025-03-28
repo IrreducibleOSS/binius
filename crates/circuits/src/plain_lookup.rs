@@ -335,7 +335,7 @@ mod tests {
 
 	#[test]
 	fn test_plain_u8_mul_lookup() {
-		const MAX_LOG_MULTIPLICITY: usize = 18;
+		const MAX_LOG_MULTIPLICITY: usize = 20;
 		let log_lookup_count = 19;
 
 		let log_inv_rate = 1;
