@@ -22,7 +22,8 @@ use crate::{
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedExtension, PackedField,
+	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
+	PackedField,
 };
 
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
@@ -598,16 +599,16 @@ macro_rules! define_byte_sliced_3d_1b {
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				self.data
-					.get_unchecked(i % (Self::HEIGHT_BYTES * 8))
-					.get_unchecked(i / (Self::HEIGHT_BYTES * 8))
+					.get_unchecked((i / 8) % Self::HEIGHT_BYTES)
+					.get_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8)
 			}
 
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				self.data
-					.get_unchecked_mut(i % (Self::HEIGHT_BYTES * 8))
-					.set_unchecked(i / (Self::HEIGHT_BYTES * 8), scalar);
+					.get_unchecked_mut((i / 8) % Self::HEIGHT_BYTES)
+					.set_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8, scalar);
 			}
 
 			fn random(mut rng: impl rand::RngCore) -> Self {
@@ -622,7 +623,7 @@ macro_rules! define_byte_sliced_3d_1b {
 					scalar.to_underlier().into(),
 				);
 				Self {
-					data: array::from_fn(|_| underlier.into()),
+					data: array::from_fn(|_| WithUnderlier::from_underlier(underlier)),
 				}
 			}
 
@@ -940,7 +941,11 @@ define_byte_sliced_3d!(
 	TowerLevel16
 );
 
-define_byte_sliced_3d_1b!(ByteSlicedAES16x128x1b, PackedBinaryField128x1b, TowerLevel16);
+define_byte_sliced_3d_1b!(ByteSliced16x128x1b, PackedBinaryField128x1b, TowerLevel16);
+define_byte_sliced_3d_1b!(ByteSliced8x128x1b, PackedBinaryField128x1b, TowerLevel8);
+define_byte_sliced_3d_1b!(ByteSliced4x128x1b, PackedBinaryField128x1b, TowerLevel4);
+define_byte_sliced_3d_1b!(ByteSliced2x128x1b, PackedBinaryField128x1b, TowerLevel2);
+define_byte_sliced_3d_1b!(ByteSliced1x128x1b, PackedBinaryField128x1b, TowerLevel1);
 
 // 256 bit
 define_byte_sliced_3d!(
@@ -1007,6 +1012,12 @@ define_byte_sliced_3d!(
 	TowerLevel16
 );
 
+define_byte_sliced_3d_1b!(ByteSliced16x256x1b, PackedBinaryField256x1b, TowerLevel16);
+define_byte_sliced_3d_1b!(ByteSliced8x256x1b, PackedBinaryField256x1b, TowerLevel8);
+define_byte_sliced_3d_1b!(ByteSliced4x256x1b, PackedBinaryField256x1b, TowerLevel4);
+define_byte_sliced_3d_1b!(ByteSliced2x256x1b, PackedBinaryField256x1b, TowerLevel2);
+define_byte_sliced_3d_1b!(ByteSliced1x256x1b, PackedBinaryField256x1b, TowerLevel1);
+
 // 512 bit
 define_byte_sliced_3d!(
 	ByteSlicedAES64x128b,
@@ -1071,6 +1082,12 @@ define_byte_sliced_3d!(
 	TowerLevel1,
 	TowerLevel16
 );
+
+define_byte_sliced_3d_1b!(ByteSliced16x512x1b, PackedBinaryField512x1b, TowerLevel16);
+define_byte_sliced_3d_1b!(ByteSliced8x512x1b, PackedBinaryField512x1b, TowerLevel8);
+define_byte_sliced_3d_1b!(ByteSliced4x512x1b, PackedBinaryField512x1b, TowerLevel4);
+define_byte_sliced_3d_1b!(ByteSliced2x512x1b, PackedBinaryField512x1b, TowerLevel2);
+define_byte_sliced_3d_1b!(ByteSliced1x512x1b, PackedBinaryField512x1b, TowerLevel1);
 
 macro_rules! impl_packed_extension{
 	($packed_ext:ty, $packed_base:ty,) => {
@@ -1137,6 +1154,7 @@ impl_packed_extension!(
 	ByteSlicedAES4x16x32b,
 	ByteSlicedAES8x16x16b,
 	ByteSlicedAES16x16x8b,
+	ByteSliced16x128x1b,
 );
 
 impl_packed_extension!(
@@ -1145,6 +1163,7 @@ impl_packed_extension!(
 	ByteSlicedAES4x32x32b,
 	ByteSlicedAES8x32x16b,
 	ByteSlicedAES16x32x8b,
+	ByteSliced16x256x1b,
 );
 
 impl_packed_extension!(
@@ -1153,4 +1172,5 @@ impl_packed_extension!(
 	ByteSlicedAES4x64x32b,
 	ByteSlicedAES8x64x16b,
 	ByteSlicedAES16x64x8b,
+	ByteSliced16x512x1b,
 );

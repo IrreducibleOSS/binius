@@ -254,7 +254,7 @@ pub mod tests {
 	);
 	define_byte_sliced_test!(
 		tests_3d_16x128x1,
-		ByteSlicedAES16x128x1b,
+		ByteSliced16x128x1b,
 		BinaryField1b,
 		PackedBinaryField128x1b
 	);
