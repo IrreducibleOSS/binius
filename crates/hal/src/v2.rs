@@ -28,8 +28,8 @@ pub trait DevSliceMut<T>: Into<Self::ConstSlice> {
 	const MIN_LEN: usize = Self::ConstSlice::MIN_LEN;
 	type ConstSlice: DevSlice<T>;
 
-	fn try_slice(&self, range: impl RangeBounds<usize>) -> Self::ConstSlice;
-	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Self;
+	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice>;
+	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self>;
 }
 
 pub trait HAL<F: BinaryField> {
