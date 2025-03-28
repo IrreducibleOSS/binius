@@ -1,138 +1,168 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::{cmp::Reverse, fmt::Debug, hash::Hash};
+
+use anyhow::{ensure, Result};
 use binius_core::{constraint_system::channel::FlushDirection, oracle::OracleId};
 use binius_field::{
-	as_packed_field::PackScalar, packed::set_packed_slice, BinaryField1b, ExtensionField, Field,
-	TowerField,
+	as_packed_field::{PackScalar, PackedType},
+	packed::set_packed_slice,
+	BinaryField1b, ExtensionField, Field, PackedFieldIndexable, TowerField,
 };
 use bytemuck::Pod;
+use itertools::izip;
 
 use crate::builder::{
 	types::{F, U},
 	ConstraintSystemBuilder,
 };
 
-/// Checks values in `lookup_values` to be in `table`.
+/// A gadget validating the lookup relation between:
+/// * `lookups_u` - the set of "looked up" tables
+/// * `lookup_t` - the lookup table
 ///
-/// # Introduction
-/// This is a gadget for performing a "lookup", wherein a set of values are claimed by the prover to be a subset of a set of values known to the verifier.
-/// We call the set of values known to the verifier as the "table", and we call the set of values held by the prover as the "lookup values."
-/// We represent these sets using oracles `table` and `lookup_values` as lists of values.
-/// This gadget performs the lookup by verifying that every value in the oracle `lookup_vales` appears somewhere in the oracle `table`.
+/// Both looked up and lookup tables are defined by tuples of column oracles, where each column has the same `FTable` type.
+/// Primary reason to support this behaviour is to be able to lookup into tables "wider" than the largest 128-bit field.
 ///
-/// # Parameters
-/// - `builder`: a mutable reference to the `ConstraintSystemBuilder`.
-/// - `table`: an oracle holding the table of valid lookup values.
-/// - `lookup_values`: an oracle holding the values to be looked up.
-/// - `lookup_values_count`: only the first `lookup_values_count` values in `lookup_values` will be looked up.
+/// Looked up tables are assumed to have `n_lookups` values each, whereas `lookup_t` is considered to be always full.
+///
+/// The prover needs to provide multiplicities of the lookup table elements; the helper [`count_multiplicities`] method
+/// does that using a hash map of counters, but in some cases it should be possible to compute this table more efficiently
+/// or in an indirect way.
 ///
 /// # How this Works
-/// We create a single channel for this lookup.
-/// We let the prover push all values in `lookup_values`, that is all values to be looked up, into the channel.
-/// We also must pull valid table values (i.e. values that appear in `table`) from the channel if the channel is to balance.
-/// By ensuring that only valid table values get pulled from the channel, and observing the channel to balance, we ensure that only valid table values get pushed (by the prover) into the channel.
-/// Therefore our construction is sound.
+/// We create two channel for this lookup - a multiplicity channel and a permutation channel.
+/// We let the prover push all values in `lookups_u`, that is all values to be looked up, into the multiplicity channel.
+/// We also must pull valid table values (i.e. values that appear in `lookup_t`) from this channel if the channel is to balance.
+/// By ensuring that only valid table values get pulled from the channel, and observing the channel to balance, we ensure
+/// that only valid table values get pushed (by the prover) into the channel. Therefore our construction is sound.
+///
 /// In order for the construction to be complete, allowing an honest prover to pass, we must pull each
-/// table value from the channel with exactly the same multiplicity (duplicate count) that the prover pushed that table value into the channel.
-/// To do so, we allow the prover to commit information on the multiplicity of each table value.
+/// table value from the multiplicity channel with exactly the same multiplicity (duplicate count) that the prover pushed that table
+/// value into the channel. To do so, we allow the prover to commit information on the multiplicity of each table value.
 ///
-/// The prover counts the multiplicity of each table value, and creates a bit column for
-/// each of the LOG_MAX_MULTIPLICITY bits in the bit-decomposition of the multiplicities.
-/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit column as the 'selector' oracle to select which values in the
-/// table actually get pushed into the channel flushed. When flushing the table with the i'th bit column as the selector, we flush with multiplicity 1 << i.
+/// The prover counts the multiplicity of each table value, and creates a bit column for each of the LOG_MAX_MULTIPLICITY bits in
+/// the bit-decomposition of the multiplicities.
+/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit column as the 'selector' oracle to select
+/// which values in the table actually get pushed into the channel flushed. When flushing the table with the i'th bit column as the selector,
+///we flush with multiplicity 1 << i.
 ///
-pub fn plain_lookup<FS, const LOG_MAX_MULTIPLICITY: usize>(
+/// The reason for using _two_ channels is a prover-side optimization - instead of counting multiplicities on the original `lookup_t`, we
+/// commit a permuted version of that with non-decreasing multiplicities. This enforces nonzero scalars prefixes on the committed multiplicity
+/// bits columns, which can be used to optimize the flush and GKR reduction sumchecks. In order to constrain this committed lookup to be a
+/// permutation of lookup_t we do a push/pull on the permutation channel.
+pub fn plain_lookup<FTable, const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
-	table: OracleId,
-	lookup_values: OracleId,
-	lookup_values_count: usize,
-) -> Result<(), anyhow::Error>
+	name: impl ToString,
+	n_lookups: &[usize],
+	lookups_u: &[impl AsRef<[OracleId]>],
+	lookup_t: impl AsRef<[OracleId]>,
+	multiplicities: Option<impl AsRef<[usize]>>,
+) -> Result<()>
 where
-	U: PackScalar<FS> + Pod,
-	F: ExtensionField<FS>,
-	FS: TowerField + Pod,
+	U: PackScalar<FTable> + Pod,
+	F: ExtensionField<FTable>,
+	FTable: TowerField,
+	PackedType<U, FTable>: PackedFieldIndexable,
 {
-	let n_vars = builder.log_rows([table])?;
-
-	let channel = builder.add_channel();
-
-	builder.send(channel, lookup_values_count, [lookup_values])?;
-
-	let mut multiplicities = None;
-	// have prover compute and fill the multiplicities
-	if let Some(witness) = builder.witness() {
-		let table_slice = witness.get::<FS>(table)?.as_slice::<FS>();
-		let values_slice = witness.get::<FS>(lookup_values)?.as_slice::<FS>();
-
-		multiplicities = Some(count_multiplicities(
-			&table_slice[0..1 << n_vars],
-			&values_slice[0..lookup_values_count],
-			false,
-		)?);
-	}
-
-	let bits: [OracleId; LOG_MAX_MULTIPLICITY] = get_bits(builder, table, multiplicities)?;
-	bits.into_iter().enumerate().try_for_each(|(i, bit)| {
-		builder.flush_custom(FlushDirection::Pull, channel, bit, [table], 1 << i)
-	})?;
-
-	Ok(())
-}
-
-// the `i`'th returned bit column holds the `i`'th multiplicity bit.
-fn get_bits<FS, const LOG_MAX_MULTIPLICITY: usize>(
-	builder: &mut ConstraintSystemBuilder,
-	table: OracleId,
-	multiplicities: Option<Vec<usize>>,
-) -> Result<[OracleId; LOG_MAX_MULTIPLICITY], anyhow::Error>
-where
-	U: PackScalar<FS>,
-	F: ExtensionField<FS>,
-	FS: TowerField + Pod,
-{
-	let n_vars = builder.log_rows([table])?;
-
-	let bits: [OracleId; LOG_MAX_MULTIPLICITY] = builder
-		.add_committed_multiple::<LOG_MAX_MULTIPLICITY>("bits", n_vars, BinaryField1b::TOWER_LEVEL);
-
-	if let Some(witness) = builder.witness() {
-		let multiplicities =
-			multiplicities.ok_or_else(|| anyhow::anyhow!("multiplicities empty for prover"))?;
-		debug_assert_eq!(1 << n_vars, multiplicities.len());
-
-		// check all multiplicities are in range
-		if multiplicities
+	ensure!(n_lookups.len() == lookups_u.len(), "n_vars and lookups_u must be of the same length");
+	ensure!(
+		lookups_u
 			.iter()
-			.any(|&multiplicity| multiplicity >= 1 << LOG_MAX_MULTIPLICITY)
-		{
-			return Err(anyhow::anyhow!(
-				"one or more multiplicities exceed `1 << LOG_MAX_MULTIPLICITY`"
-			));
+			.all(|oracles| oracles.as_ref().len() == lookup_t.as_ref().len()),
+		"looked up and lookup tables must have the same number of oracles"
+	);
+
+	let lookups_u_count_sum = n_lookups.iter().sum::<usize>();
+	ensure!(lookups_u_count_sum < 1 << LOG_MAX_MULTIPLICITY, "LOG_MAX_MULTIPLICITY too small");
+
+	builder.push_namespace(name);
+
+	let t_log_rows = builder.log_rows(lookup_t.as_ref().iter().copied())?;
+	let bits = builder.add_committed_multiple::<LOG_MAX_MULTIPLICITY>(
+		"multiplicity_bits",
+		t_log_rows,
+		BinaryField1b::TOWER_LEVEL,
+	);
+
+	let permuted_lookup_t = (0..lookup_t.as_ref().len())
+		.map(|i| {
+			builder.add_committed(format!("permuted_t_{}", i), t_log_rows, FTable::TOWER_LEVEL)
+		})
+		.collect::<Vec<_>>();
+
+	if let Some(witness) = builder.witness() {
+		let mut indexed_multiplicities = multiplicities
+			.expect("multiplicities should be supplied when proving")
+			.as_ref()
+			.iter()
+			.copied()
+			.enumerate()
+			.collect::<Vec<_>>();
+
+		let multiplicities_sum = indexed_multiplicities
+			.iter()
+			.map(|&(_, multiplicity)| multiplicity)
+			.sum::<usize>();
+		ensure!(multiplicities_sum == lookups_u_count_sum, "Multiplicities do not add up.");
+
+		indexed_multiplicities.sort_by_key(|&(_, multiplicity)| Reverse(multiplicity));
+
+		for (i, bit) in bits.into_iter().enumerate() {
+			let nonzero_scalars_prefix =
+				indexed_multiplicities.partition_point(|&(_, count)| count >= 1 << i);
+
+			let mut column = witness.new_column_with_nonzero_scalars_prefix::<BinaryField1b>(
+				bit,
+				nonzero_scalars_prefix,
+			);
+
+			let packed = column.packed();
+
+			for (j, &(_, multiplicity)) in indexed_multiplicities.iter().enumerate() {
+				if (1 << i) & multiplicity != 0 {
+					set_packed_slice(packed, j, BinaryField1b::ONE);
+				}
+			}
 		}
 
-		// create the columns for the bits
-		let mut bit_cols = bits.map(|bit| witness.new_column::<BinaryField1b>(bit));
-		let mut packed_bit_cols = bit_cols.each_mut().map(|bit_col| bit_col.packed());
+		for (&permuted, &original) in izip!(&permuted_lookup_t, lookup_t.as_ref()) {
+			let original_slice =
+				PackedType::<U, FTable>::unpack_scalars(witness.get::<FTable>(original)?.packed());
 
-		multiplicities
-			.iter()
-			.enumerate()
-			.for_each(|(i, multiplicity)| {
-				(0..LOG_MAX_MULTIPLICITY).for_each(|j| {
-					let bit_set = multiplicity & (1 << j) != 0;
-					set_packed_slice(
-						packed_bit_cols[j],
-						i,
-						match bit_set {
-							true => BinaryField1b::ONE,
-							false => BinaryField1b::ZERO,
-						},
-					);
-				})
-			});
+			let mut permuted_column = witness.new_column::<FTable>(permuted);
+			let permuted_slice =
+				PackedType::<U, FTable>::unpack_scalars_mut(permuted_column.packed());
+
+			for (&(index, _), permuted) in izip!(&indexed_multiplicities, permuted_slice) {
+				*permuted = original_slice[index];
+			}
+		}
 	}
 
-	Ok(bits)
+	let permutation_channel = builder.add_channel();
+	let multiplicity_channel = builder.add_channel();
+
+	builder.send(permutation_channel, 1 << t_log_rows, permuted_lookup_t.iter().copied())?;
+	builder.receive(permutation_channel, 1 << t_log_rows, lookup_t.as_ref().iter().copied())?;
+
+	for (lookup_u, &count) in izip!(lookups_u, n_lookups) {
+		builder.send(multiplicity_channel, count, lookup_u.as_ref().iter().copied())?;
+	}
+
+	for (i, bit) in bits.into_iter().enumerate() {
+		builder.flush_custom(
+			FlushDirection::Pull,
+			multiplicity_channel,
+			bit,
+			permuted_lookup_t.iter().copied(),
+			1 << i,
+		)?
+	}
+
+	builder.pop_namespace();
+
+	Ok(())
 }
 
 #[cfg(test)]
@@ -185,41 +215,52 @@ pub mod test_plain_lookup {
 
 		let lookup_values_count = 1 << log_lookup_count;
 
-		if let Some(witness) = builder.witness() {
+		let multiplicities = if let Some(witness) = builder.witness() {
 			let mut lookup_values_col = witness.new_column::<BinaryField32b>(lookup_values);
 			let mut_slice = lookup_values_col.as_mut_slice::<u32>();
 			generate_random_u8_mul_claims(&mut mut_slice[0..lookup_values_count]);
-		}
+			Some(count_multiplicities(&table_values, mut_slice, true).unwrap())
+		} else {
+			None
+		};
 
 		plain_lookup::<BinaryField32b, LOG_MAX_MULTIPLICITY>(
 			builder,
-			table,
-			lookup_values,
-			lookup_values_count,
+			"u8_mul_lookup",
+			&[1 << log_lookup_count],
+			&[[lookup_values]],
+			&[table],
+			multiplicities,
 		)?;
 
 		Ok(())
 	}
 }
 
-fn count_multiplicities<T: Eq + std::hash::Hash + Clone + std::fmt::Debug>(
+pub fn count_multiplicities<T>(
 	table: &[T],
 	values: &[T],
 	check_inclusion: bool,
-) -> Result<Vec<usize>, anyhow::Error> {
+) -> Result<Vec<usize>, anyhow::Error>
+where
+	T: Eq + Hash + Debug,
+{
 	use std::collections::{HashMap, HashSet};
 
 	if check_inclusion {
-		let table_set: HashSet<_> = table.iter().cloned().collect();
+		let table_set: HashSet<_> = table.iter().collect();
 		if let Some(invalid_value) = values.iter().find(|value| !table_set.contains(value)) {
 			return Err(anyhow::anyhow!("value {:?} not in table", invalid_value));
 		}
 	}
 
-	let counts: HashMap<_, usize> = values.iter().fold(HashMap::new(), |mut acc, value| {
-		*acc.entry(value).or_insert(0) += 1;
-		acc
-	});
+	let counts: HashMap<_, usize> =
+		values
+			.iter()
+			.fold(HashMap::with_capacity(table.len()), |mut acc, value| {
+				*acc.entry(value).or_insert(0) += 1;
+				acc
+			});
 
 	let multiplicities = table
 		.iter()

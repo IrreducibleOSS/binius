@@ -59,10 +59,11 @@ impl<'arena> Builder<'arena> {
 		&self,
 		id: OracleId,
 		nonzero_scalars_prefix: usize,
-	) -> EntryBuilder<'arena, FS> where
-        U: PackScalar<FS>,
-        F: ExtensionField<FS>,
-    {
+	) -> EntryBuilder<'arena, FS>
+	where
+		U: PackScalar<FS>,
+		F: ExtensionField<FS>,
+	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
 		// TODO: validate nonzero_scalars_prefix
@@ -89,7 +90,7 @@ impl<'arena> Builder<'arena> {
 	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
-        let nonzero_scalars_prefix = 1 << log_rows;
+		let nonzero_scalars_prefix = 1 << log_rows;
 		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let default = WithUnderlier::to_underlier(PackedType::<U, FS>::broadcast(default));
 		let data = bumpalo::vec![in self.bump; default; len].into_bump_slice_mut();
@@ -98,7 +99,7 @@ impl<'arena> Builder<'arena> {
 			entries: self.entries.clone(),
 			id,
 			log_rows,
-            nonzero_scalars_prefix,
+			nonzero_scalars_prefix,
 			data: Some(data),
 		}
 	}
@@ -131,7 +132,7 @@ impl<'arena> Builder<'arena> {
 		Ok(WitnessEntry {
 			data: entry.data,
 			log_rows: oracles.n_vars(id),
-            nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
+			nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
 			_marker: PhantomData,
 		})
 	}
@@ -155,7 +156,7 @@ impl<'arena> Builder<'arena> {
 		}
 		entries[id] = Some(WitnessBuilderEntry {
 			data: entry.data,
-            nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
+			nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
 			tower_level: FS::TOWER_LEVEL,
 			witness: MultilinearExtension::new(entry.log_rows, entry.packed())
 				.map(|x| x.specialize_arc_dyn()),
@@ -184,7 +185,7 @@ where
 {
 	data: &'arena [U],
 	log_rows: usize,
-    nonzero_scalars_prefix: usize,
+	nonzero_scalars_prefix: usize,
 	_marker: PhantomData<FS>,
 }
 
@@ -207,11 +208,13 @@ where
 		FE: TowerField + ExtensionField<FS>,
 		U: PackScalar<FE>,
 	{
-        let log_extension_degree = <FE as ExtensionField<FS>>::LOG_DEGREE;
+		let log_extension_degree = <FE as ExtensionField<FS>>::LOG_DEGREE;
 		WitnessEntry {
 			data: self.data,
 			log_rows: self.log_rows - log_extension_degree,
-            nonzero_scalars_prefix: self.nonzero_scalars_prefix.div_ceil(1 << log_extension_degree),
+			nonzero_scalars_prefix: self
+				.nonzero_scalars_prefix
+				.div_ceil(1 << log_extension_degree),
 			_marker: PhantomData,
 		}
 	}
