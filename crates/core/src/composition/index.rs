@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use binius_field::{Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef};
 use binius_utils::bail;
 
 use crate::polynomial::Error;
@@ -85,12 +85,12 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 
 	fn batch_evaluate(
 		&self,
-		batch_query: &[&[P]],
+		batch_query: &RowsBatchRef<P>,
 		evals: &mut [P],
 	) -> Result<(), binius_math::Error> {
-		let batch_subquery = self.indices.map(|index| batch_query[index]);
+		let batch_subquery = batch_query.map(self.indices);
 		self.composition
-			.batch_evaluate(batch_subquery.as_slice(), evals)
+			.batch_evaluate(&batch_subquery.get_ref(), evals)
 	}
 }
 

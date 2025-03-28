@@ -2,7 +2,7 @@
 
 use binius_field::*;
 use binius_macros::arith_circuit_poly;
-use binius_math::CompositionPoly;
+use binius_math::{CompositionPoly, RowsBatchRef};
 use paste::paste;
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -40,7 +40,7 @@ macro_rules! test_arithmetic_poly {
                 }
 
                 let mut batch_result = vec![<$packed>::zero(); BATCH_SIZE];
-                circuit.batch_evaluate(&query_data, &mut batch_result).unwrap();
+                circuit.batch_evaluate(&RowsBatchRef::new(&query_data, BATCH_SIZE), &mut batch_result).unwrap();
                 assert_eq!(&batch_result, &expected);
             }
         }

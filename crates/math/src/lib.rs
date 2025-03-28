@@ -26,6 +26,7 @@ mod multilinear_extension;
 mod multilinear_query;
 mod packing_deref;
 mod piecewise_multilinear;
+mod rows_batch;
 mod tensor_prod_eq_ind;
 mod univariate;
 
@@ -42,5 +43,6 @@ pub use multilinear_extension::*;
 pub use multilinear_query::*;
 pub use packing_deref::*;
 pub use piecewise_multilinear::*;
+pub use rows_batch::*;
 pub use tensor_prod_eq_ind::*;
 pub use univariate::*;
