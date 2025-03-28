@@ -82,3 +82,11 @@ where
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data>;
 }
+
+pub struct IDTransformation;
+
+impl<OP: PackedBinaryField> Transformation<OP, OP> for IDTransformation {
+	fn transform(&self, data: &OP) -> OP {
+		*data
+	}
+}
