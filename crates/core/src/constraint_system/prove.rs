@@ -756,22 +756,24 @@ where
 		let mut multilinears =
 			Vec::with_capacity(flush_selectors_unique.len() + flush_oracle_ids.len());
 
-		for &flush_selector in &flush_selectors_unique {
-			multilinears.push(witness.get_multilin_poly(flush_selector)?);
+		let mut nonzero_scalars_prefixes = Vec::with_capacity(multilinears.len());
+
+		for &oracle_id in chain!(&flush_selectors_unique, &flush_oracle_ids) {
+			let entry = witness.get_index_entry(oracle_id)?;
+			multilinears.push(entry.multilin_poly);
+			nonzero_scalars_prefixes.push(entry.nonzero_scalars_prefix);
 		}
 
-		for &oracle_id in &flush_oracle_ids {
-			multilinears.push(witness.get_multilin_poly(oracle_id)?);
-		}
-
-		let prover = EqIndSumcheckProverBuilder::new(backend).build(
-			EvaluationOrder::LowToHigh,
-			multilinears,
-			&eval_point,
-			composite_sum_claims,
-			domain_factory.clone(),
-			immediate_switchover_heuristic,
-		)?;
+		let prover = EqIndSumcheckProverBuilder::new(backend)
+			.with_nonzero_scalars_prefixes(&nonzero_scalars_prefixes)
+			.build(
+				EvaluationOrder::LowToHigh,
+				multilinears,
+				&eval_point,
+				composite_sum_claims,
+				domain_factory.clone(),
+				immediate_switchover_heuristic,
+			)?;
 
 		provers.push(prover);
 		flush_oracle_ids_by_claim.push(flush_oracle_ids);
