@@ -15,7 +15,7 @@ pub mod tests {
 	use crate::{
 		packed::{get_packed_slice, set_packed_slice},
 		underlier::WithUnderlier,
-		Field, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
+		PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
 		PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
 		PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
 		PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
@@ -37,6 +37,14 @@ pub mod tests {
 				use super::*;
 
 				proptest! {
+					#[test]
+					fn check_from_fn(scalar_elems in scalars_vec_strategy::<$name>()) {
+						let bytesliced = <$name>::from_fn(|i| scalar_elems[i]);
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], bytesliced.get(i));
+						}
+					}
+
 					#[test]
 					fn check_add(scalar_elems_a in scalars_vec_strategy::<$name>(), scalar_elems_b in scalars_vec_strategy::<$name>()) {
 						let bytesliced_a = <$name>::from_scalars(scalar_elems_a.iter().copied());

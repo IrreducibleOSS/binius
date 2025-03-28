@@ -87,6 +87,6 @@ pub struct IDTransformation;
 
 impl<OP: PackedBinaryField> Transformation<OP, OP> for IDTransformation {
 	fn transform(&self, data: &OP) -> OP {
-		data.clone()
+		*data
 	}
 }

@@ -507,6 +507,8 @@ macro_rules! byte_sliced_common {
 	};
 }
 
+/// Special case: byte-sliced packed 1b-fields. The order of bytes in the layout matches the one
+/// for a byte-sliced AES field, each byte contains 1b-scalar elements in the natural order.
 macro_rules! define_byte_sliced_3d_1b {
 	($name:ident, $packed_storage:ty, $storage_tower_level: ty) => {
 		#[derive(Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
@@ -629,15 +631,13 @@ macro_rules! define_byte_sliced_3d_1b {
 
 			#[inline]
 			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
-				let mut result = Self::default();
+				let data = array::from_fn(|row| {
+					<$packed_storage>::from_fn(|col| {
+						f(row * 8 + 8 * Self::HEIGHT_BYTES * (col / 8) + col % 8)
+					})
+				});
 
-				// TODO: use transposition here as
-				for i in 0..Self::WIDTH {
-					//SAFETY: i doesn't exceed Self::WIDTH
-					unsafe { result.set_unchecked(i, f(i)) };
-				}
-
-				result
+				Self { data }
 			}
 
 			#[inline]
