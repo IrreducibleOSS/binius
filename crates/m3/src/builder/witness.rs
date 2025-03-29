@@ -2,7 +2,7 @@
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
-	iter,
+	iter, slice,
 	sync::Arc,
 };
 
@@ -26,7 +26,6 @@ use itertools::Itertools;
 use super::{
 	column::{Col, ColumnShape},
 	error::Error,
-	multi_iter::MultiIterator,
 	statement::Statement,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
@@ -349,6 +348,23 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		table: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
+		let log_size = self.optimal_segment_size_heuristic();
+		self.fill_sequential_with_segment_size(table, rows, log_size)
+	}
+
+	/// Fill a full table witness index using the given row data.
+	///
+	/// This function iterates through witness segments in parallel in multiple threads.
+	pub fn fill_parallel<T: TableFiller<U, F>>(
+		&mut self,
+		table: &T,
+		rows: &[T::Event],
+	) -> Result<(), Error> {
+		let log_size = self.optimal_segment_size_heuristic();
+		self.fill_sequential_with_segment_size(table, rows, log_size)
+	}
+
+	fn optimal_segment_size_heuristic(&self) -> usize {
 		// As a heuristic, choose log_size so that the median column segment size is 4 KiB.
 		const TARGET_SEGMENT_LOG_BITS: usize = 12 + 3;
 
@@ -362,8 +378,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.nth(n_cols / 2)
 			.unwrap_or_default();
 
-		let log_size = TARGET_SEGMENT_LOG_BITS.saturating_sub(median_col_log_bits);
-		self.fill_sequential_with_segment_size(table, rows, log_size)
+		TARGET_SEGMENT_LOG_BITS.saturating_sub(median_col_log_bits)
 	}
 
 	/// Fill a full table witness index using the given row data.
@@ -434,6 +449,91 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		Ok(())
 	}
 
+	/// Fill a full table witness index using the given row data.
+	///
+	/// This function iterates through witness segments in parallel in multiple threads.
+	pub fn fill_parallel_with_segment_size<T>(
+		&mut self,
+		table: &T,
+		rows: &[T::Event],
+		log_size: usize,
+	) -> Result<(), Error>
+	where
+		T: TableFiller<U, F> + Sync,
+		T::Event: Clone + Sync,
+	{
+		if rows.len() != self.size {
+			return Err(Error::IncorrectNumberOfTableEvents {
+				expected: self.size,
+				actual: rows.len(),
+			});
+		}
+
+		let segment_size = 1 << log_size;
+
+		// rows.len() equals self.size and self.size is check to be non-zero in the constructor
+		debug_assert_ne!(rows.len(), 0);
+		// number of chunks is rounded up
+		let n_chunks = (rows.len() - 1) / segment_size + 1;
+
+		// Fill segments of the table with full chunks
+		self.par_segments(log_size)
+			.zip(rows.par_chunks(segment_size))
+			// by taking n_chunks - 1, we guarantee that all row chunks are full
+			.take(n_chunks - 1)
+			.try_for_each(|(mut witness_segment, row_chunk)| {
+				table
+					.fill(row_chunk.iter(), &mut witness_segment)
+					.map_err(Error::TableFill)
+			})?;
+
+		// Fill the last segment. There may not be enough events to match the size of the segment,
+		// which is a pre-condition for TableFiller::fill. In that case, we clone the last event to
+		// pad the row_chunk. Since it's a clone, the filled witness should satisfy all row-wise
+		// constraints as long as all the given events do.
+		let row_chunk = &rows[(n_chunks - 1) * segment_size..];
+		let mut padded_row_chunk = Vec::new();
+		let row_chunk = if row_chunk.len() != segment_size {
+			padded_row_chunk.reserve(segment_size);
+			padded_row_chunk.extend_from_slice(row_chunk);
+			let last_event = row_chunk
+				.last()
+				.expect("row_chunk must be non-empty because of how n_chunk is calculated")
+				.clone();
+			padded_row_chunk.resize(segment_size, last_event);
+			&padded_row_chunk
+		} else {
+			row_chunk
+		};
+
+		self.par_segments(log_size)
+			.skip(n_chunks - 1)
+			.try_for_each(|mut witness_segment| {
+				table
+					.fill(row_chunk.iter(), &mut witness_segment)
+					.map_err(Error::TableFill)
+			})?;
+
+		/*
+		// Finally, copy the last filled segment to the remaining segments. This should satisfy all
+		// row-wise constraints if the last segment does.
+		for mut segment in segments_iter {
+			for (dst_col, src_col) in iter::zip(&mut segment.cols, &mut last_segment.cols) {
+				if let (RefCellData::Owned(dst), RefCellData::Owned(src)) = (dst_col, src_col) {
+					dst.get_mut().copy_from_slice(src.get_mut())
+				}
+			}
+		}
+		 */
+
+		Ok(())
+	}
+
+	/// Returns an iterator over segments of witness index rows.
+	///
+	/// This method clamps the segment size, requested as `log_size`, to a minimum of
+	/// `self.min_log_segment_size()` and a maximum of `self.log_capacity()`. The actual segment
+	/// size can be queried on the items yielded by the iterator.
 	pub fn segments(
 		&mut self,
 		log_size: usize,
@@ -443,37 +543,87 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.min(self.log_capacity)
 			.max(self.min_log_segment_size);
 
-		let log_n = self.log_capacity - log_size;
-		let iter = MultiIterator::new(
-			self.cols
-				.iter_mut()
-				.map(|col| match &mut col.data {
-					WitnessDataMut::SameAsOracleIndex(index) => itertools::Either::Left(
-						iter::repeat_n(*index, log_n).map(RefCellData::SameAsOracleIndex),
-					),
+		let self_ref = self as &Self;
+		(0..1 << (self.log_capacity - log_size)).map(move |i| {
+			let table = self_ref.table;
+			let col_strides = self_ref
+				.cols
+				.iter()
+				.map(|col| match &col.data {
+					WitnessDataMut::SameAsOracleIndex(index) => {
+						RefCellData::SameAsOracleIndex(*index)
+					}
 					WitnessDataMut::Owned(data) => {
 						// The segment size can be smaller than required for the segment to fill
 						// one underlier in the case when the whole column only has one
 						// partially-filed underlier. In this case it's OK to use a saturating_sub.
-						let log_stride =
-							(log_size + col.shape.log_cell_size()).saturating_sub(U::LOG_BITS);
-						itertools::Either::Right(
-							data.chunks_mut(1 << log_stride)
-								.map(|data| RefCellData::Owned(RefCell::new(data))),
-						)
+						let log_cell_bits = col.shape.log_cell_size();
+						let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
+						RefCellData::Owned(RefCell::new(unsafe {
+							// Safety: The function borrows self mutably, so we have mutable access
+							// to all columns and thus none can be borrowed by anyone else. The
+							// loop is constructed to borrow disjoint segments of each column -- if
+							// this loop were transposed, we would use `chunks_mut`.
+							cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
+						}))
 					}
 				})
-				.collect(),
-		);
-
-		let table = self.table;
-		let oracle_offset = self.oracle_offset;
-		iter.map(move |cols| TableWitnessSegment {
-			table,
-			cols,
-			log_size,
-			oracle_offset,
+				.collect();
+			TableWitnessSegment {
+				table,
+				cols: col_strides,
+				log_size,
+				oracle_offset: self_ref.oracle_offset,
+			}
 		})
+	}
+
+	pub fn par_segments(
+		&mut self,
+		log_size: usize,
+	) -> impl IndexedParallelIterator<Item = TableWitnessSegment<'_, U, F>> + '_ {
+		// Clamp the segment size.
+		let log_size = log_size
+			.min(self.log_capacity)
+			.max(self.min_log_segment_size);
+
+		// TODO: deduplicate closure between this and `segments`. It's kind of a tricky interface
+		// because of the unsafe casting.
+		let self_ref = self as &Self;
+		(0..1 << (self.log_capacity - log_size))
+			.into_par_iter()
+			.map(move |i| {
+				let table = self_ref.table;
+				let col_strides = self_ref
+					.cols
+					.iter()
+					.map(|col| match &col.data {
+						WitnessDataMut::SameAsOracleIndex(index) => {
+							RefCellData::SameAsOracleIndex(*index)
+						}
+						WitnessDataMut::Owned(data) => {
+							// The segment size can be smaller than required for the segment to fill
+							// one underlier in the case when the whole column only has one
+							// partially-filed underlier. In this case it's OK to use a saturating_sub.
+							let log_cell_bits = col.shape.log_cell_size();
+							let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
+							RefCellData::Owned(RefCell::new(unsafe {
+								// Safety: The function borrows self mutably, so we have mutable access
+								// to all columns and thus none can be borrowed by anyone else. The
+								// loop is constructed to borrow disjoint segments of each column -- if
+								// this loop were transposed, we would use `chunks_mut`.
+								cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
+							}))
+						}
+					})
+					.collect();
+				TableWitnessSegment {
+					table,
+					cols: col_strides,
+					log_size,
+					oracle_offset: self_ref.oracle_offset,
+				}
+			})
 	}
 }
 
@@ -676,6 +826,12 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegment<'a, U, F> {
 	}
 }
 
+// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
+#[allow(clippy::mut_from_ref)]
+unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
+	slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
+}
+
 /// A struct that can populate segments of a table witness using row descriptors.
 pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	/// A struct that specifies the row contents.
@@ -864,53 +1020,51 @@ mod tests {
 		drop(iter);
 	}
 
+	struct TestTable {
+		id: TableId,
+		col0: Col<B32>,
+		col1: Col<B32>,
+	}
+
+	impl TestTable {
+		fn new(cs: &mut ConstraintSystem) -> Self {
+			let mut table = cs.add_table("test");
+
+			let col0 = table.add_committed("col0");
+			let col1 = table.add_computed("col1", col0 * col0 + B32::new(0x03));
+
+			Self {
+				id: table.id(),
+				col0,
+				col1,
+			}
+		}
+	}
+
+	impl TableFiller<OptimalUnderlier128b> for TestTable {
+		type Event = u32;
+
+		fn id(&self) -> TableId {
+			self.id
+		}
+
+		fn fill<'a>(
+			&'a self,
+			rows: impl Iterator<Item = &'a Self::Event> + Clone,
+			witness: &'a mut TableWitnessSegment<OptimalUnderlier128b>,
+		) -> anyhow::Result<()> {
+			let mut col0 = witness.get_scalars_mut(self.col0)?;
+			let mut col1 = witness.get_scalars_mut(self.col1)?;
+			for (i, &val) in rows.enumerate() {
+				col0[i] = B32::new(val);
+				col1[i] = col0[i].pow(2) + B32::new(0x03);
+			}
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn test_fill_sequential_with_incomplete_events() {
-		type U = OptimalUnderlier128b;
-
-		struct TestTable {
-			id: TableId,
-			col0: Col<B32>,
-			col1: Col<B32>,
-		}
-
-		impl TestTable {
-			fn new(cs: &mut ConstraintSystem) -> Self {
-				let mut table = cs.add_table("test");
-
-				let col0 = table.add_committed("col0");
-				let col1 = table.add_computed("col1", col0 * col0 + B32::new(0x03));
-
-				Self {
-					id: table.id(),
-					col0,
-					col1,
-				}
-			}
-		}
-
-		impl TableFiller<U> for TestTable {
-			type Event = u32;
-
-			fn id(&self) -> TableId {
-				self.id
-			}
-
-			fn fill<'a>(
-				&'a self,
-				rows: impl Iterator<Item = &'a Self::Event> + Clone,
-				witness: &'a mut TableWitnessSegment<U>,
-			) -> anyhow::Result<()> {
-				let mut col0 = witness.get_scalars_mut(self.col0)?;
-				let mut col1 = witness.get_scalars_mut(self.col1)?;
-				for (i, &val) in rows.enumerate() {
-					col0[i] = B32::new(val);
-					col1[i] = col0[i].pow(2) + B32::new(0x03);
-				}
-				Ok(())
-			}
-		}
-
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
@@ -955,5 +1109,53 @@ mod tests {
 		assert_eq!(col0[13].val(), rows[9]);
 		assert_eq!(col0[14].val(), rows[10]);
 		assert_eq!(col0[15].val(), rows[8]);
+	}
+
+	#[test]
+	fn test_fill_parallel_with_incomplete_events() {
+		let mut cs = ConstraintSystem::new();
+		let test_table = TestTable::new(&mut cs);
+
+		let allocator = bumpalo::Bump::new();
+
+		let table_size = 11;
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![table_size],
+		};
+		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+		let table_index = index.get_table(test_table.id()).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let rows = repeat_with(|| rng.gen())
+			.take(table_size)
+			.collect::<Vec<_>>();
+
+		// 2^4 is the next power of two after 1, the table size.
+		assert_eq!(table_index.log_capacity(), 4);
+
+		// 2^2 B32 values fit into a 128-bit underlier.
+		assert_eq!(table_index.min_log_segment_size(), 2);
+
+		// Assert that fill_sequential validates the number of events..
+		assert_matches!(
+			table_index.fill_parallel_with_segment_size(&test_table, &rows[1..], 2),
+			Err(Error::IncorrectNumberOfTableEvents { .. })
+		);
+
+		table_index
+			.fill_parallel_with_segment_size(&test_table, &rows, 2)
+			.unwrap();
+
+		let segment = table_index.full_segment();
+		let col0 = segment.get_scalars(test_table.col0).unwrap();
+		for i in 0..11 {
+			assert_eq!(col0[i].val(), rows[i]);
+		}
+		assert_eq!(col0[11].val(), rows[10]);
+		assert_eq!(col0[12].val(), rows[8]);
+		assert_eq!(col0[13].val(), rows[9]);
+		assert_eq!(col0[14].val(), rows[10]);
+		assert_eq!(col0[15].val(), rows[10]);
 	}
 }
