@@ -31,6 +31,7 @@ use super::{
 	types::{B1, B128, B16, B32, B64, B8},
 	ColumnDef, ColumnId, ColumnIndex, Expr,
 };
+use crate::builder::multi_iter::MultiIterator;
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
 ///
@@ -198,7 +199,7 @@ pub struct WitnessIndexColumn<'a, U: UnderlierType> {
 	is_single_row: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum WitnessColumnInfo<T> {
 	Owned(T),
 	SameAsOracleIndex(usize),
@@ -534,37 +535,165 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	/// This method clamps the segment size, requested as `log_size`, to a minimum of
 	/// `self.min_log_segment_size()` and a maximum of `self.log_capacity()`. The actual segment
 	/// size can be queried on the items yielded by the iterator.
-	pub fn segments(
+	pub fn segments(&mut self, log_size: usize) -> impl Iterator<Item = TableWitnessSegment<U, F>> {
+		TableWitnessSegmentedView::new(self, log_size).into_iter()
+	}
+
+	pub fn par_segments(
 		&mut self,
 		log_size: usize,
-	) -> impl Iterator<Item = TableWitnessSegment<U, F>> + '_ {
-		// Clamp the segment size.
-		let log_size = log_size
-			.min(self.log_capacity)
-			.max(self.min_log_segment_size);
+	) -> impl IndexedParallelIterator<Item = TableWitnessSegment<'_, U, F>> {
+		TableWitnessSegmentedView::new(self, log_size).into_par_iter()
+	}
+}
 
-		let self_ref = self as &Self;
-		(0..1 << (self.log_capacity - log_size)).map(move |i| {
-			let table = self_ref.table;
-			let col_strides = self_ref
-				.cols
-				.iter()
-				.map(|col| match &col.data {
+/// A view over a table witness that splits the table into segments.
+///
+/// The purpose of this struct is to implement the `split_at` method, which safely splits the view
+/// of the table witness vertically. This aids in the implementation of `fill_sequential` and
+/// `fill_parallel`.
+#[derive(Debug)]
+struct TableWitnessSegmentedView<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
+	table: &'a Table<F>,
+	oracle_offset: usize,
+	cols: Vec<WitnessDataMut<'a, U>>,
+	log_segment_size: usize,
+	n_segments: usize,
+}
+
+impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
+	fn new(witness: &'a mut TableWitnessIndex<U, F>, log_segment_size: usize) -> Self {
+		// Clamp the segment size.
+		let log_segment_size = log_segment_size
+			.min(witness.log_capacity)
+			.max(witness.min_log_segment_size);
+
+		let cols = witness
+			.cols
+			.iter_mut()
+			.map(|col| match &mut col.data {
+				WitnessColumnInfo::Owned(data) => WitnessColumnInfo::Owned(&mut **data),
+				WitnessColumnInfo::SameAsOracleIndex(idx) => {
+					WitnessColumnInfo::SameAsOracleIndex(*idx)
+				}
+			})
+			.collect::<Vec<_>>();
+		Self {
+			table: witness.table,
+			oracle_offset: witness.oracle_offset,
+			cols,
+			log_segment_size,
+			n_segments: 1 << (witness.log_capacity - log_segment_size),
+		}
+	}
+
+	fn split_at(
+		&mut self,
+		index: usize,
+	) -> (TableWitnessSegmentedView<U, F>, TableWitnessSegmentedView<U, F>) {
+		assert!(index < self.n_segments);
+		let (cols_0, cols_1) = self
+			.cols
+			.iter_mut()
+			.map(|col| match col {
+				WitnessColumnInfo::Owned(data) => {
+					let (data_0, data_1) = data.split_at_mut(index);
+					(WitnessColumnInfo::Owned(data_0), WitnessColumnInfo::Owned(data_1))
+				}
+				WitnessColumnInfo::SameAsOracleIndex(idx) => (
+					WitnessColumnInfo::SameAsOracleIndex(*idx),
+					WitnessColumnInfo::SameAsOracleIndex(*idx),
+				),
+			})
+			.unzip();
+		(
+			TableWitnessSegmentedView {
+				table: self.table,
+				oracle_offset: self.oracle_offset,
+				cols: cols_0,
+				log_segment_size: self.log_segment_size,
+				n_segments: index,
+			},
+			TableWitnessSegmentedView {
+				table: self.table,
+				oracle_offset: self.oracle_offset,
+				cols: cols_1,
+				log_segment_size: self.log_segment_size,
+				n_segments: self.n_segments - index,
+			},
+		)
+	}
+
+	fn into_iter(self) -> impl Iterator<Item = TableWitnessSegment<'a, U, F>> {
+		let TableWitnessSegmentedView {
+			table,
+			oracle_offset,
+			cols,
+			log_segment_size,
+			n_segments,
+		} = self;
+		MultiIterator::new(
+			cols.into_iter()
+				.map(|col| match col {
+					WitnessColumnInfo::Owned(data) => {
+						let chunk_size = data.len() / n_segments;
+						itertools::Either::Left(
+							data.chunks_mut(chunk_size)
+								.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
+						)
+					}
+					WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
+						iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
+					),
+				})
+				.collect(),
+		)
+		.map(move |cols| TableWitnessSegment {
+			table,
+			cols,
+			log_size: log_segment_size,
+			oracle_offset,
+		})
+	}
+
+	fn into_par_iter(self) -> impl IndexedParallelIterator<Item = TableWitnessSegment<'a, U, F>> {
+		let TableWitnessSegmentedView {
+			table,
+			oracle_offset,
+			cols,
+			log_segment_size,
+			n_segments,
+		} = self;
+
+		// Convert cols with mutable references into cols with const refs so that they can be
+		// cloned. Within the loop, we unsafely cast back to mut refs.
+		let cols = cols
+			.into_iter()
+			.map(|col| -> WitnessColumnInfo<&'a [U]> {
+				match col {
+					WitnessDataMut::Owned(data) => WitnessColumnInfo::Owned(data),
 					WitnessDataMut::SameAsOracleIndex(index) => {
+						WitnessColumnInfo::SameAsOracleIndex(index)
+					}
+				}
+			})
+			.collect::<Vec<_>>();
+
+		(0..self.n_segments).into_par_iter().map(move |i| {
+			let col_strides = cols
+				.iter()
+				.map(|col| match col {
+					WitnessColumnInfo::SameAsOracleIndex(index) => {
 						RefCellData::SameAsOracleIndex(*index)
 					}
-					WitnessDataMut::Owned(data) => {
-						// The segment size can be smaller than required for the segment to fill
-						// one underlier in the case when the whole column only has one
-						// partially-filed underlier. In this case it's OK to use a saturating_sub.
-						let log_cell_bits = col.shape.log_cell_size();
-						let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
+					WitnessColumnInfo::Owned(data) => {
+						let chunk_size = data.len() / n_segments;
 						RefCellData::Owned(RefCell::new(unsafe {
 							// Safety: The function borrows self mutably, so we have mutable access
 							// to all columns and thus none can be borrowed by anyone else. The
 							// loop is constructed to borrow disjoint segments of each column -- if
 							// this loop were transposed, we would use `chunks_mut`.
-							cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
+							cast_slice_ref_to_mut(&data[i * chunk_size..(i + 1) * chunk_size])
 						}))
 					}
 				})
@@ -572,58 +701,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			TableWitnessSegment {
 				table,
 				cols: col_strides,
-				log_size,
-				oracle_offset: self_ref.oracle_offset,
+				log_size: log_segment_size,
+				oracle_offset,
 			}
 		})
-	}
-
-	pub fn par_segments(
-		&mut self,
-		log_size: usize,
-	) -> impl IndexedParallelIterator<Item = TableWitnessSegment<'_, U, F>> + '_ {
-		// Clamp the segment size.
-		let log_size = log_size
-			.min(self.log_capacity)
-			.max(self.min_log_segment_size);
-
-		// TODO: deduplicate closure between this and `segments`. It's kind of a tricky interface
-		// because of the unsafe casting.
-		let self_ref = self as &Self;
-		(0..1 << (self.log_capacity - log_size))
-			.into_par_iter()
-			.map(move |i| {
-				let table = self_ref.table;
-				let col_strides = self_ref
-					.cols
-					.iter()
-					.map(|col| match &col.data {
-						WitnessDataMut::SameAsOracleIndex(index) => {
-							RefCellData::SameAsOracleIndex(*index)
-						}
-						WitnessDataMut::Owned(data) => {
-							// The segment size can be smaller than required for the segment to fill
-							// one underlier in the case when the whole column only has one
-							// partially-filed underlier. In this case it's OK to use a saturating_sub.
-							let log_cell_bits = col.shape.log_cell_size();
-							let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
-							RefCellData::Owned(RefCell::new(unsafe {
-								// Safety: The function borrows self mutably, so we have mutable access
-								// to all columns and thus none can be borrowed by anyone else. The
-								// loop is constructed to borrow disjoint segments of each column -- if
-								// this loop were transposed, we would use `chunks_mut`.
-								cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
-							}))
-						}
-					})
-					.collect();
-				TableWitnessSegment {
-					table,
-					cols: col_strides,
-					log_size,
-					oracle_offset: self_ref.oracle_offset,
-				}
-			})
 	}
 }
 
