@@ -70,6 +70,19 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		Ok(())
 	}
 
+	pub fn fill_table_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
+	where
+		T: TableFiller<U, F> + Sync,
+		T::Event: Clone + Sync,
+	{
+		let table_id = table.id();
+		let witness = self
+			.get_table(table_id)
+			.ok_or(Error::MissingTable { table_id })?;
+		witness.fill_parallel(table, rows)?;
+		Ok(())
+	}
+
 	pub fn into_multilinear_extension_index(
 		self,
 		statement: &Statement<B128>,
@@ -356,13 +369,13 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	/// Fill a full table witness index using the given row data.
 	///
 	/// This function iterates through witness segments in parallel in multiple threads.
-	pub fn fill_parallel<T: TableFiller<U, F>>(
-		&mut self,
-		table: &T,
-		rows: &[T::Event],
-	) -> Result<(), Error> {
+	pub fn fill_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
+	where
+		T: TableFiller<U, F> + Sync,
+		T::Event: Clone + Sync,
+	{
 		let log_size = self.optimal_segment_size_heuristic();
-		self.fill_sequential_with_segment_size(table, rows, log_size)
+		self.fill_parallel_with_segment_size(table, rows, log_size)
 	}
 
 	fn optimal_segment_size_heuristic(&self) -> usize {
@@ -398,13 +411,18 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			});
 		}
 
+		let segmented_view = TableWitnessSegmentedView::new(self, log_size);
+
+		// Overwrite log_size because it may need to get clamped.
+		let log_size = segmented_view.log_segment_size;
 		let segment_size = 1 << log_size;
+
 		let n_full_chunks = rows.len() / segment_size;
 		let n_extra_rows = rows.len() % segment_size;
 		let max_full_chunk_index = n_full_chunks * segment_size;
 
 		// Fill segments of the table with full chunks
-		let mut segments_iter = self.segments(log_size);
+		let mut segments_iter = segmented_view.into_iter();
 
 		let mut last_segment = None;
 		for (row_chunk, mut witness_segment) in
@@ -470,6 +488,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			});
 		}
 
+		let mut segmented_view = TableWitnessSegmentedView::new(self, log_size);
+
+		// Overwrite log_size because it may need to get clamped.
+		let log_size = segmented_view.log_segment_size;
 		let segment_size = 1 << log_size;
 
 		// rows.len() equals self.size and self.size is check to be non-zero in the constructor
@@ -477,11 +499,13 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		// number of chunks is rounded up
 		let n_chunks = (rows.len() - 1) / segment_size + 1;
 
+		let (full_chunk_segments, mut rest_segments) = segmented_view.split_at(n_chunks - 1);
+
 		// Fill segments of the table with full chunks
-		self.par_segments(log_size)
-			.zip(rows.par_chunks(segment_size))
+		full_chunk_segments
+			.into_par_iter()
 			// by taking n_chunks - 1, we guarantee that all row chunks are full
-			.take(n_chunks - 1)
+			.zip(rows.par_chunks(segment_size).take(n_chunks - 1))
 			.try_for_each(|(mut witness_segment, row_chunk)| {
 				table
 					.fill(row_chunk.iter(), &mut witness_segment)
@@ -507,25 +531,35 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			row_chunk
 		};
 
-		self.par_segments(log_size)
-			.skip(n_chunks - 1)
-			.try_for_each(|mut witness_segment| {
-				table
-					.fill(row_chunk.iter(), &mut witness_segment)
-					.map_err(Error::TableFill)
-			})?;
+		let (partial_chunk_segments, rest_segments) = rest_segments.split_at(1);
+		let mut partial_chunk_segment_iter = partial_chunk_segments.into_iter();
+		let mut witness_segment = partial_chunk_segment_iter.next().expect(
+			"segmented_view.split_at called with 1 must return a view with exactly one segment",
+		);
+		table
+			.fill(row_chunk.iter(), &mut witness_segment)
+			.map_err(Error::TableFill)?;
+		assert!(partial_chunk_segment_iter.next().is_none());
 
-		/*
 		// Finally, copy the last filled segment to the remaining segments. This should satisfy all
 		// row-wise constraints if the last segment does.
-		for mut segment in segments_iter {
-			for (dst_col, src_col) in iter::zip(&mut segment.cols, &mut last_segment.cols) {
-				if let (RefCellData::Owned(dst), RefCellData::Owned(src)) = (dst_col, src_col) {
-					dst.get_mut().copy_from_slice(src.get_mut())
+		let last_segment_cols = witness_segment
+			.cols
+			.iter_mut()
+			.map(|col| match col {
+				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
+				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+			})
+			.collect::<Vec<_>>();
+
+		rest_segments.into_par_iter().for_each(|mut segment| {
+			for (dst_col, src_col) in iter::zip(&mut segment.cols, &last_segment_cols) {
+				if let (RefCellData::Owned(dst), WitnessColumnInfo::Owned(src)) = (dst_col, src_col)
+				{
+					dst.get_mut().copy_from_slice(src)
 				}
 			}
-		}
-		 */
+		});
 
 		Ok(())
 	}
@@ -932,9 +966,6 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 		witness: &'a mut TableWitnessSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
-
-// TODO: fill_table_parallel
-// TODO: a streaming version that streams in rows and fills in a background thread pool.
 
 #[cfg(test)]
 mod tests {
