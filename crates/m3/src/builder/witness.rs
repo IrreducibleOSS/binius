@@ -14,7 +14,7 @@ use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	ExtensionField, PackedField, TowerField,
+	ExtensionField, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
@@ -537,6 +537,32 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'a, U, F> {
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, FSub>>::from_underliers_ref_mut(x)))
 	}
 
+	pub fn get_scalars<FSub: TowerField, const V: usize>(
+		&self,
+		col: Col<FSub, V>,
+	) -> Result<Ref<[FSub]>, Error>
+	where
+		U: PackScalar<FSub>,
+		F: ExtensionField<FSub>,
+		PackedType<U, FSub>: PackedFieldIndexable,
+	{
+		self.get(col)
+			.map(|packed| Ref::map(packed, <PackedType<U, FSub>>::unpack_scalars))
+	}
+
+	pub fn get_scalars_mut<FSub: TowerField, const V: usize>(
+		&self,
+		col: Col<FSub, V>,
+	) -> Result<RefMut<[FSub]>, Error>
+	where
+		U: PackScalar<FSub>,
+		F: ExtensionField<FSub>,
+		PackedType<U, FSub>: PackedFieldIndexable,
+	{
+		self.get_mut(col)
+			.map(|packed| RefMut::map(packed, <PackedType<U, FSub>>::unpack_scalars_mut))
+	}
+
 	pub fn get_as<T: Pod, FSub: TowerField, const V: usize>(
 		&self,
 		col: Col<FSub, V>,
@@ -684,7 +710,6 @@ mod tests {
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
-		PackedFieldIndexable,
 	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -879,14 +904,8 @@ mod tests {
 				rows: impl Iterator<Item = &'a Self::Event> + Clone,
 				witness: &'a mut TableWitnessIndexSegment<U>,
 			) -> anyhow::Result<()> {
-				let mut col0 = RefMut::map(
-					witness.get_mut(self.col0)?,
-					PackedFieldIndexable::unpack_scalars_mut,
-				);
-				let mut col1 = RefMut::map(
-					witness.get_mut(self.col1)?,
-					PackedFieldIndexable::unpack_scalars_mut,
-				);
+				let mut col0 = witness.get_scalars_mut(self.col0)?;
+				let mut col1 = witness.get_scalars_mut(self.col1)?;
 				for (i, &val) in rows.enumerate() {
 					col0[i] = B32::new(val);
 					col1[i] = col0[i].pow(2) + B32::new(0x03);
@@ -930,8 +949,7 @@ mod tests {
 			.unwrap();
 
 		let segment = table_index.full_segment();
-		let col0 = segment.get(test_table.col0).unwrap();
-		let col0 = PackedFieldIndexable::unpack_scalars(&col0);
+		let col0 = segment.get_scalars(test_table.col0).unwrap();
 		for i in 0..11 {
 			assert_eq!(col0[i].val(), rows[i]);
 		}
