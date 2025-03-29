@@ -1,9 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
-pub trait SplitAtMut {
-	fn split_at_mut(&mut self, index: usize) -> (Self, Self);
-}
-
+/// An iterator that iterates multiple inner iterators in parallel.
+///
+/// The iterator yields vectors of items from the inner iterators.
 #[derive(Debug)]
 pub struct MultiIterator<T> {
 	entries: Vec<T>,

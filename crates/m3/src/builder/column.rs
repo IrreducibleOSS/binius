@@ -102,6 +102,7 @@ pub struct ColumnShape {
 }
 
 impl ColumnShape {
+	/// Returns the binary logarithm of the number of bits each cell occupies.
 	pub fn log_cell_size(&self) -> usize {
 		self.tower_height + self.log_values_per_row
 	}

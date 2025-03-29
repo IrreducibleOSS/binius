@@ -10,7 +10,6 @@ array-util.workspace = true
 binius_core = { path = "../core", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math", default-features = false }
-binius_maybe_rayon = { path = "../maybe_rayon" }
 binius_utils = { path = "../utils" }
 bumpalo.workspace = true
 bytemuck.workspace = true

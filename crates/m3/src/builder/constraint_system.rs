@@ -168,7 +168,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						None
 					}
 				})
-				.collect(),
+				.collect().transpose()?,
 		})
 	}
 
