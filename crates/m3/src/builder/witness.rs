@@ -40,8 +40,6 @@ use super::{
 /// gets converted into a multilinear extension index, which maintains references to the data
 /// allocated by the allocator, but does not need to maintain a reference to the constraint system,
 /// which can then be dropped.
-///
-/// TODO: Change Underlier to P: PackedFieldIndexable
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, U, F>>>,
@@ -426,7 +424,6 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			 self.size is checked to be non-zero in the constructor",
 		);
 		for mut segment in segments_iter {
-			println!("Hi");
 			for (dst_col, src_col) in iter::zip(&mut segment.cols, &mut last_segment.cols) {
 				if let (RefCellData::Owned(dst), RefCellData::Owned(src)) = (dst_col, src_col) {
 					dst.get_mut().copy_from_slice(src.get_mut())
