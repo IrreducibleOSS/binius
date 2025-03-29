@@ -156,15 +156,12 @@ impl<F: TowerField> ConstraintSystem<F> {
 		allocator: &'alloc Bump,
 		statement: &Statement,
 	) -> Result<WitnessIndex<'cs, 'alloc, U, F>, Error> {
-		Ok(WitnessIndex {
-			tables: self
-				.tables
-				.iter()
-				.map(|table| {
-					TableWitnessIndex::new(allocator, table, statement.table_sizes[table.id])
-				})
-				.collect(),
-		})
+		let tables = self
+			.tables
+			.iter()
+			.map(|table| TableWitnessIndex::new(allocator, table, statement.table_sizes[table.id]))
+			.collect::<Result<_, _>>()?;
+		Ok(WitnessIndex { tables })
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.
