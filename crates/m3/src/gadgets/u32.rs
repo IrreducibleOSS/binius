@@ -4,7 +4,7 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{as_packed_field::PackScalar, packed::set_packed_slice, Field};
 use bytemuck::Pod;
 
-use crate::builder::{column::Col, types::B1, witness::TableWitnessIndexSegment, TableBuilder};
+use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder};
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
 ///
@@ -83,7 +83,7 @@ impl U32Add {
 		}
 	}
 
-	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<(), anyhow::Error>
+	pub fn populate<U>(&self, index: &mut TableWitnessSegment<U>) -> Result<(), anyhow::Error>
 	where
 		U: Pod + PackScalar<B1>,
 	{
