@@ -326,7 +326,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	}
 
 	/// Returns a witness index segment covering the entire table.
-	pub fn full_segment(&mut self) -> TableWitnessIndexSegment<U, F> {
+	pub fn full_segment(&mut self) -> TableWitnessSegment<U, F> {
 		let cols = self
 			.cols
 			.iter_mut()
@@ -335,7 +335,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				WitnessDataMut::Owned(data) => RefCellData::Owned(RefCell::new(data)),
 			})
 			.collect();
-		TableWitnessIndexSegment {
+		TableWitnessSegment {
 			table: self.table,
 			cols,
 			log_size: self.log_capacity,
@@ -440,7 +440,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	pub fn segments(
 		&mut self,
 		log_size: usize,
-	) -> impl Iterator<Item = TableWitnessIndexSegment<U, F>> + '_ {
+	) -> impl Iterator<Item = TableWitnessSegment<U, F>> + '_ {
 		// Clamp the segment size.
 		let log_size = log_size
 			.min(self.log_capacity)
@@ -471,7 +471,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 
 		let table = self.table;
 		let oracle_offset = self.oracle_offset;
-		iter.map(move |cols| TableWitnessIndexSegment {
+		iter.map(move |cols| TableWitnessSegment {
 			table,
 			cols,
 			log_size,
@@ -485,7 +485,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 /// This provides runtime-checked access to slices of the witness columns. This is used separately
 /// from [`TableWitnessIndex`] so that witness population can be parallelized over segments.
 #[derive(Debug, CopyGetters)]
-pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
+pub struct TableWitnessSegment<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	table: &'a Table<F>,
 	cols: Vec<RefCellData<'a, U>>,
 	#[get_copy = "pub"]
@@ -493,7 +493,7 @@ pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier, F: 
 	oracle_offset: usize,
 }
 
-impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'a, U, F> {
+impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegment<'a, U, F> {
 	pub fn get<FSub: TowerField, const V: usize>(
 		&self,
 		col: Col<FSub, V>,
@@ -695,7 +695,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 	fn fill<'a>(
 		&'a self,
 		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessIndexSegment<U, F>,
+		witness: &'a mut TableWitnessSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
 
@@ -902,7 +902,7 @@ mod tests {
 			fn fill<'a>(
 				&'a self,
 				rows: impl Iterator<Item = &'a Self::Event> + Clone,
-				witness: &'a mut TableWitnessIndexSegment<U>,
+				witness: &'a mut TableWitnessSegment<U>,
 			) -> anyhow::Result<()> {
 				let mut col0 = witness.get_scalars_mut(self.col0)?;
 				let mut col1 = witness.get_scalars_mut(self.col1)?;

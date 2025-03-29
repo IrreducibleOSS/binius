@@ -4,7 +4,7 @@ use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B64,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B64,
 };
 use bumpalo::Bump;
 use bytemuck::Pod;
@@ -62,7 +62,7 @@ where
 	fn fill<'a>(
 		&'a self,
 		mut rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessIndexSegment<U>,
+		witness: &'a mut TableWitnessSegment<U>,
 	) -> Result<(), anyhow::Error> {
 		let mut committed_1 = witness.get_mut_as(self.committed_1)?;
 		let mut committed_2 = witness.get_mut_as(self.committed_2)?;

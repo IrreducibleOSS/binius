@@ -72,7 +72,7 @@ mod arithmetization {
 	use binius_m3::{
 		builder::{
 			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller, TableId,
-			TableWitnessIndexSegment, B1, B128, B32,
+			TableWitnessSegment, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -141,7 +141,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&'a self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessIndexSegment<U>,
+			witness: &'a mut TableWitnessSegment<U>,
 		) -> anyhow::Result<()> {
 			{
 				let mut f0_bits = witness.get_mut_as(self.f0_bits)?;
