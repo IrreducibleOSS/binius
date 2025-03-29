@@ -308,6 +308,6 @@ fn good_proof_verifies() {
 			batch_verify::batch_verify(evaluation_order, &claims, &mut verifier_transcript)
 				.unwrap();
 
-		verifier_transcript.finalize().unwrap()
+		verifier_transcript.finalize().unwrap();
 	}
 }

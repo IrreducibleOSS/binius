@@ -22,7 +22,7 @@ use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
 use tracing::warn;
 
-use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
+use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger, Interaction};
 
 /// Prover transcript over some Challenger that writes to the internal tape and `CanSample<F: TowerField>`
 ///
@@ -41,6 +41,7 @@ pub struct ProverTranscript<Challenger> {
 #[derive(Debug)]
 pub struct VerifierTranscript<Challenger> {
 	combined: FiatShamirBuf<Bytes, Challenger>,
+	expected_interactions: Option<Vec<Interaction>>,
 	debug_assertions: bool,
 }
 
@@ -107,7 +108,9 @@ impl<Challenger_: Default + Challenger> ProverTranscript<Challenger_> {
 	}
 
 	pub fn into_verifier(self) -> VerifierTranscript<Challenger_> {
-		VerifierTranscript::new(self.finalize())
+		let (proof, interactions) = self.finalize();
+
+		VerifierTranscript::new(proof, Some(interactions))
 	}
 }
 
@@ -118,8 +121,12 @@ impl<Challenger_: Default + Challenger> Default for ProverTranscript<Challenger_
 }
 
 impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
-	pub fn finalize(self) -> Vec<u8> {
-		self.combined.buffer.to_vec()
+	pub fn finalize(self) -> (Vec<u8>, Vec<Interaction>) {
+		let proof = self.combined.buffer.to_vec();
+		let challenger = self.combined.challenger;
+		let interactions = challenger.finalize();
+
+		(proof, interactions)
 	}
 
 	/// Sets the debug flag.
@@ -173,25 +180,35 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 }
 
 impl<Challenger_: Default + Challenger> VerifierTranscript<Challenger_> {
-	pub fn new(vec: Vec<u8>) -> Self {
+	pub fn new(vec: Vec<u8>, expected_interactions: Option<Vec<Interaction>>) -> Self {
 		Self {
 			combined: FiatShamirBuf {
 				challenger: Challenger_::default(),
 				buffer: Bytes::from(vec),
 			},
+			expected_interactions,
 			debug_assertions: cfg!(debug_assertions),
 		}
 	}
 }
 
 impl<Challenger_: Challenger> VerifierTranscript<Challenger_> {
-	pub fn finalize(self) -> Result<(), Error> {
+	pub fn finalize(mut self) -> Result<Vec<Interaction>, Error>
+	where
+		Challenger_: Default,
+	{
 		if self.combined.buffer.has_remaining() {
 			return Err(Error::TranscriptNotEmpty {
 				remaining: self.combined.buffer.remaining(),
 			});
 		}
-		Ok(())
+
+		let interactions = std::mem::take(&mut self.combined.challenger).finalize();
+		if let Some(expected_interactions) = &self.expected_interactions {
+			check_interactions_match(expected_interactions, &interactions)?;
+		}
+
+		Ok(interactions)
 	}
 
 	pub const fn set_debug(&mut self, debug: bool) {
@@ -471,6 +488,27 @@ pub fn write_u64<B: BufMut>(transcript: &mut TranscriptWriter<B>, n: u64) {
 	transcript.write_bytes(&n.to_le_bytes());
 }
 
+fn check_interactions_match(
+	prover_interactions: &[Interaction],
+	verifier_interactions: &[Interaction],
+) -> Result<(), Error> {
+	for (round, (&prover, &verifier)) in prover_interactions
+		.iter()
+		.zip(verifier_interactions.iter())
+		.enumerate()
+	{
+		if prover != verifier {
+			return Err(Error::InteractionMismatch {
+				round,
+				prover,
+				verifier,
+			});
+		}
+	}
+
+	Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 	use binius_field::{
@@ -622,7 +660,8 @@ mod tests {
 
 		let mut taped_transcript = taped_transcript.into_verifier();
 
-		assert!(untaped_transcript.finalize().is_empty());
+		let (proof, _interactions) = untaped_transcript.finalize();
+		assert!(proof.is_empty());
 
 		for array in sampled_arrays {
 			let _: BinaryField64b = taped_transcript.message().read_scalar().unwrap();
@@ -655,5 +694,37 @@ mod tests {
 			.into_verifier()
 			.message()
 			.read_debug("test_transcript_debug_should_fail");
+	}
+
+	#[test]
+	fn test_check_interactions_match_success() {
+		let prover_interactions = vec![Interaction::Observe(3), Interaction::Sample(4)];
+		let verifier_interactions = vec![Interaction::Observe(3), Interaction::Sample(4)];
+
+		assert!(check_interactions_match(&prover_interactions, &verifier_interactions).is_ok());
+	}
+
+	#[test]
+	fn test_check_interactions_match_failure() {
+		let prover_interactions = vec![Interaction::Observe(3), Interaction::Sample(4)];
+		let verifier_interactions = vec![
+			Interaction::Observe(3),
+			Interaction::Sample(5), // Different sample count
+		];
+
+		let result = check_interactions_match(&prover_interactions, &verifier_interactions);
+		assert!(result.is_err());
+		match result.unwrap_err() {
+			Error::InteractionMismatch {
+				round,
+				prover,
+				verifier,
+			} => {
+				assert_eq!(round, 1);
+				assert_eq!(prover, Interaction::Sample(4));
+				assert_eq!(verifier, Interaction::Sample(5));
+			}
+			_ => panic!("Expected InteractionMismatch error"),
+		}
 	}
 }

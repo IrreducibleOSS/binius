@@ -596,5 +596,5 @@ fn test_evalcheck_serialization() {
 
 	assert_eq!(out_deserialized, second_linear_combination);
 
-	transcript.finalize().unwrap()
+	transcript.finalize().unwrap();
 }

@@ -74,7 +74,7 @@ where
 
 	let Proof { transcript } = proof;
 
-	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
+	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript, None);
 	transcript.observe().write_slice(boundaries);
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());

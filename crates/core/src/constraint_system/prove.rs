@@ -492,9 +492,8 @@ where
 		&backend,
 	)?;
 
-	Ok(Proof {
-		transcript: transcript.finalize(),
-	})
+	let (proof, _interactions) = transcript.finalize();
+	Ok(Proof { transcript: proof })
 }
 
 type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;

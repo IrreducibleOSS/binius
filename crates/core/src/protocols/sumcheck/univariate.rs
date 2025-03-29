@@ -573,7 +573,7 @@ mod tests {
 			)
 			.unwrap();
 
-			verifier_proof.finalize().unwrap()
+			verifier_proof.finalize().unwrap();
 		}
 	}
 }
