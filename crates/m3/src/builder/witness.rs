@@ -613,7 +613,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 struct TableWitnessSegmentedView<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	table: &'a Table<F>,
 	oracle_offset: usize,
-	cols: Vec<WitnessDataMut<'a, U>>,
+	cols: Vec<WitnessColumnInfo<(&'a mut [U], usize)>>,
 	log_segment_size: usize,
 	n_segments: usize,
 }
@@ -629,7 +629,11 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			.cols
 			.iter_mut()
 			.map(|col| match &mut col.data {
-				WitnessColumnInfo::Owned(data) => WitnessColumnInfo::Owned(&mut **data),
+				WitnessColumnInfo::Owned(data) => {
+					let chunk_size =
+						(log_segment_size + col.shape.log_cell_size()).saturating_sub(U::LOG_BITS);
+					WitnessColumnInfo::Owned((&mut **data, 1 << chunk_size))
+				}
 				WitnessColumnInfo::SameAsOracleIndex(idx) => {
 					WitnessColumnInfo::SameAsOracleIndex(*idx)
 				}
@@ -653,11 +657,12 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			.cols
 			.iter_mut()
 			.map(|col| match col {
-				WitnessColumnInfo::Owned(data) => {
-					// TODO: Store chunk size with all values
-					let chunk_size = data.len() / self.n_segments.max(1);
-					let (data_0, data_1) = data.split_at_mut(chunk_size * index);
-					(WitnessColumnInfo::Owned(data_0), WitnessColumnInfo::Owned(data_1))
+				WitnessColumnInfo::Owned((data, chunk_size)) => {
+					let (data_0, data_1) = data.split_at_mut(*chunk_size * index);
+					(
+						WitnessColumnInfo::Owned((data_0, *chunk_size)),
+						WitnessColumnInfo::Owned((data_1, *chunk_size)),
+					)
 				}
 				WitnessColumnInfo::SameAsOracleIndex(idx) => (
 					WitnessColumnInfo::SameAsOracleIndex(*idx),
@@ -698,13 +703,10 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			let iter = MultiIterator::new(
 				cols.into_iter()
 					.map(|col| match col {
-						WitnessColumnInfo::Owned(data) => {
-							let chunk_size = data.len() / n_segments;
-							itertools::Either::Left(
-								data.chunks_mut(chunk_size)
-									.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
-							)
-						}
+						WitnessColumnInfo::Owned((data, chunk_size)) => itertools::Either::Left(
+							data.chunks_mut(chunk_size)
+								.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
+						),
 						WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
 							iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
 						),
@@ -727,7 +729,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			oracle_offset,
 			cols,
 			log_segment_size,
-			n_segments,
+			n_segments: _,
 		} = self;
 
 		// This implementation uses unsafe code to iterate the segments of the view. A fully safe
@@ -744,10 +746,12 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 		// cloned. Within the loop, we unsafely cast back to mut refs.
 		let cols = cols
 			.into_iter()
-			.map(|col| -> WitnessColumnInfo<&'a [U]> {
+			.map(|col| -> WitnessColumnInfo<(&'a [U], usize)> {
 				match col {
-					WitnessDataMut::Owned(data) => WitnessColumnInfo::Owned(data),
-					WitnessDataMut::SameAsOracleIndex(index) => {
+					WitnessColumnInfo::Owned((data, chunk_size)) => {
+						WitnessColumnInfo::Owned((data, chunk_size))
+					}
+					WitnessColumnInfo::SameAsOracleIndex(index) => {
 						WitnessColumnInfo::SameAsOracleIndex(index)
 					}
 				}
@@ -761,8 +765,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 					WitnessColumnInfo::SameAsOracleIndex(index) => {
 						RefCellData::SameAsOracleIndex(*index)
 					}
-					WitnessColumnInfo::Owned(data) => {
-						let chunk_size = data.len() / n_segments;
+					WitnessColumnInfo::Owned((data, chunk_size)) => {
 						RefCellData::Owned(RefCell::new(unsafe {
 							// Safety: The function borrows self mutably, so we have mutable access
 							// to all columns and thus none can be borrowed by anyone else. The
