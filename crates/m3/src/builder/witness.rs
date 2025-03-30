@@ -73,7 +73,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 	pub fn fill_table_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
 	where
 		T: TableFiller<U, F> + Sync,
-		T::Event: Clone + Sync,
+		T::Event: Sync,
 	{
 		let table_id = table.id();
 		let witness = self
@@ -372,7 +372,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	pub fn fill_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
 	where
 		T: TableFiller<U, F> + Sync,
-		T::Event: Clone + Sync,
+		T::Event: Sync,
 	{
 		let log_size = self.optimal_segment_size_heuristic();
 		self.fill_parallel_with_segment_size(table, rows, log_size)
@@ -411,59 +411,78 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			});
 		}
 
-		let segmented_view = TableWitnessSegmentedView::new(self, log_size);
+		let mut segmented_view = TableWitnessSegmentedView::new(self, log_size);
 
 		// Overwrite log_size because it may need to get clamped.
 		let log_size = segmented_view.log_segment_size;
 		let segment_size = 1 << log_size;
 
-		let n_full_chunks = rows.len() / segment_size;
-		let n_extra_rows = rows.len() % segment_size;
-		let max_full_chunk_index = n_full_chunks * segment_size;
+		// rows.len() equals self.size and self.size is check to be non-zero in the constructor
+		debug_assert_ne!(rows.len(), 0);
+		// number of chunks is rounded up
+		let n_chunks = (rows.len() - 1) / segment_size + 1;
+
+		let (full_chunk_segments, mut rest_segments) = segmented_view.split_at(n_chunks - 1);
 
 		// Fill segments of the table with full chunks
-		let mut segments_iter = segmented_view.into_iter();
+		full_chunk_segments
+			.into_iter()
+			// by taking n_chunks - 1, we guarantee that all row chunks are full
+			.zip(rows.chunks(segment_size).take(n_chunks - 1))
+			.try_for_each(|(mut witness_segment, row_chunk)| {
+				table
+					.fill(row_chunk.iter(), &mut witness_segment)
+					.map_err(Error::TableFill)
+			})?;
 
-		let mut last_segment = None;
-		for (row_chunk, mut witness_segment) in
-			iter::zip(rows[..max_full_chunk_index].chunks(segment_size), &mut segments_iter)
-		{
-			table
-				.fill(row_chunk.iter(), &mut witness_segment)
-				.map_err(Error::TableFill)?;
-			last_segment = Some(witness_segment);
-		}
+		// Fill the last segment. There may not be enough events to match the size of the segment,
+		// which is a pre-condition for TableFiller::fill. In that case, we clone the last event to
+		// pad the row_chunk. Since it's a clone, the filled witness should satisfy all row-wise
+		// constraints as long as all the given events do.
+		let row_chunk = &rows[(n_chunks - 1) * segment_size..];
+		let mut padded_row_chunk = Vec::new();
+		let row_chunk = if row_chunk.len() != segment_size {
+			padded_row_chunk.reserve(segment_size);
+			padded_row_chunk.extend_from_slice(row_chunk);
+			let last_event = row_chunk
+				.last()
+				.expect("row_chunk must be non-empty because of how n_chunk is calculated")
+				.clone();
+			padded_row_chunk.resize(segment_size, last_event);
+			&padded_row_chunk
+		} else {
+			row_chunk
+		};
 
-		// Fill the segment that is only partially assigned row events.
-		if n_extra_rows != 0 {
-			let mut witness_segment = segments_iter
-				.next()
-				.expect("the witness capacity is at least as much as the number of rows");
-
-			let repeating_rows = rows[max_full_chunk_index..]
-				.iter()
-				.cycle()
-				.take(segment_size);
-			table
-				.fill(repeating_rows, &mut witness_segment)
-				.map_err(Error::TableFill)?;
-			last_segment = Some(witness_segment);
-		}
-
-		// Copy the filled segment to the remaining segments. This should satisfy all row-wise
-		// constraints if the last segment does.
-		let mut last_segment = last_segment.expect(
-			"there must be at least one row chunk; \
-			 rows length is equal to self.size; \
-			 self.size is checked to be non-zero in the constructor",
+		let (partial_chunk_segments, rest_segments) = rest_segments.split_at(1);
+		let mut partial_chunk_segment_iter = partial_chunk_segments.into_iter();
+		let mut witness_segment = partial_chunk_segment_iter.next().expect(
+			"segmented_view.split_at called with 1 must return a view with exactly one segment",
 		);
-		for mut segment in segments_iter {
-			for (dst_col, src_col) in iter::zip(&mut segment.cols, &mut last_segment.cols) {
-				if let (RefCellData::Owned(dst), RefCellData::Owned(src)) = (dst_col, src_col) {
-					dst.get_mut().copy_from_slice(src.get_mut())
+		table
+			.fill(row_chunk.iter(), &mut witness_segment)
+			.map_err(Error::TableFill)?;
+		assert!(partial_chunk_segment_iter.next().is_none());
+
+		// Finally, copy the last filled segment to the remaining segments. This should satisfy all
+		// row-wise constraints if the last segment does.
+		let last_segment_cols = witness_segment
+			.cols
+			.iter_mut()
+			.map(|col| match col {
+				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
+				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+			})
+			.collect::<Vec<_>>();
+
+		rest_segments.into_iter().for_each(|mut segment| {
+			for (dst_col, src_col) in iter::zip(&mut segment.cols, &last_segment_cols) {
+				if let (RefCellData::Owned(dst), WitnessColumnInfo::Owned(src)) = (dst_col, src_col)
+				{
+					dst.get_mut().copy_from_slice(src)
 				}
 			}
-		}
+		});
 
 		Ok(())
 	}
@@ -479,7 +498,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	) -> Result<(), Error>
 	where
 		T: TableFiller<U, F> + Sync,
-		T::Event: Clone + Sync,
+		T::Event: Sync,
 	{
 		if rows.len() != self.size {
 			return Err(Error::IncorrectNumberOfTableEvents {
@@ -487,6 +506,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				actual: rows.len(),
 			});
 		}
+
+		// This implementation duplicates a lot of code with `fill_sequential_with_segment_size`.
+		// We could either refactor to deduplicate or just remove `fill_sequential` once this
+		// method is more battle-tested.
 
 		let mut segmented_view = TableWitnessSegmentedView::new(self, log_size);
 
@@ -698,6 +721,16 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			log_segment_size,
 			n_segments,
 		} = self;
+
+		// This implementation uses unsafe code to iterate the segments of the view. A fully safe
+		// implementation is also possible, which would look similar to that of
+		// `rayon::slice::ChunksMut`. That just requires more code and doesn't seem justified.
+
+		// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
+		#[allow(clippy::mut_from_ref)]
+		unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
+			slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
+		}
 
 		// Convert cols with mutable references into cols with const refs so that they can be
 		// cloned. Within the loop, we unsafely cast back to mut refs.
@@ -941,16 +974,10 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegment<'a, U, F> {
 	}
 }
 
-// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
-#[allow(clippy::mut_from_ref)]
-unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
-	slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
-}
-
 /// A struct that can populate segments of a table witness using row descriptors.
 pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	/// A struct that specifies the row contents.
-	type Event;
+	type Event: Clone;
 
 	/// Returns the table ID.
 	fn id(&self) -> TableId;
@@ -1216,11 +1243,11 @@ mod tests {
 		for i in 0..11 {
 			assert_eq!(col0[i].val(), rows[i]);
 		}
-		assert_eq!(col0[11].val(), rows[8]);
+		assert_eq!(col0[11].val(), rows[10]);
 		assert_eq!(col0[12].val(), rows[8]);
 		assert_eq!(col0[13].val(), rows[9]);
 		assert_eq!(col0[14].val(), rows[10]);
-		assert_eq!(col0[15].val(), rows[8]);
+		assert_eq!(col0[15].val(), rows[10]);
 	}
 
 	#[test]
