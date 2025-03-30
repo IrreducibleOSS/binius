@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
@@ -8,8 +8,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearPoly,
-	MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -34,7 +33,6 @@ use crate::{
 		univariate_zerocheck::domain_size,
 		Error,
 	},
-	witness::MultilinearWitness,
 };
 
 pub fn validate_witness<'a, F, P, M, Composition>(
@@ -231,16 +229,18 @@ where
 
 		let first_round_eval_1s = composite_claims.iter().map(|_| F::ZERO).collect::<Vec<_>>();
 
-		let prover = EqIndSumcheckProverBuilder::new(self.backend)
-			.with_first_round_eval_1s(&first_round_eval_1s)
-			.build(
-				EvaluationOrder::LowToHigh,
-				self.multilinears,
-				&self.zerocheck_challenges,
-				composite_claims,
-				self.domain_factory,
-				self.switchover_fn,
-			)?;
+		let prover = EqIndSumcheckProverBuilder::with_switchover(
+			self.multilinears,
+			self.switchover_fn,
+			self.backend,
+		)?
+		.with_first_round_eval_1s(&first_round_eval_1s)
+		.build(
+			EvaluationOrder::LowToHigh,
+			&self.zerocheck_challenges,
+			composite_claims,
+			self.domain_factory,
+		)?;
 
 		Ok(Box::new(prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
@@ -389,14 +389,17 @@ where
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
+		// REVIEW: we currently partially evaluate all multilinears on skip_rounds sized prefix;
+		//         a more correct approach is to allow the follow up EqIndSumcheckProver to take
+		//         a multilinear query consisting of Lagrange polynomial evaluations and pass
+		//         the multilinears with switchover_round > skip_rounds as transparents.
 		let partial_low_multilinears = self
 			.multilinears
 			.into_par_iter()
 			.map(|multilinear| -> Result<_, Error> {
-				let multilinear =
-					multilinear.evaluate_partial_low(lagrange_coeffs_query.to_ref())?;
-				let mle_adapter = Arc::new(MLEDirectAdapter::from(multilinear));
-				Ok(mle_adapter as MultilinearWitness<'static, P>)
+				Ok(multilinear
+					.evaluate_partial_low(lagrange_coeffs_query.to_ref())?
+					.into_evals())
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -406,18 +409,18 @@ where
 
 		// The remaining non-univariate zerocheck rounds are an instance of EqIndSumcheck,
 		// due to the number of zerocheck challenges being equal to the number of remaining rounds.
-		let regular_prover = EqIndSumcheckProverBuilder::new(self.backend)
-			.with_eq_ind_partial_evals(partial_eq_ind_evals)
-			.build(
-				EvaluationOrder::LowToHigh,
-				partial_low_multilinears,
-				&self.zerocheck_challenges,
-				composite_claims,
-				self.domain_factory,
-				|extension_degree| {
-					(self.switchover_fn)(extension_degree).saturating_sub(skip_rounds)
-				},
-			)?;
+		let regular_prover = EqIndSumcheckProverBuilder::without_switchover(
+			self.n_vars - skip_rounds,
+			partial_low_multilinears,
+			self.backend,
+		)
+		.with_eq_ind_partial_evals(partial_eq_ind_evals)
+		.build(
+			EvaluationOrder::LowToHigh,
+			&self.zerocheck_challenges,
+			composite_claims,
+			self.domain_factory,
+		)?;
 
 		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}

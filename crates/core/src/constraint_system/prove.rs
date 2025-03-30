@@ -764,16 +764,21 @@ where
 			nonzero_scalars_prefixes.push(entry.nonzero_scalars_prefix);
 		}
 
-		let prover = EqIndSumcheckProverBuilder::new(backend)
-			.with_nonzero_scalars_prefixes(&nonzero_scalars_prefixes)
-			.build(
-				EvaluationOrder::LowToHigh,
-				multilinears,
-				&eval_point,
-				composite_sum_claims,
-				domain_factory.clone(),
-				immediate_switchover_heuristic,
-			)?;
+		// REVIEW: we extract a type erased multilin from the witness index here,
+		//         but we can do better and move the large-field evals (potentially truncated)
+		//         directly into this sumcheck, as those are not shared
+		let prover = EqIndSumcheckProverBuilder::with_switchover(
+			multilinears,
+			immediate_switchover_heuristic,
+			backend,
+		)?
+		.with_nonzero_scalars_prefixes(&nonzero_scalars_prefixes)?
+		.build(
+			EvaluationOrder::LowToHigh,
+			&eval_point,
+			composite_sum_claims,
+			domain_factory.clone(),
+		)?;
 
 		provers.push(prover);
 		flush_oracle_ids_by_claim.push(flush_oracle_ids);
