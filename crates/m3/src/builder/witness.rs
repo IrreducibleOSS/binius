@@ -648,13 +648,15 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 		&mut self,
 		index: usize,
 	) -> (TableWitnessSegmentedView<U, F>, TableWitnessSegmentedView<U, F>) {
-		assert!(index < self.n_segments);
+		assert!(index <= self.n_segments);
 		let (cols_0, cols_1) = self
 			.cols
 			.iter_mut()
 			.map(|col| match col {
 				WitnessColumnInfo::Owned(data) => {
-					let (data_0, data_1) = data.split_at_mut(index);
+					// TODO: Store chunk size with all values
+					let chunk_size = data.len() / self.n_segments.max(1);
+					let (data_0, data_1) = data.split_at_mut(chunk_size * index);
 					(WitnessColumnInfo::Owned(data_0), WitnessColumnInfo::Owned(data_1))
 				}
 				WitnessColumnInfo::SameAsOracleIndex(idx) => (
@@ -689,28 +691,34 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegmentedView<'a, U, F> {
 			log_segment_size,
 			n_segments,
 		} = self;
-		MultiIterator::new(
-			cols.into_iter()
-				.map(|col| match col {
-					WitnessColumnInfo::Owned(data) => {
-						let chunk_size = data.len() / n_segments;
-						itertools::Either::Left(
-							data.chunks_mut(chunk_size)
-								.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
-						)
-					}
-					WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
-						iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
-					),
-				})
-				.collect(),
-		)
-		.map(move |cols| TableWitnessSegment {
-			table,
-			cols,
-			log_size: log_segment_size,
-			oracle_offset,
-		})
+
+		if n_segments == 0 {
+			itertools::Either::Left(iter::empty())
+		} else {
+			let iter = MultiIterator::new(
+				cols.into_iter()
+					.map(|col| match col {
+						WitnessColumnInfo::Owned(data) => {
+							let chunk_size = data.len() / n_segments;
+							itertools::Either::Left(
+								data.chunks_mut(chunk_size)
+									.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
+							)
+						}
+						WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
+							iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
+						),
+					})
+					.collect(),
+			)
+			.map(move |cols| TableWitnessSegment {
+				table,
+				cols,
+				log_size: log_segment_size,
+				oracle_offset,
+			});
+			itertools::Either::Right(iter)
+		}
 	}
 
 	fn into_par_iter(self) -> impl IndexedParallelIterator<Item = TableWitnessSegment<'a, U, F>> {

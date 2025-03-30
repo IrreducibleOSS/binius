@@ -61,21 +61,21 @@ where
 
 	fn fill<'a>(
 		&'a self,
-		mut rows: impl Iterator<Item = &'a Self::Event>,
+		rows: impl Iterator<Item = &'a Self::Event>,
 		witness: &'a mut TableWitnessSegment<U>,
 	) -> Result<(), anyhow::Error> {
 		let mut committed_1 = witness.get_mut_as(self.committed_1)?;
 		let mut committed_2 = witness.get_mut_as(self.committed_2)?;
 		let mut computed = witness.get_mut_as(self.computed)?;
 
-		let &(com1, com2) = rows.next().unwrap();
-		assert!(rows.next().is_none());
-
-		for i in 0..VALUES_PER_ROW {
-			committed_1[i] = com1;
-			committed_2[i] = com2;
-			computed[i] = (B128::from(com1) + B128::from(com2)) * B128::from(com1) * B128::from(10)
-				+ B128::ONE;
+		for (i, &(com1, com2)) in rows.enumerate() {
+			for j in 0..VALUES_PER_ROW {
+				committed_1[i * VALUES_PER_ROW + j] = com1;
+				committed_2[i * VALUES_PER_ROW + j] = com2;
+				computed[i * VALUES_PER_ROW + j] =
+					(B128::from(com1) + B128::from(com2)) * B128::from(com1) * B128::from(10)
+						+ B128::ONE;
+			}
 		}
 		Ok(())
 	}
