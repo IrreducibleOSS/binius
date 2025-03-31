@@ -63,8 +63,12 @@ mod model {
 }
 
 mod arithmetization {
-	use binius_core::constraint_system::channel::ChannelId;
+	use binius_core::{
+		constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger,
+		tower::CanonicalTowerFamily,
+	};
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar};
+	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
 			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller, TableId,
@@ -96,8 +100,14 @@ mod arithmetization {
 				&mut table.with_namespace("f2_bits"),
 				f0_bits,
 				f1_bits,
-				U32AddFlags::default(),
+				U32AddFlags {
+					expose_final_carry: true,
+					..U32AddFlags::default()
+				},
 			);
+			let final_carry = f2_bits.final_carry.expect("expose_final_carry is true");
+
+			table.assert_zero("carry out", final_carry.into());
 
 			let f0 = table.add_packed("f0", f0_bits);
 			let f1 = table.add_packed("f1", f1_bits);
@@ -187,6 +197,78 @@ mod arithmetization {
 			&statement.boundaries,
 			&witness,
 		)
+		.unwrap();
+	}
+
+	#[test]
+	fn test_fibonacci_prove_verify_small_table() {
+		let mut cs = ConstraintSystem::new();
+		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
+		let fibonacci_table = FibonacciTable::new(&mut cs, fibonacci_pairs);
+		let trace = FibonacciTrace::generate((0, 1), 1);
+		let statement = Statement {
+			boundaries: vec![
+				Boundary {
+					values: vec![B128::new(0), B128::new(1)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Push,
+					multiplicity: 1,
+				},
+				Boundary {
+					values: vec![B128::new(1), B128::new(2)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Pull,
+					multiplicity: 1,
+				},
+			],
+			table_sizes: vec![trace.rows.len()],
+		};
+		let allocator = Bump::new();
+		let mut witness = cs
+			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.unwrap();
+
+		witness
+			.fill_table_sequential(&fibonacci_table, &trace.rows)
+			.unwrap();
+
+		let compiled_cs = cs.compile(&statement).unwrap();
+		let witness = witness.into_multilinear_extension_index(&statement);
+
+		binius_core::constraint_system::validate::validate_witness(
+			&compiled_cs,
+			&statement.boundaries,
+			&witness,
+		)
+		.unwrap();
+
+		const LOG_INV_RATE: usize = 1;
+		const SECURITY_BITS: usize = 100;
+
+		let proof = binius_core::constraint_system::prove::<
+			_,
+			CanonicalTowerFamily,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+			_,
+		>(
+			&compiled_cs,
+			LOG_INV_RATE,
+			SECURITY_BITS,
+			&statement.boundaries,
+			witness,
+			&binius_hal::make_portable_backend(),
+		)
+		.unwrap();
+
+		binius_core::constraint_system::verify::<
+			OptimalUnderlier128b,
+			CanonicalTowerFamily,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+		>(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
 		.unwrap();
 	}
 }
