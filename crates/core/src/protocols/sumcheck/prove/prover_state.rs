@@ -223,7 +223,6 @@ where
 	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_round_evals<Evaluator, Composition>(
 		&self,
-		const_eval_suffix: usize,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
@@ -233,7 +232,6 @@ where
 		Ok(self.backend.sumcheck_compute_round_evals(
 			self.evaluation_order,
 			self.n_vars,
-			const_eval_suffix,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
 			evaluators,

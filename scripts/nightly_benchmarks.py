@@ -103,16 +103,24 @@ BINARY_OPS_BENCHMARKS = {}
 
 
 def run_benchmark(
-    benchmark_args, include_single_threaded, perfetto
+    benchmark, benchmark_args, include_single_threaded, perfetto
 ) -> tuple[bytes, bytes]:
+    other_vars = {}
     if perfetto:
         cargo_cmd = ["cargo", "run", "--features", "perfetto", "--release", "--example"]
+        # Move perfetto trace to example specific file
+        f_name = f"{benchmark}.perfetto-trace"
+        if include_single_threaded:
+            f_name = f"{benchmark}-single-thread.perfetto-trace"
+        other_vars["PERFETTO_TRACE_FILE_PATH"] = os.path.join("examples", f_name)
     else:
         cargo_cmd = ["cargo", "run", "--release", "--example"]
     command = cargo_cmd + benchmark_args["args"] + [f"{benchmark_args['n_ops']}"]
+
     env_vars_to_run = {
         **os.environ,
         **ENV_VARS,
+        **other_vars,
         "PROFILE_CSV_FILE": benchmark_args["export"],
     }
     if include_single_threaded:
@@ -198,7 +206,7 @@ def run_and_parse_benchmark(
     )
     for _ in range(SAMPLE_SIZE):
         stdout, _stderr = run_benchmark(
-            benchmark_args, include_single_threaded, perfetto
+            benchmark, benchmark_args, include_single_threaded, perfetto
         )
         result = parse_csv_file(benchmark_args["export"])
         # Parse the csv file
@@ -211,15 +219,6 @@ def run_and_parse_benchmark(
             if data.get(key) is None:
                 data[key] = []
             data[key].append(value)
-    # Move perfetto trace to example specific file
-    if perfetto:
-        if include_single_threaded:
-            perfetto_file = os.path.join(
-                "examples", f"{benchmark}-single-thread.perfetto-trace"
-            )
-        else:
-            perfetto_file = os.path.join("examples", f"{benchmark}.perfetto-trace")
-        os.rename("tracing.perfetto-trace", perfetto_file)
     # Get proof sizes
     found = re.search(rb"Proof size: (.*)", stdout)
     if found:
