@@ -778,20 +778,28 @@ impl<F: TowerField> LinearCombination<F> {
 		offset: F,
 		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
 	) -> Result<Self, Error> {
-		let inner = inner
-			.into_iter()
-			.map(|(oracle, value)| {
-				if oracle.n_vars() == n_vars {
-					Ok((oracle.id(), value))
-				} else {
-					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
+		let mut inner_dedup = Vec::new();
+		for (oracle, value) in inner.into_iter() {
+			if oracle.n_vars() == n_vars {
+				match inner_dedup
+					.iter()
+					.position(|(other_id, _)| *other_id == oracle.id())
+				{
+					Some(i) => {
+						let (_, f) = inner_dedup[i];
+						inner_dedup[i] = (oracle.id(), f + value);
+					}
+					None => inner_dedup.push((oracle.id(), value)),
 				}
-			})
-			.collect::<Result<Vec<_>, _>>()?;
+			} else {
+				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+			}
+		}
+
 		Ok(Self {
 			n_vars,
 			offset,
-			inner,
+			inner: inner_dedup,
 		})
 	}
 

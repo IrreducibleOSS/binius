@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with, slice};
+use std::iter::{repeat, repeat_with};
 
 use assert_matches::assert_matches;
 use binius_field::{
@@ -18,16 +18,16 @@ use binius_math::{
 };
 use bytemuck::cast_slice_mut;
 use itertools::Either;
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
 		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+		EvalcheckProofAdvice, EvalcheckProofEnum, EvalcheckProver, EvalcheckVerifier, Subclaim,
 	},
-	transparent::select_row::SelectRow,
+	transparent::{select_row::SelectRow, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
 };
 
@@ -112,11 +112,11 @@ fn test_shifted_evaluation_whole_cube() {
 		.unwrap();
 
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	let (proofs, advices) = prover_state.prove(claims.clone()).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+	verifier_state.verify(claims, proofs, advices).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -178,11 +178,11 @@ fn test_shifted_evaluation_subcube() {
 		.unwrap();
 
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	let (proofs, advices) = prover_state.prove(claims.clone()).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+	verifier_state.verify(claims, proofs, advices).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -263,10 +263,10 @@ fn test_evalcheck_linear_combination() {
 
 	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let (proofs, advices) = prover_state.prove(vec![claim.clone()]).unwrap();
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], proofs, advices).unwrap();
 }
 
 #[test]
@@ -320,10 +320,10 @@ fn test_evalcheck_linear_combination_size_one() {
 
 	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let (proofs, advices) = prover_state.prove(vec![claim.clone()]).unwrap();
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], proofs, advices).unwrap();
 }
 
 #[test]
@@ -408,10 +408,10 @@ fn test_evalcheck_composite() {
 
 	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let (proofs, advices) = prover_state.prove(vec![claim.clone()]).unwrap();
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], proofs, advices).unwrap();
 }
 
 #[test]
@@ -457,12 +457,12 @@ fn test_evalcheck_repeating() {
 
 	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let (proofs, advices) = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
+	assert_matches!(proofs[0], EvalcheckProofEnum::Repeating);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], proofs, advices).unwrap();
 }
 
 #[test]
@@ -539,63 +539,247 @@ fn test_evalcheck_zero_padded() {
 
 	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let (proofs, advices) = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::ZeroPadded { .. });
+	assert_matches!(proofs[0], EvalcheckProofEnum::ZeroPadded { .. });
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], proofs, advices).unwrap();
 }
 
-// Test evalcheck serialization
 #[test]
 fn test_evalcheck_serialization() {
-	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Committed)
-	}
+	let mut rng = StdRng::seed_from_u64(0xdeadbeef);
 
-	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Transparent)
-	}
-
-	fn rand_composite<'a, F: TowerField>(
-		elems: impl Iterator<Item = &'a EvalcheckProof<F>>,
-	) -> EvalcheckProof<F> {
-		let mut rng = thread_rng();
-		EvalcheckProof::LinearCombination {
-			subproofs: elems
-				.map(|x| (F::random(&mut rng), x.clone()))
-				.collect::<Vec<_>>(),
-		}
-	}
-
-	fn rand_repeating<F: TowerField>(inner: &EvalcheckProof<F>) -> EvalcheckProof<F> {
-		EvalcheckProof::Repeating(Box::new(inner.clone()))
-	}
-
-	let committed = rand_committed::<BinaryField128b, 10>();
-	let transparent = rand_transparent::<_, 20>();
-	let repeating = transparent.clone().map(|x| rand_repeating(&x));
-	let first_linear_combination =
-		rand_composite(committed[..10].iter().chain(repeating[..2].iter()));
-	let second_linear_combination = rand_composite(
-		slice::from_ref(&first_linear_combination)
-			.iter()
-			.chain(transparent[..20].iter()),
-	);
+	let linear_combination = EvalcheckProofEnum::LinearCombination {
+		subproofs: vec![
+			Subclaim::ExistingClaim(8),
+			Subclaim::ExistingClaim(2),
+			Subclaim::ExistingClaim(4),
+			Subclaim::NewClaim(<BinaryField128b as Field>::random(&mut rng)),
+			Subclaim::NewClaim(<BinaryField128b as Field>::random(&mut rng)),
+		],
+	};
 
 	let mut transcript = crate::transcript::ProverTranscript::<
 		crate::fiat_shamir::HasherChallenger<Groestl256>,
 	>::new();
 
 	let mut writer = transcript.message();
-	serialize_evalcheck_proof(&mut writer, &second_linear_combination);
+	serialize_evalcheck_proof(&mut writer, &linear_combination);
 	let mut transcript = transcript.into_verifier();
 	let mut reader = transcript.message();
 
 	let out_deserialized = deserialize_evalcheck_proof::<_, BinaryField128b>(&mut reader).unwrap();
 
-	assert_eq!(out_deserialized, second_linear_combination);
+	assert_eq!(out_deserialized, linear_combination);
 
 	transcript.finalize().unwrap()
+}
+
+#[test]
+fn test_evalcheck_duplicate_claims() {
+	let n_vars = 8;
+	let mut oracles = MultilinearOracleSet::new();
+
+	let stepdown1 = StepDown::new(n_vars, 1 << 2).unwrap();
+	let stepdown2 = StepDown::new(n_vars, 1 << 4).unwrap();
+
+	let stepdown1_witness = stepdown1
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let stepdown2_witness = stepdown2
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let transp1_id = oracles.add_transparent(stepdown1.clone()).unwrap();
+	let transp2_id = oracles.add_transparent(stepdown2.clone()).unwrap();
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let field_gen = repeat(<BinaryField128b as Field>::random(&mut rng));
+	let eval_point = field_gen.take(n_vars).collect::<Vec<_>>();
+
+	let eval_stepdown1 = stepdown1.evaluate(&eval_point).unwrap();
+	let eval_stepdown2 = stepdown2.evaluate(&eval_point).unwrap();
+
+	let claims = vec![
+		EvalcheckMultilinearClaim {
+			id: transp1_id,
+			eval_point: eval_point.clone().into(),
+			eval: eval_stepdown1,
+		},
+		EvalcheckMultilinearClaim {
+			id: transp2_id,
+			eval_point: eval_point.clone().into(),
+			eval: eval_stepdown2,
+		},
+		EvalcheckMultilinearClaim {
+			id: transp1_id,
+			eval_point: eval_point.clone().into(),
+			eval: eval_stepdown1,
+		},
+	];
+
+	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	witness_index
+		.update_multilin_poly(vec![
+			(transp1_id, stepdown1_witness.specialize_arc_dyn()),
+			(transp2_id, stepdown2_witness.specialize_arc_dyn()),
+		])
+		.unwrap();
+
+	let backend = make_portable_backend();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let (proofs, advices) = prover_state.prove(claims.clone()).unwrap();
+
+	assert_eq!(
+		advices.as_slice(),
+		&[
+			EvalcheckProofAdvice::DuplicateClaim(2),
+			EvalcheckProofAdvice::HandleClaim,
+			EvalcheckProofAdvice::HandleClaim
+		]
+	);
+
+	assert_eq!(
+		proofs.as_slice(),
+		&[
+			EvalcheckProofEnum::Transparent,
+			EvalcheckProofEnum::Transparent
+		]
+	);
+
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state.verify(claims, proofs, advices).unwrap();
+}
+
+#[test]
+fn test_evalcheck_existing_claims() {
+	let n_vars = 8;
+	let mut oracles = MultilinearOracleSet::new();
+
+	let stepdown1 = StepDown::new(n_vars, 1 << 4).unwrap();
+	let stepdown2 = StepDown::new(n_vars, 1 << 5).unwrap();
+	let stepdown3 = StepDown::new(n_vars, 1 << 6).unwrap();
+
+	let stepdown1_witness = stepdown1
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let stepdown2_witness = stepdown2
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let stepdown3_witness = stepdown3
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let transp1_id = oracles.add_transparent(stepdown1.clone()).unwrap();
+	let transp2_id = oracles.add_transparent(stepdown2.clone()).unwrap();
+	let transp3_id = oracles.add_transparent(stepdown3.clone()).unwrap();
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let field_gen = repeat(<BinaryField128b as Field>::random(&mut rng));
+	let fs = field_gen.take(6).collect::<Vec<_>>();
+
+	let lin_comb1_id = oracles
+		.add_linear_combination_with_offset(
+			n_vars,
+			fs[0],
+			[(transp1_id, fs[1]), (transp2_id, fs[2])],
+		)
+		.unwrap();
+
+	let lin_comb2_id = oracles
+		.add_linear_combination_with_offset(
+			n_vars,
+			fs[3],
+			[(lin_comb1_id, fs[4]), (transp3_id, fs[5])],
+		)
+		.unwrap();
+
+	let mut rng = StdRng::seed_from_u64(0xdeadbeef);
+	let field_gen = repeat(<BinaryField128b as Field>::random(&mut rng));
+	let eval_point = field_gen.take(n_vars).collect::<Vec<_>>();
+
+	let eval_stepdown1 = stepdown1.evaluate(&eval_point).unwrap();
+	let eval_stepdown2 = stepdown2.evaluate(&eval_point).unwrap();
+	let eval_stepdown3 = stepdown3.evaluate(&eval_point).unwrap();
+	let eval_lin_comb1 = fs[0] + eval_stepdown1 * fs[1] + eval_stepdown2 * fs[2];
+
+	let eval_lin_comb2 = fs[3] + eval_lin_comb1 * fs[4] + eval_stepdown3 * fs[5];
+
+	let lin_comb1_values = (0..1 << n_vars)
+		.map(|i| {
+			fs[0]
+				+ stepdown1_witness.evaluate_on_hypercube(i).unwrap() * fs[1]
+				+ stepdown2_witness.evaluate_on_hypercube(i).unwrap() * fs[2]
+		})
+		.map(PackedBinaryField1x128b::set_single)
+		.collect();
+	let lin_comb1_witness = MultilinearExtension::from_values(lin_comb1_values).unwrap();
+
+	let lin_comb2_values = (0..1 << n_vars)
+		.map(|i| {
+			fs[3]
+				+ lin_comb1_witness.evaluate_on_hypercube(i).unwrap() * fs[4]
+				+ stepdown3_witness.evaluate_on_hypercube(i).unwrap() * fs[5]
+		})
+		.map(PackedBinaryField1x128b::set_single)
+		.collect();
+	let lin_comb2_witness = MultilinearExtension::from_values(lin_comb2_values).unwrap();
+
+	let claims = vec![
+		EvalcheckMultilinearClaim {
+			id: lin_comb2_id,
+			eval_point: eval_point.clone().into(),
+			eval: eval_lin_comb2,
+		},
+		EvalcheckMultilinearClaim {
+			id: lin_comb1_id,
+			eval_point: eval_point.clone().into(),
+			eval: eval_lin_comb1,
+		},
+	];
+
+	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	witness_index
+		.update_multilin_poly(vec![
+			(transp1_id, stepdown1_witness.specialize_arc_dyn()),
+			(transp2_id, stepdown2_witness.specialize_arc_dyn()),
+			(transp3_id, stepdown3_witness.specialize_arc_dyn()),
+			(lin_comb1_id, lin_comb1_witness.specialize_arc_dyn()),
+			(lin_comb2_id, lin_comb2_witness.specialize_arc_dyn()),
+		])
+		.unwrap();
+
+	let backend = make_portable_backend();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let (proofs, advices) = prover_state.prove(claims.clone()).unwrap();
+
+	for advice in &advices {
+		assert!(matches!(advice, EvalcheckProofAdvice::HandleClaim));
+	}
+
+	assert_eq!(
+		proofs.as_slice(),
+		&[
+			EvalcheckProofEnum::LinearCombination {
+				subproofs: vec![
+					Subclaim::ExistingClaim(1),
+					Subclaim::NewClaim(eval_stepdown3)
+				]
+			},
+			EvalcheckProofEnum::LinearCombination {
+				subproofs: vec![
+					Subclaim::NewClaim(eval_stepdown1),
+					Subclaim::NewClaim(eval_stepdown2)
+				]
+			},
+			EvalcheckProofEnum::Transparent,
+			EvalcheckProofEnum::Transparent,
+			EvalcheckProofEnum::Transparent
+		]
+	);
+
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state.verify(claims, proofs, advices).unwrap();
 }

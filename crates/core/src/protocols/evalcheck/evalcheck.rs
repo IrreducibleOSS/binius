@@ -12,10 +12,10 @@ use bytes::{Buf, BufMut};
 use super::error::Error;
 use crate::{
 	oracle::OracleId,
-	transcript::{TranscriptReader, TranscriptWriter},
+	transcript::{read_u64, write_u64, TranscriptReader, TranscriptWriter},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
 	pub id: OracleId,
@@ -24,6 +24,9 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Claimed Evaluation
 	pub eval: F,
 }
+
+// #[derive(Debug, Clone)]
+// pub struct EvalcheckProof<F: Field>(pub Vec<EvalcheckProofEnum<F>>);
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -36,42 +39,50 @@ enum EvalcheckNumerics {
 	LinearCombination,
 	ZeroPadded,
 	CompositeMLE,
+	Projected,
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+enum EvalcheckProofAdviceNumerics {
+	HandleClaim = 1,
+	DuplicateClaim,
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+enum SubclaimNumerics {
+	ExistingClaim = 1,
+	NewClaim,
+}
+
+pub type ProofIndex = usize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvalcheckProofAdvice {
+	HandleClaim,
+	DuplicateClaim(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalcheckProof<F: Field> {
+pub enum Subclaim<F: Field> {
+	ExistingClaim(ProofIndex),
+	NewClaim(F),
+}
+
+/// A struct for storing the EvalcheckProofs, for proofs referencing inner evalchecks the index is
+/// is index into `EvalcheckProof` struct
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvalcheckProofEnum<F: Field> {
 	Transparent,
 	Committed,
 	Shifted,
 	Packed,
-	Repeating(Box<EvalcheckProof<F>>),
-	LinearCombination {
-		subproofs: Vec<(F, EvalcheckProof<F>)>,
-	},
-	ZeroPadded(F, Box<EvalcheckProof<F>>),
+	Repeating,
+	LinearCombination { subproofs: Vec<Subclaim<F>> },
+	ZeroPadded(F),
 	CompositeMLE,
-}
-
-impl<F: Field> EvalcheckProof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
-		match self {
-			Self::Transparent => EvalcheckProof::Transparent,
-			Self::Committed => EvalcheckProof::Committed,
-			Self::Shifted => EvalcheckProof::Shifted,
-			Self::Packed => EvalcheckProof::Packed,
-			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
-			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
-				subproofs: subproofs
-					.into_iter()
-					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
-					.collect(),
-			},
-			Self::ZeroPadded(eval, proof) => {
-				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
-			}
-			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
-		}
-	}
+	Projected,
 }
 
 impl EvalcheckNumerics {
@@ -85,6 +96,27 @@ impl EvalcheckNumerics {
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
 			8 => Ok(Self::CompositeMLE),
+			9 => Ok(Self::Projected),
+			_ => Err(Error::EvalcheckSerializationError),
+		}
+	}
+}
+
+impl SubclaimNumerics {
+	const fn from(x: u8) -> Result<Self, Error> {
+		match x {
+			1 => Ok(SubclaimNumerics::ExistingClaim),
+			2 => Ok(SubclaimNumerics::NewClaim),
+			_ => Err(Error::EvalcheckSerializationError),
+		}
+	}
+}
+
+impl EvalcheckProofAdviceNumerics {
+	const fn from(x: u8) -> Result<Self, Error> {
+		match x {
+			1 => Ok(EvalcheckProofAdviceNumerics::HandleClaim),
+			2 => Ok(EvalcheckProofAdviceNumerics::DuplicateClaim),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -93,41 +125,64 @@ impl EvalcheckNumerics {
 /// Serializes the `EvalcheckProof` into the transcript
 pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 	transcript: &mut TranscriptWriter<B>,
-	evalcheck: &EvalcheckProof<F>,
+	evalcheck: &EvalcheckProofEnum<F>,
 ) {
 	match evalcheck {
-		EvalcheckProof::Transparent => {
+		EvalcheckProofEnum::Transparent => {
 			transcript.write_bytes(&[EvalcheckNumerics::Transparent as u8]);
 		}
-		EvalcheckProof::Committed => {
+		EvalcheckProofEnum::Committed => {
 			transcript.write_bytes(&[EvalcheckNumerics::Committed as u8]);
 		}
-		EvalcheckProof::Shifted => {
+		EvalcheckProofEnum::Shifted => {
 			transcript.write_bytes(&[EvalcheckNumerics::Shifted as u8]);
 		}
-		EvalcheckProof::Packed => {
+		EvalcheckProofEnum::Packed => {
 			transcript.write_bytes(&[EvalcheckNumerics::Packed as u8]);
 		}
-		EvalcheckProof::Repeating(inner) => {
+		EvalcheckProofEnum::Repeating => {
 			transcript.write_bytes(&[EvalcheckNumerics::Repeating as u8]);
-			serialize_evalcheck_proof(transcript, inner);
 		}
-		EvalcheckProof::LinearCombination { subproofs } => {
+		EvalcheckProofEnum::LinearCombination { subproofs } => {
 			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
-			let len_u64 = subproofs.len() as u64;
-			transcript.write_bytes(&len_u64.to_le_bytes());
-			for (scalar, subproof) in subproofs {
-				transcript.write_scalar(*scalar);
-				serialize_evalcheck_proof(transcript, subproof)
+			write_u64(transcript, subproofs.len() as u64);
+			for subproof in subproofs {
+				match subproof {
+					Subclaim::ExistingClaim(index) => {
+						transcript.write_bytes(&[SubclaimNumerics::ExistingClaim as u8]);
+						write_u64(transcript, *index as u64);
+					}
+					Subclaim::NewClaim(eval) => {
+						transcript.write_bytes(&[SubclaimNumerics::NewClaim as u8]);
+						transcript.write_scalar(*eval);
+					}
+				}
 			}
 		}
-		EvalcheckProof::ZeroPadded(val, subproof) => {
+		EvalcheckProofEnum::ZeroPadded(val) => {
 			transcript.write_bytes(&[EvalcheckNumerics::ZeroPadded as u8]);
 			transcript.write_scalar(*val);
-			serialize_evalcheck_proof(transcript, subproof);
 		}
-		EvalcheckProof::CompositeMLE => {
+		EvalcheckProofEnum::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
+		}
+		EvalcheckProofEnum::Projected => {
+			transcript.write_bytes(&[EvalcheckNumerics::Projected as u8]);
+		}
+	}
+}
+
+pub fn serialize_advice<B: BufMut>(
+	transcript: &mut TranscriptWriter<B>,
+	advice: &EvalcheckProofAdvice,
+) {
+	match advice {
+		EvalcheckProofAdvice::HandleClaim => {
+			transcript.write_bytes(&[EvalcheckProofAdviceNumerics::HandleClaim as u8]);
+		}
+		EvalcheckProofAdvice::DuplicateClaim(idx) => {
+			transcript.write_bytes(&[EvalcheckProofAdviceNumerics::DuplicateClaim as u8]);
+			transcript.write(idx);
 		}
 	}
 }
@@ -135,41 +190,65 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 /// Deserializes the `EvalcheckProof` object from the given transcript.
 pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	transcript: &mut TranscriptReader<B>,
-) -> Result<EvalcheckProof<F>, Error> {
+) -> Result<EvalcheckProofEnum<F>, Error> {
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
 
 	match as_enum {
-		EvalcheckNumerics::Transparent => Ok(EvalcheckProof::Transparent),
-		EvalcheckNumerics::Committed => Ok(EvalcheckProof::Committed),
-		EvalcheckNumerics::Shifted => Ok(EvalcheckProof::Shifted),
-		EvalcheckNumerics::Packed => Ok(EvalcheckProof::Packed),
-		EvalcheckNumerics::Repeating => {
-			let inner = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::Repeating(Box::new(inner)))
-		}
+		EvalcheckNumerics::Transparent => Ok(EvalcheckProofEnum::Transparent),
+		EvalcheckNumerics::Committed => Ok(EvalcheckProofEnum::Committed),
+		EvalcheckNumerics::Shifted => Ok(EvalcheckProofEnum::Shifted),
+		EvalcheckNumerics::Packed => Ok(EvalcheckProofEnum::Packed),
+		EvalcheckNumerics::Repeating => Ok(EvalcheckProofEnum::Repeating),
 		EvalcheckNumerics::LinearCombination => {
-			let mut len = [0u8; 8];
-			transcript.read_bytes(&mut len)?;
-			let len = u64::from_le_bytes(len) as usize;
-			let mut subproofs: Vec<(F, EvalcheckProof<F>)> = Vec::new();
+			// TODO: @anex replace with serialization
+			let len = read_u64(transcript)? as usize;
+			let mut subproofs = Vec::with_capacity(len);
 			for _ in 0..len {
-				let scalar = transcript.read_scalar()?;
-				let subproof = deserialize_evalcheck_proof(transcript)?;
-				subproofs.push((scalar, subproof));
+				let variant: u8 = transcript.read()?;
+				let subproof = match SubclaimNumerics::from(variant)? {
+					SubclaimNumerics::ExistingClaim => {
+						Subclaim::ExistingClaim(read_u64(transcript)? as usize)
+					}
+					SubclaimNumerics::NewClaim => {
+						let new_eval = transcript.read()?;
+						Subclaim::NewClaim(new_eval)
+					}
+				};
+				subproofs.push(subproof);
 			}
-			Ok(EvalcheckProof::LinearCombination { subproofs })
+			Ok(EvalcheckProofEnum::LinearCombination { subproofs })
 		}
 		EvalcheckNumerics::ZeroPadded => {
 			let scalar = transcript.read_scalar()?;
-			let subproof = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
+			Ok(EvalcheckProofEnum::ZeroPadded(scalar))
 		}
-		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
+		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProofEnum::CompositeMLE),
+		EvalcheckNumerics::Projected => Ok(EvalcheckProofEnum::Projected),
 	}
 }
 
+pub fn deserialize_advice<B: Buf>(
+	transcript: &mut TranscriptReader<B>,
+) -> Result<EvalcheckProofAdvice, Error> {
+	let mut ty = 0;
+	transcript.read_bytes(slice::from_mut(&mut ty))?;
+
+	let as_enum = EvalcheckProofAdviceNumerics::from(ty)?;
+
+	match as_enum {
+		EvalcheckProofAdviceNumerics::HandleClaim => Ok(EvalcheckProofAdvice::HandleClaim),
+		EvalcheckProofAdviceNumerics::DuplicateClaim => {
+			let idx = transcript.read()?;
+			Ok(EvalcheckProofAdvice::DuplicateClaim(idx))
+		}
+	}
+}
+
+// Issues with this struct, It should be a Vec<(EvalPoint<F>, Vec<T>)> for better caching
+// What happens if the user tries to insert a different T to same (OracleId, EvalPoint<F>) combo?
+// Find only returns the first EvalPoint<F> it could find, maybe better to return filtered
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -189,7 +268,19 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
+	pub fn get_mut<'a>(&mut self, id: OracleId, eval_point: &[F]) -> Option<&mut T> {
+		self.data
+			.get_mut(id)?
+			.iter_mut()
+			.find(|(ep, _)| ep.as_ref() == eval_point)
+			.map(|(_, val)| val)
+	}
+
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
+		if self.get(id, eval_point.as_ref()).is_some() {
+			panic!("Value already exists for this slot");
+		}
+
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
 		}
@@ -197,7 +288,11 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		self.data[id].push((eval_point, val))
 	}
 
-	pub fn flatten(mut self) -> Vec<T> {
+	pub fn into_flatten(mut self) -> Vec<T> {
+		self.flatten()
+	}
+
+	pub fn flatten(&mut self) -> Vec<T> {
 		self.data.reverse();
 
 		std::mem::take(&mut self.data)
@@ -205,6 +300,10 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.flatten()
 			.map(|(_, val)| val)
 			.collect::<Vec<_>>()
+	}
+
+	pub fn clear(&mut self) {
+		self.data.clear()
 	}
 }
 
@@ -216,8 +315,8 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct EvalPoint<F> {
+#[derive(Debug, Clone, Eq)]
+pub struct EvalPoint<F: Field> {
 	data: Arc<[F]>,
 	range: Range<usize>,
 }
@@ -228,7 +327,7 @@ impl<F: Field> PartialEq for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> EvalPoint<F> {
+impl<F: Field> EvalPoint<F> {
 	pub fn slice(&self, range: Range<usize>) -> Self {
 		assert!(self.range.len() >= range.len());
 
@@ -245,7 +344,7 @@ impl<F: Clone> EvalPoint<F> {
 	}
 }
 
-impl<F> From<Vec<F>> for EvalPoint<F> {
+impl<F: Field> From<Vec<F>> for EvalPoint<F> {
 	fn from(data: Vec<F>) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -255,7 +354,7 @@ impl<F> From<Vec<F>> for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> From<&[F]> for EvalPoint<F> {
+impl<F: Field> From<&[F]> for EvalPoint<F> {
 	fn from(data: &[F]) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -265,7 +364,7 @@ impl<F: Clone> From<&[F]> for EvalPoint<F> {
 	}
 }
 
-impl<F> Deref for EvalPoint<F> {
+impl<F: Field> Deref for EvalPoint<F> {
 	type Target = [F];
 
 	fn deref(&self) -> &Self::Target {

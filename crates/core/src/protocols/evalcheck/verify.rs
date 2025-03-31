@@ -9,15 +9,16 @@ use tracing::instrument;
 
 use super::{
 	error::{Error, VerificationError},
-	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProofEnum},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
 		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
+	EvalcheckProofAdvice, ProofIndex, Subclaim,
 };
 use crate::oracle::{
 	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-	MultilinearPolyVariant, OracleId,
+	MultilinearPolyVariant,
 };
 
 /// A mutable verifier state.
@@ -36,6 +37,8 @@ where
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
+
+	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
 }
 
 impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
@@ -47,6 +50,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			oracles,
 			committed_eval_claims: Vec::new(),
 			new_sumcheck_constraints: Vec::new(),
+			round_claims: Vec::new(),
 		}
 	}
 
@@ -67,13 +71,48 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	pub fn verify(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-		evalcheck_proofs: Vec<EvalcheckProof<F>>,
+		proofs: Vec<EvalcheckProofEnum<F>>,
+		advices: Vec<EvalcheckProofAdvice>,
 	) -> Result<(), Error> {
-		for (claim, proof) in evalcheck_claims
-			.into_iter()
-			.zip(evalcheck_proofs.into_iter())
-		{
-			self.verify_multilinear(claim, proof)?;
+		self.round_claims.clear();
+		self.round_claims.extend(evalcheck_claims.clone());
+
+		let mut proof_idx = 0;
+		// proof_len <= total_claim_len == advice_len
+		for (current_claim_idx, advice) in advices.into_iter().enumerate() {
+			if self.round_claims.len() <= current_claim_idx {
+				return Err(VerificationError::ClaimIndexOutOfRange {
+					index: current_claim_idx,
+					length: self.round_claims.len(),
+				}
+				.into());
+			}
+			let claim = &self.round_claims[current_claim_idx];
+			match advice {
+				EvalcheckProofAdvice::DuplicateClaim(claim_idx) => {
+					if claim_idx >= self.round_claims.len() {
+						return Err(VerificationError::ClaimIndexOutOfRange {
+							index: claim_idx,
+							length: self.round_claims.len(),
+						}
+						.into());
+					}
+					if claim_idx <= current_claim_idx {
+						return Err(VerificationError::DuplicateClaimIndexTooSmall.into());
+					}
+					if claim != &self.round_claims[claim_idx] {
+						return Err(VerificationError::DuplicateClaimMismatch.into());
+					}
+				}
+				EvalcheckProofAdvice::HandleClaim => {
+					self.verify_multilinear(claim.clone(), current_claim_idx, &proofs[proof_idx])?;
+					proof_idx += 1;
+				}
+			};
+		}
+
+		if proof_idx != proofs.len() {
+			return Err(Error::Verification(VerificationError::NotAllProofsVerified));
 		}
 
 		Ok(())
@@ -82,7 +121,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	fn verify_multilinear(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-		evalcheck_proof: EvalcheckProof<F>,
+		current_idx: ProofIndex,
+		proof: &EvalcheckProofEnum<F>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
@@ -93,7 +133,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		let multilinear = self.oracles.oracle(id);
 		match multilinear.variant.clone() {
 			MultilinearPolyVariant::Transparent(inner) => {
-				if evalcheck_proof != EvalcheckProof::Transparent {
+				if !matches!(proof, EvalcheckProofEnum::Transparent) {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
@@ -107,7 +147,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Committed => {
-				if evalcheck_proof != EvalcheckProof::Committed {
+				if !matches!(proof, EvalcheckProofEnum::Committed) {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
@@ -121,9 +161,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Repeating { id, .. } => {
-				let subproof = match evalcheck_proof {
-					EvalcheckProof::Repeating(subproof) => subproof,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
+				if !matches!(proof, EvalcheckProofEnum::Repeating) {
+					return Err(VerificationError::SubproofMismatch.into());
 				};
 				let n_vars = self.oracles.n_vars(id);
 				let subclaim = EvalcheckMultilinearClaim {
@@ -132,10 +171,13 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(subclaim, *subproof)?;
+				self.round_claims.push(subclaim);
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
+				if !matches!(proof, EvalcheckProofEnum::Projected) {
+					return Err(VerificationError::SubproofMismatch.into());
+				};
 				let (id, values) = (projected.id(), projected.values());
 
 				let new_eval_point = {
@@ -152,11 +194,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(new_claim, evalcheck_proof)?;
+				self.round_claims.push(new_claim);
 			}
 
 			MultilinearPolyVariant::Shifted(shifted) => {
-				if evalcheck_proof != EvalcheckProof::Shifted {
+				if !matches!(proof, EvalcheckProofEnum::Shifted) {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
@@ -166,11 +208,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					&mut self.new_sumcheck_constraints,
 					shifted.block_size(),
 					eval,
-				)
+				);
 			}
 
 			MultilinearPolyVariant::Packed(packed) => {
-				if evalcheck_proof != EvalcheckProof::Packed {
+				if !matches!(proof, EvalcheckProofEnum::Packed) {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
@@ -180,12 +222,12 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					&mut self.new_sumcheck_constraints,
 					packed.log_degree(),
 					eval,
-				)
+				);
 			}
 
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				let subproofs = match evalcheck_proof {
-					EvalcheckProof::LinearCombination { subproofs } => subproofs,
+				let subproofs = match proof {
+					EvalcheckProofEnum::LinearCombination { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
@@ -193,27 +235,47 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
+				let inner_evals = subproofs
+					.iter()
+					.zip(linear_combination.polys())
+					.map(|(subclaim, sub_oracle_id)| match subclaim {
+						Subclaim::ExistingClaim(index) => {
+							if *index == current_idx {
+								return Err(VerificationError::ExistingClaimEqCurrentClaim);
+							}
+							if *index >= self.round_claims.len() {
+								return Err(VerificationError::ClaimIndexOutOfRange {
+									index: *index,
+									length: self.round_claims.len(),
+								});
+							}
+							Ok(self.round_claims[*index].eval)
+						}
+						Subclaim::NewClaim(claim) => {
+							self.round_claims.push(EvalcheckMultilinearClaim {
+								id: sub_oracle_id,
+								eval_point: eval_point.clone(),
+								eval: *claim,
+							});
+							Ok(*claim)
+						}
+					})
+					.collect::<Result<Vec<_>, _>>()?;
+
 				// Verify the evaluation of the linear combination over the claimed evaluations
 				let actual_eval = linear_combination.offset()
 					+ inner_product_unchecked::<F, F>(
-						subproofs.iter().map(|(eval, _)| *eval),
+						inner_evals.into_iter(),
 						linear_combination.coefficients(),
 					);
 
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
 				}
-
-				subproofs
-					.into_iter()
-					.zip(linear_combination.polys())
-					.try_for_each(|((eval, subproof), suboracle_id)| {
-						self.verify_multilinear_subclaim(eval, subproof, suboracle_id, &eval_point)
-					})?;
 			}
 			MultilinearPolyVariant::ZeroPadded(inner) => {
-				let (inner_eval, subproof) = match evalcheck_proof {
-					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
+				let inner_eval = match proof {
+					EvalcheckProofEnum::ZeroPadded(eval) => *eval,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
@@ -232,15 +294,14 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
 				}
 
-				self.verify_multilinear_subclaim(
-					inner_eval,
-					*subproof,
-					inner,
-					subclaim_eval_point,
-				)?;
+				self.round_claims.push(EvalcheckMultilinearClaim {
+					id: inner,
+					eval_point: subclaim_eval_point.into(),
+					eval: inner_eval,
+				})
 			}
 			MultilinearPolyVariant::Composite(composition) => {
-				if evalcheck_proof != EvalcheckProof::CompositeMLE {
+				if !matches!(proof, EvalcheckProofEnum::CompositeMLE) {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
@@ -250,25 +311,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					&mut self.new_sumcheck_constraints,
 					&composition,
 					eval,
-				)
+				);
 			}
 		}
 
 		Ok(())
-	}
-
-	fn verify_multilinear_subclaim(
-		&mut self,
-		eval: F,
-		subproof: EvalcheckProof<F>,
-		oracle_id: OracleId,
-		eval_point: &[F],
-	) -> Result<(), Error> {
-		let subclaim = EvalcheckMultilinearClaim {
-			id: oracle_id,
-			eval_point: eval_point.into(),
-			eval,
-		};
-		self.verify_multilinear(subclaim, subproof)
 	}
 }

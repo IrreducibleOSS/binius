@@ -41,6 +41,16 @@ pub enum VerificationError {
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
+	#[error("Not all evalcheck proof claims were verified")]
+	NotAllProofsVerified,
+	#[error("The claim index {index} into evalcheck is out of range; length: {length}")]
+	ClaimIndexOutOfRange { index: usize, length: usize },
+	#[error("The referenced duplicate claim is different from expected")]
+	DuplicateClaimMismatch,
+	#[error("Duplicate claim index is smaller than current index")]
+	DuplicateClaimIndexTooSmall,
+	#[error("Existing claim index is the same as current index")]
+	ExistingClaimEqCurrentClaim,
 }
 
 impl VerificationError {
