@@ -670,7 +670,7 @@ pub fn fill_table_sequential<U: UnderlierType, F: TowerField, T: TableFiller<U, 
 mod tests {
 	use assert_matches::assert_matches;
 	use binius_field::{
-		arch::OptimalUnderlier128b,
+		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
 	};
 
@@ -807,17 +807,20 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let table_size = 7;
 		let mut index =
-			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
+			TableWitnessIndex::<OptimalUnderlier256b>::new(&allocator, &inner_table, table_size);
 
-		assert_eq!(index.min_log_segment_size(), 3);
+		assert_eq!(index.log_capacity(), 4);
+		assert_eq!(index.min_log_segment_size(), 4);
 
-		let mut iter = index.segments(4);
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		let mut iter = index.segments(5);
+		// Check that the segment size is clamped to the capacity.
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 
 		let mut iter = index.segments(2);
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		// Check that the segment size is clamped to the minimum segment size.
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 	}
