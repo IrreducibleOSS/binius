@@ -129,7 +129,7 @@ where
 {
 	let suffixes = system
 		.suffix_descs
-		.par_iter()
+		.iter()
 		.map(|desc| Arc::as_ref(&desc.suffix))
 		.collect::<Vec<_>>();
 
