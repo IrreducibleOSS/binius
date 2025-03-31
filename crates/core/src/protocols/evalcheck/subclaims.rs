@@ -12,9 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -70,18 +68,17 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_shifted_sumcheck<U, F>(
+pub fn process_shifted_sumcheck<F, P>(
 	shifted: &Shifted,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	witness_index: &mut MultilinearExtensionIndex<P>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	projected: MultilinearExtension<PackedType<U, F>>,
+	projected: MultilinearExtension<P>,
 ) -> Result<(), Error>
 where
-	PackedType<U, F>: PackedFieldIndexable,
-	U: UnderlierType + PackScalar<F>,
+	P: PackedFieldIndexable<Scalar = F>,
 	F: TowerField,
 {
 	process_projected_bivariate_witness(
@@ -96,7 +93,7 @@ where
 				projected_eval_point.to_vec(),
 			)?;
 
-			let shift_ind_mle = shift_ind.multilinear_extension::<PackedType<U, F>>()?;
+			let shift_ind_mle = shift_ind.multilinear_extension::<P>()?;
 			Ok(MLEDirectAdapter::from(shift_ind_mle).upcast_arc_dyn())
 		},
 		projected,
@@ -174,18 +171,18 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_packed_sumcheck<U, F>(
+pub fn process_packed_sumcheck<F, P>(
 	oracles: &MultilinearOracleSet<F>,
 	packed: &Packed,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	witness_index: &mut MultilinearExtensionIndex<P>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	projected: MultilinearExtension<PackedType<U, F>>,
+	projected: MultilinearExtension<P>,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	let log_degree = packed.log_degree();
@@ -197,7 +194,7 @@ where
 		eval_point,
 		|_projected_eval_point| {
 			let tower_basis = TowerBasis::new(log_degree, binary_tower_level)?;
-			let tower_basis_mle = tower_basis.multilinear_extension::<PackedType<U, F>>()?;
+			let tower_basis_mle = tower_basis.multilinear_extension::<P>()?;
 			Ok(MLEDirectAdapter::from(tower_basis_mle).upcast_arc_dyn())
 		},
 		projected,
@@ -264,15 +261,15 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	Ok(meta)
 }
 
-fn process_projected_bivariate_witness<'a, U, F>(
-	witness_index: &mut MultilinearExtensionIndex<'a, U, F>,
+fn process_projected_bivariate_witness<'a, F, P>(
+	witness_index: &mut MultilinearExtensionIndex<'a, P>,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
-	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, PackedType<U, F>>, Error>,
-	projected: MultilinearExtension<PackedType<U, F>>,
+	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, P>, Error>,
+	projected: MultilinearExtension<P>,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	let ProjectedBivariateMeta {
@@ -304,15 +301,15 @@ where
 /// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
 /// composite oracle -> None
 #[allow(clippy::type_complexity)]
-pub fn calculate_projected_mles<U, F, Backend>(
+pub fn calculate_projected_mles<F, P, Backend>(
 	metas: &[ProjectedBivariateMeta],
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	memoized_queries: &mut MemoizedQueries<P, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
-	witness_index: &MultilinearExtensionIndex<U, F>,
+	witness_index: &MultilinearExtensionIndex<P>,
 	backend: &Backend,
-) -> Result<Vec<Option<MultilinearExtension<PackedType<U, F>>>>, Error>
+) -> Result<Vec<Option<MultilinearExtension<P>>>, Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -352,15 +349,15 @@ where
 }
 
 /// Each composite oracle induces a new eq oracle, for which we need to fill the witness
-pub fn fill_eq_witness_for_composites<U, F, Backend>(
+pub fn fill_eq_witness_for_composites<F, P, Backend>(
 	metas: &[ProjectedBivariateMeta],
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	memoized_queries: &mut MemoizedQueries<P, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	witness_index: &mut MultilinearExtensionIndex<P>,
 	backend: &Backend,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -486,8 +483,8 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
-pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
-	witness: &MultilinearExtensionIndex<U, F>,
+pub fn prove_bivariate_sumchecks_with_switchover<F, P, DomainField, Transcript, Backend>(
+	witness: &MultilinearExtensionIndex<P>,
 	constraint_sets: Vec<ConstraintSet<F>>,
 	transcript: &mut ProverTranscript<Transcript>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
@@ -495,7 +492,9 @@ pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, 
 	backend: &Backend,
 ) -> Result<SumcheckProofEvalcheckClaims<F>, SumcheckError>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
+	P: PackedField<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
 	Transcript: Challenger,

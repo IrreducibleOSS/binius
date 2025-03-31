@@ -55,7 +55,7 @@ struct CreateClaimsWitnessesOutput<
 	new_claims: Vec<GrandProductClaim<F>>,
 	new_witnesses: Vec<GrandProductWitness<P>>,
 	oracle_set: MultilinearOracleSet<F>,
-	witness_index: MultilinearExtensionIndex<'a, U, F>,
+	witness_index: MultilinearExtensionIndex<'a, PackedType<U, F>>,
 	rng: StdRng,
 }
 
@@ -66,7 +66,7 @@ fn create_claims_witnesses_helper<
 >(
 	mut rng: StdRng,
 	mut oracle_set: MultilinearOracleSet<F>,
-	mut witness_index: MultilinearExtensionIndex<'_, U, F>,
+	mut witness_index: MultilinearExtensionIndex<'_, PackedType<U, F>>,
 	n_vars: usize,
 	n_multilins: usize,
 ) -> CreateClaimsWitnessesOutput<'_, U, P, F> {
@@ -132,7 +132,7 @@ where
 {
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<F>::new();
-	let witness_index = MultilinearExtensionIndex::<U, F>::new();
+	let witness_index = MultilinearExtensionIndex::<PackedType<U, F>>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();

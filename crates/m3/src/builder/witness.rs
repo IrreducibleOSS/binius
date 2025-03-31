@@ -82,7 +82,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		Ok(())
 	}
 
-	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, U, B128>
+	pub fn into_multilinear_extension_index(
+		self,
+	) -> MultilinearExtensionIndex<'alloc, PackedType<U, B128>>
 	where
 		U: PackScalar<B1>
 			+ PackScalar<B8>

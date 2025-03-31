@@ -87,7 +87,7 @@ impl<'a, F, FDomain, P, Composition, M, Backend>
 where
 	F: Field,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,

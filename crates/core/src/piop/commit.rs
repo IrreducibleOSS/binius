@@ -89,7 +89,7 @@ pub fn collect_committed_witnesses<'a, U, F>(
 	commit_meta: &CommitMeta,
 	oracle_to_commit_index: &SparseIndex<usize>,
 	oracles: &MultilinearOracleSet<F>,
-	witness_index: &MultilinearExtensionIndex<'a, U, F>,
+	witness_index: &MultilinearExtensionIndex<'a, PackedType<U, F>>,
 ) -> Result<Vec<MultilinearWitness<'a, PackedType<U, F>>>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
