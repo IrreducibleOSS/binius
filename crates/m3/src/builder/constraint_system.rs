@@ -166,7 +166,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						Some(TableWitnessIndex::new(
 							allocator,
 							table,
-							statement.table_sizes[table.id],
+							table_size,
 						))
 					} else {
 						None
