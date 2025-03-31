@@ -12,9 +12,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
-	builder::{
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B8,
-	},
+	builder::{ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B8},
 	gadgets::hash::groestl,
 };
 use binius_utils::rayon::adjust_thread_pool;
@@ -68,7 +66,7 @@ where
 	fn fill<'a>(
 		&self,
 		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessIndexSegment<U>,
+		witness: &mut TableWitnessSegment<U>,
 	) -> Result<()> {
 		self.permutation.populate_state_in(witness, rows)?;
 		self.permutation.populate(witness)?;
@@ -112,7 +110,7 @@ fn main() -> Result<()> {
 	drop(trace_gen_scope);
 
 	let ccs = cs.compile(&statement).unwrap();
-	let witness = witness.into_multilinear_extension_index(&statement);
+	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
 		_,

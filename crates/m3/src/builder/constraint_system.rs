@@ -162,13 +162,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 				.iter()
 				.zip(&statement.table_sizes)
 				.map(|(table, &table_size)| {
-					if table_size > 0 {
+					let witness = if table_size > 0 {
 						Some(TableWitnessIndex::new(allocator, table, table_size))
 					} else {
 						None
-					}
+					};
+					witness.transpose()
 				})
-				.collect(),
+				.collect::<Result<_, _>>()?,
 		})
 	}
 

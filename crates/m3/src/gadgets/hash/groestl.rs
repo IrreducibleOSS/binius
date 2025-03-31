@@ -20,7 +20,7 @@ use binius_field::{
 use bytemuck::Pod;
 
 use crate::builder::{
-	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessIndexSegment, B1, B8,
+	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessSegment, B1, B8,
 };
 
 /// The first row of the circulant matrix defining the MixBytes step in Grøstl.
@@ -88,7 +88,7 @@ impl Permutation {
 		self.rounds[9].state_out
 	}
 
-	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	pub fn populate<U>(&self, index: &mut TableWitnessSegment<U>) -> Result<()>
 	where
 		U: Pod + PackScalar<B1> + PackScalar<B8>,
 		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
@@ -102,7 +102,7 @@ impl Permutation {
 	/// Populate the input column of the witness with a full permutation state.
 	pub fn populate_state_in<'a, U>(
 		&self,
-		index: &mut TableWitnessIndexSegment<U>,
+		index: &mut TableWitnessSegment<U>,
 		states: impl IntoIterator<Item = &'a [B8; 64]>,
 	) -> Result<()>
 	where
@@ -126,7 +126,7 @@ impl Permutation {
 	/// This is currently only used for testing.
 	pub fn read_state_outs<'a, U>(
 		&'a self,
-		index: &'a mut TableWitnessIndexSegment<'a, U>,
+		index: &'a mut TableWitnessSegment<'a, U>,
 	) -> Result<impl Iterator<Item = [B8; 64]> + 'a>
 	where
 		U: PackScalar<B8>,
@@ -253,7 +253,7 @@ impl PermutationRound {
 		}
 	}
 
-	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	pub fn populate<U>(&self, index: &mut TableWitnessSegment<U>) -> Result<()>
 	where
 		U: Pod + PackScalar<B1> + PackScalar<B8>,
 		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
@@ -361,7 +361,7 @@ impl<const V: usize> SBox<V> {
 		}
 	}
 
-	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	pub fn populate<U>(&self, index: &mut TableWitnessSegment<U>) -> Result<()>
 	where
 		U: Pod + PackScalar<B1> + PackScalar<B8>,
 		PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
@@ -440,7 +440,7 @@ mod tests {
 		sbox.populate(&mut segment).unwrap();
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
@@ -494,7 +494,7 @@ mod tests {
 		}
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
@@ -548,7 +548,7 @@ mod tests {
 		}
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
