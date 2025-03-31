@@ -26,7 +26,6 @@ use itertools::Itertools;
 use super::{
 	column::{Col, ColumnShape},
 	error::Error,
-	statement::Statement,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
 	ColumnDef, ColumnId, ColumnIndex, Expr,
@@ -83,10 +82,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		Ok(())
 	}
 
-	pub fn into_multilinear_extension_index(
-		self,
-		statement: &Statement<B128>,
-	) -> MultilinearExtensionIndex<'alloc, U, B128>
+	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, U, B128>
 	where
 		U: PackScalar<B1>
 			+ PackScalar<B8>
@@ -130,7 +126,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			for log_values_per_row in table.partitions.keys() {
 				let oracle_id = first_oracle_id_in_table + count;
 				let size = table_witness.size << log_values_per_row;
-				let log_size = table.log_capacity + log_values_per_row;
+				let log_size = table_witness.log_capacity + log_values_per_row;
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
 					.multilinear_extension::<PackedType<U, B1>>()
@@ -1019,7 +1015,7 @@ mod tests {
 	use super::*;
 	use crate::builder::{
 		types::{B1, B32, B8},
-		ConstraintSystem, TableBuilder,
+		ConstraintSystem, Statement, TableBuilder,
 	};
 
 	#[test]
@@ -1152,7 +1148,8 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let table_size = 7;
 		let mut index =
-			TableWitnessIndex::<OptimalUnderlier256b>::new(&allocator, &inner_table, table_size).unwrap();
+			TableWitnessIndex::<OptimalUnderlier256b>::new(&allocator, &inner_table, table_size)
+				.unwrap();
 
 		assert_eq!(index.log_capacity(), 4);
 		assert_eq!(index.min_log_segment_size(), 4);

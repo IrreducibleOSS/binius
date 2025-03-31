@@ -190,7 +190,7 @@ mod arithmetization {
 			.unwrap();
 
 		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,
@@ -233,7 +233,7 @@ mod arithmetization {
 			.unwrap();
 
 		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,

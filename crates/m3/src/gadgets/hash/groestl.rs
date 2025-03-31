@@ -440,7 +440,7 @@ mod tests {
 		sbox.populate(&mut segment).unwrap();
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
@@ -494,7 +494,7 @@ mod tests {
 		}
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
@@ -548,7 +548,7 @@ mod tests {
 		}
 
 		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index(&statement);
+		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}

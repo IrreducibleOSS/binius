@@ -110,7 +110,7 @@ fn main() -> Result<()> {
 	drop(trace_gen_scope);
 
 	let ccs = cs.compile(&statement).unwrap();
-	let witness = witness.into_multilinear_extension_index(&statement);
+	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
 		_,
