@@ -13,7 +13,7 @@ use binius_core::{
 };
 use binius_field::{underlier::UnderlierType, TowerField};
 use binius_math::LinearNormalForm;
-use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
+use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
 
 use super::{
@@ -209,8 +209,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 			}
 
 			// Add multilinear oracles for all table columns.
+			let log_capacity = table.log_capacity(count);
 			for column_info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let n_vars = log_capacity + column_info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(
 					&mut oracles,
 					&oracle_lookup,
@@ -233,7 +234,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					..
 				} = partition;
 
-				let n_vars = log2_ceil_usize(count) + log2_strict_usize(*values_per_row);
+				let n_vars = log_capacity + log2_strict_usize(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
