@@ -11,7 +11,7 @@ use binius_field::{
 };
 use binius_math::{
 	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
-	MultilinearQueryRef,
+	MultilinearQueryRef, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -268,7 +268,10 @@ where
 							},
 						);
 
+					let row_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
+						let evals_z = RowsBatchRef::new(evals_z, row_len);
+
 						for (evaluator, round_evals, &subcube_count) in
 							izip!(evaluators, round_evals.iter_mut(), &subcube_count_by_evaluator)
 						{
@@ -284,7 +287,7 @@ where
 									subcube_vars,
 									subcube_index,
 									is_infinity_point,
-									evals_z,
+									&evals_z,
 								);
 						}
 					});

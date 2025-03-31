@@ -17,7 +17,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, PackedField, TowerField,
 };
-use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly};
+use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
@@ -568,6 +568,7 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 			.iter()
 			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&dummy_col))
 			.collect::<Vec<_>>();
+		let cols = RowsBatchRef::new(&cols, 1 << log_packed_elems);
 
 		// REVIEW: This could be inefficient with very large segments because batch evaluation
 		// allocates more memory, proportional to the size of the segment. Because of how segments
