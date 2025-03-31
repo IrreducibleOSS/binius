@@ -19,9 +19,7 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{
-		ArithCircuitPoly, Error as PolynomialError, MultilinearComposite, MultivariatePoly,
-	},
+	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultivariatePoly},
 	protocols::sumcheck::{
 		common::{
 			equal_n_vars_check, get_nontrivial_evaluation_points,
@@ -34,7 +32,8 @@ use crate::{
 };
 
 pub fn validate_witness<F, P, M, Composition>(
-	multilinears: &[M],
+	n_vars: usize,
+	multilinears: &[SumcheckMultilinear<P, M>],
 	eq_ind_challenges: &[F],
 	eq_ind_sum_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 ) -> Result<(), Error>
@@ -44,11 +43,40 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Composition: CompositionPoly<P>,
 {
-	let n_vars = equal_n_vars_check(multilinears)?;
-	let multilinears = multilinears.iter().collect::<Vec<_>>();
-
 	if eq_ind_challenges.len() != n_vars {
 		bail!(Error::IncorrectEqIndChallengesLength);
+	}
+
+	for multilinear in multilinears {
+		match multilinear {
+			SumcheckMultilinear::Transparent {
+				multilinear,
+				zero_scalars_suffix,
+				..
+			} => {
+				if multilinear.n_vars() != n_vars {
+					bail!(Error::NumberOfVariablesMismatch);
+				}
+
+				let first_zero = (1usize << n_vars)
+					.checked_sub(*zero_scalars_suffix)
+					.ok_or(Error::IncorrectZeroScalarsSuffixes)?;
+
+				for i in first_zero..1 << n_vars {
+					if multilinear.evaluate_on_hypercube(i)? != F::ZERO {
+						bail!(Error::IncorrectZeroScalarsSuffixes);
+					}
+				}
+			}
+
+			SumcheckMultilinear::Folded {
+				large_field_folded_evals,
+			} => {
+				if large_field_folded_evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+					bail!(Error::IncorrectZeroScalarsSuffixes);
+				}
+			}
+		}
 	}
 
 	let backend = make_portable_backend();
@@ -60,12 +88,32 @@ where
 			composition,
 			sum: expected_sum,
 		} = claim;
-		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
 		let sum = (0..(1 << n_vars))
 			.into_par_iter()
-			.map(|j| -> Result<F, Error> {
-				Ok(eq_ind.evaluate_on_hypercube(j)? * witness.evaluate_on_hypercube(j)?)
-			})
+			.try_fold(
+				|| (vec![P::zero(); multilinears.len()], F::ZERO),
+				|(mut multilinear_evals, mut running_sum), j| -> Result<_, Error> {
+					for (eval, multilinear) in izip!(&mut multilinear_evals, multilinears) {
+						*eval = P::broadcast(match multilinear {
+							SumcheckMultilinear::Transparent { multilinear, .. } => {
+								multilinear.evaluate_on_hypercube(j)?
+							}
+							SumcheckMultilinear::Folded {
+								large_field_folded_evals,
+							} => binius_field::packed::get_packed_slice_checked(
+								large_field_folded_evals,
+								j,
+							)
+							.unwrap_or(F::ZERO),
+						});
+					}
+
+					running_sum += eq_ind.evaluate_on_hypercube(j)?
+						* composition.evaluate(&multilinear_evals)?.get(0);
+					Ok((multilinear_evals, running_sum))
+				},
+			)
+			.map(|fold_state| -> Result<_, Error> { Ok(fold_state?.1) })
 			.try_reduce(|| F::ZERO, |a, b| Ok(a + b))?;
 
 		if sum != expected_sum {
@@ -230,8 +278,7 @@ where
 					sum: composite_claim.sum,
 				})
 				.collect::<Vec<_>>();
-			// TODO: fix validate_witness
-			//			validate_witness(&multilinears, eq_ind_challenges, composite_claims.clone())?;
+			validate_witness(n_vars, &multilinears, eq_ind_challenges, composite_claims.clone())?;
 		}
 
 		if eq_ind_challenges.len() != n_vars {
