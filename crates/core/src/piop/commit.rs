@@ -116,6 +116,7 @@ fn n_packed_vars_for_committed_oracle<F: TowerField>(
 		.checked_sub(F::TOWER_LEVEL - tower_level)
 		.ok_or_else(|| Error::OracleTooSmall {
 			id: oracle.id(),
+			n_vars,
 			min_vars: F::TOWER_LEVEL - tower_level,
 		})
 }

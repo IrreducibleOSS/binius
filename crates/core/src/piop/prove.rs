@@ -119,6 +119,7 @@ where
 				// i is not an OracleId, but whatever, that's a problem for whoever has to debug
 				// this
 				id: i,
+				n_vars: multilin.n_vars(),
 				min_vars: multilin.log_extension_degree(),
 			});
 		}

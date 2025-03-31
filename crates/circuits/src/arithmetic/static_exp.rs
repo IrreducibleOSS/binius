@@ -76,7 +76,7 @@ pub fn u16_static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 		],
 	)?;
 
-	if let Some(witness) = builder.witness() {
+	let multiplicities = if let Some(witness) = builder.witness() {
 		let xin = witness.get::<BinaryField16b>(xin)?.as_slice::<u16>();
 
 		let mut exp_result = witness.new_column::<BinaryField64b>(exp_result);
@@ -98,13 +98,24 @@ pub fn u16_static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 				let exp_result_u64: u64 = exp_result[i].into();
 				*look_val = ((xin[i] as u128) << 64) | exp_result_u64 as u128;
 			});
-	}
+
+		let mut multiplicities = vec![0usize; 1 << 16];
+		for &i in xin {
+			multiplicities[i as usize] += 1;
+		}
+
+		Some(multiplicities)
+	} else {
+		None
+	};
 
 	plain_lookup::plain_lookup::<BinaryField128b, LOG_MAX_MULTIPLICITY>(
 		builder,
-		g_lookup_table,
-		lookup_values,
-		1 << log_rows,
+		"u16_exp_lookup",
+		&[1 << log_rows],
+		&[[lookup_values]],
+		[g_lookup_table],
+		multiplicities,
 	)?;
 
 	Ok((exp_result, g_lookup_table))

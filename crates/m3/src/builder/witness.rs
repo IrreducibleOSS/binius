@@ -19,7 +19,7 @@ use binius_field::{
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::checked_arithmetics::{checked_log_2, log2_ceil_usize};
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
 use getset::CopyGetters;
 
@@ -35,7 +35,7 @@ use super::{
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
-	pub tables: Vec<TableWitnessIndex<'cs, 'alloc, U, F>>,
+	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, U, F>>>,
 }
 
 impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, F> {
@@ -43,7 +43,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		&mut self,
 		table_id: TableId,
 	) -> Option<&mut TableWitnessIndex<'cs, 'alloc, U, F>> {
-		self.tables.get_mut(table_id)
+		self.tables
+			.get_mut(table_id)
+			.and_then(|inner| inner.as_mut())
 	}
 
 	pub fn fill_table_sequential<T: TableFiller<U, F>>(
@@ -51,11 +53,13 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		table: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		let table_id = table.id();
-		let witness = self
-			.get_table(table_id)
-			.ok_or(Error::MissingTable { table_id })?;
-		fill_table_sequential(table, rows, witness).map_err(Error::TableFill)?;
+		if !rows.is_empty() {
+			let table_id = table.id();
+			let witness = self
+				.get_table(table_id)
+				.ok_or(Error::MissingTable { table_id })?;
+			fill_table_sequential(table, rows, witness).map_err(Error::TableFill)?;
+		}
 		Ok(())
 	}
 
@@ -74,6 +78,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table in self.tables {
+			let Some(table) = table else {
+				continue;
+			};
 			let table_id = table.table_id();
 			let cols = immutable_witness_index_columns(table.cols);
 
@@ -101,7 +108,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			for log_values_per_row in table.selector_log_values_per_rows.into_iter() {
 				let oracle_id = first_oracle_id_in_table + count;
 				let size = statement.table_sizes[table_id] << log_values_per_row;
-				let log_size = log2_ceil_usize(size);
+				let log_size = table.log_capacity + log_values_per_row;
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
 					.multilinear_extension::<PackedType<U, B1>>()
@@ -226,8 +233,7 @@ fn immutable_witness_index_columns<U: UnderlierType>(
 
 impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc, U, F> {
 	pub fn new(allocator: &'alloc bumpalo::Bump, table: &'cs Table<F>, table_size: usize) -> Self {
-		// TODO: Make packed columns alias the same slice data
-		let log_capacity = log2_ceil_usize(table_size);
+		let log_capacity = table.log_capacity(table_size);
 
 		let mut cols = Vec::new();
 		let mut oracle_offset = 0;
@@ -610,7 +616,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 	/// Fill the table witness with data derived from the given rows.
 	fn fill<'a>(
 		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event>,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
 		witness: &'a mut TableWitnessIndexSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
@@ -665,7 +671,7 @@ pub fn fill_table_sequential<U: UnderlierType, F: TowerField, T: TableFiller<U, 
 mod tests {
 	use assert_matches::assert_matches;
 	use binius_field::{
-		arch::OptimalUnderlier128b,
+		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
 	};
 
@@ -802,17 +808,20 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let table_size = 7;
 		let mut index =
-			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
+			TableWitnessIndex::<OptimalUnderlier256b>::new(&allocator, &inner_table, table_size);
 
-		assert_eq!(index.min_log_segment_size(), 3);
+		assert_eq!(index.log_capacity(), 4);
+		assert_eq!(index.min_log_segment_size(), 4);
 
-		let mut iter = index.segments(4);
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		let mut iter = index.segments(5);
+		// Check that the segment size is clamped to the capacity.
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 
 		let mut iter = index.segments(2);
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		// Check that the segment size is clamped to the minimum segment size.
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 	}

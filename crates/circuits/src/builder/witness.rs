@@ -30,6 +30,7 @@ pub struct Builder<'arena> {
 struct WitnessBuilderEntry<'arena> {
 	witness: Result<MultilinearWitness<'arena, PackedType<U, F>>, binius_math::Error>,
 	tower_level: usize,
+	nonzero_scalars_prefix: usize,
 	data: &'arena [U],
 }
 
@@ -50,16 +51,31 @@ impl<'arena> Builder<'arena> {
 		U: PackScalar<FS>,
 		F: ExtensionField<FS>,
 	{
+		let nonzero_scalars_prefix = 1 << self.oracles.borrow().n_vars(id);
+		self.new_column_with_nonzero_scalars_prefix(id, nonzero_scalars_prefix)
+	}
+
+	pub fn new_column_with_nonzero_scalars_prefix<FS: TowerField>(
+		&self,
+		id: OracleId,
+		nonzero_scalars_prefix: usize,
+	) -> EntryBuilder<'arena, FS>
+	where
+		U: PackScalar<FS>,
+		F: ExtensionField<FS>,
+	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
+		// TODO: validate nonzero_scalars_prefix
 		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let data = bumpalo::vec![in self.bump; U::default(); len].into_bump_slice_mut();
 		EntryBuilder {
 			_marker: PhantomData,
-			log_rows,
-			id,
-			data: Some(data),
 			entries: self.entries.clone(),
+			id,
+			log_rows,
+			nonzero_scalars_prefix,
+			data: Some(data),
 		}
 	}
 
@@ -74,15 +90,17 @@ impl<'arena> Builder<'arena> {
 	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
+		let nonzero_scalars_prefix = 1 << log_rows;
 		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let default = WithUnderlier::to_underlier(PackedType::<U, FS>::broadcast(default));
 		let data = bumpalo::vec![in self.bump; default; len].into_bump_slice_mut();
 		EntryBuilder {
 			_marker: PhantomData,
-			log_rows,
-			id,
-			data: Some(data),
 			entries: self.entries.clone(),
+			id,
+			log_rows,
+			nonzero_scalars_prefix,
+			data: Some(data),
 		}
 	}
 
@@ -114,6 +132,7 @@ impl<'arena> Builder<'arena> {
 		Ok(WitnessEntry {
 			data: entry.data,
 			log_rows: oracles.n_vars(id),
+			nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
 			_marker: PhantomData,
 		})
 	}
@@ -137,6 +156,7 @@ impl<'arena> Builder<'arena> {
 		}
 		entries[id] = Some(WitnessBuilderEntry {
 			data: entry.data,
+			nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
 			tower_level: FS::TOWER_LEVEL,
 			witness: MultilinearExtension::new(entry.log_rows, entry.packed())
 				.map(|x| x.specialize_arc_dyn()),
@@ -151,9 +171,9 @@ impl<'arena> Builder<'arena> {
 			.into_inner()
 			.into_iter()
 			.enumerate()
-			.filter_map(|(id, entry)| entry.map(|entry| Ok((id, entry.witness?))))
+			.filter_map(|(id, entry)| entry.map(|entry| Ok((id, entry.witness?, entry.nonzero_scalars_prefix))))
 			.collect::<Result<Vec<_>, Error>>()?;
-		result.update_multilin_poly(entries)?;
+		result.update_multilin_poly_with_nonzero_scalars_prefixes(entries)?;
 		Ok(result)
 	}
 }
@@ -165,6 +185,7 @@ where
 {
 	data: &'arena [U],
 	log_rows: usize,
+	nonzero_scalars_prefix: usize,
 	_marker: PhantomData<FS>,
 }
 
@@ -187,9 +208,13 @@ where
 		FE: TowerField + ExtensionField<FS>,
 		U: PackScalar<FE>,
 	{
+		let log_extension_degree = <FE as ExtensionField<FS>>::LOG_DEGREE;
 		WitnessEntry {
 			data: self.data,
-			log_rows: self.log_rows - <FE as ExtensionField<FS>>::LOG_DEGREE,
+			log_rows: self.log_rows - log_extension_degree,
+			nonzero_scalars_prefix: self
+				.nonzero_scalars_prefix
+				.div_ceil(1 << log_extension_degree),
 			_marker: PhantomData,
 		}
 	}
@@ -210,6 +235,7 @@ where
 	entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena>>>>>,
 	id: OracleId,
 	log_rows: usize,
+	nonzero_scalars_prefix: usize,
 	data: Option<&'arena mut [U]>,
 }
 
@@ -247,11 +273,13 @@ where
 		let data = Option::take(&mut self.data).expect("data is always Some until this point");
 		let mut entries = self.entries.borrow_mut();
 		let id = self.id;
+		let nonzero_scalars_prefix = self.nonzero_scalars_prefix;
 		if id >= entries.len() {
 			entries.resize_with(id + 1, || None);
 		}
 		entries[id] = Some(WitnessBuilderEntry {
 			data,
+			nonzero_scalars_prefix,
 			tower_level: FS::TOWER_LEVEL,
 			witness: MultilinearExtension::new(
 				self.log_rows,
