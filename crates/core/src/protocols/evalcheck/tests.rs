@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with, slice};
+use std::{array, iter, iter::repeat_with, slice};
 
 use assert_matches::assert_matches;
 use binius_field::{
@@ -24,7 +24,7 @@ use crate::{
 	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
 		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+		EvalcheckProofEnum, EvalcheckProver, EvalcheckVerifier, ProofIndex,
 	},
 	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
@@ -458,7 +458,7 @@ fn test_evalcheck_repeating() {
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
 	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
+	assert_matches!(proof[0], EvalcheckProofEnum::Repeating(..));
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
@@ -540,7 +540,7 @@ fn test_evalcheck_zero_padded() {
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
 	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::ZeroPadded { .. });
+	assert_matches!(proof[0], EvalcheckProofEnum::ZeroPadded { .. });
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
@@ -549,39 +549,34 @@ fn test_evalcheck_zero_padded() {
 // Test evalcheck serialization
 #[test]
 fn test_evalcheck_serialization() {
-	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Committed)
+	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProofEnum<F>; N] {
+		array::from_fn(|_| EvalcheckProofEnum::Committed)
 	}
 
-	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Transparent)
+	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProofEnum<F>; N] {
+		array::from_fn(|_| EvalcheckProofEnum::Transparent)
 	}
 
-	fn rand_composite<'a, F: TowerField>(
-		elems: impl Iterator<Item = &'a EvalcheckProof<F>>,
-	) -> EvalcheckProof<F> {
+	fn rand_composite<F: TowerField>(
+		elems: impl Iterator<Item = ProofIndex>,
+	) -> EvalcheckProofEnum<F> {
 		let mut rng = thread_rng();
-		EvalcheckProof::LinearCombination {
-			subproofs: elems
-				.map(|x| (F::random(&mut rng), x.clone()))
-				.collect::<Vec<_>>(),
+		EvalcheckProofEnum::LinearCombination {
+			subproofs: elems.map(|x| (F::random(&mut rng), x)).collect::<Vec<_>>(),
 		}
 	}
 
-	fn rand_repeating<F: TowerField>(inner: &EvalcheckProof<F>) -> EvalcheckProof<F> {
-		EvalcheckProof::Repeating(Box::new(inner.clone()))
+	fn rand_repeating<F: TowerField>(inner_idx: ProofIndex) -> EvalcheckProofEnum<F> {
+		EvalcheckProofEnum::Repeating(inner_idx)
 	}
 
 	let committed = rand_committed::<BinaryField128b, 10>();
-	let transparent = rand_transparent::<_, 20>();
-	let repeating = transparent.clone().map(|x| rand_repeating(&x));
-	let first_linear_combination =
-		rand_composite(committed[..10].iter().chain(repeating[..2].iter()));
-	let second_linear_combination = rand_composite(
-		slice::from_ref(&first_linear_combination)
-			.iter()
-			.chain(transparent[..20].iter()),
-	);
+	let transparent = rand_transparent::<BinaryField128b, 20>();
+	let repeating = (10..30)
+		.map(|x| rand_repeating::<BinaryField128b>(x))
+		.collect::<Vec<_>>();
+	let first_linear_combination = rand_composite::<BinaryField128b>((0..10).chain(20..22));
+	let second_linear_combination = rand_composite::<BinaryField128b>(iter::once(50).chain(10..30));
 
 	let mut transcript = crate::transcript::ProverTranscript::<
 		crate::fiat_shamir::HasherChallenger<Groestl256>,

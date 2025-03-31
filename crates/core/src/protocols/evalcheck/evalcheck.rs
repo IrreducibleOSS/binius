@@ -12,7 +12,7 @@ use bytes::{Buf, BufMut};
 use super::error::Error;
 use crate::{
 	oracle::OracleId,
-	transcript::{TranscriptReader, TranscriptWriter},
+	transcript::{read_u64, write_u64, TranscriptReader, TranscriptWriter},
 };
 
 #[derive(Debug, Clone)]
@@ -24,6 +24,9 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Claimed Evaluation
 	pub eval: F,
 }
+
+// #[derive(Debug, Clone)]
+// pub struct EvalcheckProof<F: Field>(pub Vec<EvalcheckProofEnum<F>>);
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -38,40 +41,20 @@ enum EvalcheckNumerics {
 	CompositeMLE,
 }
 
+pub type ProofIndex = usize;
+
+/// A struct for storing the EvalcheckProofs, for proofs referencing inner evalchecks the index is
+/// is index into `EvalcheckProof` struct
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalcheckProof<F: Field> {
+pub enum EvalcheckProofEnum<F: Field> {
 	Transparent,
 	Committed,
 	Shifted,
 	Packed,
-	Repeating(Box<EvalcheckProof<F>>),
-	LinearCombination {
-		subproofs: Vec<(F, EvalcheckProof<F>)>,
-	},
-	ZeroPadded(F, Box<EvalcheckProof<F>>),
+	Repeating(ProofIndex),
+	LinearCombination { subproofs: Vec<(F, ProofIndex)> },
+	ZeroPadded(F, ProofIndex),
 	CompositeMLE,
-}
-
-impl<F: Field> EvalcheckProof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
-		match self {
-			Self::Transparent => EvalcheckProof::Transparent,
-			Self::Committed => EvalcheckProof::Committed,
-			Self::Shifted => EvalcheckProof::Shifted,
-			Self::Packed => EvalcheckProof::Packed,
-			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
-			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
-				subproofs: subproofs
-					.into_iter()
-					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
-					.collect(),
-			},
-			Self::ZeroPadded(eval, proof) => {
-				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
-			}
-			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
-		}
-	}
 }
 
 impl EvalcheckNumerics {
@@ -93,40 +76,40 @@ impl EvalcheckNumerics {
 /// Serializes the `EvalcheckProof` into the transcript
 pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 	transcript: &mut TranscriptWriter<B>,
-	evalcheck: &EvalcheckProof<F>,
+	evalcheck: &EvalcheckProofEnum<F>,
 ) {
 	match evalcheck {
-		EvalcheckProof::Transparent => {
+		EvalcheckProofEnum::Transparent => {
 			transcript.write_bytes(&[EvalcheckNumerics::Transparent as u8]);
 		}
-		EvalcheckProof::Committed => {
+		EvalcheckProofEnum::Committed => {
 			transcript.write_bytes(&[EvalcheckNumerics::Committed as u8]);
 		}
-		EvalcheckProof::Shifted => {
+		EvalcheckProofEnum::Shifted => {
 			transcript.write_bytes(&[EvalcheckNumerics::Shifted as u8]);
 		}
-		EvalcheckProof::Packed => {
+		EvalcheckProofEnum::Packed => {
 			transcript.write_bytes(&[EvalcheckNumerics::Packed as u8]);
 		}
-		EvalcheckProof::Repeating(inner) => {
+		EvalcheckProofEnum::Repeating(inner) => {
 			transcript.write_bytes(&[EvalcheckNumerics::Repeating as u8]);
-			serialize_evalcheck_proof(transcript, inner);
+			write_u64(transcript, *inner as u64)
 		}
-		EvalcheckProof::LinearCombination { subproofs } => {
+		EvalcheckProofEnum::LinearCombination { subproofs } => {
 			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
 			let len_u64 = subproofs.len() as u64;
 			transcript.write_bytes(&len_u64.to_le_bytes());
-			for (scalar, subproof) in subproofs {
+			for (scalar, subproof_idx) in subproofs {
 				transcript.write_scalar(*scalar);
-				serialize_evalcheck_proof(transcript, subproof)
+				write_u64(transcript, *subproof_idx as u64)
 			}
 		}
-		EvalcheckProof::ZeroPadded(val, subproof) => {
+		EvalcheckProofEnum::ZeroPadded(val, subproof_idx) => {
 			transcript.write_bytes(&[EvalcheckNumerics::ZeroPadded as u8]);
 			transcript.write_scalar(*val);
-			serialize_evalcheck_proof(transcript, subproof);
+			write_u64(transcript, *subproof_idx as u64)
 		}
-		EvalcheckProof::CompositeMLE => {
+		EvalcheckProofEnum::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
 		}
 	}
@@ -135,38 +118,38 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 /// Deserializes the `EvalcheckProof` object from the given transcript.
 pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	transcript: &mut TranscriptReader<B>,
-) -> Result<EvalcheckProof<F>, Error> {
+) -> Result<EvalcheckProofEnum<F>, Error> {
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
 
 	match as_enum {
-		EvalcheckNumerics::Transparent => Ok(EvalcheckProof::Transparent),
-		EvalcheckNumerics::Committed => Ok(EvalcheckProof::Committed),
-		EvalcheckNumerics::Shifted => Ok(EvalcheckProof::Shifted),
-		EvalcheckNumerics::Packed => Ok(EvalcheckProof::Packed),
+		EvalcheckNumerics::Transparent => Ok(EvalcheckProofEnum::Transparent),
+		EvalcheckNumerics::Committed => Ok(EvalcheckProofEnum::Committed),
+		EvalcheckNumerics::Shifted => Ok(EvalcheckProofEnum::Shifted),
+		EvalcheckNumerics::Packed => Ok(EvalcheckProofEnum::Packed),
 		EvalcheckNumerics::Repeating => {
-			let inner = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::Repeating(Box::new(inner)))
+			let inner_idx = read_u64(transcript)? as ProofIndex;
+			Ok(EvalcheckProofEnum::Repeating(inner_idx))
 		}
 		EvalcheckNumerics::LinearCombination => {
 			let mut len = [0u8; 8];
 			transcript.read_bytes(&mut len)?;
 			let len = u64::from_le_bytes(len) as usize;
-			let mut subproofs: Vec<(F, EvalcheckProof<F>)> = Vec::new();
+			let mut subproofs: Vec<(F, ProofIndex)> = Vec::new();
 			for _ in 0..len {
 				let scalar = transcript.read_scalar()?;
-				let subproof = deserialize_evalcheck_proof(transcript)?;
-				subproofs.push((scalar, subproof));
+				let subproof_idx = read_u64(transcript)? as ProofIndex;
+				subproofs.push((scalar, subproof_idx));
 			}
-			Ok(EvalcheckProof::LinearCombination { subproofs })
+			Ok(EvalcheckProofEnum::LinearCombination { subproofs })
 		}
 		EvalcheckNumerics::ZeroPadded => {
 			let scalar = transcript.read_scalar()?;
-			let subproof = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
+			let subproof_idx = read_u64(transcript)? as ProofIndex;
+			Ok(EvalcheckProofEnum::ZeroPadded(scalar, subproof_idx))
 		}
-		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
+		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProofEnum::CompositeMLE),
 	}
 }
 
@@ -205,6 +188,10 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.flatten()
 			.map(|(_, val)| val)
 			.collect::<Vec<_>>()
+	}
+
+	pub fn clear(&mut self) {
+		self.clear()
 	}
 }
 

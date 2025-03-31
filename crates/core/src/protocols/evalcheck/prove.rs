@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use super::{
 	error::Error,
-	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProofEnum},
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedQueries, ProjectedBivariateMeta,
@@ -51,7 +51,7 @@ where
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	finalized_proofs: EvalPointOracleIdMap<(F, EvalcheckProof<F>), F>,
+	finalized_proofs: EvalPointOracleIdMap<(usize, F, EvalcheckProofEnum<F>), F>,
 
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
 	incomplete_proof_claims: EvalPointOracleIdMap<EvalcheckMultilinearClaim<F>, F>,
@@ -62,6 +62,8 @@ where
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
 	memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
 	backend: &'a Backend,
+
+	proof_context_index: usize,
 }
 
 impl<'a, 'b, U, F, Backend> EvalcheckProver<'a, 'b, U, F, Backend>
@@ -92,6 +94,7 @@ where
 			memoized_queries: MemoizedQueries::new(),
 			backend,
 			incomplete_proof_claims: EvalPointOracleIdMap::new(),
+			proof_context_index: 0,
 		}
 	}
 
@@ -105,12 +108,22 @@ where
 			.collect()
 	}
 
+	fn reset_context(&mut self) {
+		self.proof_context_index = 0;
+	}
+
+	fn next_proof(&mut self) -> usize {
+		let idx = self.proof_context_index;
+		self.proof_context_index += 1;
+		idx
+	}
+
 	/// Prove an evalcheck claim.
 	///
 	/// Given a prover state containing [`MultilinearOracleSet`] indexing into given
 	/// [`MultilinearExtensionIndex`], we prove an [`EvalcheckMultilinearClaim`] (stating that given composite
 	/// `poly` equals `eval` at `eval_point`) by recursively processing each of the multilinears.
-	/// This way the evalcheck claim gets transformed into an [`EvalcheckProof`]
+	/// This way the evalcheck claim gets transformed into an [`EvalcheckProofEnum`]
 	/// and a new set of claims on:
 	///  * Committed polynomial evaluations
 	///  * New sumcheck constraints that need to be proven in subsequent rounds (those get appended to `new_sumchecks`)
@@ -123,7 +136,8 @@ where
 	pub fn prove(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	) -> Result<Vec<EvalcheckProof<F>>, Error> {
+	) -> Result<Vec<EvalcheckProofEnum<F>>, Error> {
+		self.reset_context();
 		for claim in &evalcheck_claims {
 			self.claims_without_evals_dedup
 				.insert(claim.id, claim.eval_point.clone(), ());
@@ -245,15 +259,19 @@ where
 
 		// Step 4: Find and return the proofs of the original claims.
 
-		Ok(evalcheck_claims
+		let out = Ok(evalcheck_claims
 			.iter()
 			.map(|claim| {
 				self.finalized_proofs
 					.get(claim.id, &claim.eval_point)
-					.map(|(_, proof)| proof.clone())
+					.map(|(_, _, proof)| proof.clone())
 					.expect("finalized_proofs contains all the proofs")
 			})
-			.collect::<Vec<_>>())
+			.collect::<Vec<_>>());
+
+		// Debugging
+		// self.finalized_proofs.clear();
+		out
 	}
 
 	#[instrument(
@@ -288,18 +306,20 @@ where
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Transparent { .. } => {
+				let next_idx = self.next_proof();
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::Transparent),
+					(next_idx, eval, EvalcheckProofEnum::Transparent),
 				);
 			}
 
 			MultilinearPolyVariant::Committed => {
+				let next_idx = self.next_proof();
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::Committed),
+					(next_idx, eval, EvalcheckProofEnum::Committed),
 				);
 			}
 
@@ -317,26 +337,29 @@ where
 			}
 
 			MultilinearPolyVariant::Shifted { .. } => {
+				let next_idx = self.next_proof();
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::Shifted),
+					(next_idx, eval, EvalcheckProofEnum::Shifted),
 				);
 			}
 
 			MultilinearPolyVariant::Packed { .. } => {
+				let next_idx = self.next_proof();
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::Packed),
+					(next_idx, eval, EvalcheckProofEnum::Packed),
 				);
 			}
 
 			MultilinearPolyVariant::Composite(_) => {
+				let next_idx = self.next_proof();
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::CompositeMLE),
+					(next_idx, eval, EvalcheckProofEnum::CompositeMLE),
 				);
 			}
 
@@ -415,11 +438,15 @@ where
 				let inner_eval_point = &evalcheck_claim.eval_point[..n_vars];
 				self.finalized_proofs
 					.get(id, inner_eval_point)
-					.map(|(_, subproof)| subproof.clone())
-					.map(move |subproof| {
-						let proof = EvalcheckProof::Repeating(Box::new(subproof));
-						self.finalized_proofs
-							.insert(evalcheck_claim.id, eval_point, (eval, proof));
+					.map(|(inner_idx, _, subproof)| (*inner_idx, subproof.clone()))
+					.map(move |(inner_idx, _)| {
+						let proof = EvalcheckProofEnum::Repeating(inner_idx);
+						let next_idx = self.next_proof();
+						self.finalized_proofs.insert(
+							evalcheck_claim.id,
+							eval_point,
+							(next_idx, eval, proof),
+						);
 					})
 			}
 			MultilinearPolyVariant::Projected(projected) => {
@@ -438,12 +465,13 @@ where
 				};
 				self.finalized_proofs
 					.get(id, &new_eval_point)
-					.map(|(_, subproof)| subproof.clone())
+					.map(|(_, _, subproof)| subproof.clone())
 					.map(|subproof| {
+						let next_idx = self.next_proof();
 						self.finalized_proofs.insert(
 							evalcheck_claim.id,
 							eval_point,
-							(eval, subproof),
+							(next_idx, eval, subproof),
 						);
 					})
 			}
@@ -453,14 +481,15 @@ where
 				.map(|suboracle_id| {
 					self.finalized_proofs
 						.get(suboracle_id, &evalcheck_claim.eval_point)
-						.map(|(eval, subproof)| (*eval, subproof.clone()))
+						.map(|(inner_idx, eval, _)| (*eval, *inner_idx))
 				})
 				.collect::<Option<Vec<_>>>()
 				.map(|subproofs| {
+					let next_idx = self.next_proof();
 					self.finalized_proofs.insert(
 						evalcheck_claim.id,
 						eval_point,
-						(eval, EvalcheckProof::LinearCombination { subproofs }),
+						(next_idx, eval, EvalcheckProofEnum::LinearCombination { subproofs }),
 					);
 				}),
 
@@ -469,12 +498,17 @@ where
 				let inner_eval_point = &evalcheck_claim.eval_point[..inner_n_vars];
 				self.finalized_proofs
 					.get(inner_id, inner_eval_point)
-					.map(|(eval, subproof)| (*eval, subproof.clone()))
-					.map(|(internal_eval, subproof)| {
+					.map(|(inner_idx, eval, _)| (*inner_idx, *eval))
+					.map(|(inner_idx, internal_eval)| {
+						let next_idx = self.next_proof();
 						self.finalized_proofs.insert(
 							evalcheck_claim.id,
 							eval_point,
-							(eval, EvalcheckProof::ZeroPadded(internal_eval, Box::new(subproof))),
+							(
+								next_idx,
+								eval,
+								EvalcheckProofEnum::ZeroPadded(internal_eval, inner_idx),
+							),
 						);
 					})
 			}
@@ -540,7 +574,7 @@ where
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for id in linear_combination.polys() {
-					let (eval, _) = self
+					let (_, eval, _) = self
 						.finalized_proofs
 						.get(id, &eval_point)
 						.expect("finalized_proofs contains all the proofs");
@@ -556,7 +590,7 @@ where
 				let inner_n_vars = self.oracles.n_vars(id);
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 
-				let (eval, _) = self
+				let (_, eval, _) = self
 					.finalized_proofs
 					.get(id, &inner_eval_point)
 					.expect("finalized_proofs contains all the proofs");

@@ -41,6 +41,12 @@ pub enum VerificationError {
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
+	#[error("The number of claims does not match the number of proofs given")]
+	NumberOfClaimsMismatch,
+	#[error("Not all evalcheck proof claims were verified")]
+	NotAllProofsVerified,
+	#[error("The proof index {index} into evalcheck is out of range; length: {length}")]
+	ProofIndexOutOfRange { index: usize, length: usize },
 }
 
 impl VerificationError {
