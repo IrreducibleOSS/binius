@@ -31,11 +31,10 @@ impl<'a, T> RowsBatch<'a, T> {
 	}
 
 	#[inline(always)]
-	pub fn get_ref(&self) -> RowsBatchRef<'a, '_, T> {
+	pub fn get_ref(&self) -> RowsBatchRef<'_, T> {
 		RowsBatchRef {
 			rows: self.rows.as_slice(),
 			row_len: self.row_len,
-			_pd: std::marker::PhantomData,
 		}
 	}
 }
@@ -43,28 +42,23 @@ impl<'a, T> RowsBatch<'a, T> {
 /// This struct is similar to `RowsBatch`, but it holds a reference to the slice of rows.
 /// Unfortunately due to liftime issues we can't have a single generic struct which is
 /// parameterized by a container type.
-pub struct RowsBatchRef<'a, 'b, T> {
-	rows: &'a [&'b [T]],
+pub struct RowsBatchRef<'a, T> {
+	rows: &'a [&'a [T]],
 	row_len: usize,
-	_pd: std::marker::PhantomData<&'b [&'a [T]]>,
 }
 
-impl<'a, 'b, T> RowsBatchRef<'a, 'b, T> {
+impl<'a, T> RowsBatchRef<'a, T> {
 	/// Create a new `RowsBatchRef` from a slice of rows and the given row length.
 	///
 	/// # Panics
 	/// In case if any of the rows has a length different from `n_cols`.
 	#[inline]
-	pub fn new(rows: &'a [&'b [T]], row_len: usize) -> Self {
+	pub fn new(rows: &'a [&'a [T]], row_len: usize) -> Self {
 		for row in rows {
 			assert_eq!(row.len(), row_len);
 		}
 
-		Self {
-			rows,
-			row_len,
-			_pd: std::marker::PhantomData,
-		}
+		Self { rows, row_len }
 	}
 
 	#[inline]

@@ -86,8 +86,8 @@ impl CircuitNode {
 	/// Return either the input column or the slice with evaluations at one of the previous steps.
 	/// This method is used for batch evaluation.
 	fn get_sparse_chunk<'a, P: PackedField>(
-		&self,
-		inputs: &RowsBatchRef<'_, 'a, P>,
+		&'a self,
+		inputs: &'a RowsBatchRef<'a, P>,
 		evals: &'a [P],
 		row_len: usize,
 	) -> &'a [P] {
