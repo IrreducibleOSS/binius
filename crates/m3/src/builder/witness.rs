@@ -19,7 +19,7 @@ use binius_field::{
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::checked_arithmetics::{checked_log_2, log2_ceil_usize};
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
 use getset::CopyGetters;
 
@@ -108,7 +108,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			for log_values_per_row in table.selector_log_values_per_rows.into_iter() {
 				let oracle_id = first_oracle_id_in_table + count;
 				let size = statement.table_sizes[table_id] << log_values_per_row;
-				let log_size = log2_ceil_usize(size);
+				let log_size = table.log_capacity + log_values_per_row;
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
 					.multilinear_extension::<PackedType<U, B1>>()
@@ -233,8 +233,7 @@ fn immutable_witness_index_columns<U: UnderlierType>(
 
 impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc, U, F> {
 	pub fn new(allocator: &'alloc bumpalo::Bump, table: &'cs Table<F>, table_size: usize) -> Self {
-		// TODO: Make packed columns alias the same slice data
-		let log_capacity = log2_ceil_usize(table_size);
+		let log_capacity = table.log_capacity(table_size);
 
 		let mut cols = Vec::new();
 		let mut oracle_offset = 0;
