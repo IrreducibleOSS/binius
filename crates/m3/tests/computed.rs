@@ -113,7 +113,7 @@ fn test_m3_computed_col() {
 	.unwrap();
 
 	let proof = binius_core::constraint_system::prove::<
-		_,
+		OptimalUnderlier128b,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

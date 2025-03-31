@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
-};
+use binius_field::{BinaryField1b, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackendExt;
 use binius_math::MultilinearPoly;
 use binius_utils::bail;
@@ -24,13 +22,13 @@ use crate::{
 	witness::MultilinearExtensionIndex,
 };
 
-pub fn validate_witness<U, F>(
+pub fn validate_witness<F, P>(
 	constraint_system: &ConstraintSystem<F>,
 	boundaries: &[Boundary<F>],
-	witness: &MultilinearExtensionIndex<'_, U, F>,
+	witness: &MultilinearExtensionIndex<'_, P>,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b>,
+	P: PackedField<Scalar = F> + PackedExtension<BinaryField1b>,
 	F: TowerField,
 {
 	// Check the constraint sets
@@ -80,13 +78,13 @@ where
 	Ok(())
 }
 
-pub fn validate_virtual_oracle_witness<U, F>(
+pub fn validate_virtual_oracle_witness<F, P>(
 	oracle: MultilinearPolyOracle<F>,
 	oracles: &MultilinearOracleSet<F>,
-	witness: &MultilinearExtensionIndex<U, F>,
+	witness: &MultilinearExtensionIndex<P>,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	let oracle_label = &oracle.label();
@@ -280,7 +278,7 @@ fn check_eval<F: TowerField>(
 }
 
 pub mod nonzerocheck {
-	use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+	use binius_field::{PackedField, TowerField};
 	use binius_math::MultilinearPoly;
 	use binius_maybe_rayon::prelude::*;
 	use binius_utils::bail;
@@ -291,13 +289,13 @@ pub mod nonzerocheck {
 		witness::MultilinearExtensionIndex,
 	};
 
-	pub fn validate_witness<U, F>(
-		witness: &MultilinearExtensionIndex<U, F>,
-		oracles: &MultilinearOracleSet<F>,
+	pub fn validate_witness<F, P>(
+		witness: &MultilinearExtensionIndex<P>,
+		oracles: &MultilinearOracleSet<P::Scalar>,
 		oracle_ids: &[OracleId],
 	) -> Result<(), Error>
 	where
-		U: UnderlierType + PackScalar<F>,
+		P: PackedField<Scalar = F>,
 		F: TowerField,
 	{
 		oracle_ids.into_par_iter().try_for_each(|id| {

@@ -51,7 +51,7 @@
 
 use std::collections::HashMap;
 
-use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use binius_field::{PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::{Error, VerificationError};
@@ -82,14 +82,14 @@ pub enum FlushDirection {
 	Pull,
 }
 
-pub fn validate_witness<U, F>(
-	witness: &MultilinearExtensionIndex<U, F>,
+pub fn validate_witness<F, P>(
+	witness: &MultilinearExtensionIndex<P>,
 	flushes: &[Flush],
 	boundaries: &[Boundary<F>],
 	max_channel_id: ChannelId,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];

@@ -2,11 +2,7 @@
 
 use std::iter;
 
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	Field, PackedField, TowerField,
-};
+use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
 use tracing::instrument;
 
@@ -18,13 +14,12 @@ use crate::{
 };
 
 #[instrument(skip_all, level = "debug")]
-pub fn construct_grand_product_witnesses<U, F>(
+pub fn construct_grand_product_witnesses<P>(
 	ids: &[OracleId],
-	witness_index: &MultilinearExtensionIndex<U, F>,
-) -> Result<Vec<GrandProductWitness<PackedType<U, F>>>, Error>
+	witness_index: &MultilinearExtensionIndex<P>,
+) -> Result<Vec<GrandProductWitness<P>>, Error>
 where
-	U: UnderlierType + PackScalar<F>,
-	F: Field,
+	P: PackedField,
 {
 	ids.iter()
 		.map(|id| {

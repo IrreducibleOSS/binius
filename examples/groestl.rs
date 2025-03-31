@@ -3,6 +3,7 @@
 use std::{array, iter::repeat_with};
 
 use anyhow::Result;
+use binius_circuits::builder::types::U;
 use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
 	arch::{OptimalUnderlier, OptimalUnderlier128b},
@@ -113,7 +114,7 @@ fn main() -> Result<()> {
 	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
-		_,
+		U,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

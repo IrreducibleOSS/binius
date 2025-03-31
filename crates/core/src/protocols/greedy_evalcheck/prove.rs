@@ -1,10 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, PackedExtension, PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use tracing::instrument;
@@ -23,9 +19,9 @@ use crate::{
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "greedy_evalcheck::prove")]
-pub fn prove<U, F, DomainField, Challenger_, Backend>(
+pub fn prove<F, P, DomainField, Challenger_, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	witness_index: &mut MultilinearExtensionIndex<P>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	transcript: &mut ProverTranscript<Challenger_>,
@@ -33,15 +29,16 @@ pub fn prove<U, F, DomainField, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
-	PackedType<U, F>: PackedFieldIndexable,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<DomainField>,
 	DomainField: TowerField,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
 	let mut evalcheck_prover =
-		EvalcheckProver::<U, F, Backend>::new(oracles, witness_index, backend);
+		EvalcheckProver::<F, P, Backend>::new(oracles, witness_index, backend);
 
 	let claims: Vec<_> = claims.into_iter().collect();
 

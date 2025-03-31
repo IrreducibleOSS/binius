@@ -293,7 +293,7 @@ mod arithmetization {
 
 	pub struct Instance<'a> {
 		pub statement: Statement,
-		pub witness: MultilinearExtensionIndex<'a, OptimalUnderlier128b, B128>,
+		pub witness: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier128b, B128>>,
 		pub constraint_system: binius_core::constraint_system::ConstraintSystem<B128>,
 	}
 
@@ -371,7 +371,7 @@ mod arithmetization {
 		const SECURITY_BITS: usize = 100;
 
 		let proof = binius_core::constraint_system::prove::<
-			_,
+			OptimalUnderlier128b,
 			CanonicalTowerFamily,
 			Groestl256,
 			Groestl256ByteCompression,

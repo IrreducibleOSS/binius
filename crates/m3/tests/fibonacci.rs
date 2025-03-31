@@ -246,7 +246,7 @@ mod arithmetization {
 		const SECURITY_BITS: usize = 100;
 
 		let proof = binius_core::constraint_system::prove::<
-			_,
+			OptimalUnderlier128b,
 			CanonicalTowerFamily,
 			Groestl256,
 			Groestl256ByteCompression,

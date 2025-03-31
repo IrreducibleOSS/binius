@@ -17,7 +17,10 @@ use binius_core::{
 	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{as_packed_field::PackScalar, BinaryField1b};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	BinaryField1b,
+};
 use binius_math::ArithExpr;
 use binius_utils::bail;
 
@@ -81,7 +84,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 
 	pub fn take_witness(
 		&mut self,
-	) -> Result<MultilinearExtensionIndex<'arena, U, F>, anyhow::Error> {
+	) -> Result<MultilinearExtensionIndex<'arena, PackedType<U, F>>, anyhow::Error> {
 		Option::take(&mut self.witness)
 			.ok_or_else(|| {
 				anyhow!("Witness is missing. Are you in verifier mode, or have you already extraced the witness?")

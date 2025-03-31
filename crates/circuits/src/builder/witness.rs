@@ -164,7 +164,7 @@ impl<'arena> Builder<'arena> {
 		Ok(())
 	}
 
-	pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, U, F>, Error> {
+	pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, PackedType<U, F>>, Error> {
 		let mut result = MultilinearExtensionIndex::new();
 		let entries = Rc::into_inner(self.entries)
 			.ok_or_else(|| anyhow!("Failed to build. There are still entries refs. Make sure there are no pending column insertions."))?
