@@ -362,6 +362,12 @@ fn verify_transparent_evals<'a, 'b, F: Field>(
 	transparents: &[impl Borrow<dyn MultivariatePoly<F> + 'b>],
 	challenges: &[F],
 ) -> Result<Vec<F>, Error> {
+	// Reverse the challenges to get the correct order for transparents. This is required because
+	// the sumcheck is using high-to-low folding.
+	let mut challenges_rev = challenges.to_vec();
+	challenges_rev.reverse();
+	let n_challenges = challenges.len();
+
 	let mut piecewise_evals = Vec::with_capacity(commit_meta.total_multilins());
 	for ((n_vars, desc), multilinear_evals) in iter::zip(sumcheck_descs, multilinear_evals) {
 		let (committed_evals, transparent_evals) = multilinear_evals.split_at(desc.n_committed());
@@ -372,7 +378,9 @@ fn verify_transparent_evals<'a, 'b, F: Field>(
 			iter::zip(transparent_evals, &transparents[desc.transparent_indices.clone()])
 				.enumerate()
 		{
-			let computed_eval = transparent.borrow().evaluate(&challenges[..n_vars])?;
+			let computed_eval = transparent
+				.borrow()
+				.evaluate(&challenges_rev[n_challenges - n_vars..])?;
 			if claimed_eval != computed_eval {
 				return Err(VerificationError::IncorrectTransparentEvaluation {
 					index: desc.transparent_indices.start + i,

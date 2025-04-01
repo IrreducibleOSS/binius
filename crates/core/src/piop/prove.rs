@@ -14,6 +14,7 @@ use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::{bail, sorting::is_sorted_ascending, SerializeBytes};
 use either::Either;
 use itertools::{chain, Itertools};
+use p3_util::reverse_slice_index_bits;
 
 use super::{
 	error::Error,
@@ -48,7 +49,7 @@ use crate::{
 // * `message_buffer` is larger than the total number of scalars in the multilinears
 fn merge_multilins<P, M>(multilins: &[M], message_buffer: &mut [P])
 where
-	P: PackedField,
+	P: PackedFieldIndexable,
 	M: MultilinearPoly<P>,
 {
 	let mut mle_iter = multilins.iter().rev();
@@ -68,6 +69,7 @@ where
 	}
 	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
 		chunk.copy_from_slice(evals);
+		reverse_slice_index_bits(PackedFieldIndexable::unpack_scalars_mut(chunk));
 	});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
@@ -108,7 +110,7 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 where
 	F: BinaryField,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -225,7 +227,7 @@ where
 			)
 			.collect::<Vec<_>>();
 			RegularSumcheckProver::new(
-				EvaluationOrder::LowToHigh,
+				EvaluationOrder::HighToLow,
 				multilins,
 				desc.composite_sums.iter().cloned(),
 				&domain_factory,
