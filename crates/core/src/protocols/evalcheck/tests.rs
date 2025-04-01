@@ -4,6 +4,7 @@ use std::{array, iter::repeat_with, slice};
 
 use assert_matches::assert_matches;
 use binius_field::{
+	as_packed_field::PackedType,
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	underlier::WithUnderlier,
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
@@ -102,7 +103,7 @@ fn test_shifted_evaluation_whole_cube() {
 		})
 		.collect();
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(poly_id, poly_witness.to_ref().specialize_arc_dyn::<PExtension>()),
@@ -168,7 +169,7 @@ fn test_shifted_evaluation_subcube() {
 		})
 		.collect();
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(poly_id, poly_witness.to_ref().specialize_arc_dyn::<PExtension>()),
@@ -250,7 +251,7 @@ fn test_evalcheck_linear_combination() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn()),
@@ -309,7 +310,7 @@ fn test_evalcheck_linear_combination_size_one() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row_oracle_id, select_row_witness.specialize_arc_dyn()),
@@ -395,7 +396,7 @@ fn test_evalcheck_composite() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn()),
@@ -449,7 +450,7 @@ fn test_evalcheck_repeating() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
@@ -503,7 +504,7 @@ fn test_evalcheck_zero_padded() {
 		.add_zero_padded(select_row_oracle_id, n_vars)
 		.unwrap();
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row_oracle_id, select_row_subwitness.specialize_arc_dyn()),

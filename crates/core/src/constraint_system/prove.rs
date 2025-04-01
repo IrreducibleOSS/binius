@@ -67,7 +67,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	log_inv_rate: usize,
 	security_bits: usize,
 	boundaries: &[Boundary<FExt<Tower>>],
-	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
+	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
@@ -119,7 +119,7 @@ where
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
-	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &oracles, &exponents)?;
+	let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -129,7 +129,7 @@ where
 	let merkle_scheme = merkle_prover.scheme();
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
-	let committed_multilins = piop::collect_committed_witnesses(
+	let committed_multilins = piop::collect_committed_witnesses::<U, _>(
 		&commit_meta,
 		&oracle_to_commit_index,
 		&oracles,
@@ -188,7 +188,7 @@ where
 	// Grand product arguments
 	// Grand products for non-zero checking
 	let non_zero_fast_witnesses =
-		make_fast_masked_flush_witnesses(&oracles, &witness, &non_zero_oracle_ids, None)?;
+		make_fast_masked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids, None)?;
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
 		.map(GrandProductWitness::new)
@@ -225,9 +225,9 @@ where
 		.map(|flush| flush.selector)
 		.collect::<Vec<_>>();
 
-	make_unmasked_flush_witnesses(&oracles, &mut witness, &flush_oracle_ids)?;
+	make_unmasked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids)?;
 	// there are no oracle ids associated with these flush_witnesses
-	let flush_witnesses = make_fast_masked_flush_witnesses(
+	let flush_witnesses = make_fast_masked_flush_witnesses::<U, _>(
 		&oracles,
 		&witness,
 		&flush_oracle_ids,
@@ -288,7 +288,7 @@ where
 		provers,
 		flush_selectors_unique_by_claim,
 		flush_oracle_ids_by_claim,
-	} = get_flush_sumcheck_provers::<_, _, FDomain<Tower>, _, _>(
+	} = get_flush_sumcheck_provers::<U, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&flush_oracle_ids,
 		&flush_selectors,
@@ -566,7 +566,7 @@ where
 #[instrument(skip_all, level = "debug")]
 fn make_unmasked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
+	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
 ) -> Result<(), Error>
 where
@@ -622,7 +622,7 @@ where
 #[instrument(skip_all, level = "debug")]
 fn make_fast_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
+	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracles: &[OracleId],
 	flush_selectors: Option<&[OracleId]>,
 ) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
@@ -720,7 +720,7 @@ fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>
 	flush_oracle_ids: &[OracleId],
 	flush_selectors: &[OracleId],
 	final_layer_claims: &[LayerClaim<Tower::B128>],
-	witness: &mut MultilinearExtensionIndex<'a, U, Tower::B128>,
+	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, Tower::B128>>,
 	domain_factory: DomainFactory,
 	backend: &'b Backend,
 ) -> Result<FlushSumcheckProvers<impl SumcheckProver<Tower::B128> + 'b>, Error>
@@ -756,22 +756,24 @@ where
 		let mut multilinears =
 			Vec::with_capacity(flush_selectors_unique.len() + flush_oracle_ids.len());
 
-		for &flush_selector in &flush_selectors_unique {
-			multilinears.push(witness.get_multilin_poly(flush_selector)?);
+		let mut nonzero_scalars_prefixes = Vec::with_capacity(multilinears.len());
+
+		for &oracle_id in chain!(&flush_selectors_unique, &flush_oracle_ids) {
+			let entry = witness.get_index_entry(oracle_id)?;
+			multilinears.push(entry.multilin_poly);
+			nonzero_scalars_prefixes.push(entry.nonzero_scalars_prefix);
 		}
 
-		for &oracle_id in &flush_oracle_ids {
-			multilinears.push(witness.get_multilin_poly(oracle_id)?);
-		}
-
-		let prover = EqIndSumcheckProverBuilder::new(backend).build(
-			EvaluationOrder::LowToHigh,
-			multilinears,
-			&eval_point,
-			composite_sum_claims,
-			domain_factory.clone(),
-			immediate_switchover_heuristic,
-		)?;
+		let prover = EqIndSumcheckProverBuilder::new(backend)
+			.with_nonzero_scalars_prefixes(&nonzero_scalars_prefixes)
+			.build(
+				EvaluationOrder::LowToHigh,
+				multilinears,
+				&eval_point,
+				composite_sum_claims,
+				domain_factory.clone(),
+				immediate_switchover_heuristic,
+			)?;
 
 		provers.push(prover);
 		flush_oracle_ids_by_claim.push(flush_oracle_ids);

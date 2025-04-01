@@ -1,10 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	PackedFieldIndexable, TowerField,
-};
+use binius_field::{PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
@@ -39,14 +35,14 @@ use crate::{
 /// `new_sumchecks` bivariate sumcheck instances, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during proving)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckProver<'a, 'b, U, F, Backend>
+pub struct EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedFieldIndexable<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
-	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
+	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
 
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
@@ -60,14 +56,13 @@ where
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
-	memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
+	memoized_queries: MemoizedQueries<P, Backend>,
 	backend: &'a Backend,
 }
 
-impl<'a, 'b, U, F, Backend> EvalcheckProver<'a, 'b, U, F, Backend>
+impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	U: UnderlierType + PackScalar<F>,
-	PackedType<U, F>: PackedFieldIndexable,
+	P: PackedFieldIndexable<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -76,7 +71,7 @@ where
 	/// as well as committed eval claims accumulator.
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
-		witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
+		witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
 		backend: &'a Backend,
 	) -> Self {
 		Self {
@@ -594,7 +589,7 @@ where
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		meta: ProjectedBivariateMeta,
-		projected: Option<MultilinearExtension<PackedType<U, F>>>,
+		projected: Option<MultilinearExtension<P>>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
@@ -641,8 +636,8 @@ where
 	fn make_new_eval_claim(
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
-		witness_index: &MultilinearExtensionIndex<U, F>,
-		memoized_queries: &MemoizedQueries<PackedType<U, F>, Backend>,
+		witness_index: &MultilinearExtensionIndex<P>,
+		memoized_queries: &MemoizedQueries<P, Backend>,
 	) -> Result<EvalcheckMultilinearClaim<F>, Error> {
 		let eval_query = memoized_queries
 			.full_query_readonly(&eval_point)

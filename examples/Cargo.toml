@@ -7,14 +7,15 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 alloy-primitives.workspace = true
-binius_circuits = { path = "../crates/circuits" }
-binius_core = { path = "../crates/core" }
-binius_field = { path = "../crates/field" }
-binius_hal = { path = "../crates/hal" }
-binius_hash = { path = "../crates/hash" }
-binius_m3 = { path = "../crates/m3" }
-binius_macros = { path = "../crates/macros" }
-binius_math = { path = "../crates/math" }
+array-util.workspace = true
+binius_circuits = { path = "../crates/circuits", default-features = false }
+binius_core = { path = "../crates/core", default-features = false }
+binius_field = { path = "../crates/field", default-features = false }
+binius_hal = { path = "../crates/hal", default-features = false }
+binius_hash = { path = "../crates/hash", default-features = false }
+binius_m3 = { path = "../crates/m3", default-features = false }
+binius_macros = { path = "../crates/macros", default-features = false }
+binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
 bytemuck.workspace = true
@@ -90,9 +91,14 @@ name = "u32_mul_gkr_exp_lookups"
 path = "u32_mul_gkr_exp_lookups.rs"
 
 [features]
-default = ["rayon"]
+default = ["rayon", "nightly_features"]
 aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
 perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
+nightly_features = [
+    "binius_core/nightly_features",
+    "binius_hal/nightly_features",
+    "binius_macros/nightly_features",
+]

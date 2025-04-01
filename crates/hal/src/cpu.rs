@@ -41,7 +41,6 @@ impl ComputationBackend for CpuBackend {
 		&self,
 		evaluation_order: EvaluationOrder,
 		n_vars: usize,
-		const_eval_suffix: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
@@ -57,7 +56,6 @@ impl ComputationBackend for CpuBackend {
 		calculate_round_evals(
 			evaluation_order,
 			n_vars,
-			const_eval_suffix,
 			tensor_query,
 			multilinears,
 			evaluators,

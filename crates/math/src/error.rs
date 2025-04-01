@@ -23,14 +23,10 @@ pub enum Error {
 	#[error("{0}")]
 	FieldError(#[from] binius_field::Error),
 	#[error(
-		"batch evaluation expects all input slices to have the same length as the output slice;
-		at index {index}, expected length {expected}, got length {actual}"
+		"batch evaluation expects input slices to have the same length as the output slice;
+		expected length {expected}, got length {actual}"
 	)]
-	BatchEvaluateSizeMismatch {
-		index: usize,
-		expected: usize,
-		actual: usize,
-	},
+	BatchEvaluateSizeMismatch { expected: usize, actual: usize },
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
 	#[error("the nonzero scalar prefix should be at most {expected}")]

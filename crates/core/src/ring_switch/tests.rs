@@ -57,7 +57,7 @@ where
 fn generate_multilinears<U, Tower>(
 	mut rng: impl Rng,
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-) -> MultilinearExtensionIndex<U, FExt<Tower>>
+) -> MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
@@ -92,7 +92,7 @@ fn random_eval_point<F: Field>(mut rng: impl Rng, n_vars: usize) -> Vec<F> {
 fn make_eval_claim<U, F>(
 	oracle_id: OracleId,
 	eval_point: Vec<F>,
-	witness_index: &MultilinearExtensionIndex<U, F>,
+	witness_index: &MultilinearExtensionIndex<PackedType<U, F>>,
 ) -> EvalcheckMultilinearClaim<F>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -127,7 +127,7 @@ fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
 fn setup_test_eval_claims<U, F>(
 	mut rng: impl Rng,
 	oracles: &MultilinearOracleSet<F>,
-	witness_index: &MultilinearExtensionIndex<U, F>,
+	witness_index: &MultilinearExtensionIndex<PackedType<U, F>>,
 ) -> Vec<EvalcheckMultilinearClaim<F>>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -154,19 +154,19 @@ where
 				Ordering::Less => {
 					// Create both back-loaded and front-loaded claims to test both shared prefixes
 					// and suffixes.
-					eval_claims.push(make_eval_claim(
+					eval_claims.push(make_eval_claim::<U, F>(
 						oracle.id(),
 						eval_point[..oracle.n_vars()].to_vec(),
 						witness_index,
 					));
-					eval_claims.push(make_eval_claim(
+					eval_claims.push(make_eval_claim::<U, F>(
 						oracle.id(),
 						eval_point[eval_point.len() - oracle.n_vars()..].to_vec(),
 						witness_index,
 					));
 				}
 				Ordering::Equal => {
-					eval_claims.push(make_eval_claim(
+					eval_claims.push(make_eval_claim::<U, F>(
 						oracle.id(),
 						eval_point.clone(),
 						witness_index,
@@ -195,7 +195,7 @@ fn with_test_instance_from_oracles<U, Tower, R>(
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
 	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
-	let witnesses = piop::collect_committed_witnesses(
+	let witnesses = piop::collect_committed_witnesses::<U, Tower::B128>(
 		&commit_meta,
 		&oracle_to_commit_index,
 		oracles,
@@ -203,7 +203,7 @@ fn with_test_instance_from_oracles<U, Tower, R>(
 	)
 	.unwrap();
 
-	let eval_claims = setup_test_eval_claims(&mut rng, oracles, &witness_index);
+	let eval_claims = setup_test_eval_claims::<U, Tower::B128>(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
 	let system =
@@ -285,7 +285,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	.unwrap();
 
 	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
-	let committed_multilins = piop::collect_committed_witnesses(
+	let committed_multilins = piop::collect_committed_witnesses::<U, FExt<Tower>>(
 		&commit_meta,
 		&oracle_to_commit_index,
 		oracles,
@@ -299,7 +299,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		codeword,
 	} = piop::commit(&fri_params, merkle_prover, &committed_multilins).unwrap();
 
-	let eval_claims = setup_test_eval_claims(&mut rng, oracles, &witness_index);
+	let eval_claims = setup_test_eval_claims::<U, FExt<Tower>>(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
 	let system =
