@@ -49,31 +49,32 @@ where
 
 	for multilinear in multilinears {
 		match multilinear {
-			SumcheckMultilinear::Transparent {
-				multilinear,
-				zero_scalars_suffix,
+			&SumcheckMultilinear::Transparent {
+				ref multilinear,
+				const_suffix: (suffix_eval, suffix_len),
 				..
 			} => {
 				if multilinear.n_vars() != n_vars {
 					bail!(Error::NumberOfVariablesMismatch);
 				}
 
-				let first_zero = (1usize << n_vars)
-					.checked_sub(*zero_scalars_suffix)
-					.ok_or(Error::IncorrectZeroScalarsSuffixes)?;
+				let first_const = (1usize << n_vars)
+					.checked_sub(suffix_len)
+					.ok_or(Error::IncorrectConstSuffixes)?;
 
-				for i in first_zero..1 << n_vars {
-					if multilinear.evaluate_on_hypercube(i)? != F::ZERO {
-						bail!(Error::IncorrectZeroScalarsSuffixes);
+				for i in first_const..1 << n_vars {
+					if multilinear.evaluate_on_hypercube(i)? != suffix_eval {
+						bail!(Error::IncorrectConstSuffixes);
 					}
 				}
 			}
 
-			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+			&SumcheckMultilinear::Folded {
+				large_field_folded_evals: ref evals,
+				..
 			} => {
-				if large_field_folded_evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
-					bail!(Error::IncorrectZeroScalarsSuffixes);
+				if evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+					bail!(Error::IncorrectConstSuffixes)
 				}
 			}
 		}
@@ -100,11 +101,12 @@ where
 							}
 							SumcheckMultilinear::Folded {
 								large_field_folded_evals,
+								suffix_eval,
 							} => binius_field::packed::get_packed_slice_checked(
 								large_field_folded_evals,
 								j,
 							)
-							.unwrap_or(F::ZERO),
+							.unwrap_or(*suffix_eval),
 						});
 					}
 
@@ -222,26 +224,23 @@ where
 		self
 	}
 
-	/// Specify the nonzero scalar prefixes for multilinears.
+	/// Specify the const suffixes for multilinears.
 	///
-	/// The provided array specifies the nonzero scalars at the beginning of each multilinear.
+	/// The provided array specifies the const suffixes at the end of each multilinear.
 	/// Prover is able to reduce multilinear storage and compute using this information.
-	pub fn with_nonzero_scalars_prefixes(
-		mut self,
-		nonzero_scalars_prefixes: &[usize],
-	) -> Result<Self, Error> {
-		if nonzero_scalars_prefixes.len() != self.multilinears.len() {
-			bail!(Error::IncorrectZeroScalarsSuffixes);
+	pub fn with_const_suffixes(mut self, const_suffixes: &[(F, usize)]) -> Result<Self, Error> {
+		if const_suffixes.len() != self.multilinears.len() {
+			bail!(Error::IncorrectConstSuffixes);
 		}
 
-		for (multilinear, &nonzero_scalars_prefix) in
-			izip!(&mut self.multilinears, nonzero_scalars_prefixes)
-		{
-			let zero_scalars_suffix = (1usize << self.n_vars)
-				.checked_sub(nonzero_scalars_prefix)
-				.ok_or(Error::IncorrectZeroScalarsSuffixes)?;
+		for (multilinear, &const_suffix) in izip!(&mut self.multilinears, const_suffixes) {
+			let (_, suffix_len) = const_suffix;
 
-			multilinear.update_zero_scalars_suffix(self.n_vars, zero_scalars_suffix);
+			if suffix_len > 1 << self.n_vars {
+				bail!(Error::IncorrectConstSuffixes);
+			}
+
+			multilinear.update_const_suffix(self.n_vars, const_suffix);
 		}
 
 		Ok(self)
@@ -316,7 +315,7 @@ where
 			composite_claims,
 			multilinears
 				.iter()
-				.map(|multilinear| multilinear.zero_scalars_suffix(n_vars)),
+				.map(|multilinear| multilinear.const_suffix(n_vars)),
 		);
 
 		let domains = interpolation_domains_for_composition_degrees(
@@ -451,39 +450,36 @@ type CompositionsAndSums<F, Composition> = (Vec<(Composition, ConstEvalSuffix<F>
 // Automatically determine trace suffix which evaluates to constant polynomials during sumcheck.
 //
 // Algorithm outline:
-//  * sort multilinears by non-increasing zero scalars suffix
-//  * processing multilinears in this order, symbolically substitute zero for current variable and optimize
+//  * sort multilinears by non-increasing const suffix length
+//  * processing multilinears in this order, symbolically substitute suffix eval for the current variable and optimize
 //  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this suffix
 fn determine_const_eval_suffixes<F, P, Composition>(
 	composite_claims: Vec<CompositeSumClaim<F, Composition>>,
-	zero_scalars_suffixes: impl IntoIterator<Item = usize>,
+	const_suffixes: impl IntoIterator<Item = (F, usize)>,
 ) -> CompositionsAndSums<F, Composition>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	Composition: CompositionPoly<P>,
 {
-	let mut zero_scalars_suffixes = zero_scalars_suffixes
-		.into_iter()
-		.enumerate()
-		.collect::<Vec<_>>();
+	let mut const_suffixes = const_suffixes.into_iter().enumerate().collect::<Vec<_>>();
 
-	zero_scalars_suffixes.sort_by_key(|(_var, zero_scalars_suffix)| Reverse(*zero_scalars_suffix));
+	const_suffixes.sort_by_key(|&(_var, (_suffix_eval, suffix_len))| Reverse(suffix_len));
 
 	composite_claims
 		.into_iter()
 		.map(|claim| {
 			let CompositeSumClaim { composition, sum } = claim;
-			assert_eq!(zero_scalars_suffixes.len(), composition.n_vars());
+			assert_eq!(const_suffixes.len(), composition.n_vars());
 
 			let mut const_eval_suffix = Default::default();
 
 			let mut expr = composition.expression();
 			let mut expr_at_inf = composition.expression().leading_term();
 
-			for &(var_index, suffix) in &zero_scalars_suffixes {
-				expr = expr.const_subst(var_index, F::ZERO).optimize();
-				expr_at_inf = expr_at_inf.const_subst(var_index, F::ZERO).optimize();
+			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
+				expr = expr.const_subst(var_index, suffix_eval).optimize();
+				expr_at_inf = expr_at_inf.const_subst(var_index, suffix_eval).optimize();
 
 				if let Some((value, value_at_inf)) = expr.constant().zip(expr_at_inf.constant()) {
 					const_eval_suffix = ConstEvalSuffix {

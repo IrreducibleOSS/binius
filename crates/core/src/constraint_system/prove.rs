@@ -756,12 +756,13 @@ where
 		let mut multilinears =
 			Vec::with_capacity(flush_selectors_unique.len() + flush_oracle_ids.len());
 
-		let mut nonzero_scalars_prefixes = Vec::with_capacity(multilinears.len());
+		let mut const_suffixes = Vec::with_capacity(multilinears.len());
 
 		for &oracle_id in chain!(&flush_selectors_unique, &flush_oracle_ids) {
 			let entry = witness.get_index_entry(oracle_id)?;
+			let suffix_len = (1 << entry.multilin_poly.n_vars()) - entry.nonzero_scalars_prefix;
 			multilinears.push(entry.multilin_poly);
-			nonzero_scalars_prefixes.push(entry.nonzero_scalars_prefix);
+			const_suffixes.push((Field::ZERO, suffix_len));
 		}
 
 		// REVIEW: we extract a type erased multilin from the witness index here,
@@ -772,7 +773,7 @@ where
 			immediate_switchover_heuristic,
 			backend,
 		)?
-		.with_nonzero_scalars_prefixes(&nonzero_scalars_prefixes)?
+		.with_const_suffixes(&const_suffixes)?
 		.build(
 			EvaluationOrder::LowToHigh,
 			&eval_point,

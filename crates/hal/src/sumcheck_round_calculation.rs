@@ -444,6 +444,7 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess {
 
 			SumcheckMultilinear::Folded {
 				large_field_folded_evals: evals,
+				suffix_eval,
 			} => {
 				if subcube_vars + 1 >= P::LOG_WIDTH {
 					let packed_log_size = subcube_vars + 1 - P::LOG_WIDTH;
@@ -453,16 +454,14 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess {
 						scratch_space[..packed_len]
 							.copy_from_slice(&evals[offset..offset + packed_len]);
 					}
-					scratch_space[packed_len..].fill(P::zero());
+					scratch_space[packed_len..].fill(P::broadcast(*suffix_eval));
 				} else {
 					let mut only_packed = P::zero();
 
 					for i in 0..1 << (subcube_vars + 1) {
 						let index = subcube_index << (subcube_vars + 1) | i;
-						only_packed.set(
-							i,
-							get_packed_slice_checked(evals, index).unwrap_or(P::Scalar::ZERO),
-						);
+						only_packed
+							.set(i, get_packed_slice_checked(evals, index).unwrap_or(*suffix_eval));
 					}
 
 					*scratch_space.first_mut().expect("non-empty scratch space") = only_packed;
@@ -549,6 +548,7 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess {
 
 			SumcheckMultilinear::Folded {
 				large_field_folded_evals: evals,
+				suffix_eval,
 			} => {
 				if subcube_vars >= P::LOG_WIDTH {
 					let packed_log_size = subcube_vars - P::LOG_WIDTH;
@@ -567,8 +567,8 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess {
 						evals_1[..packed_len_1].copy_from_slice(&evals[offset_1..][..packed_len_1]);
 					}
 
-					evals_0[packed_len_0..].fill(P::zero());
-					evals_1[packed_len_1..].fill(P::zero());
+					evals_0[packed_len_0..].fill(P::broadcast(*suffix_eval));
+					evals_1[packed_len_1..].fill(P::broadcast(*suffix_eval));
 				} else {
 					let mut evals_0_packed = P::zero();
 					let mut evals_1_packed = P::zero();
@@ -578,11 +578,11 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess {
 						let index_1 = index_0 | 1 << (index_vars + subcube_vars);
 						evals_0_packed.set(
 							i,
-							get_packed_slice_checked(evals, index_0).unwrap_or(P::Scalar::ZERO),
+							get_packed_slice_checked(evals, index_0).unwrap_or(*suffix_eval),
 						);
 						evals_1_packed.set(
 							i,
-							get_packed_slice_checked(evals, index_1).unwrap_or(P::Scalar::ZERO),
+							get_packed_slice_checked(evals, index_1).unwrap_or(*suffix_eval),
 						);
 					}
 

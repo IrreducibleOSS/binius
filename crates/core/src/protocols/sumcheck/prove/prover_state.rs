@@ -81,25 +81,26 @@ where
 	) -> Result<Self, Error> {
 		for multilinear in &multilinears {
 			match multilinear {
-				SumcheckMultilinear::Transparent {
-					multilinear,
-					zero_scalars_suffix,
+				&SumcheckMultilinear::Transparent {
+					ref multilinear,
+					const_suffix: (_, suffix_len),
 					..
 				} => {
 					if multilinear.n_vars() != n_vars {
 						bail!(Error::NumberOfVariablesMismatch);
 					}
 
-					if *zero_scalars_suffix > 1 << n_vars {
-						bail!(Error::IncorrectZeroScalarsSuffixes);
+					if suffix_len > 1 << n_vars {
+						bail!(Error::IncorrectConstSuffixes);
 					}
 				}
 
-				SumcheckMultilinear::Folded {
-					large_field_folded_evals,
+				&SumcheckMultilinear::Folded {
+					large_field_folded_evals: ref evals,
+					..
 				} => {
-					if large_field_folded_evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
-						bail!(Error::IncorrectZeroScalarsSuffixes);
+					if evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+						bail!(Error::IncorrectConstSuffixes);
 					}
 				}
 			}
@@ -209,9 +210,10 @@ where
 					}
 					SumcheckMultilinear::Folded {
 						large_field_folded_evals,
+						suffix_eval,
 					} => Ok(large_field_folded_evals
 						.first()
-						.map_or(F::ZERO, |packed| packed.get(0))
+						.map_or(suffix_eval, |packed| packed.get(0))
 						.get(0)),
 				}
 				.map_err(Error::MathError)
