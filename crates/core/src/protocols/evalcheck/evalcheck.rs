@@ -191,7 +191,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	}
 
 	pub fn clear(&mut self) {
-		self.clear()
+		self.data.clear()
 	}
 }
 
