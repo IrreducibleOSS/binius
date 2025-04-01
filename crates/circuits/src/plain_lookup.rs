@@ -149,30 +149,19 @@ where
 	builder.send(
 		permutation_channel,
 		1 << t_log_rows,
-		permuted_lookup_t
-			.iter()
-			.copied()
-			.map(OracleOrConst::Oracle),
+		permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
 	)?;
 	builder.receive(
 		permutation_channel,
 		1 << t_log_rows,
-		lookup_t
-			.as_ref()
-			.iter()
-			.copied()
-			.map(OracleOrConst::Oracle),
+		lookup_t.as_ref().iter().copied().map(OracleOrConst::Oracle),
 	)?;
 
 	for (lookup_u, &count) in izip!(lookups_u, n_lookups) {
 		builder.send(
 			multiplicity_channel,
 			count,
-			lookup_u
-				.as_ref()
-				.iter()
-				.copied()
-				.map(OracleOrConst::Oracle),
+			lookup_u.as_ref().iter().copied().map(OracleOrConst::Oracle),
 		)?;
 	}
 
@@ -181,10 +170,7 @@ where
 			FlushDirection::Pull,
 			multiplicity_channel,
 			bit,
-			permuted_lookup_t
-				.iter()
-				.copied()
-				.map(OracleOrConst::Oracle),
+			permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
 			1 << i,
 		)?
 	}

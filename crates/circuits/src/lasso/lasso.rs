@@ -151,9 +151,7 @@ where
 			builder.send(
 				channel,
 				n_lookup,
-				oracle_prefix_u
-					.chain([lookup_w])
-					.map(OracleOrConst::Oracle),
+				oracle_prefix_u.chain([lookup_w]).map(OracleOrConst::Oracle),
 			)?;
 			Ok(())
 		},
