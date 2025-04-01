@@ -550,7 +550,7 @@ mod tests {
 				Ok(val
 					* F::from_underlier(F::Underlier::from(ISOMORPHIC_ALPHAS[iota].to_underlier())))
 			}
-			_ => <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b),
+			_ => <F as ExtensionField<BinaryField1b>>::basis_checked(1 << iota).map(|b| val * b),
 		};
 		assert_eq!(result.is_ok(), expected.is_ok());
 		if result.is_ok() {

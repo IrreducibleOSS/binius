@@ -326,9 +326,7 @@ struct SBox<const V: usize> {
 
 impl<const V: usize> SBox<V> {
 	pub fn new(table: &mut TableBuilder, input: Expr<B8, V>) -> Self {
-		let b8_basis: [_; 8] = array::from_fn(|i| {
-			<B8 as ExtensionField<B1>>::basis(i).expect("i in range 0..8; extension degree is 8")
-		});
+		let b8_basis: [_; 8] = array::from_fn(<B8 as ExtensionField<B1>>::basis);
 		let pack_b8 = move |bits: [Expr<B1, V>; 8]| {
 			bits.into_iter()
 				.enumerate()

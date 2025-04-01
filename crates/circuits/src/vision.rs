@@ -224,7 +224,7 @@ fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
 
 	// x == 0 AND inv == 0
 	// TODO: Implement `mul_primitive` expression for ArithExpr
-	let beta = <F as ExtensionField<BinaryField1b>>::basis(1 << 5)?;
+	let beta = <F as ExtensionField<BinaryField1b>>::basis_checked(1 << 5)?;
 	let zero_case = x + inv * ArithExpr::Const(beta);
 
 	// (x * inv == 1) OR (x == 0 AND inv == 0)

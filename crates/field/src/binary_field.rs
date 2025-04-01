@@ -65,7 +65,7 @@ where
 				max: n_basis_elts,
 			});
 		}
-		<Self as ExtensionField<BinaryField1b>>::basis(i << iota)
+		<Self as ExtensionField<BinaryField1b>>::basis_checked(i << iota)
 	}
 
 	/// Multiplies a field element by the canonical primitive element of the extension $T_{\iota + 1} / T_{iota}$.
@@ -77,7 +77,7 @@ where
 	///
 	/// * `Error::ExtensionDegreeTooHigh` if `iota >= Self::TOWER_LEVEL`
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
-		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis(1 << iota)?)
+		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis_checked(1 << iota)?)
 	}
 }
 
@@ -576,7 +576,7 @@ macro_rules! impl_field_extension {
 			const LOG_DEGREE: usize = $log_degree;
 
 			#[inline]
-			fn basis(i: usize) -> Result<Self, Error> {
+			fn basis_checked(i: usize) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
 				if i >= 1 << $log_degree {
@@ -1176,7 +1176,8 @@ pub(crate) mod tests {
 
 	fn test_mul_primitive<F: TowerField>(val: F, iota: usize) {
 		let result = val.mul_primitive(iota);
-		let expected = <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b);
+		let expected =
+			<F as ExtensionField<BinaryField1b>>::basis_checked(1 << iota).map(|b| val * b);
 		assert_eq!(result.is_ok(), expected.is_ok());
 		if result.is_ok() {
 			assert_eq!(result.unwrap(), expected.unwrap());

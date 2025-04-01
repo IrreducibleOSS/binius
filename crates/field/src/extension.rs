@@ -27,7 +27,23 @@ pub trait ExtensionField<F: Field>:
 	const DEGREE: usize = 1 << Self::LOG_DEGREE;
 
 	/// For `0 <= i < DEGREE`, returns `i`-th basis field element.
-	fn basis(i: usize) -> Result<Self, Error>;
+	///
+	/// ## Pre-conditions
+	///
+	/// * `i` must be in the range [0, `Self::DEGREE`).
+	fn basis(i: usize) -> Self {
+		Self::basis_checked(i).expect("pre-condition: 0 <= i < DEGREE")
+	}
+
+	/// For `0 <= i < DEGREE`, returns `i`-th basis field element.
+	///
+	/// This is the same operation as [`Self::basis`], but it returns an error result instead of
+	/// panicking if the index is out of range.
+	///
+	/// ## Throws
+	///
+	/// * `Error::ExtensionDegreeMismatch` unless `i` is in the range [0, `Self::DEGREE`).
+	fn basis_checked(i: usize) -> Result<Self, Error>;
 
 	/// Create an extension field element from a slice of base field elements in order
 	/// consistent with `basis(i)` return values.
@@ -71,7 +87,7 @@ impl<F: Field> ExtensionField<F> for F {
 	const LOG_DEGREE: usize = 0;
 
 	#[inline(always)]
-	fn basis(i: usize) -> Result<Self, Error> {
+	fn basis_checked(i: usize) -> Result<Self, Error> {
 		if i != 0 {
 			return Err(Error::ExtensionDegreeMismatch);
 		}
