@@ -54,305 +54,307 @@ use std::collections::HashMap;
 use binius_field::{PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
-use super::error::{Error, VerificationError};
-use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use super::error::{ Error, VerificationError };
+use crate::{ oracle::OracleId, witness::MultilinearExtensionIndex };
 
 pub type ChannelId = usize;
-pub type F = BinaryField128b;
 
-#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes)]
-pub enum OracleOrConst<F: Field>{
-	Oracle(usize),
-	Const{base: F, tower_level:usize}
+#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
+pub enum OracleOrConst<F: TowerField> {
+    Oracle(usize),
+    Const {
+        base: F,
+        tower_level: usize,
+    },
 }
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
-pub struct Flush {
-	pub oracles: Vec<OracleOrConst<F>>,
-	pub channel_id: ChannelId,
-	pub direction: FlushDirection,
-	pub selector: OracleId,
-	pub multiplicity: u64,
+pub struct Flush<F: TowerField> {
+    pub oracles: Vec<OracleOrConst<F>>,
+    pub channel_id: ChannelId,
+    pub direction: FlushDirection,
+    pub selector: OracleId,
+    pub multiplicity: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub struct Boundary<F: TowerField> {
-	pub values: Vec<F>,
-	pub channel_id: ChannelId,
-	pub direction: FlushDirection,
-	pub multiplicity: u64,
+    pub values: Vec<F>,
+    pub channel_id: ChannelId,
+    pub direction: FlushDirection,
+    pub multiplicity: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub enum FlushDirection {
-	Push,
-	Pull,
+    Push,
+    Pull,
 }
 
 pub fn validate_witness<F, P>(
-	witness: &MultilinearExtensionIndex<P>,
-	flushes: &[Flush],
-	boundaries: &[Boundary<F>],
-	max_channel_id: ChannelId,
-) -> Result<(), Error>
-where
-	P: PackedField<Scalar = F>,
-	F: TowerField,
+    witness: &MultilinearExtensionIndex<P>,
+    flushes: &[Flush<F>],
+    boundaries: &[Boundary<F>],
+    max_channel_id: ChannelId
+)
+    -> Result<(), Error>
+    where P: PackedField<Scalar = F>, F: TowerField
 {
-	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
+    let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
 
-	for boundary in boundaries.iter().cloned() {
-		let Boundary {
-			channel_id,
-			values,
-			direction,
-			multiplicity,
-		} = boundary;
-		if channel_id > max_channel_id {
-			return Err(Error::ChannelIdOutOfRange {
-				max: max_channel_id,
-				got: channel_id,
-			});
-		}
-		channels[channel_id].flush(direction, multiplicity, values.clone())?;
-	}
+    for boundary in boundaries.iter().cloned() {
+        let Boundary { channel_id, values, direction, multiplicity } = boundary;
+        if channel_id > max_channel_id {
+            return Err(Error::ChannelIdOutOfRange {
+                max: max_channel_id,
+                got: channel_id,
+            });
+        }
+        channels[channel_id].flush(direction, multiplicity, values.clone())?;
+    }
 
-	for flush in flushes {
-		let &Flush {
-			ref oracles,
-			channel_id,
-			direction,
-			selector,
-			multiplicity,
-		} = flush;
+    for flush in flushes {
+        let &Flush { ref oracles, channel_id, direction, selector, multiplicity } = flush;
 
-		if channel_id > max_channel_id {
-			return Err(Error::ChannelIdOutOfRange {
-				max: max_channel_id,
-				got: channel_id,
-			});
-		}
+        if channel_id > max_channel_id {
+            return Err(Error::ChannelIdOutOfRange {
+                max: max_channel_id,
+                got: channel_id,
+            });
+        }
 
-		let channel = &mut channels[channel_id];
+        let channel = &mut channels[channel_id];
 
-		let non_const_oracles: Vec<usize> = oracles.iter().filter_map(|&id|match id {
-			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
-			OracleOrConst::Const{ base, tower_level} => None
-		}).collect();
+        //We check the variables only of OracleOrConst::Oracle variant oracles being the same.
+        let non_const_polys = oracles
+            .iter()
+            .filter_map(|&id| {
+                match id {
+                    OracleOrConst::Oracle(oracle_id) => Some(witness.get_multilin_poly(oracle_id)),
+                    OracleOrConst::Const { base, tower_level } => None,
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-		let polys = non_const_oracles
-			.iter()
-			.map(|&id| witness.get_multilin_poly(id)
-			)
-			.collect::<Result<Vec<_>, _>>()?;
+        let selector_poly = witness.get_multilin_poly(selector)?;
 
-		// Ensure that all the polys in a single flush have the same n_vars
-		if let Some(first_poly) = polys.first() {
-			let n_vars = first_poly.n_vars();
-			for poly in &polys {
-				if poly.n_vars() != n_vars {
-					return Err(Error::ChannelFlushNvarsMismatch {
-						expected: n_vars,
-						got: poly.n_vars(),
-					});
-				}
-			}
+        if let Some(first_poly) = non_const_polys.first() {
+            // Ensure that all the polys in a single flush have the same n_vars
+            let n_vars = first_poly.n_vars();
+            for poly in &non_const_polys {
+                if poly.n_vars() != n_vars {
+                    return Err(Error::ChannelFlushNvarsMismatch {
+                        expected: n_vars,
+                        got: poly.n_vars(),
+                    });
+                }
+            }
 
-			let selector_poly = witness.get_multilin_poly(selector)?;
-			// Check selector polynomial is compatible
-			if selector_poly.n_vars() != n_vars {
-				let id = non_const_oracles.first().copied().expect("polys is not empty");
-				return Err(Error::IncompatibleFlushSelector { id, selector });
-			}
+            // Check selector polynomial is compatible
+            if selector_poly.n_vars() != n_vars {
+                let id = oracles
+                    .into_iter()
+                    .copied()
+                    .filter_map(|id| {
+                        match id {
+                            OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+                            OracleOrConst::Const { base, tower_level } => None,
+                        }
+                    })
+                    .nth(0)
+                    .expect("non_const_polys is not empty");
+                return Err(Error::IncompatibleFlushSelector { id, selector });
+            }
+        }
 
-			for i in 0..1 << selector_poly.n_vars() {
-				if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
-					continue;
-				}
-				let values = polys
-					.iter()
-					.map(|poly| poly.evaluate_on_hypercube(i))
-					.collect::<Result<Vec<_>, _>>()?;
-				channel.flush(direction, multiplicity, values)?;
-			}
-		}
-	}
+        for i in 0..1 << selector_poly.n_vars() {
+            if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
+                continue;
+            }
+            let values = oracles
+                .iter()
+                .copied()
+                .map(|id| {
+                    match id {
+                        OracleOrConst::Const { base, tower_level } => Ok(base),
+                        OracleOrConst::Oracle(oracle_id) =>
+                            witness
+                                .get_multilin_poly(oracle_id)
+                                .expect(
+                                    "Witness error would have been caught while checking variables."
+                                )
+                                .evaluate_on_hypercube(i),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            channel.flush(direction, multiplicity, values)?;
+        }
+    }
 
-	for (id, channel) in channels.iter().enumerate() {
-		if !channel.is_balanced() {
-			return Err(VerificationError::ChannelUnbalanced { id }.into());
-		}
-	}
+    for (id, channel) in channels.iter().enumerate() {
+        if !channel.is_balanced() {
+            return Err((VerificationError::ChannelUnbalanced { id }).into());
+        }
+    }
 
-	Ok(())
+    Ok(())
 }
 
 #[derive(Default, Debug, Clone)]
 struct Channel<F: TowerField> {
-	width: Option<usize>,
-	multiplicities: HashMap<Vec<F>, i64>,
+    width: Option<usize>,
+    multiplicities: HashMap<Vec<F>, i64>,
 }
 
 impl<F: TowerField> Channel<F> {
-	fn new() -> Self {
-		Self::default()
-	}
+    fn new() -> Self {
+        Self::default()
+    }
 
-	fn _print_unbalanced_values(&self) {
-		for (key, val) in &self.multiplicities {
-			if *val != 0 {
-				println!("{key:?}: {val}");
-			}
-		}
-	}
+    fn _print_unbalanced_values(&self) {
+        for (key, val) in &self.multiplicities {
+            if *val != 0 {
+                println!("{key:?}: {val}");
+            }
+        }
+    }
 
-	fn flush(
-		&mut self,
-		direction: FlushDirection,
-		multiplicity: u64,
-		values: Vec<F>,
-	) -> Result<(), Error> {
-		if self.width.is_none() {
-			self.width = Some(values.len());
-		} else if self.width.expect("checked for None above") != values.len() {
-			return Err(Error::ChannelFlushWidthMismatch {
-				expected: self.width.unwrap(),
-				got: values.len(),
-			});
-		}
-		*self.multiplicities.entry(values).or_default() += (multiplicity as i64)
-			* (match direction {
-				FlushDirection::Pull => -1i64,
-				FlushDirection::Push => 1i64,
-			});
-		Ok(())
-	}
+    fn flush(
+        &mut self,
+        direction: FlushDirection,
+        multiplicity: u64,
+        values: Vec<F>
+    ) -> Result<(), Error> {
+        if self.width.is_none() {
+            self.width = Some(values.len());
+        } else if self.width.expect("checked for None above") != values.len() {
+            return Err(Error::ChannelFlushWidthMismatch {
+                expected: self.width.unwrap(),
+                got: values.len(),
+            });
+        }
+        *self.multiplicities.entry(values).or_default() +=
+            (multiplicity as i64) *
+            (match direction {
+                FlushDirection::Pull => -1i64,
+                FlushDirection::Push => 1i64,
+            });
+        Ok(())
+    }
 
-	fn is_balanced(&self) -> bool {
-		self.multiplicities.iter().all(|(_, m)| *m == 0)
-	}
+    fn is_balanced(&self) -> bool {
+        self.multiplicities.iter().all(|(_, m)| *m == 0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-	use binius_field::BinaryField64b;
+    use binius_field::BinaryField64b;
 
-	use super::*;
+    use super::*;
 
-	#[test]
-	fn test_flush_push_single_row() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_push_single_row() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Push a single row of data
-		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		let result = channel.flush(FlushDirection::Push, 1, values.clone());
+        // Push a single row of data
+        let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+        let result = channel.flush(FlushDirection::Push, 1, values.clone());
 
-		assert!(result.is_ok());
-		assert!(!channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
-	}
+        assert!(result.is_ok());
+        assert!(!channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+    }
 
-	#[test]
-	fn test_flush_pull_single_row() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_pull_single_row() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Pull a single row of data
-		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		let result = channel.flush(FlushDirection::Pull, 1, values.clone());
+        // Pull a single row of data
+        let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+        let result = channel.flush(FlushDirection::Pull, 1, values.clone());
 
-		assert!(result.is_ok());
-		assert!(!channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap(), &-1);
-	}
+        assert!(result.is_ok());
+        assert!(!channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap(), &-1);
+    }
 
-	#[test]
-	fn test_flush_push_pull_single_row() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_push_pull_single_row() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Push and then pull the same row
-		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		channel
-			.flush(FlushDirection::Push, 1, values.clone())
-			.unwrap();
-		let result = channel.flush(FlushDirection::Pull, 1, values.clone());
+        // Push and then pull the same row
+        let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+        channel.flush(FlushDirection::Push, 1, values.clone()).unwrap();
+        let result = channel.flush(FlushDirection::Pull, 1, values.clone());
 
-		assert!(result.is_ok());
-		assert!(channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
-	}
+        assert!(result.is_ok());
+        assert!(channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
+    }
 
-	#[test]
-	fn test_flush_multiplicity() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_multiplicity() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Push multiple rows with a multiplicity of 2
-		let values = vec![BinaryField64b::from(3), BinaryField64b::from(4)];
-		channel
-			.flush(FlushDirection::Push, 2, values.clone())
-			.unwrap();
+        // Push multiple rows with a multiplicity of 2
+        let values = vec![BinaryField64b::from(3), BinaryField64b::from(4)];
+        channel.flush(FlushDirection::Push, 2, values.clone()).unwrap();
 
-		// Pull the same row with a multiplicity of 1
-		channel
-			.flush(FlushDirection::Pull, 1, values.clone())
-			.unwrap();
+        // Pull the same row with a multiplicity of 1
+        channel.flush(FlushDirection::Pull, 1, values.clone()).unwrap();
 
-		// The channel should not be balanced yet
-		assert!(!channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+        // The channel should not be balanced yet
+        assert!(!channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
 
-		// Pull the same row again with a multiplicity of 1
-		channel
-			.flush(FlushDirection::Pull, 1, values.clone())
-			.unwrap();
+        // Pull the same row again with a multiplicity of 1
+        channel.flush(FlushDirection::Pull, 1, values.clone()).unwrap();
 
-		// Now the channel should be balanced
-		assert!(channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
-	}
+        // Now the channel should be balanced
+        assert!(channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
+    }
 
-	#[test]
-	fn test_flush_width_mismatch() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_width_mismatch() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Push a row with width 2
-		let values1 = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		channel.flush(FlushDirection::Push, 1, values1).unwrap();
+        // Push a row with width 2
+        let values1 = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+        channel.flush(FlushDirection::Push, 1, values1).unwrap();
 
-		// Attempt to push a row with width 3
-		let values2 = vec![
-			BinaryField64b::from(3),
-			BinaryField64b::from(4),
-			BinaryField64b::from(5),
-		];
-		let result = channel.flush(FlushDirection::Push, 1, values2);
+        // Attempt to push a row with width 3
+        let values2 = vec![
+            BinaryField64b::from(3),
+            BinaryField64b::from(4),
+            BinaryField64b::from(5)
+        ];
+        let result = channel.flush(FlushDirection::Push, 1, values2);
 
-		assert!(result.is_err());
-		if let Err(Error::ChannelFlushWidthMismatch { expected, got }) = result {
-			assert_eq!(expected, 2);
-			assert_eq!(got, 3);
-		} else {
-			panic!("Expected ChannelFlushWidthMismatch error");
-		}
-	}
+        assert!(result.is_err());
+        if let Err(Error::ChannelFlushWidthMismatch { expected, got }) = result {
+            assert_eq!(expected, 2);
+            assert_eq!(got, 3);
+        } else {
+            panic!("Expected ChannelFlushWidthMismatch error");
+        }
+    }
 
-	#[test]
-	fn test_flush_direction_effects() {
-		let mut channel = Channel::<BinaryField64b>::new();
+    #[test]
+    fn test_flush_direction_effects() {
+        let mut channel = Channel::<BinaryField64b>::new();
 
-		// Push a row
-		let values = vec![BinaryField64b::from(7), BinaryField64b::from(8)];
-		channel
-			.flush(FlushDirection::Push, 1, values.clone())
-			.unwrap();
+        // Push a row
+        let values = vec![BinaryField64b::from(7), BinaryField64b::from(8)];
+        channel.flush(FlushDirection::Push, 1, values.clone()).unwrap();
 
-		// Pull a different row
-		let values2 = vec![BinaryField64b::from(9), BinaryField64b::from(10)];
-		channel
-			.flush(FlushDirection::Pull, 1, values2.clone())
-			.unwrap();
+        // Pull a different row
+        let values2 = vec![BinaryField64b::from(9), BinaryField64b::from(10)];
+        channel.flush(FlushDirection::Pull, 1, values2.clone()).unwrap();
 
-		// The channel should not be balanced because different rows were pushed and pulled
-		assert!(!channel.is_balanced());
-		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
-		assert_eq!(channel.multiplicities.get(&values2).unwrap(), &-1);
-	}
+        // The channel should not be balanced because different rows were pushed and pulled
+        assert!(!channel.is_balanced());
+        assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+        assert_eq!(channel.multiplicities.get(&values2).unwrap(), &-1);
+    }
 }

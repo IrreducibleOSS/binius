@@ -34,7 +34,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
-	flushes: Vec<Flush>,
+	flushes: Vec<Flush<F>>,
 	exponents: Vec<Exp<F>>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
@@ -116,6 +116,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	where
 		U: PackScalar<BinaryField1b>,
 	{	
+		//We assume there is atleast one non constant in the collection of oracle ids.
 		let non_const_oracles: Vec<usize> = oracle_ids.clone().into_iter().filter_map(|id|match id {
 			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
 			OracleOrConst::Const{ base, tower_level} => None
@@ -151,6 +152,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
+		//We assume there is atleast one non constant in the collection of oracle ids.
 		let non_const_oracles: Vec<usize> = oracle_ids.clone().into_iter().filter_map(|id|match id {
 			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
 			OracleOrConst::Const{ base, tower_level} => None
