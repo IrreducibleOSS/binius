@@ -129,7 +129,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			})
 			.collect();
 
-		let n_vars = self.log_rows(non_const_oracles.clone())?;
+		let n_vars = self.log_rows(non_const_oracles)?;
 
 		let selector = if let Some(&selector) = self.step_down_dedup.get(&(n_vars, count)) {
 			selector

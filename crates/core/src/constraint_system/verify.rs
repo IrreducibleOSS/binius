@@ -481,7 +481,7 @@ pub fn make_flush_oracles<F: TowerField>(
 
 					let first_oracle = non_const_oracles
 						.clone()
-						.nth(0)
+						.next()
 						.ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
 

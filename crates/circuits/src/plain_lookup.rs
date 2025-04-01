@@ -152,7 +152,7 @@ where
 		permuted_lookup_t
 			.iter()
 			.copied()
-			.map(|id| OracleOrConst::Oracle(id)),
+			.map(OracleOrConst::Oracle),
 	)?;
 	builder.receive(
 		permutation_channel,
@@ -161,7 +161,7 @@ where
 			.as_ref()
 			.iter()
 			.copied()
-			.map(|id| OracleOrConst::Oracle(id)),
+			.map(OracleOrConst::Oracle),
 	)?;
 
 	for (lookup_u, &count) in izip!(lookups_u, n_lookups) {
@@ -172,7 +172,7 @@ where
 				.as_ref()
 				.iter()
 				.copied()
-				.map(|id| OracleOrConst::Oracle(id)),
+				.map(OracleOrConst::Oracle),
 		)?;
 	}
 
@@ -184,7 +184,7 @@ where
 			permuted_lookup_t
 				.iter()
 				.copied()
-				.map(|id| OracleOrConst::Oracle(id)),
+				.map(OracleOrConst::Oracle),
 			1 << i,
 		)?
 	}

@@ -133,7 +133,7 @@ where
 		oracles_prefix_t
 			.clone()
 			.chain([lookup_o])
-			.map(|id| OracleOrConst::Oracle(id)),
+			.map(OracleOrConst::Oracle),
 	)?;
 
 	// for every value looked up, pull using current timestamp and push with incremented timestamp
@@ -146,14 +146,14 @@ where
 				oracle_prefix_u
 					.clone()
 					.chain([lookup_r])
-					.map(|id| OracleOrConst::Oracle(id)),
+					.map(OracleOrConst::Oracle),
 			)?;
 			builder.send(
 				channel,
 				n_lookup,
 				oracle_prefix_u
 					.chain([lookup_w])
-					.map(|id| OracleOrConst::Oracle(id)),
+					.map(OracleOrConst::Oracle),
 			)?;
 			Ok(())
 		},
@@ -165,7 +165,7 @@ where
 		1 << t_log_rows,
 		oracles_prefix_t
 			.chain([lookup_f])
-			.map(|id| OracleOrConst::Oracle(id)),
+			.map(OracleOrConst::Oracle),
 	)?;
 
 	Ok(())

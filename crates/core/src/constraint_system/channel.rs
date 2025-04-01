@@ -162,7 +162,7 @@ where
 			// Check selector polynomial is compatible
 			if selector_poly.n_vars() != n_vars {
 				let id = oracles
-					.into_iter()
+					.iter()
 					.copied()
 					.filter_map(|id| match id {
 						OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
@@ -171,7 +171,7 @@ where
 							tower_level: _,
 						} => None,
 					})
-					.nth(0)
+					.next()
 					.expect("non_const_polys is not empty");
 				return Err(Error::IncompatibleFlushSelector { id, selector });
 			}
