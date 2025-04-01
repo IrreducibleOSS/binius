@@ -11,6 +11,7 @@ use array_util::ArrayExt;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
+	ext_basis,
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
@@ -326,7 +327,7 @@ struct SBox<const V: usize> {
 
 impl<const V: usize> SBox<V> {
 	pub fn new(table: &mut TableBuilder, input: Expr<B8, V>) -> Self {
-		let b8_basis: [_; 8] = array::from_fn(<B8 as ExtensionField<B1>>::basis);
+		let b8_basis: [_; 8] = array::from_fn(ext_basis::<B8, B1>);
 		let pack_b8 = move |bits: [Expr<B1, V>; 8]| {
 			bits.into_iter()
 				.enumerate()

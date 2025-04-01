@@ -54,6 +54,8 @@ where
 	/// from `elem.min_tower_level()`.
 	fn min_tower_level(self) -> usize;
 
+	/// Returns the i'th basis element of this field as an extension over the tower subfield with
+	/// level $\iota$.
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
 		if iota > Self::TOWER_LEVEL {
 			return Err(Error::ExtensionDegreeTooHigh);
@@ -79,6 +81,22 @@ where
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis_checked(1 << iota)?)
 	}
+}
+
+/// Returns the i'th basis element of `FExt` as a field extension of `FSub`.
+///
+/// This is an alias function for [`ExtensionField::basis`].
+///
+/// ## Pre-conditions
+///
+/// * `i` must be in the range $[0, d)$, where $d$ is the field extension degree.
+#[inline]
+pub fn ext_basis<FExt, FSub>(i: usize) -> FExt
+where
+	FSub: Field,
+	FExt: ExtensionField<FSub>,
+{
+	<FExt as ExtensionField<FSub>>::basis(i)
 }
 
 pub(super) trait TowerExtensionField:

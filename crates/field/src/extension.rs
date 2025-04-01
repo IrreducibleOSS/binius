@@ -31,6 +31,7 @@ pub trait ExtensionField<F: Field>:
 	/// ## Pre-conditions
 	///
 	/// * `i` must be in the range [0, `Self::DEGREE`).
+	#[inline]
 	fn basis(i: usize) -> Self {
 		Self::basis_checked(i).expect("pre-condition: 0 <= i < DEGREE")
 	}
