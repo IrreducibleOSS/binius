@@ -441,8 +441,11 @@ where
 		univariatizing_output,
 	)?;
 
-	let zerocheck_eval_claims =
-		sumcheck::make_eval_claims(zerocheck_oracle_metas, multilinear_zerocheck_output)?;
+	let zerocheck_eval_claims = sumcheck::make_eval_claims(
+		EvaluationOrder::LowToHigh,
+		zerocheck_oracle_metas,
+		multilinear_zerocheck_output,
+	)?;
 
 	// Prove evaluation claims
 	let eval_claims = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(

@@ -16,8 +16,8 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
-	MultilinearQuery,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
+	MultilinearExtension, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -501,6 +501,7 @@ where
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(
+		EvaluationOrder::HighToLow,
 		constraint_sets,
 		witness,
 		domain_factory,
@@ -510,7 +511,8 @@ where
 
 	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
 
-	let evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
+	let evalcheck_claims =
+		sumcheck::make_eval_claims(EvaluationOrder::HighToLow, metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
 }
