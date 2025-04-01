@@ -47,10 +47,10 @@ where
 	assert!(n_vars > 0);
 	parallel_map(multilinears, |sumcheck_multilinear| -> Result<_, Error> {
 		match sumcheck_multilinear {
-			SumcheckMultilinear::Transparent {
-				multilinear,
-				switchover_round,
-				zero_scalars_suffix,
+			&mut SumcheckMultilinear::Transparent {
+				ref multilinear,
+				ref mut switchover_round,
+				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
 					// At switchover we partially evaluate the multilinear at an expanded tensor query.
@@ -60,20 +60,19 @@ where
 
 					assert!(tensor_query.n_vars() > 0);
 
-					let nonzero_scalars_prefix = (1 << n_vars) - *zero_scalars_suffix;
+					let non_const_prefix = (1 << n_vars) - suffix_len;
 
-					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
+					let large_field_folded_evals = if non_const_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(
 							MAX_SRC_SUBCUBE_LOG_BITS,
-							log2_ceil_usize(nonzero_scalars_prefix),
+							log2_ceil_usize(non_const_prefix),
 							tensor_query.n_vars(),
 							n_vars - 1,
 						);
 
 						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
-						let folded_scalars =
-							nonzero_scalars_prefix.div_ceil(1 << tensor_query.n_vars());
+						let folded_scalars = non_const_prefix.div_ceil(1 << tensor_query.n_vars());
 
 						let mut folded =
 							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);
@@ -100,6 +99,7 @@ where
 
 					*sumcheck_multilinear = SumcheckMultilinear::Folded {
 						large_field_folded_evals,
+						suffix_eval,
 					};
 
 					Ok(false)
@@ -109,8 +109,9 @@ where
 				}
 			}
 
-			SumcheckMultilinear::Folded {
-				large_field_folded_evals: evals,
+			&mut SumcheckMultilinear::Folded {
+				large_field_folded_evals: ref mut evals,
+				suffix_eval,
 			} => {
 				// Post-switchover, we perform single variable folding (linear interpolation).
 				// NB: Lerp folding in low-to-high evaluation order can be made inplace, but not
@@ -119,9 +120,10 @@ where
 
 				fold_right_lerp(
 					evals.as_slice(),
-					// evals is optimally truncated, upper bound on nonzero scalars is quite tight
+					// evals is optimally truncated, upper bound on non const scalars is quite tight
 					evals.len() * P::WIDTH,
 					challenge,
+					suffix_eval,
 					&mut new_evals,
 				)?;
 
@@ -144,10 +146,10 @@ where
 {
 	parallel_map(multilinears, |sumcheck_multilinear| -> Result<_, Error> {
 		match sumcheck_multilinear {
-			SumcheckMultilinear::Transparent {
-				multilinear,
-				switchover_round,
-				zero_scalars_suffix,
+			&mut SumcheckMultilinear::Transparent {
+				ref multilinear,
+				ref mut switchover_round,
+				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
 					// At switchover we partially evaluate the multilinear at an expanded tensor query.
@@ -155,12 +157,12 @@ where
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
 
-					let nonzero_scalars_prefix = (1 << n_vars) - *zero_scalars_suffix;
+					let non_const_prefix = (1 << n_vars) - suffix_len;
 
-					let large_field_folded_evals = if nonzero_scalars_prefix < 1 << n_vars {
+					let large_field_folded_evals = if non_const_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(
 							MAX_SRC_SUBCUBE_LOG_BITS,
-							log2_ceil_usize(nonzero_scalars_prefix),
+							log2_ceil_usize(non_const_prefix),
 							tensor_query.n_vars(),
 							n_vars - 1,
 						);
@@ -168,7 +170,7 @@ where
 						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
 						let folded_scalars =
-							nonzero_scalars_prefix.min(1 << (n_vars - tensor_query.n_vars()));
+							non_const_prefix.min(1 << (n_vars - tensor_query.n_vars()));
 
 						let mut folded =
 							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);
@@ -195,6 +197,7 @@ where
 
 					*sumcheck_multilinear = SumcheckMultilinear::Folded {
 						large_field_folded_evals,
+						suffix_eval,
 					};
 
 					Ok(false)
@@ -204,14 +207,16 @@ where
 				}
 			}
 
-			SumcheckMultilinear::Folded {
-				large_field_folded_evals,
+			&mut SumcheckMultilinear::Folded {
+				large_field_folded_evals: ref mut evals,
+				suffix_eval,
 			} => {
 				// REVIEW: note that this method is currently _not_ multithreaded, as
 				//         traces are usually sufficiently wide
 				fold_left_lerp_inplace(
-					large_field_folded_evals,
-					(large_field_folded_evals.len() * P::WIDTH).min(1 << n_vars),
+					evals,
+					(evals.len() * P::WIDTH).min(1 << n_vars),
+					suffix_eval,
 					n_vars,
 					challenge,
 				)?;
