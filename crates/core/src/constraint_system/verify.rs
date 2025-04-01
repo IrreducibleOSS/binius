@@ -375,7 +375,7 @@ where
 }
 
 fn verify_channels_balance<F: TowerField>(
-	flushes: &[Flush],
+	flushes: &[Flush<F>],
 	flush_products: &[F],
 	boundaries: &[Boundary<F>],
 	mixing_challenge: F,
@@ -452,7 +452,7 @@ fn verify_channels_balance<F: TowerField>(
 
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	flushes: &[Flush],
+	flushes: &[Flush<F>],
 	mixing_challenge: F,
 	permutation_challenges: &[F],
 ) -> Result<Vec<OracleId>, Error> {
@@ -472,25 +472,22 @@ pub fn make_flush_oracles<F: TowerField>(
 						OracleOrConst::Const{ base, tower_level} => None
 					});
 
-					let first_oracle = non_const_oracles.nth(0).ok_or(Error::EmptyFlushOracles)?;
+					let first_oracle = non_const_oracles.clone().nth(0).ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
-					for oracle_id in non_const_oracles.skip(1) {
-						let oracle_n_vars = oracles.n_vars(oracle_id);
-						if oracle_n_vars != n_vars {
-							return Err(Error::ChannelFlushNvarsMismatch {
-								expected: n_vars,
-								got: oracle_n_vars,
-							});
+					if non_const_oracles.try_len().expect("There will be a finite number of oracles.") > 1{
+						for oracle_id in non_const_oracles.clone().skip(1) {
+							let oracle_n_vars = oracles.n_vars(oracle_id);
+							if oracle_n_vars != n_vars {
+								return Err(Error::ChannelFlushNvarsMismatch {
+									expected: n_vars,
+									got: oracle_n_vars,
+								});
+							}
 						}
 					}
 
-					let mut non_const_oracles:Vec<usize>  = flush.oracles.iter().copied().filter_map(|id|match id {
-						OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
-						OracleOrConst::Const{ base, tower_level} => None
-					}).collect();
-					
 					// Compute powers of the mixing challenge
-					while mixing_powers.len() < non_const_oracles.len() {
+					while mixing_powers.len() < flush.oracles.len() {
 						let last_power = *mixing_powers.last().expect(
 							"mixing_powers is initialized with one element; \
 								mixing_powers never shrinks; \
@@ -505,7 +502,7 @@ pub fn make_flush_oracles<F: TowerField>(
 						.linear_combination_with_offset(
 							n_vars,
 							*permutation_challenge,
-								non_const_oracles.iter().copied()
+								non_const_oracles
 								.zip(mixing_powers.iter().copied()),
 						)?;
 					Ok(id)
