@@ -122,7 +122,10 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.into_iter()
 			.filter_map(|id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-				OracleOrConst::Const { base:_, tower_level:_ } => None,
+				OracleOrConst::Const {
+					base: _,
+					tower_level: _,
+				} => None,
 			})
 			.collect();
 
@@ -162,7 +165,10 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.into_iter()
 			.filter_map(|id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-				OracleOrConst::Const { base:_, tower_level:_ } => None,
+				OracleOrConst::Const {
+					base: _,
+					tower_level: _,
+				} => None,
 			})
 			.collect();
 

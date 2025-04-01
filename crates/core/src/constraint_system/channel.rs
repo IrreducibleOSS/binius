@@ -138,7 +138,10 @@ where
 			.iter()
 			.filter_map(|&id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(witness.get_multilin_poly(oracle_id)),
-				OracleOrConst::Const { base:_, tower_level:_ } => None,
+				OracleOrConst::Const {
+					base: _,
+					tower_level: _,
+				} => None,
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -163,7 +166,10 @@ where
 					.copied()
 					.filter_map(|id| match id {
 						OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-						OracleOrConst::Const { base:_, tower_level:_ } => None,
+						OracleOrConst::Const {
+							base: _,
+							tower_level: _,
+						} => None,
 					})
 					.nth(0)
 					.expect("non_const_polys is not empty");
@@ -179,7 +185,10 @@ where
 				.iter()
 				.copied()
 				.map(|id| match id {
-					OracleOrConst::Const { base, tower_level:_ } => Ok(base),
+					OracleOrConst::Const {
+						base,
+						tower_level: _,
+					} => Ok(base),
 					OracleOrConst::Oracle(oracle_id) => witness
 						.get_multilin_poly(oracle_id)
 						.expect("Witness error would have been caught while checking variables.")

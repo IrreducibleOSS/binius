@@ -473,7 +473,10 @@ pub fn make_flush_oracles<F: TowerField>(
 					let non_const_oracles =
 						flush.oracles.iter().copied().filter_map(|id| match id {
 							OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-							OracleOrConst::Const { base:_, tower_level:_ } => None,
+							OracleOrConst::Const {
+								base: _,
+								tower_level: _,
+							} => None,
 						});
 
 					let first_oracle = non_const_oracles
@@ -481,7 +484,7 @@ pub fn make_flush_oracles<F: TowerField>(
 						.nth(0)
 						.ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
-					
+
 					for oracle_id in non_const_oracles.clone().skip(1) {
 						let oracle_n_vars = oracles.n_vars(oracle_id);
 						if oracle_n_vars != n_vars {
@@ -491,7 +494,6 @@ pub fn make_flush_oracles<F: TowerField>(
 							});
 						}
 					}
-
 
 					// Compute powers of the mixing challenge
 					while mixing_powers.len() < flush.oracles.len() {
@@ -509,7 +511,10 @@ pub fn make_flush_oracles<F: TowerField>(
 						.copied()
 						.zip(mixing_powers.iter())
 						.filter_map(|(id, coeff)| match id {
-							OracleOrConst::Const { base, tower_level:_ } => Some(base * coeff),
+							OracleOrConst::Const {
+								base,
+								tower_level: _,
+							} => Some(base * coeff),
 							OracleOrConst::Oracle(_oracle_id) => None,
 						})
 						.sum();
@@ -526,7 +531,10 @@ pub fn make_flush_oracles<F: TowerField>(
 								.zip(mixing_powers.iter().copied())
 								.filter_map(|(id, coeff)| match id {
 									OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
-									OracleOrConst::Const { base:_, tower_level:_ } => None,
+									OracleOrConst::Const {
+										base: _,
+										tower_level: _,
+									} => None,
 								}),
 						)?;
 					Ok(id)
