@@ -4,7 +4,10 @@ pub use binius_core::constraint_system::channel::{
 	Boundary, Flush as CompiledFlush, FlushDirection,
 };
 use binius_core::{
-	constraint_system::{channel::{ChannelId, OracleOrConst}, ConstraintSystem as CompiledConstraintSystem},
+	constraint_system::{
+		channel::{ChannelId, OracleOrConst},
+		ConstraintSystem as CompiledConstraintSystem,
+	},
 	oracle::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		ProjectionVariant,

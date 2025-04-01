@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
-		channel::{ChannelId, Flush, OracleOrConst, FlushDirection},
+		channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
 		exp::{Exp, ExpBase},
 		ConstraintSystem,
 	},
@@ -115,12 +115,16 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	) -> anyhow::Result<()>
 	where
 		U: PackScalar<BinaryField1b>,
-	{	
+	{
 		//We assume there is atleast one non constant in the collection of oracle ids.
-		let non_const_oracles: Vec<usize> = oracle_ids.clone().into_iter().filter_map(|id|match id {
-			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
-			OracleOrConst::Const{ base, tower_level} => None
-		}).collect();
+		let non_const_oracles: Vec<usize> = oracle_ids
+			.clone()
+			.into_iter()
+			.filter_map(|id| match id {
+				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+				OracleOrConst::Const { base:_, tower_level:_ } => None,
+			})
+			.collect();
 
 		let n_vars = self.log_rows(non_const_oracles.clone())?;
 
@@ -153,10 +157,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
 		//We assume there is atleast one non constant in the collection of oracle ids.
-		let non_const_oracles: Vec<usize> = oracle_ids.clone().into_iter().filter_map(|id|match id {
-			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
-			OracleOrConst::Const{ base, tower_level} => None
-		}).collect();
+		let non_const_oracles: Vec<usize> = oracle_ids
+			.clone()
+			.into_iter()
+			.filter_map(|id| match id {
+				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+				OracleOrConst::Const { base:_, tower_level:_ } => None,
+			})
+			.collect();
 
 		let log_rows = self.log_rows(non_const_oracles.iter().copied())?;
 		ensure!(

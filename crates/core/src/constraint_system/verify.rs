@@ -461,7 +461,7 @@ pub fn make_flush_oracles<F: TowerField>(
 ) -> Result<Vec<OracleId>, Error> {
 	let mut mixing_powers = vec![F::ONE];
 	let mut flush_iter = flushes.iter();
-	
+
 	permutation_challenges
 		.iter()
 		.enumerate()
@@ -470,24 +470,28 @@ pub fn make_flush_oracles<F: TowerField>(
 				.peeking_take_while(|flush| flush.channel_id == channel_id)
 				.map(|flush| {
 					// Check that all flushed oracles have the same number of variables
-					let mut non_const_oracles  = flush.oracles.iter().copied().filter_map(|id|match id {
-						OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
-						OracleOrConst::Const{ base, tower_level} => None
-					});
+					let non_const_oracles =
+						flush.oracles.iter().copied().filter_map(|id| match id {
+							OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+							OracleOrConst::Const { base:_, tower_level:_ } => None,
+						});
 
-					let first_oracle = non_const_oracles.clone().nth(0).ok_or(Error::EmptyFlushOracles)?;
+					let first_oracle = non_const_oracles
+						.clone()
+						.nth(0)
+						.ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
-					if non_const_oracles.try_len().expect("There will be a finite number of oracles.") > 1{
-						for oracle_id in non_const_oracles.clone().skip(1) {
-							let oracle_n_vars = oracles.n_vars(oracle_id);
-							if oracle_n_vars != n_vars {
-								return Err(Error::ChannelFlushNvarsMismatch {
-									expected: n_vars,
-									got: oracle_n_vars,
-								});
-							}
+					
+					for oracle_id in non_const_oracles.clone().skip(1) {
+						let oracle_n_vars = oracles.n_vars(oracle_id);
+						if oracle_n_vars != n_vars {
+							return Err(Error::ChannelFlushNvarsMismatch {
+								expected: n_vars,
+								got: oracle_n_vars,
+							});
 						}
 					}
+
 
 					// Compute powers of the mixing challenge
 					while mixing_powers.len() < flush.oracles.len() {
@@ -498,14 +502,17 @@ pub fn make_flush_oracles<F: TowerField>(
 						);
 						mixing_powers.push(last_power * mixing_challenge);
 					}
-					
-					let const_linear_combination: F = flush.oracles.iter().copied().zip(mixing_powers.iter())
-					.filter_map(|(id, coeff)|
-						match id {
-							OracleOrConst::Const { base, tower_level } => Some(base * coeff),
-							OracleOrConst::Oracle(oracle_id) => None
-						}
-					).sum();
+
+					let const_linear_combination: F = flush
+						.oracles
+						.iter()
+						.copied()
+						.zip(mixing_powers.iter())
+						.filter_map(|(id, coeff)| match id {
+							OracleOrConst::Const { base, tower_level:_ } => Some(base * coeff),
+							OracleOrConst::Oracle(_oracle_id) => None,
+						})
+						.sum();
 
 					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
 					let id = oracles
@@ -513,14 +520,14 @@ pub fn make_flush_oracles<F: TowerField>(
 						.linear_combination_with_offset(
 							n_vars,
 							*permutation_challenge + const_linear_combination,
-								flush.oracles.iter()
-								.zip(mixing_powers.iter().copied()).filter_map(
-									|(id, coeff)| 
-									match id {
-										OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
-										OracleOrConst::Const { base, tower_level } => None
-									}
-								),
+							flush
+								.oracles
+								.iter()
+								.zip(mixing_powers.iter().copied())
+								.filter_map(|(id, coeff)| match id {
+									OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
+									OracleOrConst::Const { base:_, tower_level:_ } => None,
+								}),
 						)?;
 					Ok(id)
 				})
