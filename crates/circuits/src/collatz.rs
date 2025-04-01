@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::{
-	constraint_system::channel::{Boundary, ChannelId, FlushDirection},
+	constraint_system::channel::{Boundary, ChannelId, FlushDirection, OracleOrConst},
 	oracle::OracleId,
 };
 use binius_field::{
@@ -85,10 +85,10 @@ impl Collatz {
 		let half = arithmetic::u32::half(builder, "half", even, arithmetic::Flags::Checked)?;
 
 		let even_packed = arithmetic::u32::packed(builder, "even_packed", even)?;
-		builder.receive(channel, count, [even_packed])?;
+		builder.receive(channel, count, [OracleOrConst::Oracle(even_packed)])?;
 
 		let half_packed = arithmetic::u32::packed(builder, "half_packed", half)?;
-		builder.send(channel, count, [half_packed])?;
+		builder.send(channel, count, [OracleOrConst::Oracle(half_packed)])?;
 
 		Ok(())
 	}
@@ -126,11 +126,11 @@ impl Collatz {
 		)?;
 
 		let odd_packed = arithmetic::u32::packed(builder, "odd_packed", odd)?;
-		builder.receive(channel, count, [odd_packed])?;
+		builder.receive(channel, count, [OracleOrConst::Oracle(odd_packed)])?;
 
 		let triple_plus_one_packed =
 			arithmetic::u32::packed(builder, "triple_plus_one_packed", triple_plus_one)?;
-		builder.send(channel, count, [triple_plus_one_packed])?;
+		builder.send(channel, count, [OracleOrConst::Oracle(triple_plus_one_packed)])?;
 
 		Ok(())
 	}

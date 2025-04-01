@@ -28,7 +28,7 @@ mod tests {
 	use binius_core::{
 		constraint_system::{
 			self,
-			channel::{validate_witness, Boundary, FlushDirection},
+			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
 		},
 		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
@@ -125,16 +125,16 @@ mod tests {
 		}
 
 		builder
-			.flush(FlushDirection::Pull, channel_id, even_counter, [even])
+			.flush(FlushDirection::Pull, channel_id, even_counter, [OracleOrConst::Oracle(even)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Push, channel_id, even_counter, [half])
+			.flush(FlushDirection::Push, channel_id, even_counter, [OracleOrConst::Oracle(half)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Pull, channel_id, odd_counter, [odd])
+			.flush(FlushDirection::Pull, channel_id, odd_counter, [OracleOrConst::Oracle(odd)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Push, channel_id, odd_counter, [output])
+			.flush(FlushDirection::Push, channel_id, odd_counter, [OracleOrConst::Oracle(output)])
 			.unwrap();
 
 		let witness = builder
@@ -246,13 +246,13 @@ mod tests {
 				channel,
 				1 << n_vars,
 				vec![
-					column_x,
-					column_y,
-					column_comp_1,
-					column_shift,
-					column_comp_2,
-					column_packed,
-					column_comp_3,
+					OracleOrConst::Oracle(column_y),
+					OracleOrConst::Oracle(column_x),
+					OracleOrConst::Oracle(column_comp_1),
+					OracleOrConst::Oracle(column_shift),
+					OracleOrConst::Oracle(column_comp_2),
+					OracleOrConst::Oracle(column_packed),
+					OracleOrConst::Oracle(column_comp_3),
 				],
 			)
 			.unwrap();
@@ -261,13 +261,13 @@ mod tests {
 				channel,
 				1 << n_vars,
 				vec![
-					column_x,
-					column_y,
-					column_comp_1,
-					column_shift,
-					column_comp_2,
-					column_packed,
-					column_comp_3,
+					OracleOrConst::Oracle(column_x),
+					OracleOrConst::Oracle(column_y),
+					OracleOrConst::Oracle(column_comp_1),
+					OracleOrConst::Oracle(column_shift),
+					OracleOrConst::Oracle(column_comp_2),
+					OracleOrConst::Oracle(column_packed),
+					OracleOrConst::Oracle(column_comp_3),
 				],
 			)
 			.unwrap();

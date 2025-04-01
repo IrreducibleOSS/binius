@@ -58,10 +58,16 @@ use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
+pub type F = BinaryField128b;
 
+#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes)]
+pub enum OracleOrConst<F: Field>{
+	Oracle(usize),
+	Const{base: F, tower_level:usize}
+}
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Flush {
-	pub oracles: Vec<OracleId>,
+	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	pub selector: OracleId,
@@ -128,9 +134,15 @@ where
 
 		let channel = &mut channels[channel_id];
 
-		let polys = oracles
+		let non_const_oracles: Vec<usize> = oracles.iter().filter_map(|&id|match id {
+			OracleOrConst::Oracle(oracle_id)	=> Some(oracle_id),
+			OracleOrConst::Const{ base, tower_level} => None
+		}).collect();
+
+		let polys = non_const_oracles
 			.iter()
-			.map(|&id| witness.get_multilin_poly(id))
+			.map(|&id| witness.get_multilin_poly(id)
+			)
 			.collect::<Result<Vec<_>, _>>()?;
 
 		// Ensure that all the polys in a single flush have the same n_vars
@@ -148,7 +160,7 @@ where
 			let selector_poly = witness.get_multilin_poly(selector)?;
 			// Check selector polynomial is compatible
 			if selector_poly.n_vars() != n_vars {
-				let id = oracles.first().copied().expect("polys is not empty");
+				let id = non_const_oracles.first().copied().expect("polys is not empty");
 				return Err(Error::IncompatibleFlushSelector { id, selector });
 			}
 
