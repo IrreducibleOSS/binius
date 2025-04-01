@@ -63,8 +63,8 @@ pub enum Error {
 	IncorrectEqIndChallengesLength,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
-	#[error("zero scalars suffixes length does not equal multilinear count, or suffix is longer than multilinear")]
-	IncorrectZeroScalarsSuffixes,
+	#[error("suffixes count not equal to multilinear count, const suffix longer than multilinear, or not const")]
+	IncorrectConstSuffixes,
 	#[error("incorrect size of the equality indicator expansion in eq_ind sumcheck")]
 	IncorrectEqIndPartialEvalsSize,
 	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]
