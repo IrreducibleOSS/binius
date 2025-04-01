@@ -25,7 +25,6 @@ either.workspace = true
 getset.workspace = true
 inventory.workspace = true
 itertools.workspace = true
-p3-util.workspace = true
 rand.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
