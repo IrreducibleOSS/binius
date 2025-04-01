@@ -20,9 +20,7 @@ use binius_field::{
 };
 use bytemuck::Pod;
 
-use crate::builder::{
-	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessSegment, B1, B8,
-};
+use crate::builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B8};
 
 /// The first row of the circulant matrix defining the MixBytes step in Grøstl.
 const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
@@ -327,17 +325,8 @@ struct SBox<const V: usize> {
 
 impl<const V: usize> SBox<V> {
 	pub fn new(table: &mut TableBuilder, input: Expr<B8, V>) -> Self {
-		let b8_basis: [_; 8] = array::from_fn(ext_basis::<B8, B1>);
-		let pack_b8 = move |bits: [Expr<B1, V>; 8]| {
-			bits.into_iter()
-				.enumerate()
-				.map(|(i, bit)| upcast_expr(bit) * b8_basis[i])
-				.reduce(|a, b| a + b)
-				.expect("bits has length 8")
-		};
-
 		let inv_bits = array::from_fn(|i| table.add_committed(format!("inv_bits[{}]", i)));
-		let inv = table.add_computed("inv", pack_b8(inv_bits.map(Expr::from)));
+		let inv = table.add_computed("inv", pack_b8(inv_bits));
 
 		// input * inv == 1 OR inv == 0
 		table.assert_zero("inv_valid_or_inv_zero", input.clone() * Expr::from(inv).pow(2) - inv);
@@ -394,6 +383,15 @@ impl<const V: usize> SBox<V> {
 
 		Ok(())
 	}
+}
+
+fn pack_b8<const V: usize>(bits: [Col<B1, V>; 8]) -> Expr<B8, V> {
+	let b8_basis: [_; 8] = array::from_fn(ext_basis::<B8, B1>);
+	bits.into_iter()
+		.enumerate()
+		.map(|(i, bit)| upcast_col(bit) * b8_basis[i])
+		.reduce(|a, b| a + b)
+		.expect("bits has length 8")
 }
 
 #[cfg(test)]
