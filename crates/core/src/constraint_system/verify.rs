@@ -495,15 +495,29 @@ pub fn make_flush_oracles<F: TowerField>(
 						);
 						mixing_powers.push(last_power * mixing_challenge);
 					}
-
 					
+					let const_linear_combination: F = flush.oracles.iter().copied().zip(mixing_powers.iter())
+					.filter_map(|(id, coeff)|
+						match id {
+							OracleOrConst::Const { base, tower_level } => Some(base * coeff),
+							OracleOrConst::Oracle(oracle_id) => None
+						}
+					).sum();
+
+					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
 					let id = oracles
 						.add_named(format!("flush channel_id={channel_id}"))
 						.linear_combination_with_offset(
 							n_vars,
-							*permutation_challenge,
-								non_const_oracles
-								.zip(mixing_powers.iter().copied()),
+							*permutation_challenge + const_linear_combination,
+								flush.oracles.iter()
+								.zip(mixing_powers.iter().copied()).filter_map(
+									|(id, coeff)| 
+									match id {
+										OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
+										OracleOrConst::Const { base, tower_level } => None
+									}
+								),
 						)?;
 					Ok(id)
 				})
