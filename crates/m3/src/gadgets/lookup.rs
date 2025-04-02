@@ -2,10 +2,7 @@
 
 use anyhow::Result;
 use binius_core::constraint_system::channel::ChannelId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	ExtensionField, PackedField, TowerField,
-};
+use binius_field::{ExtensionField, PackedExtension, PackedField, PackedSubfield, TowerField};
 use itertools::Itertools;
 
 use crate::builder::{Col, FlushOpts, TableBuilder, TableWitnessSegment, B1, B128};
@@ -54,20 +51,21 @@ impl LookupProducer {
 	/// ## Pre-condition
 	///
 	/// * Multiplicities must be sorted in ascending order.
-	pub fn populate<U>(
+	pub fn populate<P>(
 		&self,
-		index: &mut TableWitnessSegment<U>,
+		index: &mut TableWitnessSegment<P>,
 		counts: impl Iterator<Item = u32> + Clone,
 	) -> Result<(), anyhow::Error>
 	where
-		U: PackScalar<B1>,
+		P: PackedExtension<B1>,
+		P::Scalar: TowerField,
 	{
 		// TODO: Optimize the gadget for bit-transposing u32s
 		for (j, &multiplicity_col) in self.multiplicity_bits.iter().enumerate().take(32) {
 			let mut multiplicity_col = index.get_mut(multiplicity_col)?;
 			for (packed, counts) in multiplicity_col
 				.iter_mut()
-				.zip(&counts.clone().chunks(<PackedType<U, B1>>::WIDTH))
+				.zip(&counts.clone().chunks(<PackedSubfield<P, B1>>::WIDTH))
 			{
 				for (i, count) in counts.enumerate() {
 					packed.set(i, B1::from((count >> j) & 1 == 1))
@@ -82,7 +80,7 @@ impl LookupProducer {
 mod tests {
 	use std::{cmp::Reverse, iter, iter::repeat_with};
 
-	use binius_field::arch::OptimalUnderlier128b;
+	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -145,7 +143,7 @@ mod tests {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
 		// Fill the lookup table
