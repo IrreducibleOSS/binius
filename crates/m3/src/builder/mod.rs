@@ -5,6 +5,7 @@ pub mod column;
 pub mod constraint_system;
 pub mod error;
 pub mod expr;
+mod indexed_lookup;
 mod multi_iter;
 pub mod statement;
 pub mod structured;
