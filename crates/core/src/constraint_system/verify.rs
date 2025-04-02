@@ -470,19 +470,13 @@ pub fn make_flush_oracles<F: TowerField>(
 				.peeking_take_while(|flush| flush.channel_id == channel_id)
 				.map(|flush| {
 					// Check that all flushed oracles have the same number of variables
-					let non_const_oracles =
+					let mut non_const_oracles =
 						flush.oracles.iter().copied().filter_map(|id| match id {
 							OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-							OracleOrConst::Const {
-								base: _,
-								tower_level: _,
-							} => None,
+							_ => None,
 						});
 
-					let first_oracle = non_const_oracles
-						.clone()
-						.next()
-						.ok_or(Error::EmptyFlushOracles)?;
+					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
 
 					for oracle_id in non_const_oracles.clone().skip(1) {
@@ -505,19 +499,16 @@ pub fn make_flush_oracles<F: TowerField>(
 						mixing_powers.push(last_power * mixing_challenge);
 					}
 
-					let const_linear_combination: F = flush
+					let const_linear_combination = flush
 						.oracles
 						.iter()
 						.copied()
 						.zip(mixing_powers.iter())
 						.filter_map(|(id, coeff)| match id {
-							OracleOrConst::Const {
-								base,
-								tower_level: _,
-							} => Some(base * coeff),
-							OracleOrConst::Oracle(_oracle_id) => None,
+							OracleOrConst::Const { base, .. } => Some(base * coeff),
+							_ => None,
 						})
-						.sum();
+						.sum::<F>();
 
 					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
 					let id = oracles
@@ -531,10 +522,7 @@ pub fn make_flush_oracles<F: TowerField>(
 								.zip(mixing_powers.iter().copied())
 								.filter_map(|(id, coeff)| match id {
 									OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
-									OracleOrConst::Const {
-										base: _,
-										tower_level: _,
-									} => None,
+									_ => None,
 								}),
 						)?;
 					Ok(id)

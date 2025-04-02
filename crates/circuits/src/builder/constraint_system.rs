@@ -6,7 +6,7 @@ use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
-		exp::{Exp, ExpBase},
+		exp::Exp,
 		ConstraintSystem,
 	},
 	oracle::{
@@ -117,17 +117,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		U: PackScalar<BinaryField1b>,
 	{
 		//We assume there is atleast one non constant in the collection of oracle ids.
-		let non_const_oracles: Vec<usize> = oracle_ids
+		let non_const_oracles = oracle_ids
 			.clone()
 			.into_iter()
 			.filter_map(|id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-				OracleOrConst::Const {
-					base: _,
-					tower_level: _,
-				} => None,
+				_ => None,
 			})
-			.collect();
+			.collect::<Vec<_>>();
 
 		let n_vars = self.log_rows(non_const_oracles)?;
 
@@ -160,17 +157,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
 		//We assume there is atleast one non constant in the collection of oracle ids.
-		let non_const_oracles: Vec<usize> = oracle_ids
+		let non_const_oracles = oracle_ids
 			.clone()
 			.into_iter()
 			.filter_map(|id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-				OracleOrConst::Const {
-					base: _,
-					tower_level: _,
-				} => None,
+				_ => None,
 			})
-			.collect();
+			.collect::<Vec<_>>();
 
 		let log_rows = self.log_rows(non_const_oracles.iter().copied())?;
 		ensure!(
@@ -265,7 +259,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
-			base: ExpBase::Static {
+			base: OracleOrConst::Const {
 				base,
 				tower_level: base_tower_level,
 			},
@@ -287,7 +281,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
-			base: ExpBase::Dynamic(base),
+			base: OracleOrConst::Oracle(base),
 		});
 	}
 
@@ -476,5 +470,93 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			bail!(anyhow!("log_rows: All columns must have the same number of rows"))
 		}
 		Ok(log_rows)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_field::{BinaryField128b, PackedField, TowerField};
+	use rand::{seq::SliceRandom, thread_rng};
+
+	use super::*;
+	use crate::{builder::test_utils::test_circuit, unconstrained::unconstrained};
+
+	#[test]
+	fn test_flush_with_const() {
+		test_circuit(|builder| {
+			let channel_id = builder.add_channel();
+			let oracle = unconstrained::<BinaryField1b>(builder, "oracle", 1)?;
+			builder
+				.flush(
+					FlushDirection::Push,
+					channel_id,
+					1,
+					vec![
+						OracleOrConst::Oracle(oracle),
+						OracleOrConst::Const {
+							base: F::one(),
+							tower_level: BinaryField1b::TOWER_LEVEL,
+						},
+					],
+				)
+				.unwrap();
+
+			builder
+				.flush(
+					FlushDirection::Pull,
+					channel_id,
+					1,
+					vec![
+						OracleOrConst::Oracle(oracle),
+						OracleOrConst::Const {
+							base: F::one(),
+							tower_level: BinaryField1b::TOWER_LEVEL,
+						},
+					],
+				)
+				.unwrap();
+
+			Ok(vec![])
+		})
+		.unwrap()
+	}
+
+	//Testing with larger oracles, and random constants, in a random order. To see if given appropriate flushes with constants the channel balances.
+	#[test]
+	fn test_flush_with_const_large() {
+		test_circuit(|builder| {
+			let channel_id = builder.add_channel();
+			let mut rng = thread_rng();
+			let oracles = (0..5)
+				.map(|i| unconstrained::<BinaryField128b>(builder, format!("oracle {i}"), 5))
+				.collect::<Result<Vec<_>, _>>()?;
+			let random_consts = (0..5).map(|_| OracleOrConst::Const {
+				base: BinaryField128b::random(&mut rng),
+				tower_level: BinaryField128b::TOWER_LEVEL,
+			});
+			//Places the oracles and consts in a random order
+			//This is not a cryptographic random order, but it is good enough for testing
+			let mut random_order = oracles
+				.iter()
+				.copied()
+				.map(OracleOrConst::Oracle)
+				.chain(random_consts)
+				.collect::<Vec<_>>();
+			random_order.shuffle(&mut rng);
+
+			let random_order_iterator = random_order.iter().copied();
+			for i in 0..1 << 5 {
+				builder
+					.flush(FlushDirection::Push, channel_id, i, random_order_iterator.clone())
+					.unwrap();
+
+				builder
+					.flush(FlushDirection::Pull, channel_id, i, random_order_iterator.clone())
+					.unwrap();
+			}
+
+			Ok(vec![])
+		})
+		.unwrap()
 	}
 }

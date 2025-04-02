@@ -51,7 +51,7 @@
 
 use std::collections::HashMap;
 
-use binius_field::{PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::{Error, VerificationError};
@@ -60,7 +60,7 @@ use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 pub type ChannelId = usize;
 
 #[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
-pub enum OracleOrConst<F: TowerField> {
+pub enum OracleOrConst<F: Field> {
 	Oracle(usize),
 	Const { base: F, tower_level: usize },
 }
@@ -138,10 +138,7 @@ where
 			.iter()
 			.filter_map(|&id| match id {
 				OracleOrConst::Oracle(oracle_id) => Some(witness.get_multilin_poly(oracle_id)),
-				OracleOrConst::Const {
-					base: _,
-					tower_level: _,
-				} => None,
+				_ => None,
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -166,10 +163,7 @@ where
 					.copied()
 					.filter_map(|id| match id {
 						OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
-						OracleOrConst::Const {
-							base: _,
-							tower_level: _,
-						} => None,
+						_ => None,
 					})
 					.next()
 					.expect("non_const_polys is not empty");
@@ -185,10 +179,7 @@ where
 				.iter()
 				.copied()
 				.map(|id| match id {
-					OracleOrConst::Const {
-						base,
-						tower_level: _,
-					} => Ok(base),
+					OracleOrConst::Const { base, .. } => Ok(base),
 					OracleOrConst::Oracle(oracle_id) => witness
 						.get_multilin_poly(oracle_id)
 						.expect("Witness error would have been caught while checking variables.")
