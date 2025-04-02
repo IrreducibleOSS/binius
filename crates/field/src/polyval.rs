@@ -422,7 +422,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	const LOG_DEGREE: usize = 7;
 
 	#[inline]
-	fn basis(i: usize) -> Result<Self, Error> {
+	fn basis_checked(i: usize) -> Result<Self, Error> {
 		if i >= 128 {
 			return Err(Error::ExtensionDegreeMismatch);
 		}
