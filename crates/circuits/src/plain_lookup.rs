@@ -5,9 +5,9 @@ use std::{cmp::Reverse, fmt::Debug, hash::Hash};
 use anyhow::{ensure, Result};
 use binius_core::{constraint_system::channel::FlushDirection, oracle::OracleId};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	packed::set_packed_slice,
-	BinaryField1b, ExtensionField, Field, PackedFieldIndexable, TowerField,
+	as_packed_field::PackScalar,
+	packed::{get_packed_slice, set_packed_slice},
+	BinaryField1b, ExtensionField, Field, PackedField, TowerField,
 };
 use bytemuck::Pod;
 use itertools::izip;
@@ -63,7 +63,6 @@ where
 	U: PackScalar<FTable> + Pod,
 	F: ExtensionField<FTable>,
 	FTable: TowerField,
-	PackedType<U, FTable>: PackedFieldIndexable,
 {
 	ensure!(n_lookups.len() == lookups_u.len(), "n_vars and lookups_u must be of the same length");
 	ensure!(
@@ -127,15 +126,16 @@ where
 		}
 
 		for (&permuted, &original) in izip!(&permuted_lookup_t, lookup_t.as_ref()) {
-			let original_slice =
-				PackedType::<U, FTable>::unpack_scalars(witness.get::<FTable>(original)?.packed());
+			let original_slice = witness.get::<FTable>(original)?.packed();
 
 			let mut permuted_column = witness.new_column::<FTable>(permuted);
-			let permuted_slice =
-				PackedType::<U, FTable>::unpack_scalars_mut(permuted_column.packed());
+			let permuted_slice = permuted_column.packed();
 
-			for (&(index, _), permuted) in izip!(&indexed_multiplicities, permuted_slice) {
-				*permuted = original_slice[index];
+			let mut iterator = indexed_multiplicities
+				.iter()
+				.map(|&(index, _)| get_packed_slice(original_slice, index));
+			for v in permuted_slice.iter_mut() {
+				*v = PackedField::from_scalars(&mut iterator);
 			}
 		}
 	}
