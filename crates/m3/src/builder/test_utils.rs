@@ -1,12 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Utilities for testing M3 constraint systems and gadgets.
+
 use anyhow::Result;
 use binius_field::{underlier::UnderlierType, TowerField};
 
 use crate::builder::{TableFiller, TableId, TableWitnessSegment};
 
-///! Utilities for testing M3 constraint systems and gadgets.
-
+/// An easy-to-use implementation of [`TableFiller`] that is constructed with a closure.
+///
+/// Using this [`TableFiller`] implementation carries some overhead, so it is best to use it only
+/// for testing.
+#[allow(clippy::type_complexity)]
 pub struct ClosureFiller<'a, U: UnderlierType, F: TowerField, Event> {
 	table_id: TableId,
 	fill:
@@ -25,8 +30,8 @@ impl<'a, U: UnderlierType, F: TowerField, Event> ClosureFiller<'a, U, F, Event> 
 	}
 }
 
-impl<'a, U: UnderlierType, F: TowerField, Event: Clone> TableFiller<U, F>
-	for ClosureFiller<'a, U, F, Event>
+impl<U: UnderlierType, F: TowerField, Event: Clone> TableFiller<U, F>
+	for ClosureFiller<'_, U, F, Event>
 {
 	type Event = Event;
 
@@ -38,7 +43,7 @@ impl<'a, U: UnderlierType, F: TowerField, Event: Clone> TableFiller<U, F>
 		&'b self,
 		rows: impl Iterator<Item = &'b Self::Event> + Clone,
 		witness: &'b mut TableWitnessSegment<U, F>,
-	) -> anyhow::Result<()> {
+	) -> Result<()> {
 		(*self.fill)(&rows.collect::<Vec<_>>(), witness)
 	}
 }
