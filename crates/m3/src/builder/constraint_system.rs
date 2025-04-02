@@ -4,7 +4,10 @@ pub use binius_core::constraint_system::channel::{
 	Boundary, Flush as CompiledFlush, FlushDirection,
 };
 use binius_core::{
-	constraint_system::{channel::ChannelId, ConstraintSystem as CompiledConstraintSystem},
+	constraint_system::{
+		channel::{ChannelId, OracleOrConst},
+		ConstraintSystem as CompiledConstraintSystem,
+	},
 	oracle::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		ProjectionVariant,
@@ -251,19 +254,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 					column_indices,
 					channel_id,
 					direction,
+					multiplicity,
 					selector,
 				} in flushes
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| oracle_lookup[column_index])
+						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
 						selector: selector.unwrap_or(step_down),
-						multiplicity: 1,
+						multiplicity: *multiplicity as u64,
 					});
 				}
 

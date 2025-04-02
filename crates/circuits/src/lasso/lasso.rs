@@ -1,7 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::{ensure, Error, Result};
-use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
+use binius_core::{
+	constraint_system::channel::{ChannelId, OracleOrConst},
+	oracle::OracleId,
+};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
@@ -141,20 +144,44 @@ where
 	let oracles_prefix_t = lookup_t.as_ref().iter().copied();
 
 	// populate table using initial timestamps
-	builder.send(channel, 1 << t_log_rows, oracles_prefix_t.clone().chain([lookup_o]))?;
+	builder.send(
+		channel,
+		1 << t_log_rows,
+		oracles_prefix_t
+			.clone()
+			.chain([lookup_o])
+			.map(OracleOrConst::Oracle),
+	)?;
 
 	// for every value looked up, pull using current timestamp and push with incremented timestamp
 	izip!(lookups_u, lookups_r, lookups_w, n_lookups).try_for_each(
 		|(lookup_u, lookup_r, lookup_w, &n_lookup)| -> Result<()> {
 			let oracle_prefix_u = lookup_u.as_ref().iter().copied();
-			builder.receive(channel, n_lookup, oracle_prefix_u.clone().chain([lookup_r]))?;
-			builder.send(channel, n_lookup, oracle_prefix_u.chain([lookup_w]))?;
+			builder.receive(
+				channel,
+				n_lookup,
+				oracle_prefix_u
+					.clone()
+					.chain([lookup_r])
+					.map(OracleOrConst::Oracle),
+			)?;
+			builder.send(
+				channel,
+				n_lookup,
+				oracle_prefix_u.chain([lookup_w]).map(OracleOrConst::Oracle),
+			)?;
 			Ok(())
 		},
 	)?;
 
 	// depopulate table using final timestamps
-	builder.receive(channel, 1 << t_log_rows, oracles_prefix_t.chain([lookup_f]))?;
+	builder.receive(
+		channel,
+		1 << t_log_rows,
+		oracles_prefix_t
+			.chain([lookup_f])
+			.map(OracleOrConst::Oracle),
+	)?;
 
 	Ok(())
 }

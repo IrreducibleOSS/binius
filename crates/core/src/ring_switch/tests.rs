@@ -27,7 +27,10 @@ use crate::{
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
 	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
-	protocols::{evalcheck::EvalcheckMultilinearClaim, fri::CommitOutput},
+	protocols::{
+		evalcheck::{subclaims::MemoizedData, EvalcheckMultilinearClaim},
+		fri::CommitOutput,
+	},
 	ring_switch::prove::ReducedWitness,
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	transcript::ProverTranscript,
@@ -240,7 +243,14 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove::<_, _, _, Tower, _, _>(&system, &witnesses, &mut proof, &backend).unwrap();
+		} = prove::<_, _, _, Tower, _, _>(
+			&system,
+			&witnesses,
+			&mut proof,
+			MemoizedData::new(),
+			&backend,
+		)
+		.unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
@@ -313,7 +323,14 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove::<_, _, _, Tower, _, _>(&system, &committed_multilins, &mut proof, &backend).unwrap();
+	} = prove::<_, _, _, Tower, _, _>(
+		&system,
+		&committed_multilins,
+		&mut proof,
+		MemoizedData::new(),
+		&backend,
+	)
+	.unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(

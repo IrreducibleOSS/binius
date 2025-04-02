@@ -3,7 +3,10 @@
 use std::{cmp::Reverse, fmt::Debug, hash::Hash};
 
 use anyhow::{ensure, Result};
-use binius_core::{constraint_system::channel::FlushDirection, oracle::OracleId};
+use binius_core::{
+	constraint_system::channel::{FlushDirection, OracleOrConst},
+	oracle::OracleId,
+};
 use binius_field::{
 	as_packed_field::PackScalar,
 	packed::{get_packed_slice, set_packed_slice},
@@ -143,11 +146,23 @@ where
 	let permutation_channel = builder.add_channel();
 	let multiplicity_channel = builder.add_channel();
 
-	builder.send(permutation_channel, 1 << t_log_rows, permuted_lookup_t.iter().copied())?;
-	builder.receive(permutation_channel, 1 << t_log_rows, lookup_t.as_ref().iter().copied())?;
+	builder.send(
+		permutation_channel,
+		1 << t_log_rows,
+		permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
+	)?;
+	builder.receive(
+		permutation_channel,
+		1 << t_log_rows,
+		lookup_t.as_ref().iter().copied().map(OracleOrConst::Oracle),
+	)?;
 
 	for (lookup_u, &count) in izip!(lookups_u, n_lookups) {
-		builder.send(multiplicity_channel, count, lookup_u.as_ref().iter().copied())?;
+		builder.send(
+			multiplicity_channel,
+			count,
+			lookup_u.as_ref().iter().copied().map(OracleOrConst::Oracle),
+		)?;
 	}
 
 	for (i, bit) in bits.into_iter().enumerate() {
@@ -155,7 +170,7 @@ where
 			FlushDirection::Pull,
 			multiplicity_channel,
 			bit,
-			permuted_lookup_t.iter().copied(),
+			permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
 			1 << i,
 		)?
 	}

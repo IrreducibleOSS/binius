@@ -54,6 +54,8 @@ where
 	/// from `elem.min_tower_level()`.
 	fn min_tower_level(self) -> usize;
 
+	/// Returns the i'th basis element of this field as an extension over the tower subfield with
+	/// level $\iota$.
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
 		if iota > Self::TOWER_LEVEL {
 			return Err(Error::ExtensionDegreeTooHigh);
@@ -65,7 +67,7 @@ where
 				max: n_basis_elts,
 			});
 		}
-		<Self as ExtensionField<BinaryField1b>>::basis(i << iota)
+		<Self as ExtensionField<BinaryField1b>>::basis_checked(i << iota)
 	}
 
 	/// Multiplies a field element by the canonical primitive element of the extension $T_{\iota + 1} / T_{iota}$.
@@ -77,8 +79,24 @@ where
 	///
 	/// * `Error::ExtensionDegreeTooHigh` if `iota >= Self::TOWER_LEVEL`
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
-		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis(1 << iota)?)
+		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis_checked(1 << iota)?)
 	}
+}
+
+/// Returns the i'th basis element of `FExt` as a field extension of `FSub`.
+///
+/// This is an alias function for [`ExtensionField::basis`].
+///
+/// ## Pre-conditions
+///
+/// * `i` must be in the range $[0, d)$, where $d$ is the field extension degree.
+#[inline]
+pub fn ext_basis<FExt, FSub>(i: usize) -> FExt
+where
+	FSub: Field,
+	FExt: ExtensionField<FSub>,
+{
+	<FExt as ExtensionField<FSub>>::basis(i)
 }
 
 pub(super) trait TowerExtensionField:
@@ -576,7 +594,7 @@ macro_rules! impl_field_extension {
 			const LOG_DEGREE: usize = $log_degree;
 
 			#[inline]
-			fn basis(i: usize) -> Result<Self, Error> {
+			fn basis_checked(i: usize) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
 				if i >= 1 << $log_degree {
@@ -808,6 +826,13 @@ impl From<BinaryField1b> for u8 {
 	#[inline]
 	fn from(value: BinaryField1b) -> Self {
 		value.val().into()
+	}
+}
+
+impl From<bool> for BinaryField1b {
+	#[inline]
+	fn from(value: bool) -> Self {
+		Self::from(U1::new_unchecked(value.into()))
 	}
 }
 
@@ -1176,7 +1201,8 @@ pub(crate) mod tests {
 
 	fn test_mul_primitive<F: TowerField>(val: F, iota: usize) {
 		let result = val.mul_primitive(iota);
-		let expected = <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b);
+		let expected =
+			<F as ExtensionField<BinaryField1b>>::basis_checked(1 << iota).map(|b| val * b);
 		assert_eq!(result.is_ok(), expected.is_ok());
 		if result.is_ok() {
 			assert_eq!(result.unwrap(), expected.unwrap());

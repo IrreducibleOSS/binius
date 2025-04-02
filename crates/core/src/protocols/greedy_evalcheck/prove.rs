@@ -1,6 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{ExtensionField, PackedExtension, PackedFieldIndexable, TowerField};
+use binius_field::{
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use tracing::instrument;
@@ -10,24 +12,30 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		serialize_evalcheck_proof, subclaims::prove_bivariate_sumchecks_with_switchover,
+		serialize_evalcheck_proof,
+		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, ProverTranscript},
 	witness::MultilinearExtensionIndex,
 };
 
+pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
+	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
+	pub memoized_data: MemoizedData<'a, P, Backend>,
+}
+
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "greedy_evalcheck::prove")]
-pub fn prove<F, P, DomainField, Challenger_, Backend>(
+pub fn prove<'a, F, P, DomainField, Challenger_, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearExtensionIndex<P>,
+	witness_index: &'a mut MultilinearExtensionIndex<P>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	transcript: &mut ProverTranscript<Challenger_>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
-) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
+) -> Result<GreedyEvalcheckProveOutput<'a, F, P, Backend>, Error>
 where
 	F: TowerField + ExtensionField<DomainField>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -79,5 +87,9 @@ where
 		.committed_eval_claims_mut()
 		.drain(..)
 		.collect::<Vec<_>>();
-	Ok(committed_claims)
+
+	Ok(GreedyEvalcheckProveOutput {
+		eval_claims: committed_claims,
+		memoized_data: evalcheck_prover.memoized_data,
+	})
 }

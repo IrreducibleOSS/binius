@@ -5,8 +5,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
-		channel::{ChannelId, Flush, FlushDirection},
-		exp::{Exp, ExpBase},
+		channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
+		exp::Exp,
 		ConstraintSystem,
 	},
 	oracle::{
@@ -34,7 +34,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
-	flushes: Vec<Flush>,
+	flushes: Vec<Flush<F>>,
 	exponents: Vec<Exp<F>>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
@@ -97,7 +97,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		direction: FlushDirection,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 	) -> anyhow::Result<()>
 	where
 		U: PackScalar<BinaryField1b>,
@@ -110,13 +110,23 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		direction: FlushDirection,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 		multiplicity: u64,
 	) -> anyhow::Result<()>
 	where
 		U: PackScalar<BinaryField1b>,
 	{
-		let n_vars = self.log_rows(oracle_ids.clone())?;
+		//We assume there is at least one non constant in the collection of oracle ids.
+		let non_const_oracles = oracle_ids
+			.clone()
+			.into_iter()
+			.filter_map(|id| match id {
+				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+				_ => None,
+			})
+			.collect::<Vec<_>>();
+
+		let n_vars = self.log_rows(non_const_oracles)?;
 
 		let selector = if let Some(&selector) = self.step_down_dedup.get(&(n_vars, count)) {
 			selector
@@ -143,18 +153,28 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		direction: FlushDirection,
 		channel_id: ChannelId,
 		selector: OracleId,
-		oracle_ids: impl IntoIterator<Item = OracleId>,
+		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
-		let oracles = oracle_ids.into_iter().collect::<Vec<_>>();
-		let log_rows = self.log_rows(oracles.iter().copied())?;
+		//We assume there is atleast one non constant in the collection of oracle ids.
+		let non_const_oracles = oracle_ids
+			.clone()
+			.into_iter()
+			.filter_map(|id| match id {
+				OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+				_ => None,
+			})
+			.collect::<Vec<_>>();
+
+		let log_rows = self.log_rows(non_const_oracles.iter().copied())?;
 		ensure!(
 			log_rows == self.log_rows([selector])?,
 			"Selector {} n_vars does not match flush {:?}",
 			selector,
-			oracles
+			non_const_oracles
 		);
 
+		let oracles = oracle_ids.into_iter().collect();
 		self.flushes.push(Flush {
 			channel_id,
 			direction,
@@ -170,7 +190,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		&mut self,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 	) -> anyhow::Result<()>
 	where
 		U: PackScalar<BinaryField1b>,
@@ -182,7 +202,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		&mut self,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 	) -> anyhow::Result<()>
 	where
 		U: PackScalar<BinaryField1b>,
@@ -239,7 +259,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
-			base: ExpBase::Static {
+			base: OracleOrConst::Const {
 				base,
 				tower_level: base_tower_level,
 			},
@@ -261,7 +281,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
-			base: ExpBase::Dynamic(base),
+			base: OracleOrConst::Oracle(base),
 		});
 	}
 
