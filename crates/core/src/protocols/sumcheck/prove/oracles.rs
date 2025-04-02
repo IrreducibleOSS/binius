@@ -207,6 +207,7 @@ where
 
 /// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
 pub fn constraint_sets_sumcheck_provers_metas<'a, PW, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
 	constraint_sets: Vec<ConstraintSet<PW::Scalar>>,
 	witness: &MultilinearExtensionIndex<'a, PW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -225,7 +226,7 @@ where
 	for constraint_set in constraint_sets {
 		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone())?;
 		let prover = constraint_set_sumcheck_prover(
-			EvaluationOrder::LowToHigh,
+			evaluation_order,
 			constraint_set,
 			witness,
 			evaluation_domain_factory.clone(),
