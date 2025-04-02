@@ -236,6 +236,18 @@ pub type U1 = SmallU<1>;
 pub type U2 = SmallU<2>;
 pub type U4 = SmallU<4>;
 
+impl From<bool> for U1 {
+	fn from(value: bool) -> Self {
+		Self::new_unchecked(value as u8)
+	}
+}
+
+impl From<U1> for bool {
+	fn from(value: U1) -> Self {
+		value == U1::ONE
+	}
+}
+
 impl<const N: usize> SerializeBytes for SmallU<N> {
 	fn serialize(
 		&self,

@@ -829,6 +829,13 @@ impl From<BinaryField1b> for u8 {
 	}
 }
 
+impl From<bool> for BinaryField1b {
+	#[inline]
+	fn from(value: bool) -> Self {
+		Self::from(U1::new_unchecked(value.into()))
+	}
+}
+
 impl BinaryField2b {
 	/// Creates value without checking that it is within valid range (0 to 3)
 	///
