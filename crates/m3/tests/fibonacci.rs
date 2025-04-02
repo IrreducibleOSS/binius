@@ -67,7 +67,10 @@ mod arithmetization {
 		constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger,
 		tower::CanonicalTowerFamily,
 	};
-	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar};
+	use binius_field::{
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, PackedExtension,
+		PackedFieldIndexable,
+	};
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
@@ -77,7 +80,6 @@ mod arithmetization {
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
-	use bytemuck::Pod;
 
 	use crate::model::{self, FibonacciTrace};
 
@@ -128,9 +130,9 @@ mod arithmetization {
 		}
 	}
 
-	impl<U> TableFiller<U> for FibonacciTable
+	impl<P> TableFiller<P> for FibonacciTable
 	where
-		U: Pod + PackScalar<B1>,
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
 		type Event = model::FibEvent;
 
@@ -141,7 +143,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&'a self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<U>,
+			witness: &'a mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
 			{
 				let mut f0_bits = witness.get_mut_as(self.f0_bits)?;
@@ -182,7 +184,7 @@ mod arithmetization {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
 		witness
@@ -225,7 +227,7 @@ mod arithmetization {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
 		witness

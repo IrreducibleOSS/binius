@@ -1,13 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
+use binius_field::{
+	arch::OptimalUnderlier128b, as_packed_field::PackedType, Field, PackedExtension,
+	PackedFieldIndexable,
+};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B64,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B128, B64,
 };
 use bumpalo::Bump;
-use bytemuck::Pod;
 
 const VALUES_PER_ROW: usize = 32;
 const N_ROWS: usize = 8;
@@ -49,9 +51,9 @@ impl MyTable {
 	}
 }
 
-impl<U> TableFiller<U> for MyTable
+impl<P> TableFiller<P> for MyTable
 where
-	U: Pod + PackScalar<B1>,
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B128>,
 {
 	type Event = (u128, u128);
 
@@ -62,7 +64,7 @@ where
 	fn fill<'a>(
 		&'a self,
 		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessSegment<U>,
+		witness: &'a mut TableWitnessSegment<P>,
 	) -> Result<(), anyhow::Error> {
 		let mut committed_1 = witness.get_mut_as(self.committed_1)?;
 		let mut committed_2 = witness.get_mut_as(self.committed_2)?;
@@ -91,7 +93,7 @@ fn test_m3_computed_col() {
 		table_sizes: vec![N_ROWS],
 	};
 	let mut witness = cs
-		.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+		.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 		.unwrap();
 	witness
 		.fill_table_sequential(

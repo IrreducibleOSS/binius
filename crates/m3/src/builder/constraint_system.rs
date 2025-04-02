@@ -14,7 +14,7 @@ use binius_core::{
 	},
 	transparent::step_down::StepDown,
 };
-use binius_field::{underlier::UnderlierType, TowerField};
+use binius_field::{PackedField, TowerField};
 use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
@@ -154,11 +154,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// The statement includes information about the tables sizes, which this requires in order to
 	/// allocate the column data correctly. The created witness index needs to be populated before
 	/// proving.
-	pub fn build_witness<'cs, 'alloc, U: UnderlierType>(
+	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
 		statement: &Statement,
-	) -> Result<WitnessIndex<'cs, 'alloc, U, F>, Error> {
+	) -> Result<WitnessIndex<'cs, 'alloc, P>, Error> {
 		Ok(WitnessIndex {
 			tables: self
 				.tables
