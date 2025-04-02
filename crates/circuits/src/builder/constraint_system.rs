@@ -116,7 +116,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	where
 		U: PackScalar<BinaryField1b>,
 	{
-		//We assume there is atleast one non constant in the collection of oracle ids.
+		//We assume there is at least one non constant in the collection of oracle ids.
 		let non_const_oracles = oracle_ids
 			.clone()
 			.into_iter()
