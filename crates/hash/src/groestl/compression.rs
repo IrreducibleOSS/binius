@@ -31,8 +31,6 @@ impl PseudoCompressionFunction<Output<Groestl256>, 2> for Groestl256ByteCompress
 		GroestlShortImpl::p_perm(&mut state);
 		GroestlShortImpl::xor_state(&mut state, &input);
 		state_bytes = GroestlShortImpl::state_to_bytes(&state);
-		<[u8; 32]>::try_from(&state_bytes[32..])
-			.expect("Groestl256 output size is 32 bytes")
-			.into()
+		*<Output<Groestl256>>::from_slice(&state_bytes[32..])
 	}
 }
