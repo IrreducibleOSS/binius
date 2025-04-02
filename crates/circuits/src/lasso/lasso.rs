@@ -4,7 +4,8 @@ use anyhow::{ensure, Error, Result};
 use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	ExtensionField, Field, PackedFieldIndexable, TowerField,
+	packed::{get_packed_slice, set_packed_slice},
+	ExtensionField, Field, PackedField, TowerField,
 };
 use itertools::{izip, Itertools};
 
@@ -29,7 +30,6 @@ where
 	FC: TowerField,
 	U: PackScalar<FC>,
 	F: ExtensionField<FC> + From<FC>,
-	PackedType<U, FC>: PackedFieldIndexable,
 {
 	if n_lookups.len() != lookups_u.len() {
 		Err(anyhow::Error::msg("n_vars and lookups_u must be of the same length"))?;
@@ -86,11 +86,13 @@ where
 
 		let mut lookup_f_witness = witness.new_column::<FC>(lookup_f);
 
-		let lookup_f_scalars = PackedType::<U, FC>::unpack_scalars_mut(lookup_f_witness.packed());
+		let lookup_f = lookup_f_witness.packed();
 
 		let alpha = FC::MULTIPLICATIVE_GENERATOR;
+		let alpha_packed = PackedType::<U, FC>::broadcast(alpha);
+		let alpha_inverted_packed = alpha_packed.invert_or_zero();
 
-		lookup_f_scalars.fill(FC::ONE);
+		lookup_f.fill(PackedField::one());
 
 		for (u_to_t_mapping, &n_lookups, &lookup_r, &lookup_w) in
 			izip!(u_to_t_mappings, n_lookups, &lookups_r, &lookups_w)
@@ -98,21 +100,36 @@ where
 			let mut lookup_r_witness = witness.new_column::<FC>(lookup_r);
 			let mut lookup_w_witness = witness.new_column::<FC>(lookup_w);
 
-			let lookup_r_scalars =
-				PackedType::<U, FC>::unpack_scalars_mut(lookup_r_witness.packed());
-			let lookup_w_scalars =
-				PackedType::<U, FC>::unpack_scalars_mut(lookup_w_witness.packed());
+			let lookup_r = lookup_r_witness.packed();
+			let lookup_w = lookup_w_witness.packed();
 
-			lookup_r_scalars.fill(FC::ONE);
-			lookup_w_scalars.fill(alpha);
+			lookup_r.fill(PackedField::one());
+			lookup_w.fill(alpha_packed);
 
-			for (&index, r, w) in
-				izip!(u_to_t_mapping.as_ref(), lookup_r_scalars, lookup_w_scalars).take(n_lookups)
-			{
-				let ts = lookup_f_scalars[index];
-				*r = ts;
-				*w = ts * alpha;
-				lookup_f_scalars[index] *= alpha;
+			let packed_lookups = n_lookups >> PackedType::<U, FC>::LOG_WIDTH;
+			let mut scalars = vec![FC::ZERO; PackedType::<U, FC>::WIDTH];
+			for i in 0..packed_lookups {
+				let offset = i << PackedType::<U, FC>::LOG_WIDTH;
+
+				for j in 0..PackedType::<U, FC>::WIDTH {
+					let index = u_to_t_mapping.as_ref()[offset + j];
+					scalars[j] = get_packed_slice(lookup_f, index);
+					scalars[j] *= alpha;
+					set_packed_slice(lookup_f, index, scalars[j]);
+				}
+
+				let ts_by_alpha = PackedField::from_scalars(scalars.iter().copied());
+
+				lookup_r[i] = ts_by_alpha * alpha_inverted_packed;
+				lookup_w[i] = ts_by_alpha;
+			}
+
+			let offset = packed_lookups << PackedType::<U, FC>::LOG_WIDTH;
+			for i in offset..n_lookups {
+				let ts = get_packed_slice(lookup_f, u_to_t_mapping.as_ref()[i]);
+				set_packed_slice(lookup_r, i, ts);
+				set_packed_slice(lookup_w, i, ts * alpha);
+				set_packed_slice(lookup_f, u_to_t_mapping.as_ref()[i], ts * alpha);
 			}
 		}
 	}
