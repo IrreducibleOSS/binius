@@ -8,7 +8,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::U1,
-	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, PackedFieldIndexable, TowerField,
+	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, PackedField, TowerField,
 };
 use itertools::izip;
 
@@ -62,21 +62,24 @@ impl SeveralU32add {
 		if let Some(witness) = builder.witness() {
 			let mut lookup_t_witness = witness.new_column::<B32>(lookup_t);
 
-			let lookup_t_scalars =
-				PackedType::<U, B32>::unpack_scalars_mut(lookup_t_witness.packed());
+			let lookup_t = lookup_t_witness.packed();
+			for (i, lookup_t) in lookup_t.iter_mut().enumerate() {
+				let offset = i << PackedType::<U, B32>::LOG_WIDTH;
+				*lookup_t = PackedField::from_fn(|j| {
+					let index = offset + j;
 
-			for (i, lookup_t) in lookup_t_scalars.iter_mut().enumerate() {
-				let x = (i >> 9) & 0xff;
-				let y = (i >> 1) & 0xff;
-				let cin = i & 1;
-				let ab_sum = x + y + cin;
-				let cout = ab_sum >> 8;
-				let ab_sum = ab_sum & 0xff;
+					let x = (index >> 9) & 0xff;
+					let y = (index >> 1) & 0xff;
+					let cin = index & 1;
+					let ab_sum = x + y + cin;
+					let cout = ab_sum >> 8;
+					let ab_sum = ab_sum & 0xff;
 
-				let lookup_t_u32 =
-					(((((((cin << 1 | cout) << 8) | x) << 8) | y) << 8) | ab_sum) as u32;
+					let lookup_t_u32 =
+						(((((((cin << 1 | cout) << 8) | x) << 8) | y) << 8) | ab_sum) as u32;
 
-				*lookup_t = BinaryField32b::new(lookup_t_u32);
+					BinaryField32b::new(lookup_t_u32)
+				});
 			}
 		}
 		Ok(Self {
@@ -151,19 +154,13 @@ impl SeveralU32add {
 			let sum_scalars = sum_witness.as_mut_slice::<u8>();
 			let packed_slice_cin = cin_witness.packed();
 			let packed_slice_cout = cout_witness.packed();
-			let lookup_u_scalars =
-				PackedType::<U, B32>::unpack_scalars_mut(lookup_u_witness.packed());
+			let lookup_u = lookup_u_witness.packed();
 
 			let mut temp_cout = 0;
 
-			for (i, (x, y, sum, lookup_u, u_to_t)) in izip!(
-				x_ints,
-				y_ints,
-				sum_scalars.iter_mut(),
-				lookup_u_scalars.iter_mut(),
-				u_to_t_mapping_witness.iter_mut()
-			)
-			.enumerate()
+			for (i, (x, y, sum, u_to_t)) in
+				izip!(x_ints, y_ints, sum_scalars.iter_mut(), u_to_t_mapping_witness.iter_mut())
+					.enumerate()
 			{
 				let x = *x as usize;
 				let y = *y as usize;
@@ -190,7 +187,7 @@ impl SeveralU32add {
 				let lookup_u_u32 =
 					(((((((cin << 1 | temp_cout) << 8) | x) << 8) | y) << 8) | ab_sum) as u32;
 
-				*lookup_u = B32::new(lookup_u_u32);
+				set_packed_slice(lookup_u, i, B32::new(lookup_u_u32));
 			}
 
 			std::mem::drop(sum_witness);
