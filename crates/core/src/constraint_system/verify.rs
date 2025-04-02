@@ -479,7 +479,7 @@ pub fn make_flush_oracles<F: TowerField>(
 					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
 
-					for oracle_id in non_const_oracles.clone().skip(1) {
+					for oracle_id in non_const_oracles {
 						let oracle_n_vars = oracles.n_vars(oracle_id);
 						if oracle_n_vars != n_vars {
 							return Err(Error::ChannelFlushNvarsMismatch {
