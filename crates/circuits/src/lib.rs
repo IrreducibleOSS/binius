@@ -28,7 +28,7 @@ mod tests {
 	use binius_core::{
 		constraint_system::{
 			self,
-			channel::{validate_witness, Boundary, FlushDirection},
+			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
 		},
 		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
@@ -37,19 +37,24 @@ mod tests {
 	};
 	use binius_field::{
 		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier,
-		BinaryField128b, BinaryField64b, BinaryField8b, Field,
+		BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::CompositionPoly;
+	use rand::{seq::SliceRandom, thread_rng};
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;
 
-	use crate::builder::{
-		types::{F, U},
-		ConstraintSystemBuilder,
+	use crate::{
+		builder::{
+			test_utils::test_circuit,
+			types::{F, U},
+			ConstraintSystemBuilder,
+		},
+		unconstrained::unconstrained,
 	};
 
 	#[test]
@@ -125,16 +130,16 @@ mod tests {
 		}
 
 		builder
-			.flush(FlushDirection::Pull, channel_id, even_counter, [even])
+			.flush(FlushDirection::Pull, channel_id, even_counter, [OracleOrConst::Oracle(even)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Push, channel_id, even_counter, [half])
+			.flush(FlushDirection::Push, channel_id, even_counter, [OracleOrConst::Oracle(half)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Pull, channel_id, odd_counter, [odd])
+			.flush(FlushDirection::Pull, channel_id, odd_counter, [OracleOrConst::Oracle(odd)])
 			.unwrap();
 		builder
-			.flush(FlushDirection::Push, channel_id, odd_counter, [output])
+			.flush(FlushDirection::Push, channel_id, odd_counter, [OracleOrConst::Oracle(output)])
 			.unwrap();
 
 		let witness = builder
@@ -246,13 +251,13 @@ mod tests {
 				channel,
 				1 << n_vars,
 				vec![
-					column_x,
-					column_y,
-					column_comp_1,
-					column_shift,
-					column_comp_2,
-					column_packed,
-					column_comp_3,
+					OracleOrConst::Oracle(column_y),
+					OracleOrConst::Oracle(column_x),
+					OracleOrConst::Oracle(column_comp_1),
+					OracleOrConst::Oracle(column_shift),
+					OracleOrConst::Oracle(column_comp_2),
+					OracleOrConst::Oracle(column_packed),
+					OracleOrConst::Oracle(column_comp_3),
 				],
 			)
 			.unwrap();
@@ -261,13 +266,13 @@ mod tests {
 				channel,
 				1 << n_vars,
 				vec![
-					column_x,
-					column_y,
-					column_comp_1,
-					column_shift,
-					column_comp_2,
-					column_packed,
-					column_comp_3,
+					OracleOrConst::Oracle(column_x),
+					OracleOrConst::Oracle(column_y),
+					OracleOrConst::Oracle(column_comp_1),
+					OracleOrConst::Oracle(column_shift),
+					OracleOrConst::Oracle(column_comp_2),
+					OracleOrConst::Oracle(column_packed),
+					OracleOrConst::Oracle(column_comp_3),
 				],
 			)
 			.unwrap();
@@ -379,5 +384,84 @@ mod tests {
 			HasherChallenger<Groestl256>,
 		>(&constraint_system, log_inv_rate, security_bits, &[], proof)
 		.unwrap();
+	}
+
+	#[test]
+	fn test_flush_with_const() {
+		test_circuit(|builder| {
+			let channel_id = builder.add_channel();
+			let oracle = unconstrained::<BinaryField1b>(builder, "oracle", 1)?;
+			builder
+				.flush(
+					FlushDirection::Push,
+					channel_id,
+					1,
+					vec![
+						OracleOrConst::Oracle(oracle),
+						OracleOrConst::Const {
+							base: F::ONE,
+							tower_level: BinaryField1b::TOWER_LEVEL,
+						},
+					],
+				)
+				.unwrap();
+
+			builder
+				.flush(
+					FlushDirection::Pull,
+					channel_id,
+					1,
+					vec![
+						OracleOrConst::Oracle(oracle),
+						OracleOrConst::Const {
+							base: F::ONE,
+							tower_level: BinaryField1b::TOWER_LEVEL,
+						},
+					],
+				)
+				.unwrap();
+
+			Ok(vec![])
+		})
+		.unwrap()
+	}
+
+	//Testing with larger oracles, and random constants, in a random order. To see if given appropriate flushes with constants the channel balances.
+	#[test]
+	fn test_flush_with_const_large() {
+		test_circuit(|builder| {
+			let channel_id = builder.add_channel();
+			let mut rng = thread_rng();
+			let oracles = (0..5)
+				.map(|i| unconstrained::<BinaryField128b>(builder, format!("oracle {i}"), 5))
+				.collect::<Result<Vec<_>, _>>()?;
+			let random_consts = (0..5).map(|_| OracleOrConst::Const {
+				base: BinaryField128b::random(&mut rng),
+				tower_level: BinaryField128b::TOWER_LEVEL,
+			});
+			//Places the oracles and consts in a random order
+			//This is not a cryptographic random order, but it is good enough for testing
+			let mut random_order = oracles
+				.iter()
+				.copied()
+				.map(OracleOrConst::Oracle)
+				.chain(random_consts)
+				.collect::<Vec<_>>();
+			random_order.shuffle(&mut rng);
+
+			let random_order_iterator = random_order.iter().copied();
+			for i in 0..1 << 5 {
+				builder
+					.flush(FlushDirection::Push, channel_id, i, random_order_iterator.clone())
+					.unwrap();
+
+				builder
+					.flush(FlushDirection::Pull, channel_id, i, random_order_iterator.clone())
+					.unwrap();
+			}
+
+			Ok(vec![])
+		})
+		.unwrap()
 	}
 }

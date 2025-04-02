@@ -11,7 +11,7 @@ use itertools::{izip, multiunzip, Itertools};
 use tracing::instrument;
 
 use super::{
-	channel::Boundary,
+	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
 	exp, ConstraintSystem, Proof,
 };
@@ -378,7 +378,7 @@ where
 }
 
 fn verify_channels_balance<F: TowerField>(
-	flushes: &[Flush],
+	flushes: &[Flush<F>],
 	flush_products: &[F],
 	boundaries: &[Boundary<F>],
 	mixing_challenge: F,
@@ -455,12 +455,13 @@ fn verify_channels_balance<F: TowerField>(
 
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	flushes: &[Flush],
+	flushes: &[Flush<F>],
 	mixing_challenge: F,
 	permutation_challenges: &[F],
 ) -> Result<Vec<OracleId>, Error> {
 	let mut mixing_powers = vec![F::ONE];
 	let mut flush_iter = flushes.iter();
+
 	permutation_challenges
 		.iter()
 		.enumerate()
@@ -469,9 +470,16 @@ pub fn make_flush_oracles<F: TowerField>(
 				.peeking_take_while(|flush| flush.channel_id == channel_id)
 				.map(|flush| {
 					// Check that all flushed oracles have the same number of variables
-					let first_oracle = flush.oracles.first().ok_or(Error::EmptyFlushOracles)?;
-					let n_vars = oracles.n_vars(*first_oracle);
-					for &oracle_id in flush.oracles.iter().skip(1) {
+					let mut non_const_oracles =
+						flush.oracles.iter().copied().filter_map(|id| match id {
+							OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+							_ => None,
+						});
+
+					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
+					let n_vars = oracles.n_vars(first_oracle);
+
+					for oracle_id in non_const_oracles {
 						let oracle_n_vars = oracles.n_vars(oracle_id);
 						if oracle_n_vars != n_vars {
 							return Err(Error::ChannelFlushNvarsMismatch {
@@ -491,16 +499,31 @@ pub fn make_flush_oracles<F: TowerField>(
 						mixing_powers.push(last_power * mixing_challenge);
 					}
 
+					let const_linear_combination = flush
+						.oracles
+						.iter()
+						.copied()
+						.zip(mixing_powers.iter())
+						.filter_map(|(id, coeff)| match id {
+							OracleOrConst::Const { base, .. } => Some(base * coeff),
+							_ => None,
+						})
+						.sum::<F>();
+
+					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
 					let id = oracles
 						.add_named(format!("flush channel_id={channel_id}"))
 						.linear_combination_with_offset(
 							n_vars,
-							*permutation_challenge,
+							*permutation_challenge + const_linear_combination,
 							flush
 								.oracles
 								.iter()
-								.copied()
-								.zip(mixing_powers.iter().copied()),
+								.zip(mixing_powers.iter().copied())
+								.filter_map(|(id, coeff)| match id {
+									OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
+									_ => None,
+								}),
 						)?;
 					Ok(id)
 				})

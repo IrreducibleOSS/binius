@@ -19,6 +19,7 @@ use super::{
 	error::Error,
 };
 use crate::{
+	constraint_system::channel::OracleOrConst,
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
@@ -32,14 +33,8 @@ use crate::{
 pub struct Exp<F: Field> {
 	/// A vector of `OracleId`s representing the exponent in little-endian bit order
 	pub bits_ids: Vec<OracleId>,
-	pub base: ExpBase<F>,
+	pub base: OracleOrConst<F>,
 	pub exp_result_id: OracleId,
-}
-
-#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
-pub enum ExpBase<F: Field> {
-	Static { base: F, tower_level: usize },
-	Dynamic(OracleId),
 }
 
 impl<F: TowerField> Exp<F> {
@@ -77,10 +72,10 @@ where
 	// we start processing with static ones first.
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
 
 	chain!(static_exponents_iter, dynamic_exponents_iter)
 		.map(|exp| {
@@ -88,14 +83,14 @@ where
 				get_fast_exponent_witnesses::<U, Tower>(witness, &exp.bits_ids)?;
 
 			let (exp_witness, tower_level) = match exp.base {
-				ExpBase::Static { base, tower_level } => {
+				OracleOrConst::Const { base, tower_level } => {
 					let witness = gkr_exp::BaseExpWitness::new_with_static_base(
 						fast_exponent_witnesses,
 						base.into(),
 					)?;
 					(witness, tower_level)
 				}
-				ExpBase::Dynamic(base_id) => {
+				OracleOrConst::Oracle(base_id) => {
 					let fast_base_witnesses =
 						to_fast_witness::<U, Tower>(witness.get_multilin_poly(base_id)?)?;
 
@@ -147,17 +142,17 @@ where
 {
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
 	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
 
 	let constant_bases = exponents_iter
 		.clone()
 		.map(|exp| match exp.base {
-			ExpBase::Static { base, .. } => Some(base),
-			ExpBase::Dynamic(_) => None,
+			OracleOrConst::Const { base, .. } => Some(base),
+			OracleOrConst::Oracle(_) => None,
 		})
 		.collect::<Vec<_>>();
 
@@ -176,17 +171,17 @@ pub fn make_eval_claims<F: TowerField>(
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let static_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Static { .. }));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
 	let dynamic_exponents_iter = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, ExpBase::Dynamic(_)));
+		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
 	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
 
 	let dynamic_base_ids = exponents_iter
 		.clone()
 		.map(|exp| match exp.base {
-			ExpBase::Static { .. } => None,
-			ExpBase::Dynamic(base_id) => Some(base_id),
+			OracleOrConst::Const { .. } => None,
+			OracleOrConst::Oracle(base_id) => Some(base_id),
 		})
 		.collect::<Vec<_>>();
 
