@@ -36,20 +36,26 @@ mod tests {
 		tower::CanonicalTowerFamily,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field, TowerField
+		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier,
+		BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::CompositionPoly;
-use rand::thread_rng;
+	use rand::thread_rng;
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;
 
-	use crate::{builder::{
-		test_utils::test_circuit, types::{F, U}, ConstraintSystemBuilder
-	}, unconstrained::unconstrained};
+	use crate::{
+		builder::{
+			test_utils::test_circuit,
+			types::{F, U},
+			ConstraintSystemBuilder,
+		},
+		unconstrained::unconstrained,
+	};
 
 	#[test]
 	fn test_boundaries() {

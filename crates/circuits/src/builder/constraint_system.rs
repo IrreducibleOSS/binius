@@ -472,4 +472,3 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		Ok(log_rows)
 	}
 }
-
