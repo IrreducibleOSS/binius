@@ -43,7 +43,7 @@ mod tests {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::CompositionPoly;
-	use rand::thread_rng;
+	use rand::{seq::SliceRandom, thread_rng};
 
 	type B128 = BinaryField128b;
 	type B64 = BinaryField64b;
@@ -399,7 +399,7 @@ mod tests {
 					vec![
 						OracleOrConst::Oracle(oracle),
 						OracleOrConst::Const {
-							base: F::one(),
+							base: F::ONE,
 							tower_level: BinaryField1b::TOWER_LEVEL,
 						},
 					],
@@ -414,7 +414,7 @@ mod tests {
 					vec![
 						OracleOrConst::Oracle(oracle),
 						OracleOrConst::Const {
-							base: F::one(),
+							base: F::ONE,
 							tower_level: BinaryField1b::TOWER_LEVEL,
 						},
 					],
