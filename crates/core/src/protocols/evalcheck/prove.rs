@@ -1,9 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::iter;
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	PackedFieldIndexable, TowerField,
+	Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
@@ -19,7 +21,7 @@ use super::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedQueries, ProjectedBivariateMeta,
 	},
-	EvalPoint, EvalPointOracleIdMap,
+	EvalPoint, EvalPointOracleIdMap, ProofIndex,
 };
 use crate::{
 	oracle::{
@@ -32,6 +34,35 @@ use crate::{
 	},
 	witness::MultilinearExtensionIndex,
 };
+
+#[derive(Debug, Clone)]
+struct EvalcheckMultilinearClaimPartial<F: Field> {
+	id: OracleId,
+	eval_point: EvalPoint<F>,
+	eval: Option<F>,
+}
+
+#[derive(Debug, Clone)]
+enum EvalcheckProofWithStatus<F: Field> {
+	Completed {
+		proof_id: ProofIndex,
+		proof: EvalcheckProofEnum<F>,
+		eval: F,
+	},
+	Incomplete {
+		proof_id: ProofIndex,
+		subclaims: Vec<EvalcheckMultilinearClaimPartial<F>>,
+	},
+}
+
+impl<F: Field> EvalcheckProofWithStatus<F> {
+	fn get_proof_id(&self) -> ProofIndex {
+		match self {
+			EvalcheckProofWithStatus::Completed { proof_id, .. } => *proof_id,
+			EvalcheckProofWithStatus::Incomplete { proof_id, .. } => *proof_id,
+		}
+	}
+}
 
 /// A mutable prover state.
 ///
@@ -51,8 +82,8 @@ where
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	finalized_proofs: EvalPointOracleIdMap<(usize, F, EvalcheckProofEnum<F>), F>,
-
+	proofs: EvalPointOracleIdMap<EvalcheckProofWithStatus<F>, F>,
+	// finalized_proofs: EvalPointOracleIdMap<(usize, F, EvalcheckProofEnum<F>), F>,
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
 	incomplete_proof_claims: EvalPointOracleIdMap<EvalcheckMultilinearClaim<F>, F>,
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
@@ -86,7 +117,7 @@ where
 			witness_index,
 			committed_eval_claims: Vec::new(),
 			new_sumchecks_constraints: Vec::new(),
-			finalized_proofs: EvalPointOracleIdMap::new(),
+			// finalized_proofs: EvalPointOracleIdMap::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
 			claims_without_evals_dedup: EvalPointOracleIdMap::new(),
@@ -94,6 +125,7 @@ where
 			memoized_queries: MemoizedQueries::new(),
 			backend,
 			incomplete_proof_claims: EvalPointOracleIdMap::new(),
+			proofs: EvalPointOracleIdMap::new(),
 			proof_context_index: 0,
 		}
 	}
@@ -118,6 +150,98 @@ where
 		idx
 	}
 
+	fn add_completed_proof(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		proof: EvalcheckProofEnum<F>,
+		eval: F,
+	) -> ProofIndex {
+		let idx = self.next_proof();
+		self.proofs.insert(
+			evalcheck_claim.id,
+			evalcheck_claim.eval_point,
+			EvalcheckProofWithStatus::Completed {
+				proof_id: idx,
+				proof,
+				eval,
+			},
+		);
+		idx
+	}
+
+	fn add_incomplete_proof(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		subclaims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
+	) -> ProofIndex {
+		let idx = self.next_proof();
+		self.proofs.insert(
+			evalcheck_claim.id,
+			evalcheck_claim.eval_point.clone(),
+			EvalcheckProofWithStatus::Incomplete {
+				proof_id: idx,
+				subclaims: subclaims
+					.into_iter()
+					.map(|subclaim| EvalcheckMultilinearClaimPartial {
+						id: subclaim.id,
+						eval_point: subclaim.eval_point,
+						eval: Some(subclaim.eval),
+					})
+					.collect(),
+			},
+		);
+		idx
+	}
+
+	fn add_incomplete_proof_partial(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		subclaims: impl IntoIterator<Item = (OracleId, EvalPoint<F>)>,
+	) -> ProofIndex {
+		let idx = self.next_proof();
+		self.proofs.insert(
+			evalcheck_claim.id,
+			evalcheck_claim.eval_point.clone(),
+			EvalcheckProofWithStatus::Incomplete {
+				proof_id: idx,
+				subclaims: subclaims
+					.into_iter()
+					.map(|(id, eval_point)| EvalcheckMultilinearClaimPartial {
+						id,
+						eval_point,
+						eval: None,
+					})
+					.collect(),
+			},
+		);
+		idx
+	}
+
+	fn replace_incomplete_with_complete_proof(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		proof: EvalcheckProofEnum<F>,
+		eval: F,
+	) -> Option<EvalcheckProofWithStatus<F>> {
+		self.proofs
+			.get_mut(evalcheck_claim.id, evalcheck_claim.eval_point.as_ref())
+			.map(|old| {
+				let proof_id = match old {
+					EvalcheckProofWithStatus::Completed { .. } => None,
+					// TODO: You can probably add more checks to the subclaim here if need be?? or maybe the caller side??
+					EvalcheckProofWithStatus::Incomplete { proof_id, .. } => Some(*proof_id),
+				}?;
+				let mut new = EvalcheckProofWithStatus::Completed {
+					proof_id,
+					proof,
+					eval,
+				};
+				std::mem::swap(&mut new, old);
+				Some(new)
+			})
+			.flatten()
+	}
+
 	/// Prove an evalcheck claim.
 	///
 	/// Given a prover state containing [`MultilinearOracleSet`] indexing into given
@@ -137,6 +261,21 @@ where
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	) -> Result<Vec<EvalcheckProofEnum<F>>, Error> {
+		// DEBUGGGING
+		let with_ids = evalcheck_claims
+			.clone()
+			.into_iter()
+			.map(|claim| self.oracles.oracle(claim.id).variant)
+			.collect::<Vec<_>>();
+		println!("Proving claims: "); //with ids: {:?}", evalcheck_claims, with_ids);
+		for claim in evalcheck_claims.iter().enumerate() {
+			println!("\t{}: {:?}, ", claim.0, claim.1);
+		}
+		println!("with ids: ");
+		for ids in with_ids.into_iter().enumerate() {
+			println!("\t{}: id({}) {:?}, ", ids.0, evalcheck_claims[ids.0].id, ids.1);
+		}
+
 		self.reset_context();
 		for claim in &evalcheck_claims {
 			self.claims_without_evals_dedup
@@ -160,8 +299,13 @@ where
 			let mut deduplicated_claims_without_evals = Vec::new();
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
-				if self.finalized_proofs.get(poly.id(), &eval_point).is_some() {
-					continue;
+				// if self.finalized_proofs.get(poly.id(), &eval_point).is_some() {
+				// 	continue;
+				// }
+				if let Some(proof_with_status) = self.proofs.get(poly.id(), &eval_point) {
+					if matches!(proof_with_status, EvalcheckProofWithStatus::Completed { .. }) {
+						continue;
+					}
 				}
 				if self
 					.claims_without_evals_dedup
@@ -204,7 +348,7 @@ where
 		}
 
 		let mut incomplete_proof_claims =
-			std::mem::take(&mut self.incomplete_proof_claims).flatten();
+			std::mem::take(&mut self.incomplete_proof_claims).into_flatten();
 
 		while !incomplete_proof_claims.is_empty() {
 			for claim in std::mem::take(&mut incomplete_proof_claims) {
@@ -259,19 +403,78 @@ where
 
 		// Step 4: Find and return the proofs of the original claims.
 
-		let out = Ok(evalcheck_claims
-			.iter()
-			.map(|claim| {
-				self.finalized_proofs
-					.get(claim.id, &claim.eval_point)
-					.map(|(_, _, proof)| proof.clone())
-					.expect("finalized_proofs contains all the proofs")
-			})
-			.collect::<Vec<_>>());
+		// let mut proof_output = vec![None; evalcheck_claims.len()];
+		//
+		// for claim in evalcheck_claims {
+		// 	let proof_with_status = self
+		// 		.proofs
+		// 		.get(claim.id, &claim.eval_point)
+		// 		.expect("Every claim must be proved by now");
+		// 	let idx = proof_with_status.get_proof_id();
+		// 	if proof_output[idx].is_some() {
+		// 		panic!(
+		// 			"Proof index :{} is already occupied by {:?} inplace of {:?}",
+		// 			idx, proof_output[idx], proof_with_status
+		// 		);
+		// 	}
+		// 	match proof_with_status {
+		// 		EvalcheckProofWithStatus::Completed { proof, .. } => {
+		// 			proof_output[idx] = Some(proof.clone());
+		// 		}
+		// 		EvalcheckProofWithStatus::Incomplete { .. } => {
+		// 			panic!("All claimed proofs must be complete by now")
+		// 		}
+		// 	}
+		// }
+		//
+		// let out = match proof_output.into_iter().collect::<Option<Vec<_>>>() {
+		// 	Some(proofs) => Ok(proofs),
+		// 	None => panic!("Not all claims produced a proof"),
+		// };
 
-		// Debugging
-		// self.finalized_proofs.clear();
-		out
+		let mut output = vec![None; self.proof_context_index];
+
+		for proof_with_status in self.proofs.flatten().into_iter() {
+			match proof_with_status {
+				EvalcheckProofWithStatus::Incomplete { .. } => {
+					panic!("All claimed proofs must be complete by now")
+				}
+				EvalcheckProofWithStatus::Completed {
+					proof_id,
+					proof,
+					eval,
+				} => {
+					if output[proof_id].is_some() {
+						panic!("Proof index :{} is already occupied", proof_id,);
+					}
+					output[proof_id] = Some(proof);
+				}
+			}
+		}
+
+		let out = output
+			.into_iter()
+			.collect::<Option<Vec<_>>>()
+			.expect("Every proof must be non empty");
+
+		// let unordered = self
+		// 	.proofs
+		// 	.flatten_clear()
+		// 	.into_iter()
+		// 	.map(|x| match x {
+		// 		EvalcheckProofWithStatus::Completed { proof, .. } => proof,
+		// 		EvalcheckProofWithStatus::Incomplete { .. } => {
+		// 			panic!("All claimed proofs must be complete by now")
+		// 		}
+		// 	})
+		// 	.collect::<Vec<_>>();
+
+		println!("Proving output: ");
+		for proof in out.iter().enumerate() {
+			println!("\t{}: {:?}", proof.0, proof.1);
+		}
+
+		Ok(out)
 	}
 
 	#[instrument(
@@ -286,41 +489,36 @@ where
 
 		let eval = evalcheck_claim.eval;
 
-		if self
-			.finalized_proofs
-			.get(multilinear_id, &eval_point)
-			.is_some()
-		{
-			return;
-		}
+		// TODO: Do we need these two??
 
-		if self
-			.incomplete_proof_claims
-			.get(multilinear_id, &eval_point)
-			.is_some()
-		{
+		if self.proofs.get(multilinear_id, &eval_point).is_some() {
 			return;
 		}
+		// if self
+		// 	.finalized_proofs
+		// 	.get(multilinear_id, &eval_point)
+		// 	.is_some()
+		// {
+		// 	return;
+		// }
+
+		// if self
+		// 	.incomplete_proof_claims
+		// 	.get(multilinear_id, &eval_point)
+		// 	.is_some()
+		// {
+		// 	return;
+		// }
 
 		let multilinear = self.oracles.oracle(multilinear_id);
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Transparent { .. } => {
-				let next_idx = self.next_proof();
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(next_idx, eval, EvalcheckProofEnum::Transparent),
-				);
+				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Transparent, eval);
 			}
 
 			MultilinearPolyVariant::Committed => {
-				let next_idx = self.next_proof();
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(next_idx, eval, EvalcheckProofEnum::Committed),
-				);
+				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Committed, eval);
 			}
 
 			MultilinearPolyVariant::Repeating { id, .. } => {
@@ -331,36 +529,25 @@ where
 					eval_point: inner_eval_point,
 					eval,
 				};
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
-				self.claims_queue.push(subclaim);
+				self.incomplete_proof_claims.insert(
+					multilinear_id,
+					eval_point,
+					evalcheck_claim.clone(),
+				);
+				self.claims_queue.push(subclaim.clone());
+				self.add_incomplete_proof(evalcheck_claim, iter::once(subclaim));
 			}
 
 			MultilinearPolyVariant::Shifted { .. } => {
-				let next_idx = self.next_proof();
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(next_idx, eval, EvalcheckProofEnum::Shifted),
-				);
+				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Shifted, eval);
 			}
 
 			MultilinearPolyVariant::Packed { .. } => {
-				let next_idx = self.next_proof();
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(next_idx, eval, EvalcheckProofEnum::Packed),
-				);
+				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Packed, eval);
 			}
 
 			MultilinearPolyVariant::Composite(_) => {
-				let next_idx = self.next_proof();
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(next_idx, eval, EvalcheckProofEnum::CompositeMLE),
-				);
+				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::CompositeMLE, eval);
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
@@ -381,9 +568,13 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
-				self.claims_queue.push(subclaim);
+				self.incomplete_proof_claims.insert(
+					multilinear_id,
+					eval_point,
+					evalcheck_claim.clone(),
+				);
+				self.claims_queue.push(subclaim.clone());
+				self.add_incomplete_proof(evalcheck_claim, iter::once(subclaim));
 			}
 
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
@@ -402,13 +593,22 @@ where
 							eval_point: eval_point.clone(),
 							eval,
 						};
-						self.claims_queue.push(subclaim);
+						self.claims_queue.push(subclaim.clone());
+						self.add_incomplete_proof(evalcheck_claim.clone(), iter::once(subclaim));
 					}
 					_ => {
-						for suboracle_id in linear_combination.polys() {
-							self.claims_without_evals
-								.push((self.oracles.oracle(suboracle_id), eval_point.clone()));
-						}
+						let incomplete_subclaims = linear_combination
+							.polys()
+							.map(|suboracle_id| {
+								self.claims_without_evals
+									.push((self.oracles.oracle(suboracle_id), eval_point.clone()));
+								(suboracle_id, eval_point.clone())
+							})
+							.collect::<Vec<_>>();
+						self.add_incomplete_proof_partial(
+							evalcheck_claim.clone(),
+							incomplete_subclaims,
+						);
 					}
 				};
 
@@ -420,9 +620,17 @@ where
 				let inner = self.oracles.oracle(id);
 				let inner_n_vars = inner.n_vars();
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
-				self.claims_without_evals.push((inner, inner_eval_point));
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
+				self.claims_without_evals
+					.push((inner, inner_eval_point.clone()));
+				self.incomplete_proof_claims.insert(
+					multilinear_id,
+					eval_point,
+					evalcheck_claim.clone(),
+				);
+				self.add_incomplete_proof_partial(
+					evalcheck_claim,
+					iter::once((id, inner_eval_point)),
+				);
 			}
 		};
 	}
@@ -433,24 +641,38 @@ where
 		let eval = evalcheck_claim.eval;
 
 		let res = match self.oracles.oracle(*id).variant {
-			MultilinearPolyVariant::Repeating { id, .. } => {
-				let n_vars = self.oracles.n_vars(id);
+			MultilinearPolyVariant::Repeating { id: inner_id, .. } => {
+				let n_vars = self.oracles.n_vars(inner_id);
 				let inner_eval_point = &evalcheck_claim.eval_point[..n_vars];
-				self.finalized_proofs
-					.get(id, inner_eval_point)
-					.map(|(inner_idx, _, subproof)| (*inner_idx, subproof.clone()))
-					.map(move |(inner_idx, _)| {
-						let proof = EvalcheckProofEnum::Repeating(inner_idx);
-						let next_idx = self.next_proof();
-						self.finalized_proofs.insert(
-							evalcheck_claim.id,
-							eval_point,
-							(next_idx, eval, proof),
-						);
+				// self.finalized_proofs
+				// 	.get(id, inner_eval_point)
+				// 	.map(|(inner_idx, _, subproof)| (*inner_idx, subproof.clone()))
+				// 	.map(move |(inner_idx, _)| {
+				// 		let proof = EvalcheckProofEnum::Repeating(inner_idx);
+				// 		let next_idx = self.next_proof();
+				// 		self.finalized_proofs.insert(
+				// 			evalcheck_claim.id,
+				// 			eval_point,
+				// 			(next_idx, eval, proof),
+				// 		);
+				// 	})
+				self.proofs
+					.get(inner_id, inner_eval_point)
+					.cloned()
+					.map(|proof_with_status| match proof_with_status {
+						EvalcheckProofWithStatus::Completed { proof_id, .. } => self
+							.replace_incomplete_with_complete_proof(
+								evalcheck_claim.clone(),
+								EvalcheckProofEnum::Repeating(proof_id),
+								eval,
+							),
+						// TODO: Should we panic here???
+						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
+					.flatten()
 			}
 			MultilinearPolyVariant::Projected(projected) => {
-				let (id, values) = (projected.id(), projected.values());
+				let (inner_id, values) = (projected.id(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
 						let mut new_eval_point = eval_point.to_vec();
@@ -463,54 +685,96 @@ where
 						.chain((*eval_point).to_vec())
 						.collect(),
 				};
-				self.finalized_proofs
-					.get(id, &new_eval_point)
-					.map(|(_, _, subproof)| subproof.clone())
-					.map(|subproof| {
-						let next_idx = self.next_proof();
-						self.finalized_proofs.insert(
-							evalcheck_claim.id,
-							eval_point,
-							(next_idx, eval, subproof),
-						);
+				// self.finalized_proofs
+				// 	.get(inner_id, &new_eval_point)
+				// 	.map(|(_, _, subproof)| subproof.clone())
+				// 	.map(|subproof| {
+				// 		let next_idx = self.next_proof();
+				// 		self.finalized_proofs.insert(
+				// 			evalcheck_claim.id,
+				// 			eval_point,
+				// 			(next_idx, eval, subproof),
+				// 		);
+				// 	})
+
+				self.proofs
+					.get(inner_id, &new_eval_point)
+					.cloned()
+					.map(|proof_with_status| match proof_with_status {
+						EvalcheckProofWithStatus::Completed { proof, .. } => self
+							.replace_incomplete_with_complete_proof(
+								evalcheck_claim.clone(),
+								proof.clone(),
+								eval,
+							),
+						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
+					.flatten()
 			}
 
 			MultilinearPolyVariant::LinearCombination(linear_combination) => linear_combination
 				.polys()
 				.map(|suboracle_id| {
-					self.finalized_proofs
+					self.proofs
 						.get(suboracle_id, &evalcheck_claim.eval_point)
-						.map(|(inner_idx, eval, _)| (*eval, *inner_idx))
+						.cloned()
 				})
 				.collect::<Option<Vec<_>>>()
-				.map(|subproofs| {
-					let next_idx = self.next_proof();
-					self.finalized_proofs.insert(
-						evalcheck_claim.id,
-						eval_point,
-						(next_idx, eval, EvalcheckProofEnum::LinearCombination { subproofs }),
-					);
-				}),
+				.map(|proofs_with_statuses| {
+					let subproofs = proofs_with_statuses
+						.into_iter()
+						.map(|proof_with_status| match proof_with_status {
+							EvalcheckProofWithStatus::Completed {
+								proof_id,
+								eval: inner_eval,
+								..
+							} => Some((inner_eval, proof_id)),
+							EvalcheckProofWithStatus::Incomplete { .. } => None,
+						})
+						.collect::<Option<Vec<_>>>()?;
+					let proof = EvalcheckProofEnum::LinearCombination { subproofs };
+					self.replace_incomplete_with_complete_proof(
+						evalcheck_claim.clone(),
+						proof,
+						eval,
+					)
+				})
+				.flatten(),
 
 			MultilinearPolyVariant::ZeroPadded(inner_id) => {
 				let inner_n_vars = self.oracles.n_vars(inner_id);
 				let inner_eval_point = &evalcheck_claim.eval_point[..inner_n_vars];
-				self.finalized_proofs
+				// self.finalized_proofs
+				// 	.get(inner_id, inner_eval_point)
+				// 	.map(|(inner_idx, eval, _)| (*inner_idx, *eval))
+				// 	.map(|(inner_idx, internal_eval)| {
+				// 		let next_idx = self.next_proof();
+				// 		self.finalized_proofs.insert(
+				// 			evalcheck_claim.id,
+				// 			eval_point,
+				// 			(
+				// 				next_idx,
+				// 				eval,
+				// 				EvalcheckProofEnum::ZeroPadded(internal_eval, inner_idx),
+				// 			),
+				// 		);
+				// 	})
+				self.proofs
 					.get(inner_id, inner_eval_point)
-					.map(|(inner_idx, eval, _)| (*inner_idx, *eval))
-					.map(|(inner_idx, internal_eval)| {
-						let next_idx = self.next_proof();
-						self.finalized_proofs.insert(
-							evalcheck_claim.id,
-							eval_point,
-							(
-								next_idx,
-								eval,
-								EvalcheckProofEnum::ZeroPadded(internal_eval, inner_idx),
-							),
-						);
+					.cloned()
+					.map(|proof_with_status| match proof_with_status {
+						EvalcheckProofWithStatus::Completed {
+							proof_id,
+							eval: internal_eval,
+							..
+						} => self.replace_incomplete_with_complete_proof(
+							evalcheck_claim.clone(),
+							EvalcheckProofEnum::ZeroPadded(internal_eval, proof_id),
+							eval,
+						),
+						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
+					.flatten()
 			}
 
 			_ => unreachable!(),
@@ -574,14 +838,20 @@ where
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for id in linear_combination.polys() {
-					let (_, eval, _) = self
-						.finalized_proofs
+					let proof_with_status = self
+						.proofs
 						.get(id, &eval_point)
 						.expect("finalized_proofs contains all the proofs");
+					let inner_eval = match proof_with_status {
+						EvalcheckProofWithStatus::Incomplete { .. } => {
+							panic!("SubProofs of Linear combinations must be completed by now")
+						}
+						EvalcheckProofWithStatus::Completed { eval, .. } => *eval,
+					};
 					let subclaim = EvalcheckMultilinearClaim {
 						id,
 						eval_point: eval_point.clone(),
-						eval: *eval,
+						eval: inner_eval,
 					};
 					self.collect_projected_committed(subclaim);
 				}
@@ -590,15 +860,21 @@ where
 				let inner_n_vars = self.oracles.n_vars(id);
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 
-				let (_, eval, _) = self
-					.finalized_proofs
+				let proof_with_status = self
+					.proofs
 					.get(id, &inner_eval_point)
 					.expect("finalized_proofs contains all the proofs");
+				let inner_eval = match proof_with_status {
+					EvalcheckProofWithStatus::Incomplete { .. } => {
+						panic!("SubProof of ZeroPadded must be completed by now")
+					}
+					EvalcheckProofWithStatus::Completed { eval, .. } => *eval,
+				};
 
 				let subclaim = EvalcheckMultilinearClaim {
 					id,
 					eval_point,
-					eval: *eval,
+					eval: inner_eval,
 				};
 				self.collect_projected_committed(subclaim);
 			}

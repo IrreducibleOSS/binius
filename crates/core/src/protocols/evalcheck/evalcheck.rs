@@ -153,6 +153,9 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	}
 }
 
+// Issues with this struct, It should be a Vec<(EvalPoint<F>, Vec<T>)> for better caching
+// What happens if the user tries to insert a different T to same (OracleId, EvalPoint<F>) combo?
+// Find only returns the first EvalPoint<F> it could find, maybe better to return filtered
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -172,7 +175,19 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
+	pub fn get_mut<'a>(&mut self, id: OracleId, eval_point: &[F]) -> Option<&mut T> {
+		self.data
+			.get_mut(id)?
+			.iter_mut()
+			.find(|(ep, _)| ep.as_ref() == eval_point)
+			.map(|(_, val)| val)
+	}
+
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
+		if self.get(id, eval_point.as_ref()).is_some() {
+			panic!("Value already exists for this slot");
+		}
+
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
 		}
@@ -180,7 +195,11 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		self.data[id].push((eval_point, val))
 	}
 
-	pub fn flatten(mut self) -> Vec<T> {
+	pub fn into_flatten(mut self) -> Vec<T> {
+		self.flatten()
+	}
+
+	pub fn flatten(&mut self) -> Vec<T> {
 		self.data.reverse();
 
 		std::mem::take(&mut self.data)

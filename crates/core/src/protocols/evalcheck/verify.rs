@@ -70,10 +70,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 		all_proofs: Vec<EvalcheckProofEnum<F>>,
 	) -> Result<(), Error> {
-		if evalcheck_claims.len() != all_proofs.len() {
-			return Err(Error::Verification(VerificationError::NumberOfClaimsMismatch));
-		}
-
 		let mut verified_idxs = vec![false; all_proofs.len()];
 		for (current_idx, claim) in evalcheck_claims.into_iter().enumerate() {
 			self.verify_multilinear(claim, current_idx, &all_proofs, &mut verified_idxs)?;
