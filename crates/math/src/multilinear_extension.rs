@@ -194,9 +194,13 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let query = query.into();
+		if start_index + query.n_vars() > self.mu {
+			bail!(Error::IncorrectStartIndex { expected: self.mu })
+		}
+
 		if start_index == 0 {
 			return self.evaluate_partial_low(query);
-		} else if start_index + query.n_vars() >= self.mu {
+		} else if start_index + query.n_vars() == self.mu {
 			return self.evaluate_partial_high(query);
 		}
 
@@ -216,6 +220,9 @@ where
 			start_index,
 			result_evals.spare_capacity_mut(),
 		)?;
+		unsafe {
+			result_evals.set_len(result_evals_len);
+		}
 
 		MultilinearExtension::new(new_n_vars, result_evals)
 	}
@@ -349,8 +356,10 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField32b,
-		BinaryField8b, PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
+		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField1b,
+		BinaryField32b, BinaryField8b, PackedBinaryField16x1b, PackedBinaryField16x8b,
+		PackedBinaryField32x1b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
+		PackedBinaryField8x1b,
 	};
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
@@ -466,6 +475,131 @@ mod tests {
 		let result1 = poly.evaluate(multilin_query.to_ref()).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);
+	}
+
+	fn get_bits<P, PE>(values: &[PE], start_index: usize) -> Vec<PE::Scalar>
+	where
+		P: PackedField,
+		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+	{
+		let new_vals = values
+			.iter()
+			.map(|v| {
+				(P::WIDTH * start_index..P::WIDTH * (start_index + 1))
+					.map(|i| v.get(i))
+					.collect::<Vec<_>>()
+			})
+			.flatten()
+			.collect::<Vec<_>>();
+
+		new_vals
+	}
+
+	#[test]
+	fn test_evaluate_middle_32b_to_16b() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values: Vec<_> = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
+			.take(1 << 2)
+			.collect();
+
+		let expected_lower_bits =
+			get_bits::<PackedBinaryField16x1b, PackedBinaryField32x1b>(&values, 0);
+
+		let expected_higher_bits =
+			get_bits::<PackedBinaryField16x1b, PackedBinaryField32x1b>(&values, 1);
+
+		let poly = MultilinearExtension::from_values(values).unwrap();
+
+		// Get query to project on lower bits.
+		let q_low = [<BinaryField1b as PackedField>::zero()];
+		// Get query to project on higher bits.
+		let q_hi = [<BinaryField1b as PackedField>::one()];
+
+		// Get expanded query to project on lower bits.
+		let query_low = multilinear_query::<BinaryField1b>(&q_low);
+		// Get expanded query to project on higher bits.
+		let query_hi = multilinear_query::<BinaryField1b>(&q_hi);
+
+		// Get lower bits evaluations.
+		let evals_low = poly.evaluate_partial(query_low.to_ref(), 4).unwrap();
+		let evals_low = evals_low.evals();
+
+		// Get higher bits evaluations.
+		let evals_hi = poly.evaluate_partial(query_hi.to_ref(), 4).unwrap();
+		let evals_hi = evals_hi.evals();
+
+		assert_eq!(evals_low, expected_lower_bits);
+		assert_eq!(evals_hi, expected_higher_bits);
+	}
+
+	#[test]
+	fn test_evaluate_middle_32b_to_8b() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values: Vec<_> = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
+			.take(1 << 2)
+			.collect();
+
+		let expected_first_quarter =
+			get_bits::<PackedBinaryField8x1b, PackedBinaryField32x1b>(&values, 0);
+
+		let expected_second_quarter =
+			get_bits::<PackedBinaryField8x1b, PackedBinaryField32x1b>(&values, 1);
+
+		let expected_third_quarter =
+			get_bits::<PackedBinaryField8x1b, PackedBinaryField32x1b>(&values, 2);
+
+		let expected_fourth_quarter =
+			get_bits::<PackedBinaryField8x1b, PackedBinaryField32x1b>(&values, 3);
+
+		let poly = MultilinearExtension::from_values(values).unwrap();
+
+		// Get query to project on first quarter.
+		let q_first = [
+			<BinaryField1b as PackedField>::zero(),
+			<BinaryField1b as PackedField>::zero(),
+		];
+		// Get query to project on second quarter.
+		let q_second = [
+			<BinaryField1b as PackedField>::one(),
+			<BinaryField1b as PackedField>::zero(),
+		];
+		// Get query to project on third quarter.
+		let q_third = [
+			<BinaryField1b as PackedField>::zero(),
+			<BinaryField1b as PackedField>::one(),
+		];
+		// Get query to project on last quarter.
+		let q_fourth = [
+			<BinaryField1b as PackedField>::one(),
+			<BinaryField1b as PackedField>::one(),
+		];
+
+		// Get expanded query to project on first quarter.
+		let query_first = multilinear_query::<BinaryField1b>(&q_first);
+		// Get expanded query to project on second quarter.
+		let query_second = multilinear_query::<BinaryField1b>(&q_second);
+		// Get expanded query to project on third quarter.
+		let query_third = multilinear_query::<BinaryField1b>(&q_third);
+		// Get expanded query to project on last quarter.
+		let query_fourth = multilinear_query::<BinaryField1b>(&q_fourth);
+
+		// Get first quarter of bits evaluations.
+		let evals_first_quarter = poly.evaluate_partial(query_first.to_ref(), 3).unwrap();
+		let evals_first_quarter = evals_first_quarter.evals();
+		// Get second quarter evaluations.
+		let evals_second_quarter = poly.evaluate_partial(query_second.to_ref(), 3).unwrap();
+		let evals_second_quarter = evals_second_quarter.evals();
+		// Get third quarter evaluations.
+		let evals_third_quarter = poly.evaluate_partial(query_third.to_ref(), 3).unwrap();
+		let evals_third_quarter = evals_third_quarter.evals();
+		// Get last quarter evaluations.
+		let evals_fourth_quarter = poly.evaluate_partial(query_fourth.to_ref(), 3).unwrap();
+		let evals_fourth_quarter = evals_fourth_quarter.evals();
+
+		assert_eq!(evals_first_quarter, expected_first_quarter);
+		assert_eq!(evals_second_quarter, expected_second_quarter);
+		assert_eq!(evals_third_quarter, expected_third_quarter);
+		assert_eq!(evals_fourth_quarter, expected_fourth_quarter);
 	}
 
 	#[test]

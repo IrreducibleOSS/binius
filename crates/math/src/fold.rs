@@ -152,7 +152,7 @@ where
 		.enumerate()
 		.for_each(|(outer_index, out_val)| {
 			let mut res = PE::default();
-			// Index of the Scalar at the the start of the current Packed element in `out`.
+			// Index of the Scalar at the start of the current Packed element in `out`.
 			let outer_word_start = outer_index << PE::LOG_WIDTH;
 			for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
 				// Index of the current Scalar in `out`.
