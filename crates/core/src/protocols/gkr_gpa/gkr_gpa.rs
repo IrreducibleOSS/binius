@@ -37,42 +37,39 @@ impl<P: PackedField> GrandProductWitness<P> {
 
 		circuit_layers.push(input_layer);
 		debug_span!("constructing_layers").in_scope(|| {
-			for curr_n_vars in (0..n_vars).rev() {
-				let layer_below = circuit_layers
+			for layer_n_vars in (0..n_vars).rev() {
+				let prev_layer = circuit_layers
 					.last()
 					.expect("all_layers is not empty by invariant");
-				let mut new_layer = zeroed_vec(
-					layer_below
-						.len()
-						.min(1 << curr_n_vars.saturating_sub(P::LOG_WIDTH)),
-				);
+				let max_layer_len = 1 << layer_n_vars.saturating_sub(P::LOG_WIDTH);
+				let mut layer = zeroed_vec(prev_layer.len().min(max_layer_len));
 
-				if curr_n_vars >= P::LOG_WIDTH {
-					let packed_len = 1 << (curr_n_vars - P::LOG_WIDTH);
-					let pivot = layer_below.len().saturating_sub(packed_len);
+				if layer_n_vars >= P::LOG_WIDTH {
+					let packed_len = 1 << (layer_n_vars - P::LOG_WIDTH);
+					let pivot = prev_layer.len().saturating_sub(packed_len);
 
 					if pivot > 0 {
-						let (evals_0, evals_1) = layer_below.split_at(packed_len);
-						(new_layer.as_mut_slice(), evals_0, evals_1)
+						let (evals_0, evals_1) = prev_layer.split_at(packed_len);
+						(layer.as_mut_slice(), evals_0, evals_1)
 							.into_par_iter()
-							.for_each(|(out, &eval_0, &eval_1)| {
-								*out = eval_0 * eval_1;
+							.for_each(|(product, &eval_0, &eval_1)| {
+								*product = eval_0 * eval_1;
 							});
 					}
 
-					new_layer[pivot..].copy_from_slice(&layer_below[pivot..packed_len]);
-				} else if layer_below.len() > 0 {
-					let new_layer = new_layer
+					layer[pivot..].copy_from_slice(&prev_layer[pivot..packed_len.min(prev_layer.len())]);
+				} else if prev_layer.len() > 0 {
+					let layer = layer
 						.first_mut()
-						.expect("new_layer.len() >= 1 iff layer_below.len() >= 1");
-					for i in 0..1 << curr_n_vars {
-						let product = get_packed_slice(layer_below, i)
-							* get_packed_slice(layer_below, i | 1 << curr_n_vars);
-						new_layer.set(i, product);
+						.expect("layer.len() >= 1 iff prev_layer.len() >= 1");
+					for i in 0..1 << layer_n_vars {
+						let product = get_packed_slice(prev_layer, i)
+							* get_packed_slice(prev_layer, i | 1 << layer_n_vars);
+						layer.set(i, product);
 					}
 				}
 
-				circuit_layers.push(new_layer);
+				circuit_layers.push(layer);
 			}
 		});
 

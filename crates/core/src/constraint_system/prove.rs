@@ -643,20 +643,26 @@ where
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
 			let width = 1 << log_width;
 
-			let packed_len = 1 << n_vars.saturating_sub(log_width);
-			let mut fast_ext_result = vec![PackedType::<U, FFastExt<Tower>>::one(); packed_len];
-
 			let poly = witness.get_multilin_poly(flush_oracle_id)?;
-			let selector = flush_selectors
-				.map(|flush_selectors| witness.get_multilin_poly(flush_selectors[i]))
+			let selector_index_entry = flush_selectors
+				.map(|flush_selectors| witness.get_index_entry(flush_selectors[i]))
 				.transpose()?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
 			let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
 			let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
+			let non_const_scalars = selector_index_entry
+				.as_ref()
+				.map_or(1 << n_vars, |entry| entry.nonzero_scalars_prefix);
+			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
+
+			let mut fast_ext_result = vec![
+				PackedType::<U, FFastExt<Tower>>::one();
+				non_const_subcubes * subcube_packed_size
+			];
 
 			fast_ext_result
-				.par_chunks_mut(subcube_packed_size)
+				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
 				.for_each(|(subcube_index, fast_subcube)| {
 					let underliers =
@@ -673,13 +679,14 @@ where
 						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
 					}
 
-					if let Some(selector) = &selector {
+					if let Some(selector_index_entry) = selector_index_entry.as_ref() {
 						let fast_subcube =
 							PackedType::<U, FFastExt<Tower>>::from_underliers_ref_mut(underliers);
 
 						let mut ones_mask = PackedType::<U, FExt<Tower>>::default();
 						for (i, packed) in fast_subcube.iter_mut().enumerate() {
-							selector
+							selector_index_entry
+								.multilin_poly
 								.subcube_evals(
 									log_width,
 									(subcube_index << subcube_vars.saturating_sub(log_width)) | i,
@@ -701,6 +708,7 @@ where
 					}
 				});
 
+			fast_ext_result.truncate(non_const_scalars);
 			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
@@ -766,6 +774,7 @@ where
 		// REVIEW: we extract a type erased multilin from the witness index here,
 		//         but we can do better and move the large-field evals (potentially truncated)
 		//         directly into this sumcheck, as those are not shared
+		// TODO: it's actually beneficial to use switchover for binary selectors here!
 		let prover = EqIndSumcheckProverBuilder::with_switchover(
 			multilinears,
 			immediate_switchover_heuristic,

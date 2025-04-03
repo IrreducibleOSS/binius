@@ -318,6 +318,8 @@ where
 				.map(|multilinear| multilinear.const_suffix(n_vars)),
 		);
 
+		println!("compositions {:#?}", compositions);
+
 		let domains = interpolation_domains_for_composition_degrees(
 			domain_factory,
 			compositions

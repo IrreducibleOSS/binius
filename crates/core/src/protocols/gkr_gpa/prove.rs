@@ -209,6 +209,7 @@ where
 
 		let mut composite_claims = Vec::with_capacity(n_claims);
 		let mut multilinears = Vec::with_capacity(n_multilinears);
+		let mut const_suffixes = Vec::with_capacity(n_multilinears);
 
 		for (i, state) in states.iter_mut().enumerate() {
 			let indices = [2 * i, 2 * i + 1];
@@ -225,10 +226,12 @@ where
 				.pop()
 				.expect("not staging more than n_vars times");
 
-			let (evals_0, evals_1) = if n_vars >= P::LOG_WIDTH {
+			let multilinear_pair = if n_vars >= P::LOG_WIDTH && layer.len() <= 1 << (n_vars - P::LOG_WIDTH) {
+				[layer, vec![]]
+			} else if n_vars >= P::LOG_WIDTH {
 				let mut evals_0 = layer;
 				let evals_1 = evals_0.split_off(1 << (n_vars - P::LOG_WIDTH));
-				(evals_0, evals_1)
+				[evals_0, evals_1]
 			} else {
 				let mut evals_0 = P::zero();
 				let mut evals_1 = P::zero();
@@ -238,15 +241,21 @@ where
 					evals_1.set(i, get_packed_slice(&layer, i | 1 << n_vars));
 				}
 
-				(vec![evals_0], vec![evals_1])
+				[vec![evals_0], vec![evals_1]]
 			};
 
-			multilinears.extend([evals_0, evals_1]);
+			for multilinear in multilinear_pair {
+				let suffix_len = (1usize << n_vars).saturating_sub(multilinear.len() * P::WIDTH);
+				const_suffixes.push((F::ONE, suffix_len));
+				multilinears.push(multilinear);
+			}
 		}
 
-		// REVIEW: const suffixes!
+		println!("const_suffixes {:#?}", const_suffixes);
+
 		// REVIEW: comment on first_round_eval_1s
 		let prover = EqIndSumcheckProverBuilder::without_switchover(n_vars, multilinears, backend)
+			.with_const_suffixes(&const_suffixes)?
 			.build(
 				evaluation_order,
 				eq_ind_challenges,
