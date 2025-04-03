@@ -4,7 +4,7 @@ use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B64,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128,
 };
 use bumpalo::Bump;
 use bytemuck::Pod;
@@ -18,8 +18,6 @@ pub struct MyTable {
 	id: TableId,
 	committed_1: Col<B128, VALUES_PER_ROW>,
 	committed_2: Col<B128, VALUES_PER_ROW>,
-	_zeros_1: [Col<B64, 16>; 10],
-	_zeros_2: [Col<B64, 64>; 10],
 	computed: Col<B128, VALUES_PER_ROW>,
 }
 
@@ -27,24 +25,18 @@ impl MyTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
 		let mut table = cs.add_table("table_1");
 		let committed_1 = table.add_committed::<B128, VALUES_PER_ROW>("committed_2");
-		let zeros_1 = table.add_committed_multiple::<B64, 16, 10>("col_zeros_1");
 		let committed_2 = table.add_committed::<B128, VALUES_PER_ROW>("committed_2");
-		let zeros_2 = table.add_committed_multiple::<B64, 64, 10>("col_zeros_2");
 		let expr = (committed_1 + committed_2) * committed_1 * B128::from(10) + B128::ONE;
-		let computed = table.add_computed("computed", expr);
-		for col in &zeros_1 {
-			table.assert_zero("zeros_1", (*col).into());
-		}
-		for col in &zeros_2 {
-			table.assert_zero("zeros_2", (*col).into());
-		}
+		let computed = table.add_computed("computed", expr.clone());
+
+		// Test that the computed column equals the composite evaluation over the table.
+		table.assert_zero("computed = expr", expr - computed);
+
 		Self {
 			id: table.id(),
 			committed_1,
 			committed_2,
 			computed,
-			_zeros_1: zeros_1,
-			_zeros_2: zeros_2,
 		}
 	}
 }

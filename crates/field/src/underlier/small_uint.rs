@@ -266,3 +266,15 @@ impl<const N: usize> DeserializeBytes for SmallU<N> {
 		Ok(Self::new(DeserializeBytes::deserialize(read_buf, mode)?))
 	}
 }
+
+#[cfg(test)]
+impl<const N: usize> proptest::arbitrary::Arbitrary for SmallU<N> {
+	type Parameters = ();
+	type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+	fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+		use proptest::strategy::Strategy;
+
+		(0u8..(1u8 << N)).prop_map(Self::new_unchecked).boxed()
+	}
+}
