@@ -39,6 +39,7 @@ enum EvalcheckNumerics {
 	LinearCombination,
 	ZeroPadded,
 	CompositeMLE,
+	Projected,
 }
 
 pub type ProofIndex = usize;
@@ -55,6 +56,7 @@ pub enum EvalcheckProofEnum<F: Field> {
 	LinearCombination { subproofs: Vec<(F, ProofIndex)> },
 	ZeroPadded(F, ProofIndex),
 	CompositeMLE,
+	Projected(ProofIndex),
 }
 
 impl EvalcheckNumerics {
@@ -68,6 +70,7 @@ impl EvalcheckNumerics {
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
 			8 => Ok(Self::CompositeMLE),
+			9 => Ok(Self::Projected),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -112,6 +115,10 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 		EvalcheckProofEnum::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
 		}
+		EvalcheckProofEnum::Projected(inner) => {
+			transcript.write_bytes(&[EvalcheckNumerics::Projected as u8]);
+			write_u64(transcript, *inner as u64)
+		}
 	}
 }
 
@@ -150,6 +157,10 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			Ok(EvalcheckProofEnum::ZeroPadded(scalar, subproof_idx))
 		}
 		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProofEnum::CompositeMLE),
+		EvalcheckNumerics::Projected => {
+			let inner_idx = read_u64(transcript)? as ProofIndex;
+			Ok(EvalcheckProofEnum::Projected(inner_idx))
+		}
 	}
 }
 

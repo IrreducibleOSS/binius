@@ -54,8 +54,9 @@ where
 		let new_evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
 		let mut evalcheck_proofs = Vec::with_capacity(new_evalcheck_claims.len());
+		let len_new_evalcheck_proofs = read_u64(&mut transcript.decommitment())? as usize;
 		let mut reader = transcript.message();
-		for _ in 0..new_evalcheck_claims.len() {
+		for _ in 0..len_new_evalcheck_proofs {
 			let evalcheck_proof = deserialize_evalcheck_proof(&mut reader)?;
 			evalcheck_proofs.push(evalcheck_proof)
 		}

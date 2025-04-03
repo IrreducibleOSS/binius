@@ -155,6 +155,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
+				let subproof_index = match evalcheck_proof {
+					EvalcheckProofEnum::Projected(subproof) => subproof,
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
 				let (id, values) = (projected.id(), projected.values());
 				let eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
@@ -173,7 +177,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(new_claim, current_proof_idx, all_proofs, verified_indexs)?;
+				self.verify_multilinear(new_claim, subproof_index, all_proofs, verified_indexs)?;
 				verified_indexs[current_proof_idx] = true;
 			}
 

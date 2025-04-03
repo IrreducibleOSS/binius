@@ -321,19 +321,19 @@ where
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	) -> Result<Vec<EvalcheckProofEnum<F>>, Error> {
 		// DEBUGGGING
-		let with_ids = evalcheck_claims
-			.clone()
-			.into_iter()
-			.map(|claim| self.oracles.oracle(claim.id).variant)
-			.collect::<Vec<_>>();
+		// let with_ids = evalcheck_claims
+		// 	.clone()
+		// 	.into_iter()
+		// 	.map(|claim| self.oracles.oracle(claim.id).variant)
+		// 	.collect::<Vec<_>>();
 		// println!("Proving claims: ");
 		// for claim in evalcheck_claims.iter().enumerate() {
 		// 	println!("\t{}: {:?}, ", claim.0, claim.1);
 		// }
-		println!("with ids: ");
-		for ids in with_ids.into_iter().enumerate() {
-			println!("\t{}: id({}) {:?}, ", ids.0, evalcheck_claims[ids.0].id, ids.1);
-		}
+		// println!("with ids: ");
+		// for ids in with_ids.into_iter().enumerate() {
+		// 	println!("\t{}: id({}) {:?}, ", ids.0, evalcheck_claims[ids.0].id, ids.1);
+		// }
 
 		self.reset_context();
 		for claim in &evalcheck_claims {
@@ -430,7 +430,7 @@ where
 
 		// Step 3: Process projected_bivariate_claims
 
-		println!("length of projected_bivariate_metas: {}", self.projected_bivariate_claims.len());
+		// println!("length of projected_bivariate_metas: {}", self.projected_bivariate_claims.len());
 
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
@@ -491,11 +491,6 @@ where
 			.into_iter()
 			.collect::<Option<Vec<_>>>()
 			.expect("Every proof must be non empty");
-
-		println!("Proving output: ");
-		for proof in out.iter().enumerate() {
-			println!("\t{}: {:?}", proof.0, proof.1);
-		}
 
 		Ok(out)
 	}
@@ -682,27 +677,16 @@ where
 						.chain((*eval_point).to_vec())
 						.collect(),
 				};
-				// self.finalized_proofs
-				// 	.get(inner_id, &new_eval_point)
-				// 	.map(|(_, _, subproof)| subproof.clone())
-				// 	.map(|subproof| {
-				// 		let next_idx = self.next_proof();
-				// 		self.finalized_proofs.insert(
-				// 			evalcheck_claim.id,
-				// 			eval_point,
-				// 			(next_idx, eval, subproof),
-				// 		);
-				// 	})
 
 				self.proofs
 					.get(inner_id, &new_eval_point)
 					.cloned()
 					.map(|proof_with_status| match proof_with_status {
-						EvalcheckProofWithStatus::Completed { proof, .. }
-						| EvalcheckProofWithStatus::SumcheckInducing { proof, .. } => self
+						EvalcheckProofWithStatus::Completed { proof_id, .. }
+						| EvalcheckProofWithStatus::SumcheckInducing { proof_id, .. } => self
 							.replace_incomplete_with_complete_proof(
 								evalcheck_claim.clone(),
-								proof.clone(),
+								EvalcheckProofEnum::Projected(proof_id),
 								eval,
 							),
 						EvalcheckProofWithStatus::Incomplete { .. } => None,
