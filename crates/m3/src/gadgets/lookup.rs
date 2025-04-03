@@ -53,7 +53,7 @@ impl LookupProducer {
 	///
 	/// ## Pre-condition
 	///
-	/// * Multiplicities must be sorted in ascending order.
+	/// * Multiplicities must be sorted in descending order.
 	pub fn populate<U>(
 		&self,
 		index: &mut TableWitnessSegment<U>,
@@ -91,17 +91,13 @@ mod tests {
 
 	// Test configurations
 	enum MultiplicityConfig {
-		SomeZero,    // Only use a subset of values, some will have zero multiplicity
-		AllNonZero,  // Ensure all values are used at least once
-		AllZero,     // No values are used (all have zero multiplicity)
+		Partial,    // Only use a subset of values, some will have zero multiplicity
+		Complete,   // Ensure all values are used at least once
+		None,       // No values are used (all have zero multiplicity)
 	}
 
 	// Test utility function
-	fn run_lookup_test(
-		looker_first: bool,
-		multiplicity: MultiplicityConfig,
-		seed: u64,
-	) {
+	fn run_lookup_test(looker_first: bool, multiplicity: MultiplicityConfig, seed: u64) {
 		let mut cs = ConstraintSystem::new();
 		let chan = cs.add_channel("values");
 
@@ -159,7 +155,7 @@ mod tests {
 		let lookup_table_size = 40;
 		let looker_1_size = 50;
 		let looker_2_size = 60;
-		
+
 		// Generate random values for the lookup table
 		let mut rng = StdRng::seed_from_u64(seed);
 		let values = repeat_with(|| B128::random(&mut rng))
@@ -168,31 +164,31 @@ mod tests {
 
 		// Initialize counts based on test configuration
 		let mut counts = vec![0u32; lookup_table_size];
-		
+
 		// Choose lookup range based on test configuration
 		let lookup_range = match multiplicity {
-			MultiplicityConfig::SomeZero => lookup_table_size / 2, // Only use first half
-			MultiplicityConfig::AllNonZero => lookup_table_size,
-			MultiplicityConfig::AllZero => 0, // Use no entries
+			MultiplicityConfig::Partial => lookup_table_size / 2, // Only use first half
+			MultiplicityConfig::Complete => lookup_table_size,
+			MultiplicityConfig::None => 0, // Use no entries
 		};
-		
+
 		// For all non-zero case, initialize all counts to 1
-		if matches!(multiplicity, MultiplicityConfig::AllNonZero) {
+		if matches!(multiplicity, MultiplicityConfig::Complete) {
 			counts.iter_mut().for_each(|count| *count = 1);
 		}
-		
+
 		// Generate inputs for lookers
-		let (inputs_1, inputs_2) = if matches!(multiplicity, MultiplicityConfig::AllZero) {
+		let (inputs_1, inputs_2) = if matches!(multiplicity, MultiplicityConfig::None) {
 			// For AllZero case, use empty vectors - no lookups performed
-			(Vec::new(), Vec::new()) 
+			(Vec::new(), Vec::new())
 		} else {
 			// For other cases, generate inputs from the lookup table
-			
+
 			// Generate inputs for looker 1
-			let inputs_1 = if matches!(multiplicity, MultiplicityConfig::AllNonZero) {
+			let inputs_1 = if matches!(multiplicity, MultiplicityConfig::Complete) {
 				// For AllNonZero, ensure each value is used at least once
 				let mut result = values.clone(); // Start with one of each
-				
+
 				// Add additional random values to reach the desired size
 				let extra = repeat_with(|| {
 					let index = rng.gen_range(0..lookup_range);
@@ -200,7 +196,7 @@ mod tests {
 					values[index]
 				})
 				.take(looker_1_size - lookup_table_size);
-				
+
 				result.extend(extra);
 				result
 			} else {
@@ -213,7 +209,7 @@ mod tests {
 				.take(looker_1_size)
 				.collect()
 			};
-			
+
 			// Generate inputs for looker 2
 			let inputs_2 = repeat_with(|| {
 				let index = rng.gen_range(0..lookup_range);
@@ -222,7 +218,7 @@ mod tests {
 			})
 			.take(looker_2_size)
 			.collect::<Vec<_>>();
-			
+
 			(inputs_1, inputs_2)
 		};
 
@@ -251,17 +247,20 @@ mod tests {
 		// Fill the lookup table
 		witness
 			.fill_table_sequential(
-				&ClosureFiller::<OptimalUnderlier128b, B128, (B128, u32)>::new(lookup_table_id, |values_and_counts, witness| {
-					{
-						let mut values_col = witness.get_scalars_mut(values_col)?;
-						for (dst, (val, _)) in iter::zip(&mut *values_col, values_and_counts) {
-							*dst = *val;
+				&ClosureFiller::<OptimalUnderlier128b, B128, (B128, u32)>::new(
+					lookup_table_id,
+					|values_and_counts, witness| {
+						{
+							let mut values_col = witness.get_scalars_mut(values_col)?;
+							for (dst, (val, _)) in iter::zip(&mut *values_col, values_and_counts) {
+								*dst = *val;
+							}
 						}
-					}
-					lookup_producer
-						.populate(witness, values_and_counts.iter().map(|(_, count)| *count))?;
-					Ok(())
-				}),
+						lookup_producer
+							.populate(witness, values_and_counts.iter().map(|(_, count)| *count))?;
+						Ok(())
+					},
+				),
 				&values_and_counts,
 			)
 			.unwrap();
@@ -270,32 +269,38 @@ mod tests {
 		if !inputs_1.is_empty() {
 			witness
 				.fill_table_sequential(
-					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(looker_1_id, |inputs, witness| {
-						let mut vals = witness.get_scalars_mut(looker_1_vals)?;
-						for (i, dst) in vals.iter_mut().enumerate() {
-							if i < inputs.len() {
-								*dst = *inputs[i];
+					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(
+						looker_1_id,
+						|inputs, witness| {
+							let mut vals = witness.get_scalars_mut(looker_1_vals)?;
+							for (i, dst) in vals.iter_mut().enumerate() {
+								if i < inputs.len() {
+									*dst = *inputs[i];
+								}
 							}
-						}
-						Ok(())
-					}),
+							Ok(())
+						},
+					),
 					&inputs_1,
 				)
 				.unwrap();
 		}
-		
+
 		if !inputs_2.is_empty() {
 			witness
 				.fill_table_sequential(
-					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(looker_2_id, |inputs, witness| {
-						let mut vals = witness.get_scalars_mut(looker_2_vals)?;
-						for (i, dst) in vals.iter_mut().enumerate() {
-							if i < inputs.len() {
-								*dst = *inputs[i];
+					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(
+						looker_2_id,
+						|inputs, witness| {
+							let mut vals = witness.get_scalars_mut(looker_2_vals)?;
+							for (i, dst) in vals.iter_mut().enumerate() {
+								if i < inputs.len() {
+									*dst = *inputs[i];
+								}
 							}
-						}
-						Ok(())
-					}),
+							Ok(())
+						},
+					),
 					&inputs_2,
 				)
 				.unwrap();
@@ -312,18 +317,18 @@ mod tests {
 		// Some values have zero multiplicity
 		run_lookup_test(
 			false, // lookup table first (normal order)
-			MultiplicityConfig::SomeZero,
-			0
+			MultiplicityConfig::Partial,
+			0,
 		);
 	}
 
 	#[test]
 	fn test_lookup_producer_all_nonzero() {
-		// All values have non-zero multiplicity 
+		// All values have non-zero multiplicity
 		run_lookup_test(
 			false, // lookup table first (normal order)
-			MultiplicityConfig::AllNonZero,
-			1
+			MultiplicityConfig::Complete,
+			1,
 		);
 	}
 
@@ -332,8 +337,8 @@ mod tests {
 		// All values have zero multiplicity - extreme corner case
 		run_lookup_test(
 			false, // lookup table first (normal order)
-			MultiplicityConfig::AllZero,
-			3
+			MultiplicityConfig::None,
+			3,
 		);
 	}
 
@@ -342,8 +347,8 @@ mod tests {
 		// Different table creation order - looker first
 		run_lookup_test(
 			true, // looker first
-			MultiplicityConfig::SomeZero,
-			2
+			MultiplicityConfig::Partial,
+			2,
 		);
 	}
 }
