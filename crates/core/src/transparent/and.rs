@@ -30,7 +30,6 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for And
 
 	///Given a query of size n even, of the form (i || j) the multivariate polynomial returns
 	///a B32 element whose representation is of the form (i||j||(i & j))
-
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() & 1 != 0 {
 			bail!(Error::IncorrectQuerySize {

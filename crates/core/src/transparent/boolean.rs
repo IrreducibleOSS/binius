@@ -11,8 +11,8 @@ pub struct Boolean {
 }
 
 impl Boolean {
-	pub fn new(n_vars: usize) -> Boolean {
-		Boolean { n_vars }
+	pub fn new(n_vars: usize) -> Self {
+		Self { n_vars }
 	}
 }
 //Multivariate polynomial that maps points in the hypercube to the corresponding B32 element.
@@ -31,8 +31,8 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Boo
 		}
 		let mut result = F::ZERO;
 
-		for i in 0..query.len() {
-			result += query[i] * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i)
+		for (i, &var) in query.iter().enumerate() {
+			result += var * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i)
 		}
 
 		Ok(result)
