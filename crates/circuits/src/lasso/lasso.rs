@@ -109,11 +109,14 @@ where
 			lookup_r.fill(PackedField::one());
 			lookup_w.fill(alpha_packed);
 
+			// Process the number of lookups that fits into full packed field items.
 			let packed_lookups = n_lookups >> PackedType::<U, FC>::LOG_WIDTH;
 			let mut scalars = vec![FC::ZERO; PackedType::<U, FC>::WIDTH];
 			for i in 0..packed_lookups {
 				let offset = i << PackedType::<U, FC>::LOG_WIDTH;
 
+				// Since indicees may repeat withing the same packed field item, we need to
+				// process them one by one and use the result only after that.
 				for (j, scalar) in scalars.iter_mut().enumerate() {
 					let index = u_to_t_mapping.as_ref()[offset + j];
 					*scalar = get_packed_slice(lookup_f, index) * alpha;
@@ -126,6 +129,7 @@ where
 				lookup_w[i] = ts_by_alpha;
 			}
 
+			// Process the remainder
 			let offset = packed_lookups << PackedType::<U, FC>::LOG_WIDTH;
 			for i in offset..n_lookups {
 				let ts = get_packed_slice(lookup_f, u_to_t_mapping.as_ref()[i]);

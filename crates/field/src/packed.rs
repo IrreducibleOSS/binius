@@ -774,4 +774,31 @@ mod tests {
 	fn test_iteration() {
 		run_for_all_packed_fields(&PackedFieldIterationTest);
 	}
+
+	fn check_copy_from_scalars<P: PackedField>(mut rng: impl RngCore) {
+		let scalars = (0..100)
+			.map(|_| <<P as PackedField>::Scalar as Field>::random(&mut rng))
+			.collect::<Vec<_>>();
+
+		let mut packed_copy = vec![P::zero(); 100];
+
+		for len in [0, 2, 4, 8, 12, 16] {
+			copy_packed_from_scalars_slice(&scalars[0..len], &mut packed_copy);
+
+			for (i, &scalar) in scalars[0..len].iter().enumerate() {
+				assert_eq!(get_packed_slice(&packed_copy, i), scalar);
+			}
+			for i in len..100 {
+				assert_eq!(get_packed_slice(&packed_copy, i), P::Scalar::ZERO);
+			}
+		}
+	}
+
+	#[test]
+	fn test_copy_from_scalars() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		check_copy_from_scalars::<PackedBinaryField16x8b>(&mut rng);
+		check_copy_from_scalars::<PackedBinaryField32x4b>(&mut rng);
+	}
 }

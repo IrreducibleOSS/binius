@@ -3,8 +3,8 @@
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::PackedType, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField4b,
-	PackedField, TowerField,
+	as_packed_field::PackedType, packed::packed_from_fn_with_offset, BinaryField16b, BinaryField1b,
+	BinaryField32b, BinaryField4b, PackedField, TowerField,
 };
 
 use super::{lasso::lasso, u32add::SeveralU32add};
@@ -43,13 +43,10 @@ impl SeveralBitwise {
 
 			let lookup_t = lookup_t_witness.packed();
 			for (i, lookup_t) in lookup_t.iter_mut().enumerate() {
-				let offset = i << PackedType::<U, B16>::LOG_WIDTH;
-				*lookup_t = PackedField::from_fn(|j| {
-					let index = offset + j;
-
-					let x = ((index >> 8) & 15) as u16;
-					let y = ((index >> 4) & 15) as u16;
-					let z = (index & 15) as u16;
+				*lookup_t = packed_from_fn_with_offset(i, |i| {
+					let x = ((i >> 8) & 15) as u16;
+					let y = ((i >> 4) & 15) as u16;
+					let z = (i & 15) as u16;
 
 					let res = f(x as u32, y as u32, z as u32);
 

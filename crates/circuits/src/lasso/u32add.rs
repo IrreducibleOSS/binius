@@ -5,10 +5,10 @@ use std::marker::PhantomData;
 use anyhow::Result;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	packed::set_packed_slice,
+	as_packed_field::PackScalar,
+	packed::{packed_from_fn_with_offset, set_packed_slice},
 	underlier::U1,
-	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, PackedField, TowerField,
+	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, TowerField,
 };
 use itertools::izip;
 
@@ -64,13 +64,10 @@ impl SeveralU32add {
 
 			let lookup_t = lookup_t_witness.packed();
 			for (i, lookup_t) in lookup_t.iter_mut().enumerate() {
-				let offset = i << PackedType::<U, B32>::LOG_WIDTH;
-				*lookup_t = PackedField::from_fn(|j| {
-					let index = offset + j;
-
-					let x = (index >> 9) & 0xff;
-					let y = (index >> 1) & 0xff;
-					let cin = index & 1;
+				*lookup_t = packed_from_fn_with_offset(i, |i| {
+					let x = (i >> 9) & 0xff;
+					let y = (i >> 1) & 0xff;
+					let cin = i & 1;
 					let ab_sum = x + y + cin;
 					let cout = ab_sum >> 8;
 					let ab_sum = ab_sum & 0xff;

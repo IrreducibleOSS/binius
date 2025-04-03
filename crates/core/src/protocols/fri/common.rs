@@ -147,7 +147,7 @@ where
 	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
 	debug_assert!(scratch_buffer.len() >= 2 * (values.len() >> log_batch_size));
 
-	// TODO: handle the opposite case
+	// TODO: handle the case when log_batch_size is not a multiple of P::LOG_WIDTH
 	assert!(log_batch_size >= P::LOG_WIDTH);
 
 	// There are two types of mixing we do in this loop. Buffer 1 is populated with the

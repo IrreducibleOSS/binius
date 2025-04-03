@@ -42,6 +42,8 @@ where
 #[inline(always)]
 #[allow(clippy::redundant_clone)]
 pub fn is_packed_field_indexable<P: PackedField>() -> bool {
+	// Use a hack that array of copyable elements won't call clone when the array is cloned.
+
 	struct X<T> {
 		cloned: bool,
 		_pd: std::marker::PhantomData<T>,
@@ -373,6 +375,18 @@ mod tests {
 
 		let slice = [PackedBinaryField8x2b::zero(); 4];
 		let len = unpack_if_possible(&slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 4);
+	}
+
+	#[test]
+	fn test_unpack_if_possible_mut() {
+		let mut slice = [PackedBinaryField2x8b::zero(); 4];
+
+		let len = unpack_if_possible_mut(&mut slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 8);
+
+		let mut slice = [PackedBinaryField8x2b::zero(); 4];
+		let len = unpack_if_possible_mut(&mut slice, |slice| slice.len(), |slice| slice.len());
 		assert_eq!(len, 4);
 	}
 }
