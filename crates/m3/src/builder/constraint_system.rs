@@ -18,6 +18,7 @@ use binius_field::{underlier::UnderlierType, TowerField};
 use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
+use itertools::chain;
 
 use super::{
 	channel::{Channel, Flush},
@@ -253,8 +254,12 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down =
-					oracles.add_transparent(StepDown::new(n_vars, count * values_per_row)?)?;
+				let step_down = (!table.po2_sized)
+					.then(|| {
+						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
+						oracles.add_transparent(step_down_poly)
+					})
+					.transpose()?;
 
 				// Translate flushes for the compiled constraint system.
 				for Flush {
@@ -269,11 +274,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
+					let selectors =
+						chain!(selector.map(|column_idx| oracle_lookup[column_idx]), step_down)
+							.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
-						selector: selector.unwrap_or(step_down),
+						selectors,
 						multiplicity: *multiplicity as u64,
 					});
 				}

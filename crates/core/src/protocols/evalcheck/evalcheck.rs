@@ -40,10 +40,10 @@ enum EvalcheckNumerics {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalcheckProof<F: Field> {
-	Transparent,
-	Committed,
-	Shifted,
-	Packed,
+	Transparent, // Resolve
+	Committed,   // Emit
+	Shifted,     // Sumcheck
+	Packed,      // Sumcheck
 	Repeating(Box<EvalcheckProof<F>>),
 	LinearCombination {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
