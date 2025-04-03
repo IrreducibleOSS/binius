@@ -50,7 +50,7 @@ impl LookupProducer {
 	///
 	/// ## Pre-condition
 	///
-	/// * Multiplicities must be sorted in ascending order.
+	/// * Multiplicities must be sorted in descending order.
 	pub fn populate<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
@@ -240,20 +240,17 @@ mod tests {
 		// Fill the lookup table
 		witness
 			.fill_table_sequential(
-				&ClosureFiller::<OptimalUnderlier128b, B128, (B128, u32)>::new(
-					lookup_table_id,
-					|values_and_counts, witness| {
-						{
-							let mut values_col = witness.get_scalars_mut(values_col)?;
-							for (dst, (val, _)) in iter::zip(&mut *values_col, values_and_counts) {
-								*dst = *val;
-							}
+				&ClosureFiller::new(lookup_table_id, |values_and_counts, witness| {
+					{
+						let mut values_col = witness.get_scalars_mut(values_col)?;
+						for (dst, (val, _)) in iter::zip(&mut *values_col, values_and_counts) {
+							*dst = *val;
 						}
-						lookup_producer
-							.populate(witness, values_and_counts.iter().map(|(_, count)| *count))?;
-						Ok(())
-					},
-				),
+					}
+					lookup_producer
+						.populate(witness, values_and_counts.iter().map(|(_, count)| *count))?;
+					Ok(())
+				}),
 				&values_and_counts,
 			)
 			.unwrap();
@@ -262,18 +259,15 @@ mod tests {
 		if !inputs_1.is_empty() {
 			witness
 				.fill_table_sequential(
-					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(
-						looker_1_id,
-						|inputs, witness| {
-							let mut vals = witness.get_scalars_mut(looker_1_vals)?;
-							for (i, dst) in vals.iter_mut().enumerate() {
-								if i < inputs.len() {
-									*dst = *inputs[i];
-								}
+					&ClosureFiller::new(looker_1_id, |inputs, witness| {
+						let mut vals = witness.get_scalars_mut(looker_1_vals)?;
+						for (i, dst) in vals.iter_mut().enumerate() {
+							if i < inputs.len() {
+								*dst = *inputs[i];
 							}
-							Ok(())
-						},
-					),
+						}
+						Ok(())
+					}),
 					&inputs_1,
 				)
 				.unwrap();
@@ -282,18 +276,15 @@ mod tests {
 		if !inputs_2.is_empty() {
 			witness
 				.fill_table_sequential(
-					&ClosureFiller::<OptimalUnderlier128b, B128, B128>::new(
-						looker_2_id,
-						|inputs, witness| {
-							let mut vals = witness.get_scalars_mut(looker_2_vals)?;
-							for (i, dst) in vals.iter_mut().enumerate() {
-								if i < inputs.len() {
-									*dst = *inputs[i];
-								}
+					&ClosureFiller::new(looker_2_id, |inputs, witness| {
+						let mut vals = witness.get_scalars_mut(looker_2_vals)?;
+						for (i, dst) in vals.iter_mut().enumerate() {
+							if i < inputs.len() {
+								*dst = *inputs[i];
 							}
-							Ok(())
-						},
-					),
+						}
+						Ok(())
+					}),
 					&inputs_2,
 				)
 				.unwrap();
