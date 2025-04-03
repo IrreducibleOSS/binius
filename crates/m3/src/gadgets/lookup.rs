@@ -91,9 +91,9 @@ mod tests {
 
 	// Test configurations
 	enum MultiplicityConfig {
-		Partial,    // Only use a subset of values, some will have zero multiplicity
-		Complete,   // Ensure all values are used at least once
-		None,       // No values are used (all have zero multiplicity)
+		Partial,  // Only use a subset of values, some will have zero multiplicity
+		Complete, // Ensure all values are used at least once
+		None,     // No values are used (all have zero multiplicity)
 	}
 
 	// Test utility function
