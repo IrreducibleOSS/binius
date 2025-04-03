@@ -3,7 +3,7 @@
 //! Utilities for testing M3 constraint systems and gadgets.
 
 use anyhow::Result;
-use binius_field::{underlier::UnderlierType, TowerField};
+use binius_field::{PackedField, TowerField};
 
 use crate::builder::{TableFiller, TableId, TableWitnessSegment};
 
@@ -12,16 +12,19 @@ use crate::builder::{TableFiller, TableId, TableWitnessSegment};
 /// Using this [`TableFiller`] implementation carries some overhead, so it is best to use it only
 /// for testing.
 #[allow(clippy::type_complexity)]
-pub struct ClosureFiller<'a, U: UnderlierType, F: TowerField, Event> {
+pub struct ClosureFiller<'a, P, Event>
+where
+	P: PackedField,
+	P::Scalar: TowerField,
+{
 	table_id: TableId,
-	fill:
-		Box<dyn for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<U, F>) -> Result<()> + 'a>,
+	fill: Box<dyn for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + 'a>,
 }
 
-impl<'a, U: UnderlierType, F: TowerField, Event> ClosureFiller<'a, U, F, Event> {
+impl<'a, P: PackedField<Scalar: TowerField>, Event> ClosureFiller<'a, P, Event> {
 	pub fn new(
 		table_id: TableId,
-		fill: impl for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<U, F>) -> Result<()> + 'a,
+		fill: impl for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + 'a,
 	) -> Self {
 		Self {
 			table_id,
@@ -30,8 +33,8 @@ impl<'a, U: UnderlierType, F: TowerField, Event> ClosureFiller<'a, U, F, Event> 
 	}
 }
 
-impl<U: UnderlierType, F: TowerField, Event: Clone> TableFiller<U, F>
-	for ClosureFiller<'_, U, F, Event>
+impl<P: PackedField<Scalar: TowerField>, Event: Clone> TableFiller<P>
+	for ClosureFiller<'_, P, Event>
 {
 	type Event = Event;
 
@@ -42,7 +45,7 @@ impl<U: UnderlierType, F: TowerField, Event: Clone> TableFiller<U, F>
 	fn fill<'b>(
 		&'b self,
 		rows: impl Iterator<Item = &'b Self::Event> + Clone,
-		witness: &'b mut TableWitnessSegment<U, F>,
+		witness: &'b mut TableWitnessSegment<P>,
 	) -> Result<()> {
 		(*self.fill)(&rows.collect::<Vec<_>>(), witness)
 	}
