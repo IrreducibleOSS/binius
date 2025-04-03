@@ -167,8 +167,8 @@ where
 						.take(1 << log_query_size)
 						.enumerate()
 						.map(|(query_index, basis_eval)| {
-							// The reshaped `evals` "matrix" is subdivided in chunks of size `1 << (start_index + log_query_size)`
-							// for the dot-product.
+							// The reshaped `evals` "matrix" is subdivided in chunks of size
+							// `1 << (start_index + log_query_size)` for the dot-product.
 							let offset = inner_j << (start_index + log_query_size) | inner_i;
 							let eval_index = offset + (query_index << start_index);
 							let subpoly_eval_i = get_packed_slice(evals, eval_index);
@@ -1032,7 +1032,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_lower_bits() {
+	fn test_lower_higher_bits() {
 		const LOG_EVALS_SIZE: usize = 7;
 		let mut rng = StdRng::seed_from_u64(0);
 		// We have four elements of 32 bits each. Overall, that gives us 128 bits.
@@ -1060,7 +1060,7 @@ mod tests {
 			out.set_len(out.capacity());
 		}
 
-		// Every 16 consecutive bits should be equal to the lower bits of an element.
+		// Every 16 consecutive bits in `out` should be equal to the lower bits of an element.
 		for (i, out_val) in out.iter().enumerate() {
 			let first_lower = (evals[2 * i].0 as u16) as u32;
 			let second_lower = (evals[2 * i + 1].0 as u16) as u32;
@@ -1080,6 +1080,8 @@ mod tests {
 		unsafe {
 			out.set_len(out.capacity());
 		}
+
+		// Every 16 consecutive bits in `out` should be equal to the higher bits of an element.
 		for (i, out_val) in out.iter().enumerate() {
 			let first_higher = evals[2 * i].0 >> 16;
 			let second_higher = evals[2 * i + 1].0 >> 16;

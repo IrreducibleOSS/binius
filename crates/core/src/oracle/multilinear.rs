@@ -454,6 +454,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().packed(id, log_degree)
 	}
 
+	/// Adds a projection to the variables starting at `start_index`.
 	pub fn add_projected(
 		&mut self,
 		id: OracleId,
@@ -463,6 +464,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().projected(id, values, start_index)
 	}
 
+	/// Adds a projection to the last variables.
 	pub fn add_projected_last_vars(
 		&mut self,
 		id: OracleId,

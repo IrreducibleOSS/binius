@@ -346,6 +346,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.packed(id, log_degree)
 	}
 
+	/// Adds a projection to the variables starting at `start_index`.
 	pub fn add_projected(
 		&mut self,
 		name: impl ToString,
@@ -359,6 +360,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.projected(id, values, start_index)
 	}
 
+	/// Adds a projection to the last variables.
 	pub fn add_projected_last_vars(
 		&mut self,
 		name: impl ToString,

@@ -160,7 +160,6 @@ where
 		either::for_both!(self, inner => inner.evaluate(query))
 	}
 
-	// TODO: Properly implement this method.
 	fn evaluate_partial(
 		&self,
 		query: MultilinearQueryRef<P>,
