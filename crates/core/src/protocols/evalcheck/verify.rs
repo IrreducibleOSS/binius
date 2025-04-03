@@ -162,7 +162,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				let meta = shifted_sumcheck_meta(self.oracles, &shifted, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
-					meta,
+					&meta,
 					&mut self.new_sumcheck_constraints,
 					shifted.block_size(),
 					eval,
@@ -176,7 +176,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				let meta = packed_sumcheck_meta(self.oracles, &packed, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
-					meta,
+					&meta,
 					&mut self.new_sumcheck_constraints,
 					packed.log_degree(),
 					eval,
@@ -246,7 +246,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				let meta = composite_sumcheck_meta(self.oracles, &eval_point)?;
 				add_composite_sumcheck_to_constraints(
-					meta,
+					&meta,
 					&mut self.new_sumcheck_constraints,
 					&composition,
 					eval,

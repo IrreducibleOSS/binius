@@ -7,7 +7,7 @@ mod binary_utils;
 mod strategies;
 
 cfg_if! {
-	if #[cfg(target_arch = "x86_64")] {
+	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
 		#[allow(dead_code)]
 		mod portable;
 

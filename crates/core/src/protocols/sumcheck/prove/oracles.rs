@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -119,21 +117,21 @@ where
 }
 
 /// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
-pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
+pub fn constraint_set_sumcheck_prover<'a, FW, PW, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
 	constraint_set: ConstraintSet<FW>,
-	witness: &MultilinearExtensionIndex<'a, U, FW>,
+	witness: &MultilinearExtensionIndex<'a, PW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	backend: &'a Backend,
-) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
+) -> Result<OracleSumcheckProver<'a, FDomain, PW, Backend>, Error>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
+	PW: PackedField<Scalar = FW> + PackedExtension<FDomain>,
 	FW: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
+	let (constraints, multilinears) = split_constraint_set::<FW, PW>(constraint_set, witness)?;
 
 	let mut sums = Vec::new();
 
@@ -167,14 +165,14 @@ where
 type ConstraintsAndMultilinears<'a, F, PW> = (Vec<Constraint<F>>, Vec<MultilinearWitness<'a, PW>>);
 
 #[allow(clippy::type_complexity)]
-pub fn split_constraint_set<'a, U, F, FW>(
+pub fn split_constraint_set<'a, F, PW>(
 	constraint_set: ConstraintSet<F>,
-	witness: &MultilinearExtensionIndex<'a, U, FW>,
-) -> Result<ConstraintsAndMultilinears<'a, F, PackedType<U, FW>>, Error>
+	witness: &MultilinearExtensionIndex<'a, PW>,
+) -> Result<ConstraintsAndMultilinears<'a, F, PW>, Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FW>,
 	F: Field,
-	FW: ExtensionField<F>,
+	PW: PackedField,
+	PW::Scalar: ExtensionField<F>,
 {
 	let ConstraintSet {
 		oracle_ids,
@@ -197,28 +195,28 @@ where
 	Ok((constraints, multilinears))
 }
 
-pub struct SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>
+pub struct SumcheckProversWithMetas<'a, PW, FDomain, Backend>
 where
-	U: UnderlierType + PackScalar<FW>,
-	FW: TowerField,
+	PW: PackedField,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	pub provers: Vec<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>>,
+	pub provers: Vec<OracleSumcheckProver<'a, FDomain, PW, Backend>>,
 	pub metas: Vec<OracleClaimMeta>,
 }
 
 /// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
-pub fn constraint_sets_sumcheck_provers_metas<'a, U, FW, FDomain, Backend>(
-	constraint_sets: Vec<ConstraintSet<FW>>,
-	witness: &MultilinearExtensionIndex<'a, U, FW>,
+pub fn constraint_sets_sumcheck_provers_metas<'a, PW, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
+	constraint_sets: Vec<ConstraintSet<PW::Scalar>>,
+	witness: &MultilinearExtensionIndex<'a, PW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,
 	backend: &'a Backend,
-) -> Result<SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>, Error>
+) -> Result<SumcheckProversWithMetas<'a, PW, FDomain, Backend>, Error>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
-	FW: TowerField + ExtensionField<FDomain>,
+	PW: PackedExtension<FDomain>,
+	PW::Scalar: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
@@ -228,7 +226,7 @@ where
 	for constraint_set in constraint_sets {
 		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone())?;
 		let prover = constraint_set_sumcheck_prover(
-			EvaluationOrder::LowToHigh,
+			evaluation_order,
 			constraint_set,
 			witness,
 			evaluation_domain_factory.clone(),

@@ -5,8 +5,10 @@ pub mod column;
 pub mod constraint_system;
 pub mod error;
 pub mod expr;
+mod multi_iter;
 pub mod statement;
 pub mod table;
+pub mod test_utils;
 pub mod types;
 pub mod witness;
 

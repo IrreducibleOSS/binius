@@ -9,8 +9,12 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("committed oracle {id} has too few variables, must be at least {min_vars}")]
-	OracleTooSmall { id: OracleId, min_vars: usize },
+	#[error("committed oracle {id} has too few variables; only has {n_vars}, must be at least {min_vars}")]
+	OracleTooSmall {
+		id: OracleId,
+		n_vars: usize,
+		min_vars: usize,
+	},
 	#[error("committed polynomials are not sorted in ascending order by number of variables")]
 	CommittedsNotSorted,
 	#[error("transparent polynomials are not sorted in ascending order by number of variables")]

@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::set_packed_slice, BinaryField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
+	packed::{get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked},
+	BinaryField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -11,7 +11,9 @@ use binius_math::{
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, sorting::is_sorted_ascending, SerializeBytes};
+use binius_utils::{
+	bail, checked_arithmetics::checked_log_2, sorting::is_sorted_ascending, SerializeBytes,
+};
 use either::Either;
 use itertools::{chain, Itertools};
 
@@ -38,6 +40,29 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::ProverTranscript,
 };
+
+/// Reorders the scalars in a slice of packed field elements by reversing the bits of their indices.
+/// TODO: investigate if we can optimize this.
+fn reverse_slice_index_bits<P: PackedField>(slice: &mut [P]) {
+	let log_len = checked_log_2(slice.len()) + P::LOG_WIDTH;
+	for i in 0..slice.len() << P::LOG_WIDTH {
+		let bit_reversed_index = i
+			.reverse_bits()
+			.wrapping_shr((usize::BITS as usize - log_len) as _);
+		if i < bit_reversed_index {
+			// Safety: `i` and `j` are guaranteed to be in bounds of the slice
+			unsafe {
+				let tmp = get_packed_slice_unchecked(slice, i);
+				set_packed_slice_unchecked(
+					slice,
+					i,
+					get_packed_slice_unchecked(slice, bit_reversed_index),
+				);
+				set_packed_slice_unchecked(slice, bit_reversed_index, tmp);
+			}
+		}
+	}
+}
 
 // ## Preconditions
 //
@@ -68,6 +93,7 @@ where
 	}
 	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
 		chunk.copy_from_slice(evals);
+		reverse_slice_index_bits(chunk);
 	});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
@@ -108,7 +134,7 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 where
 	F: BinaryField,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -119,6 +145,7 @@ where
 				// i is not an OracleId, but whatever, that's a problem for whoever has to debug
 				// this
 				id: i,
+				n_vars: multilin.n_vars(),
 				min_vars: multilin.log_extension_degree(),
 			});
 		}
@@ -224,7 +251,7 @@ where
 			)
 			.collect::<Vec<_>>();
 			RegularSumcheckProver::new(
-				EvaluationOrder::LowToHigh,
+				EvaluationOrder::HighToLow,
 				multilins,
 				desc.composite_sums.iter().cloned(),
 				&domain_factory,

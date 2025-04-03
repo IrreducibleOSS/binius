@@ -4,13 +4,16 @@ pub use binius_core::constraint_system::channel::{
 	Boundary, Flush as CompiledFlush, FlushDirection,
 };
 use binius_core::{
-	constraint_system::{channel::ChannelId, ConstraintSystem as CompiledConstraintSystem},
+	constraint_system::{
+		channel::{ChannelId, OracleOrConst},
+		ConstraintSystem as CompiledConstraintSystem,
+	},
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
 use binius_math::LinearNormalForm;
-use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
+use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
 
 use super::{
@@ -157,10 +160,16 @@ impl<F: TowerField> ConstraintSystem<F> {
 			tables: self
 				.tables
 				.iter()
-				.map(|table| {
-					TableWitnessIndex::new(allocator, table, statement.table_sizes[table.id])
+				.zip(&statement.table_sizes)
+				.map(|(table, &table_size)| {
+					let witness = if table_size > 0 {
+						Some(TableWitnessIndex::new(allocator, table, table_size))
+					} else {
+						None
+					};
+					witness.transpose()
 				})
-				.collect(),
+				.collect::<Result<_, _>>()?,
 		})
 	}
 
@@ -185,6 +194,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut non_zero_oracle_ids = Vec::new();
 
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
+			if count == 0 {
+				continue;
+			}
 			let mut oracle_lookup = Vec::new();
 
 			let mut transparent_single = vec![None; table.columns.len()];
@@ -198,8 +210,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 			}
 
 			// Add multilinear oracles for all table columns.
+			let log_capacity = table.log_capacity(count);
 			for column_info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let n_vars = log_capacity + column_info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(
 					&mut oracles,
 					&oracle_lookup,
@@ -222,7 +235,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					..
 				} = partition;
 
-				let n_vars = log2_ceil_usize(count) + log2_strict_usize(*values_per_row);
+				let n_vars = log_capacity + log2_strict_usize(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
@@ -238,19 +251,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 					column_indices,
 					channel_id,
 					direction,
+					multiplicity,
 					selector,
 				} in flushes
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| oracle_lookup[column_index])
+						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
 						selector: selector.unwrap_or(step_down),
-						multiplicity: 1,
+						multiplicity: *multiplicity as u64,
 					});
 				}
 

@@ -39,7 +39,7 @@ pub fn vision_permutation(
 
 	if let Some(witness) = builder.witness() {
 		let perm_in_data_owned: [_; STATE_SIZE] =
-			array::try_from_fn(|i| witness.get::<B32>(p_in[i]))?;
+			array_util::try_from_fn(|i| witness.get::<B32>(p_in[i]))?;
 		let perm_in_data: [_; STATE_SIZE] = perm_in_data_owned.map(|elem| elem.as_slice::<B32>());
 		let mut round_0_input_data: [_; STATE_SIZE] =
 			round_0_input.map(|id| witness.new_column::<B32>(id));
@@ -72,10 +72,10 @@ pub fn vision_permutation(
 
 		let vision_perm = Vision32bPermutation::default();
 		let p_in_data: [_; STATE_SIZE] =
-			array::try_from_fn(|i| witness.get::<B32>(p_in[i])).unwrap();
+			array_util::try_from_fn(|i| witness.get::<B32>(p_in[i])).unwrap();
 		let p_in_slice: [_; STATE_SIZE] = p_in_data.map(|elem| elem.as_slice::<B32>());
 		let p_out_data: [_; STATE_SIZE] =
-			array::try_from_fn(|i| witness.get::<B32>(perm_out[i])).unwrap();
+			array_util::try_from_fn(|i| witness.get::<B32>(perm_out[i])).unwrap();
 		let p_out_slice: [_; STATE_SIZE] = p_out_data.map(|elem| elem.as_slice::<B32>());
 		for z in 0..1 << log_size {
 			let mut in_out: [_; 3] = array::from_fn(|i| {
@@ -224,7 +224,7 @@ fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
 
 	// x == 0 AND inv == 0
 	// TODO: Implement `mul_primitive` expression for ArithExpr
-	let beta = <F as ExtensionField<BinaryField1b>>::basis(1 << 5)?;
+	let beta = <F as ExtensionField<BinaryField1b>>::basis_checked(1 << 5)?;
 	let zero_case = x + inv * ArithExpr::Const(beta);
 
 	// (x * inv == 1) OR (x == 0 AND inv == 0)
@@ -337,7 +337,7 @@ where {
 	// Witness gen
 	if let Some(witness) = builder.witness() {
 		let perm_in_data_owned: [_; STATE_SIZE] =
-			array::try_from_fn(|i| witness.get::<B32>(perm_in[i]))?;
+			array_util::try_from_fn(|i| witness.get::<B32>(perm_in[i]))?;
 		let perm_in_data: [_; STATE_SIZE] = perm_in_data_owned.map(|elem| elem.as_slice::<B32>());
 
 		let mut even_round_consts = even_round_consts.map(|id| witness.new_column::<B32>(id));

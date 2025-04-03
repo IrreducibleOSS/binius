@@ -89,7 +89,7 @@ pub fn collect_committed_witnesses<'a, U, F>(
 	commit_meta: &CommitMeta,
 	oracle_to_commit_index: &SparseIndex<usize>,
 	oracles: &MultilinearOracleSet<F>,
-	witness_index: &MultilinearExtensionIndex<'a, U, F>,
+	witness_index: &MultilinearExtensionIndex<'a, PackedType<U, F>>,
 ) -> Result<Vec<MultilinearWitness<'a, PackedType<U, F>>>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -116,6 +116,7 @@ fn n_packed_vars_for_committed_oracle<F: TowerField>(
 		.checked_sub(F::TOWER_LEVEL - tower_level)
 		.ok_or_else(|| Error::OracleTooSmall {
 			id: oracle.id(),
+			n_vars,
 			min_vars: F::TOWER_LEVEL - tower_level,
 		})
 }

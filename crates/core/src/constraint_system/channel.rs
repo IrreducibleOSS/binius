@@ -51,7 +51,7 @@
 
 use std::collections::HashMap;
 
-use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::{Error, VerificationError};
@@ -59,9 +59,14 @@ use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
+#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
+pub enum OracleOrConst<F: Field> {
+	Oracle(usize),
+	Const { base: F, tower_level: usize },
+}
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
-pub struct Flush {
-	pub oracles: Vec<OracleId>,
+pub struct Flush<F: TowerField> {
+	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	pub selector: OracleId,
@@ -82,14 +87,14 @@ pub enum FlushDirection {
 	Pull,
 }
 
-pub fn validate_witness<U, F>(
-	witness: &MultilinearExtensionIndex<U, F>,
-	flushes: &[Flush],
+pub fn validate_witness<F, P>(
+	witness: &MultilinearExtensionIndex<P>,
+	flushes: &[Flush<F>],
 	boundaries: &[Boundary<F>],
 	max_channel_id: ChannelId,
 ) -> Result<(), Error>
 where
-	U: UnderlierType + PackScalar<F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
@@ -128,15 +133,21 @@ where
 
 		let channel = &mut channels[channel_id];
 
-		let polys = oracles
+		//We check the variables only of OracleOrConst::Oracle variant oracles being the same.
+		let non_const_polys = oracles
 			.iter()
-			.map(|&id| witness.get_multilin_poly(id))
+			.filter_map(|&id| match id {
+				OracleOrConst::Oracle(oracle_id) => Some(witness.get_multilin_poly(oracle_id)),
+				_ => None,
+			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		// Ensure that all the polys in a single flush have the same n_vars
-		if let Some(first_poly) = polys.first() {
+		let selector_poly = witness.get_multilin_poly(selector)?;
+
+		if let Some(first_poly) = non_const_polys.first() {
+			// Ensure that all the polys in a single flush have the same n_vars
 			let n_vars = first_poly.n_vars();
-			for poly in &polys {
+			for poly in &non_const_polys {
 				if poly.n_vars() != n_vars {
 					return Err(Error::ChannelFlushNvarsMismatch {
 						expected: n_vars,
@@ -145,29 +156,43 @@ where
 				}
 			}
 
-			let selector_poly = witness.get_multilin_poly(selector)?;
 			// Check selector polynomial is compatible
 			if selector_poly.n_vars() != n_vars {
-				let id = oracles.first().copied().expect("polys is not empty");
+				let id = oracles
+					.iter()
+					.copied()
+					.filter_map(|id| match id {
+						OracleOrConst::Oracle(oracle_id) => Some(oracle_id),
+						_ => None,
+					})
+					.next()
+					.expect("non_const_polys is not empty");
 				return Err(Error::IncompatibleFlushSelector { id, selector });
 			}
+		}
 
-			for i in 0..1 << selector_poly.n_vars() {
-				if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
-					continue;
-				}
-				let values = polys
-					.iter()
-					.map(|poly| poly.evaluate_on_hypercube(i))
-					.collect::<Result<Vec<_>, _>>()?;
-				channel.flush(direction, multiplicity, values)?;
+		for i in 0..1 << selector_poly.n_vars() {
+			if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
+				continue;
 			}
+			let values = oracles
+				.iter()
+				.copied()
+				.map(|id| match id {
+					OracleOrConst::Const { base, .. } => Ok(base),
+					OracleOrConst::Oracle(oracle_id) => witness
+						.get_multilin_poly(oracle_id)
+						.expect("Witness error would have been caught while checking variables.")
+						.evaluate_on_hypercube(i),
+				})
+				.collect::<Result<Vec<_>, _>>()?;
+			channel.flush(direction, multiplicity, values)?;
 		}
 	}
 
 	for (id, channel) in channels.iter().enumerate() {
 		if !channel.is_balanced() {
-			return Err(VerificationError::ChannelUnbalanced { id }.into());
+			return Err((VerificationError::ChannelUnbalanced { id }).into());
 		}
 	}
 

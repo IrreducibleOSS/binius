@@ -5,7 +5,8 @@ use std::{marker::PhantomData, ops::Range};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
+	MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -86,7 +87,7 @@ impl<'a, F, FDomain, P, Composition, M, Backend>
 where
 	F: Field,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -209,7 +210,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let round_evals = self.state.calculate_round_evals(0, &evaluators)?;
+		let round_evals = self.state.calculate_round_evals(&evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, round_evals)
 	}
@@ -249,9 +250,9 @@ where
 		_subcube_vars: usize,
 		_subcube_index: usize,
 		is_infinity_point: bool,
-		batch_query: &[&[P]],
+		batch_query: &RowsBatchRef<P>,
 	) -> P {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
+		let row_len = batch_query.row_len();
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {

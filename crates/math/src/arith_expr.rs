@@ -145,6 +145,34 @@ impl<F: Field> ArithExpr<F> {
 		Ok(expr)
 	}
 
+	/// Substitute variable with index `var` with a constant `value`
+	pub fn const_subst(self, var: usize, value: F) -> Self {
+		match self {
+			Self::Const(_) => self,
+			Self::Var(index) => {
+				if index == var {
+					Self::Const(value)
+				} else {
+					self
+				}
+			}
+			Self::Add(left, right) => {
+				let new_left = left.const_subst(var, value);
+				let new_right = right.const_subst(var, value);
+				Self::Add(Box::new(new_left), Box::new(new_right))
+			}
+			Self::Mul(left, right) => {
+				let new_left = left.const_subst(var, value);
+				let new_right = right.const_subst(var, value);
+				Self::Mul(Box::new(new_left), Box::new(new_right))
+			}
+			Self::Pow(base, exp) => {
+				let new_base = base.const_subst(var, value);
+				Self::Pow(Box::new(new_base), exp)
+			}
+		}
+	}
+
 	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithExpr<FTgt> {
 		match self {
 			Self::Const(val) => ArithExpr::Const((*val).into()),
@@ -197,9 +225,19 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
+	/// Returns `Some(F)` if the expression is a constant.
+	pub const fn constant(&self) -> Option<F> {
+		match self {
+			Self::Const(value) => Some(*value),
+			_ => None,
+		}
+	}
+
 	/// Creates a new optimized expression.
 	///
-	/// Recursively rewrites expression for better evaluation performance.
+	/// Recursively rewrites the expression for better evaluation performance. Performs constant folding,
+	/// as well as leverages simple rewriting rules around additive/multiplicative identities and addition
+	/// in characteristic 2.
 	pub fn optimize(&self) -> Self {
 		match self {
 			Self::Const(_) | Self::Var(_) => self.clone(),
@@ -207,7 +245,17 @@ impl<F: Field> ArithExpr<F> {
 				let left = left.optimize();
 				let right = right.optimize();
 				match (left, right) {
+					// constant folding
 					(Self::Const(left), Self::Const(right)) => Self::Const(left + right),
+					// 0 + a = a + 0 = a
+					(Self::Const(left), right) if left == F::ZERO => right,
+					(left, Self::Const(right)) if right == F::ZERO => left,
+					// a + a = 0 in char 2
+					// REVIEW: relies on precise structural equality, find a better way
+					(left, right) if left == right && F::CHARACTERISTIC == 2 => {
+						Self::Const(F::ZERO)
+					}
+					// fallback
 					(left, right) => Self::Add(Box::new(left), Box::new(right)),
 				}
 			}
@@ -215,7 +263,18 @@ impl<F: Field> ArithExpr<F> {
 				let left = left.optimize();
 				let right = right.optimize();
 				match (left, right) {
+					// constant folding
 					(Self::Const(left), Self::Const(right)) => Self::Const(left * right),
+					// 0 * a = a * 0 = 0
+					(left, right)
+						if left == Self::Const(F::ZERO) || right == Self::Const(F::ZERO) =>
+					{
+						Self::Const(F::ZERO)
+					}
+					// 1 * a = a * 1 = a
+					(Self::Const(left), right) if left == F::ONE => right,
+					(left, Self::Const(right)) if right == F::ONE => left,
+					// fallback
 					(left, right) => Self::Mul(Box::new(left), Box::new(right)),
 				}
 			}
@@ -449,6 +508,32 @@ mod tests {
 
 		let expected = ((ArithExpr::Var(5) + ArithExpr::Const(F::ONE)) * ArithExpr::Var(3)).pow(3);
 		assert_eq!(new_expr.unwrap(), expected);
+	}
+
+	#[test]
+	fn test_optimize_identity_handling() {
+		type F = BinaryField8b;
+		let zero = ArithExpr::<F>::zero();
+		let one = ArithExpr::<F>::one();
+
+		assert_eq!((zero.clone() * ArithExpr::<F>::Var(0)).optimize(), zero);
+		assert_eq!((ArithExpr::<F>::Var(0) * zero.clone()).optimize(), zero);
+
+		assert_eq!((ArithExpr::<F>::Var(0) * one.clone()).optimize(), ArithExpr::Var(0));
+		assert_eq!((one * ArithExpr::<F>::Var(0)).optimize(), ArithExpr::Var(0));
+
+		assert_eq!((ArithExpr::<F>::Var(0) + zero.clone()).optimize(), ArithExpr::Var(0));
+		assert_eq!((zero.clone() + ArithExpr::<F>::Var(0)).optimize(), ArithExpr::Var(0));
+
+		assert_eq!((ArithExpr::<F>::Var(0) + ArithExpr::Var(0)).optimize(), zero);
+	}
+
+	#[test]
+	fn test_const_subst_and_optimize() {
+		// NB: this is FlushSumcheckComposition from the constraint_system
+		type F = BinaryField8b;
+		let expr = ArithExpr::Var(0) * ArithExpr::Var(1) + ArithExpr::one() - ArithExpr::Var(1);
+		assert_eq!(expr.const_subst(1, F::ZERO).optimize().constant(), Some(F::ONE));
 	}
 
 	#[test]

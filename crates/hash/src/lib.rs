@@ -14,13 +14,12 @@
 //! [Vision Mark-32]: <https://eprint.iacr.org/2024/633>
 
 #![cfg_attr(
-	all(target_arch = "x86_64", not(feature = "stable_only")),
+	all(target_arch = "x86_64", feature = "nightly_features"),
 	feature(stdarch_x86_avx512)
 )]
 
 pub mod compression;
 pub mod groestl;
-pub mod hasher;
 pub mod multi_digest;
 pub mod permutation;
 mod serialization;
@@ -28,6 +27,5 @@ pub mod sha2;
 mod vision;
 
 pub use compression::*;
-pub use hasher::*;
 pub use serialization::*;
 pub use vision::*;

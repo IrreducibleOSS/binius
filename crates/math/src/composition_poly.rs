@@ -7,7 +7,7 @@ use binius_field::PackedField;
 use binius_utils::bail;
 use stackalloc::stackalloc_with_default;
 
-use crate::{ArithExpr, Error};
+use crate::{ArithExpr, Error, RowsBatchRef};
 
 /// A multivariate polynomial that is used as a composition of several multilinear polynomials.
 #[auto_impl(Arc, &)]
@@ -46,21 +46,18 @@ where
 	/// - no crosstalk between evaluations
 	///
 	/// This method has a default implementation.
-	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
+	fn batch_evaluate(&self, batch_query: &RowsBatchRef<P>, evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		for (i, row) in batch_query.iter().enumerate() {
-			if row.len() != row_len {
-				bail!(Error::BatchEvaluateSizeMismatch {
-					index: i,
-					expected: row_len,
-					actual: row.len(),
-				});
-			}
+		if batch_query.row_len() != row_len {
+			bail!(Error::BatchEvaluateSizeMismatch {
+				expected: row_len,
+				actual: batch_query.row_len(),
+			});
 		}
 
-		stackalloc_with_default(batch_query.len(), |query| {
+		stackalloc_with_default(batch_query.n_rows(), |query| {
 			for (column, eval) in evals.iter_mut().enumerate() {
-				for (query_elem, batch_query_row) in query.iter_mut().zip(batch_query) {
+				for (query_elem, batch_query_row) in query.iter_mut().zip(batch_query.iter()) {
 					*query_elem = batch_query_row[column];
 				}
 

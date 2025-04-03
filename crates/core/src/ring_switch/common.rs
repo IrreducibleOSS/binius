@@ -193,5 +193,6 @@ fn group_claims_by_eval_point<F: TowerField>(
 			});
 		claim_to_suffix_index.push(suffix_id);
 	}
+
 	Ok((prefix_descs, claim_to_prefix_index, suffix_descs, claim_to_suffix_index))
 }

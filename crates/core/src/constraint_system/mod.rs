@@ -30,7 +30,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub oracles: MultilinearOracleSet<F>,
 	pub table_constraints: Vec<ConstraintSet<F>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
-	pub flushes: Vec<Flush>,
+	pub flushes: Vec<Flush<F>>,
 	pub exponents: Vec<Exp<F>>,
 	pub max_channel_id: ChannelId,
 }

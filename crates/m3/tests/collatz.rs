@@ -114,8 +114,8 @@ mod arithmetization {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
-			B128, B32,
+			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128,
+			B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -177,7 +177,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&'a self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessIndexSegment<U>,
+			witness: &'a mut TableWitnessSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			let mut even = witness.get_mut_as(self.even)?;
 			let mut even_lsb = witness.get_mut(self.even_lsb)?;
@@ -270,7 +270,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessIndexSegment<U>,
+			witness: &'a mut TableWitnessSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			{
 				let mut odd = witness.get_mut_as(self.odd)?;
@@ -293,7 +293,7 @@ mod arithmetization {
 
 	pub struct Instance<'a> {
 		pub statement: Statement,
-		pub witness: MultilinearExtensionIndex<'a, OptimalUnderlier128b, B128>,
+		pub witness: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier128b, B128>>,
 		pub constraint_system: binius_core::constraint_system::ConstraintSystem<B128>,
 	}
 
@@ -336,7 +336,7 @@ mod arithmetization {
 
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
-			witness: witness.into_multilinear_extension_index(&statement),
+			witness: witness.into_multilinear_extension_index(),
 			statement,
 		}
 	}
@@ -371,7 +371,7 @@ mod arithmetization {
 		const SECURITY_BITS: usize = 100;
 
 		let proof = binius_core::constraint_system::prove::<
-			_,
+			OptimalUnderlier128b,
 			CanonicalTowerFamily,
 			Groestl256,
 			Groestl256ByteCompression,

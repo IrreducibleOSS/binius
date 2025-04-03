@@ -35,7 +35,7 @@ impl ToTokens for CompositionPolyItem {
 		subst_vars(
 			&mut eval_batch,
 			vars,
-			&|i| parse_quote!(unsafe {*batch_query.get_unchecked(#i).get_unchecked(row)}),
+			&|i| parse_quote!(unsafe {*batch_query.rows().get_unchecked(#i).get_unchecked(row)}),
 		)
 		.expect("Failed to substitute vars");
 
@@ -72,25 +72,14 @@ impl ToTokens for CompositionPolyItem {
 
 				fn batch_evaluate(
 					&self,
-					batch_query: &[&[P]],
+					batch_query: &binius_math::RowsBatchRef<P>,
 					evals: &mut [P],
 				) -> Result<(), binius_math::Error> {
-					if batch_query.len() != #n_vars {
+					if batch_query.row_len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 
-					let row_len = evals.len();
-					for (i, row) in batch_query.iter().enumerate() {
-						if row.len() != row_len {
-							return Err(binius_math::Error::BatchEvaluateSizeMismatch {
-								index: i,
-								expected: row_len,
-								actual: row.len(),
-							});
-						}
-					}
-
-					for row in 0..batch_query[0].len() {
+					for row in 0..batch_query.rows()[0].len() {
 						evals[row] = #eval_batch;
 					}
 

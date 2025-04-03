@@ -4,7 +4,7 @@ use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar, Field};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B64,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B64,
 };
 use bumpalo::Bump;
 use bytemuck::Pod;
@@ -61,21 +61,21 @@ where
 
 	fn fill<'a>(
 		&'a self,
-		mut rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessIndexSegment<U>,
+		rows: impl Iterator<Item = &'a Self::Event>,
+		witness: &'a mut TableWitnessSegment<U>,
 	) -> Result<(), anyhow::Error> {
 		let mut committed_1 = witness.get_mut_as(self.committed_1)?;
 		let mut committed_2 = witness.get_mut_as(self.committed_2)?;
 		let mut computed = witness.get_mut_as(self.computed)?;
 
-		let &(com1, com2) = rows.next().unwrap();
-		assert!(rows.next().is_none());
-
-		for i in 0..VALUES_PER_ROW {
-			committed_1[i] = com1;
-			committed_2[i] = com2;
-			computed[i] = (B128::from(com1) + B128::from(com2)) * B128::from(com1) * B128::from(10)
-				+ B128::ONE;
+		for (i, &(com1, com2)) in rows.enumerate() {
+			for j in 0..VALUES_PER_ROW {
+				committed_1[i * VALUES_PER_ROW + j] = com1;
+				committed_2[i * VALUES_PER_ROW + j] = com2;
+				computed[i * VALUES_PER_ROW + j] =
+					(B128::from(com1) + B128::from(com2)) * B128::from(com1) * B128::from(10)
+						+ B128::ONE;
+			}
 		}
 		Ok(())
 	}
@@ -103,7 +103,7 @@ fn test_m3_computed_col() {
 		.unwrap();
 
 	let constraint_system = cs.compile(&statement).unwrap();
-	let witness = witness.into_multilinear_extension_index(&statement);
+	let witness = witness.into_multilinear_extension_index();
 
 	binius_core::constraint_system::validate::validate_witness(
 		&constraint_system,
@@ -113,7 +113,7 @@ fn test_m3_computed_col() {
 	.unwrap();
 
 	let proof = binius_core::constraint_system::prove::<
-		_,
+		OptimalUnderlier128b,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

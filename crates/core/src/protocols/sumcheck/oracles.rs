@@ -3,6 +3,7 @@
 use std::iter;
 
 use binius_field::{Field, PackedField, TowerField};
+use binius_math::EvaluationOrder;
 use binius_utils::bail;
 
 use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
@@ -94,6 +95,7 @@ fn split_constraint_set<F: Field>(
 
 /// Constructs evalcheck claims from metadata returned by constraint set claim constructors.
 pub fn make_eval_claims<F: TowerField>(
+	evaluation_order: EvaluationOrder,
 	metas: impl IntoIterator<Item = OracleClaimMeta>,
 	batch_sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
@@ -115,7 +117,11 @@ pub fn make_eval_claims<F: TowerField>(
 		}
 
 		for (oracle_id, eval) in iter::zip(meta.oracle_ids, prover_evals) {
-			let eval_point = batch_sumcheck_output.challenges[max_n_vars - meta.n_vars..].to_vec();
+			let eval_points_range = match evaluation_order {
+				EvaluationOrder::LowToHigh => max_n_vars - meta.n_vars..max_n_vars,
+				EvaluationOrder::HighToLow => 0..meta.n_vars,
+			};
+			let eval_point = batch_sumcheck_output.challenges[eval_points_range].to_vec();
 
 			let claim = EvalcheckMultilinearClaim {
 				id: oracle_id,
