@@ -3,8 +3,8 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	util::powers, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	PackedSubfield, TowerField,
+	packed::copy_packed_from_scalars_slice, util::powers, ExtensionField, Field, PackedExtension,
+	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -384,8 +384,10 @@ where
 		//         be a dedicated method for this someday.
 		let mut packed_subcube_lagrange_coeffs =
 			zeroed_vec::<P>(1 << skip_rounds.saturating_sub(P::LOG_WIDTH));
-		P::unpack_scalars_mut(&mut packed_subcube_lagrange_coeffs)[..1 << skip_rounds]
-			.copy_from_slice(&subcube_lagrange_coeffs);
+		copy_packed_from_scalars_slice(
+			&subcube_lagrange_coeffs[..1 << skip_rounds],
+			&mut packed_subcube_lagrange_coeffs,
+		);
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
