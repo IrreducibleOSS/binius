@@ -106,10 +106,8 @@ mod arithmetization {
 		witness::MultilinearExtensionIndex,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b,
-		as_packed_field::{PackScalar, PackedType},
-		underlier::{SmallU, UnderlierType},
-		Field, PackedField,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU, Field,
+		PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
 	};
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
@@ -120,7 +118,6 @@ mod arithmetization {
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
-	use bytemuck::Pod;
 
 	use super::model;
 
@@ -164,9 +161,9 @@ mod arithmetization {
 		}
 	}
 
-	impl<U> TableFiller<U> for EvensTable
+	impl<P> TableFiller<P> for EvensTable
 	where
-		U: Pod + PackScalar<B1>,
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
 		type Event = model::EvensEvent;
 
@@ -177,7 +174,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&'a self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<U>,
+			witness: &'a mut TableWitnessSegment<P>,
 		) -> Result<(), anyhow::Error> {
 			let mut even = witness.get_mut_as(self.even)?;
 			let mut even_lsb = witness.get_mut(self.even_lsb)?;
@@ -188,7 +185,7 @@ mod arithmetization {
 				half[i] = event.val >> 1;
 			}
 
-			even_lsb.fill(<PackedType<U, B1>>::zero());
+			even_lsb.fill(<PackedSubfield<P, B1>>::zero());
 
 			Ok(())
 		}
@@ -257,9 +254,9 @@ mod arithmetization {
 		std::array::from_fn(|i| B1::new(SmallU::new(((bits >> i) & 1) as u8)))
 	}
 
-	impl<U: UnderlierType> TableFiller<U> for OddsTable
+	impl<P> TableFiller<P> for OddsTable
 	where
-		U: Pod + PackScalar<B1>,
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
 		type Event = model::OddsEvent;
 
@@ -270,7 +267,7 @@ mod arithmetization {
 		fn fill<'a>(
 			&self,
 			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<U>,
+			witness: &'a mut TableWitnessSegment<P>,
 		) -> Result<(), anyhow::Error> {
 			{
 				let mut odd = witness.get_mut_as(self.odd)?;
@@ -284,7 +281,7 @@ mod arithmetization {
 					carry_bit[i] = 1u32;
 				}
 
-				odd_lsb.fill(<PackedType<U, B1>>::one());
+				odd_lsb.fill(<PackedSubfield<P, B1>>::one());
 			}
 			self.triple_plus_one.populate(witness)?;
 			Ok(())
@@ -325,7 +322,7 @@ mod arithmetization {
 			table_sizes: vec![trace.evens.len(), trace.odds.len()],
 		};
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator, &statement)
 			.unwrap();
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)
