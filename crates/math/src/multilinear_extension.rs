@@ -203,6 +203,7 @@ where
 		} else if start_index + query.n_vars() >= self.mu {
 			return self.evaluate_partial_high(query);
 		}
+
 		if self.mu < query.n_vars() {
 			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
@@ -218,7 +219,7 @@ where
 			query.n_vars(),
 			start_index,
 			result_evals.spare_capacity_mut(),
-		);
+		)?;
 
 		MultilinearExtension::new(new_n_vars, result_evals)
 	}

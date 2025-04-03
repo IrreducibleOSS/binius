@@ -132,10 +132,19 @@ pub fn fold_middle<P, PE>(
 	log_query_size: usize,
 	start_index: usize,
 	out: &mut [MaybeUninit<PE>],
-) where
+) -> Result<(), Error>
+where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
+	check_fold_arguments(evals, log_evals_size, query, log_query_size, out)?;
+
+	if log_evals_size < log_query_size + start_index {
+		bail!(Error::IncorrectStartIndex {
+			expected: log_evals_size
+		});
+	}
+
 	let lower_indices_size = 1 << start_index;
 	let new_n_vars = log_evals_size - log_query_size;
 
@@ -170,6 +179,8 @@ pub fn fold_middle<P, PE>(
 			}
 			out_val.write(res);
 		});
+
+	Ok(())
 }
 
 #[inline]
@@ -1043,7 +1054,8 @@ mod tests {
 			(1 << (LOG_EVALS_SIZE - log_query_size)) / PackedBinaryField32x1b::WIDTH
 		];
 		out.clear();
-		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut());
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
 		unsafe {
 			out.set_len(out.capacity());
 		}
@@ -1063,7 +1075,8 @@ mod tests {
 		)];
 
 		out.clear();
-		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut());
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
 		unsafe {
 			out.set_len(out.capacity());
 		}
