@@ -2,10 +2,10 @@
 
 pub mod add_with_carry;
 pub mod and;
+pub mod boolean;
 pub mod constant;
 pub mod disjoint_product;
 pub mod eq_ind;
-pub mod boolean;
 pub mod multilinear_extension;
 pub mod powers;
 pub mod select_row;
