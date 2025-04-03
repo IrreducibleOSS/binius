@@ -12,7 +12,7 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::instrument;
 
-use crate::{fold::fold_left, fold_right, Error, MultilinearQueryRef, PackingDeref};
+use crate::{fold::fold_left, fold_middle, fold_right, Error, MultilinearQueryRef, PackingDeref};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -198,27 +198,27 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let query = query.into();
-
 		if start_index == 0 {
 			return self.evaluate_partial_low(query);
-		} else if start_index + query.n_vars() == self.mu {
+		} else if start_index + query.n_vars() >= self.mu {
 			return self.evaluate_partial_high(query);
 		}
+		if self.mu < query.n_vars() {
+			bail!(Error::IncorrectQuerySize { expected: self.mu });
+		}
 
-		let new_n_vars = self.mu.saturating_sub(query.n_vars());
+		let new_n_vars = self.mu - query.n_vars();
 		let result_evals_len = 1 << (new_n_vars.saturating_sub(PE::LOG_WIDTH));
 		let mut result_evals = Vec::with_capacity(result_evals_len);
 
-		fold_left(
+		fold_middle(
 			self.evals(),
 			self.mu,
 			query.expansion(),
 			query.n_vars(),
+			start_index,
 			result_evals.spare_capacity_mut(),
-		)?;
-		unsafe {
-			result_evals.set_len(result_evals_len);
-		}
+		);
 
 		MultilinearExtension::new(new_n_vars, result_evals)
 	}

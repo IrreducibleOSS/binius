@@ -29,7 +29,7 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
 		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, OracleId, Packed, ProjectionVariant, Shifted,
+		MultilinearOracleSet, OracleId, Packed, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -238,11 +238,8 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	let inner = oracles.oracle(inner_id);
 
 	let (projected_eval_point, projected_id) = if projected_n_vars < inner.n_vars() {
-		let projected_id = oracles.add_projected(
-			inner_id,
-			eval_point[projected_n_vars..].to_vec(),
-			ProjectionVariant::LastVars,
-		)?;
+		let projected_id =
+			oracles.add_projected_last_vars(inner_id, eval_point[projected_n_vars..].to_vec())?;
 
 		(&eval_point[..projected_n_vars], Some(projected_id))
 	} else {

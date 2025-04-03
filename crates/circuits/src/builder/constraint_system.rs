@@ -10,8 +10,7 @@ use binius_core::{
 		ConstraintSystem,
 	},
 	oracle::{
-		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
-		ProjectionVariant, ShiftVariant,
+		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId, ShiftVariant,
 	},
 	polynomial::MultivariatePoly,
 	transparent::step_down::StepDown,
@@ -329,12 +328,24 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		id: OracleId,
 		values: Vec<F>,
-		variant: ProjectionVariant,
+		start_index: usize,
 	) -> Result<usize, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.projected(id, values, variant)
+			.projected(id, values, start_index)
+	}
+
+	pub fn add_projected_last_vars(
+		&mut self,
+		name: impl ToString,
+		id: OracleId,
+		values: Vec<F>,
+	) -> Result<usize, OracleError> {
+		self.oracles
+			.borrow_mut()
+			.add_named(self.scoped_name(name))
+			.projected_last_vars(id, values)
 	}
 
 	pub fn add_repeating(

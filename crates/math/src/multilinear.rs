@@ -166,7 +166,7 @@ where
 		query: MultilinearQueryRef<P>,
 		start_index: usize,
 	) -> Result<MultilinearExtension<P>, Error> {
-		either::for_both!(self, inner => inner.evaluate_partial_low(query))
+		either::for_both!(self, inner => inner.evaluate_partial(query, start_index))
 	}
 
 	fn evaluate_partial_low(

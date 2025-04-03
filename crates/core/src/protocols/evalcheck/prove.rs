@@ -24,7 +24,7 @@ use super::{
 use crate::{
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyOracle, MultilinearPolyVariant, OracleId, ProjectionVariant,
+		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
 	},
 	protocols::evalcheck::subclaims::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
@@ -342,15 +342,12 @@ where
 
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => {
-						values.iter().copied().chain(eval_point.to_vec()).collect()
-					}
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {
@@ -424,18 +421,14 @@ where
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => values
-						.iter()
-						.copied()
-						.chain((*eval_point).to_vec())
-						.collect(),
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
+
 				self.finalized_proofs
 					.get(id, &new_eval_point)
 					.map(|(_, subproof)| subproof.clone())
@@ -515,15 +508,12 @@ where
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => {
-						values.iter().copied().chain(eval_point.to_vec()).collect()
-					}
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {

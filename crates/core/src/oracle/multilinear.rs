@@ -189,6 +189,37 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
+	pub fn projected_last_vars(
+		self,
+		inner_id: OracleId,
+		values: Vec<F>,
+	) -> Result<OracleId, Error> {
+		let inner_n_vars = self.mut_ref.n_vars(inner_id);
+		let start_index = inner_n_vars - values.len();
+		let values_len = values.len();
+		if values_len > inner_n_vars {
+			bail!(Error::InvalidProjection {
+				n_vars: inner_n_vars,
+				values_len,
+			});
+		}
+
+		let inner = self.mut_ref.get_from_set(inner_id);
+		// TODO: This is wrong, should be F::TOWER_LEVEL
+		let tower_level = inner.binary_tower_level();
+		let projected = Projected::new(&inner, values, start_index)?;
+
+		let oracle = |id: OracleId| MultilinearPolyOracle {
+			id,
+			n_vars: inner_n_vars - values_len,
+			tower_level,
+			name: self.name,
+			variant: MultilinearPolyVariant::Projected(projected),
+		};
+
+		Ok(self.mut_ref.add_to_set(oracle))
+	}
+
 	pub fn linear_combination(
 		self,
 		n_vars: usize,
@@ -429,6 +460,14 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		start_index: usize,
 	) -> Result<OracleId, Error> {
 		self.add().projected(id, values, start_index)
+	}
+
+	pub fn add_projected_last_vars(
+		&mut self,
+		id: OracleId,
+		values: Vec<F>,
+	) -> Result<OracleId, Error> {
+		self.add().projected_last_vars(id, values)
 	}
 
 	pub fn add_linear_combination(
