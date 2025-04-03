@@ -170,7 +170,7 @@ where
 		reorder_for_flushing_by_n_vars(
 			&oracles,
 			&flush_oracle_ids,
-			flush_selectors,
+			&flush_selectors,
 			flush_final_layer_claims,
 		);
 
@@ -544,7 +544,7 @@ pub struct FlushSumcheckMeta<F: TowerField> {
 pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: &[OracleId],
-	flush_selectors: &[OracleId],
+	flush_selectors: &[Option<OracleId>],
 	final_layer_claims: &[LayerClaim<F>],
 ) -> Result<Vec<FlushSumcheckMeta<F>>, Error> {
 	let total_flushes = flush_oracle_ids.len();
@@ -742,12 +742,12 @@ pub fn get_flush_dedup_eq_ind_sumcheck_claims<F: TowerField>(
 pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: &[OracleId],
-	flush_selectors: Vec<OracleId>,
+	flush_selectors: &[Option<OracleId>],
 	flush_final_layer_claims: Vec<LayerClaim<F>>,
-) -> (Vec<OracleId>, Vec<usize>, Vec<LayerClaim<F>>) {
+) -> (Vec<OracleId>, Vec<Option<OracleId>>, Vec<LayerClaim<F>>) {
 	let mut zipped: Vec<_> =
 		izip!(flush_oracle_ids.iter().copied(), flush_selectors, flush_final_layer_claims)
 			.collect();
-	zipped.sort_by_key(|&(id, flush_selector, _)| Reverse((oracles.n_vars(id), flush_selector)));
+	zipped.sort_by_key(|&(id, flush_selector, _)| Reverse(oracles.n_vars(id)));
 	multiunzip(zipped)
 }

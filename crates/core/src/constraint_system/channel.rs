@@ -53,6 +53,7 @@ use std::collections::HashMap;
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
+use binius_math::MultilinearPoly;
 
 use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
@@ -69,7 +70,7 @@ pub struct Flush<F: TowerField> {
 	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
-	pub selector: OracleId,
+	pub selector: Option<OracleId>,
 	pub multiplicity: u64,
 }
 
@@ -133,7 +134,7 @@ where
 
 		let channel = &mut channels[channel_id];
 
-		//We check the variables only of OracleOrConst::Oracle variant oracles being the same.
+		// We check the variables only of OracleOrConst::Oracle variant oracles being the same.
 		let non_const_polys = oracles
 			.iter()
 			.filter_map(|&id| match id {
@@ -142,21 +143,27 @@ where
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		let selector_poly = witness.get_multilin_poly(selector)?;
+		let selector_poly = selector
+			.map(|selector| witness.get_multilin_poly(selector))
+			.transpose()?;
 
-		if let Some(first_poly) = non_const_polys.first() {
-			// Ensure that all the polys in a single flush have the same n_vars
-			let n_vars = first_poly.n_vars();
-			for poly in &non_const_polys {
-				if poly.n_vars() != n_vars {
-					return Err(Error::ChannelFlushNvarsMismatch {
-						expected: n_vars,
-						got: poly.n_vars(),
-					});
-				}
+		let n_vars = non_const_polys
+			.first()
+			.map(|poly| poly.n_vars())
+			.unwrap_or(0);
+
+		// Ensure that all the polys in a single flush have the same n_vars
+		for poly in &non_const_polys {
+			if poly.n_vars() != n_vars {
+				return Err(Error::ChannelFlushNvarsMismatch {
+					expected: n_vars,
+					got: poly.n_vars(),
+				});
 			}
+		}
 
-			// Check selector polynomial is compatible
+		// Check selector polynomials are compatible
+		if let (Some(selector), Some(selector_poly)) = (selector, &selector_poly) {
 			if selector_poly.n_vars() != n_vars {
 				let id = oracles
 					.iter()
@@ -171,10 +178,22 @@ where
 			}
 		}
 
-		for i in 0..1 << selector_poly.n_vars() {
-			if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
+		for i in 0..1 << n_vars {
+			let selector_off = selector_poly
+				.map(|selector_poly| {
+					selector_poly
+						.evaluate_on_hypercube(i)
+						.expect(
+							"i in range 0..1 << n_vars; \
+							selector_poly checked above to have n_vars variables",
+						)
+						.is_zero()
+				})
+				.unwrap_or(false);
+			if selector_off {
 				continue;
 			}
+
 			let values = oracles
 				.iter()
 				.copied()
