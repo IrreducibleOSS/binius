@@ -200,6 +200,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
+			if table.po2_sized && !count.is_power_of_two() {
+				return Err(Error::TableSizePowerOfTwoRequired {
+					table_id: table.id,
+					size: count,
+				});
+			}
+
 			let mut oracle_lookup = Vec::new();
 
 			let mut transparent_single = vec![None; table.columns.len()];
