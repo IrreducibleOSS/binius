@@ -347,7 +347,7 @@ where
 				let new_eval_point = {
 					let idx = projected.start_index();
 					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(values.clone());
 					new_eval_point.extend(eval_point[idx..].to_vec());
 					new_eval_point
 				};
@@ -426,7 +426,7 @@ where
 				let new_eval_point = {
 					let idx = projected.start_index();
 					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(values.clone());
 					new_eval_point.extend(eval_point[idx..].to_vec());
 					new_eval_point
 				};
@@ -513,7 +513,7 @@ where
 				let new_eval_point = {
 					let idx = projected.start_index();
 					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.to_vec());
+					new_eval_point.extend(values.clone());
 					new_eval_point.extend(eval_point[idx..].to_vec());
 					new_eval_point
 				};
