@@ -183,11 +183,7 @@ where
 		}
 	}
 
-	#[instrument(
-		"MultilinearExtension::evaluate_partial_high",
-		skip_all,
-		level = "debug"
-	)]
+	#[instrument("MultilinearExtension::evaluate_partial", skip_all, level = "debug")]
 	pub fn evaluate_partial<'a, PE>(
 		&self,
 		query: impl Into<MultilinearQueryRef<'a, PE>>,

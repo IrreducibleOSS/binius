@@ -977,7 +977,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessSegment<'a, U, F> {
 
 	fn get_col_data_by_oracle_offset(&self, oracle_id: OracleId) -> Option<&RefCell<&'a mut [U]>> {
 		match self.cols.get(oracle_id) {
-			Some(RefCellData::Owned(data)) => Some(&data),
+			Some(RefCellData::Owned(data)) => Some(data),
 			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
@@ -999,7 +999,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 	/// * the number of elements in `rows` must equal `witness.size()`
 	fn fill<'a>(
 		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone + Clone,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
 		witness: &'a mut TableWitnessSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
