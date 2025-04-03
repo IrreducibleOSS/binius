@@ -68,8 +68,8 @@ mod tests {
 		let index = rng.gen_range(0..1 << n_vars);
 		let query = int_to_query(index, n_vars);
 
-		let hypercube = Boolean::new(n_vars);
-		let result = and.evaluate(&query).unwrap();
+		let boolean = Boolean::new(n_vars);
+		let result = boolean.evaluate(&query).unwrap();
 
 		assert_eq!(index, result.val())
 	}
