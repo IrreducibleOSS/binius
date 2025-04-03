@@ -191,7 +191,7 @@ where
 		make_fast_masked_flush_witnesses(&oracles, &witness, &non_zero_oracle_ids, None)?;
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
-		.map(GrandProductWitness::new)
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let non_zero_products =
@@ -237,7 +237,7 @@ where
 	// This is important to do in parallel.
 	let flush_prodcheck_witnesses = flush_witnesses
 		.into_par_iter()
-		.map(GrandProductWitness::new)
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
 
@@ -625,7 +625,7 @@ fn make_fast_masked_flush_witnesses<'a, U, Tower>(
 	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	flush_oracles: &[OracleId],
 	flush_selectors: Option<&[OracleId]>,
-) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
+) -> Result<Vec<(usize, Vec<PackedType<U, FFastExt<Tower>>>)>, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
@@ -701,9 +701,7 @@ where
 					}
 				});
 
-			let masked_poly = MultilinearExtension::new(n_vars, fast_ext_result)
-				.expect("data is constructed with the correct length with respect to n_vars");
-			Ok(MLEDirectAdapter::from(masked_poly).upcast_arc_dyn())
+			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
 }

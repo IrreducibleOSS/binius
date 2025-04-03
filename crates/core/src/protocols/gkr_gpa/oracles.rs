@@ -2,11 +2,7 @@
 
 use std::iter;
 
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	Field, PackedField, TowerField,
-};
+use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
 use tracing::instrument;
 
@@ -14,27 +10,7 @@ use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::evalcheck::EvalcheckMultilinearClaim,
-	witness::MultilinearExtensionIndex,
 };
-
-#[instrument(skip_all, level = "debug")]
-pub fn construct_grand_product_witnesses<U, F>(
-	ids: &[OracleId],
-	witness_index: &MultilinearExtensionIndex<U, F>,
-) -> Result<Vec<GrandProductWitness<PackedType<U, F>>>, Error>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: Field,
-{
-	ids.iter()
-		.map(|id| {
-			witness_index
-				.get_multilin_poly(*id)
-				.map_err(|e| e.into())
-				.and_then(GrandProductWitness::new)
-		})
-		.collect::<Result<Vec<_>, _>>()
-}
 
 pub fn get_grand_products_from_witnesses<PW, F>(witnesses: &[GrandProductWitness<PW>]) -> Vec<F>
 where
