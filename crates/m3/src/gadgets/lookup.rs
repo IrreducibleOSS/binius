@@ -172,11 +172,6 @@ mod tests {
 			MultiplicityConfig::None => 0, // Use no entries
 		};
 
-		// For all non-zero case, initialize all counts to 1
-		if matches!(multiplicity, MultiplicityConfig::Complete) {
-			counts.iter_mut().for_each(|count| *count = 1);
-		}
-
 		// Generate inputs for lookers
 		let (inputs_1, inputs_2) = if matches!(multiplicity, MultiplicityConfig::None) {
 			// For AllZero case, use empty vectors - no lookups performed
