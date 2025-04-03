@@ -358,6 +358,10 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedField>(
 	}
 }
 
+/// This is a variation of the previous function for the case when block_size <= P::LOG_WIDTH,
+/// i.e. all the changes are applied within the first packed element.
+// Supress lippy warning as applying it makes the code less readable.
+#[allow(clippy::needless_range_loop)]
 fn partial_evaluate_hypercube_with_buffers_within_packed<P: PackedField>(
 	block_size: usize,
 	shift_offset: usize,

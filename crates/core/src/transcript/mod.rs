@@ -366,7 +366,7 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 
 	pub fn write_scalar_iter<F: TowerField>(&mut self, it: impl IntoIterator<Item = F>) {
 		self.proof_size_event_wrapper(move |buffer| {
-			for elem in it.into_iter() {
+			for elem in it {
 				SerializeBytes::serialize(&elem, &mut *buffer, SerializationMode::CanonicalTower)
 					.expect("TODO: propagate error");
 			}

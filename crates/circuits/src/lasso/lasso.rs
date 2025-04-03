@@ -114,11 +114,10 @@ where
 			for i in 0..packed_lookups {
 				let offset = i << PackedType::<U, FC>::LOG_WIDTH;
 
-				for j in 0..PackedType::<U, FC>::WIDTH {
+				for (j, scalar) in scalars.iter_mut().enumerate() {
 					let index = u_to_t_mapping.as_ref()[offset + j];
-					scalars[j] = get_packed_slice(lookup_f, index);
-					scalars[j] *= alpha;
-					set_packed_slice(lookup_f, index, scalars[j]);
+					*scalar = get_packed_slice(lookup_f, index) * alpha;
+					set_packed_slice(lookup_f, index, *scalar);
 				}
 
 				let ts_by_alpha = PackedField::from_scalars(scalars.iter().copied());

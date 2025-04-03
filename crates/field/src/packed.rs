@@ -340,12 +340,12 @@ pub fn get_packed_slice_checked<P: PackedField>(
 ) -> Result<P::Scalar, Error> {
 	if i >> P::LOG_WIDTH < packed.len() {
 		// Safety: `i` is guaranteed to be less than `len_packed_slice(packed)`
-		return Ok(unsafe { get_packed_slice_unchecked(packed, i) });
+		Ok(unsafe { get_packed_slice_unchecked(packed, i) })
 	} else {
-		return Err(Error::IndexOutOfRange {
+		Err(Error::IndexOutOfRange {
 			index: i,
 			max: len_packed_slice(packed),
-		});
+		})
 	}
 }
 
@@ -365,7 +365,6 @@ pub unsafe fn set_packed_slice_unchecked<P: PackedField>(
 		unsafe {
 			*(packed.as_mut_ptr() as *mut P::Scalar).add(i) = scalar;
 		}
-		return;
 	} else {
 		// Safety: if `i` is less than `len_packed_slice(packed)`, then
 		// - `i / P::WIDTH` is within the bounds of `packed`
@@ -394,12 +393,12 @@ pub fn set_packed_slice_checked<P: PackedField>(
 	if i >> P::LOG_WIDTH < packed.len() {
 		// Safety: `i` is guaranteed to be less than `len_packed_slice(packed)`
 		unsafe { set_packed_slice_unchecked(packed, i, scalar) };
-		return Ok(());
+		Ok(())
 	} else {
-		return Err(Error::IndexOutOfRange {
+		Err(Error::IndexOutOfRange {
 			index: i,
 			max: len_packed_slice(packed),
-		});
+		})
 	}
 }
 
@@ -451,13 +450,13 @@ pub fn copy_packed_from_scalars_slice<P: PackedField>(src: &[P::Scalar], dst: &m
 			scalars[0..src.len()].copy_from_slice(src);
 		},
 		|packed| {
-			let mut chunks = src.chunks_exact(P::WIDTH);
+			let chunks = src.chunks_exact(P::WIDTH);
 			let remainder = chunks.remainder();
 			for (chunk, packed) in chunks.zip(packed.iter_mut()) {
 				*packed = P::from_scalars(chunk.iter().copied());
 			}
 
-			if remainder.len() > 0 {
+			if !remainder.is_empty() {
 				let offset = (src.len() >> P::LOG_WIDTH) << P::LOG_WIDTH;
 				let packed = &mut packed[offset];
 				for (i, scalar) in remainder.iter().enumerate() {

@@ -586,7 +586,7 @@ where
 	MTProver: MerkleTreeProver<F>,
 	B: BufMut,
 {
-	let values = iter_packed_slice_with_offset(codeword, (coset_index << log_coset_size))
+	let values = iter_packed_slice_with_offset(codeword, coset_index << log_coset_size)
 		.take(1 << log_coset_size);
 	advice.write_scalar_iter(values);
 

@@ -1,12 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_core::{composition::index, oracle::OracleId};
+use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::PackedType, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField4b,
 	PackedField, TowerField,
 };
-use itertools::izip;
 
 use super::{lasso::lasso, u32add::SeveralU32add};
 use crate::{

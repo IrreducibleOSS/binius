@@ -40,6 +40,7 @@ where
 /// This functions gets optimized out by the compiler so if it is used in a generic context
 /// as an `if` condition, the non-meaningful branch will be optimized out.
 #[inline(always)]
+#[allow(clippy::redundant_clone)]
 pub fn is_packed_field_indexable<P: PackedField>() -> bool {
 	struct X<T> {
 		cloned: bool,

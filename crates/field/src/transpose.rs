@@ -2,7 +2,7 @@
 
 use binius_utils::checked_arithmetics::log2_strict_usize;
 
-use super::{packed::PackedField, Field, PackedFieldIndexable, RepackedExtension};
+use super::packed::PackedField;
 
 /// Error thrown when a transpose operation fails.
 #[derive(Clone, thiserror::Error, Debug)]
@@ -71,10 +71,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		BinaryField32b, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField4x32b,
-		PackedBinaryField64x2b, PackedExtension,
-	};
+	use crate::{PackedBinaryField128x1b, PackedBinaryField64x2b};
 
 	#[test]
 	fn test_square_transpose_128x1b() {
