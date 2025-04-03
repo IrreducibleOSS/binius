@@ -484,12 +484,11 @@ mod tests {
 	{
 		let new_vals = values
 			.iter()
-			.map(|v| {
+			.flat_map(|v| {
 				(P::WIDTH * start_index..P::WIDTH * (start_index + 1))
 					.map(|i| v.get(i))
 					.collect::<Vec<_>>()
 			})
-			.flatten()
 			.collect::<Vec<_>>();
 
 		new_vals
