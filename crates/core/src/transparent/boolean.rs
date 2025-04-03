@@ -1,5 +1,4 @@
-//Multivariate polynomial that maps points in the hypercube to the corresponding B32 element.
-
+// Copyright 2024-2025 Irreducible Inc.
 use binius_field::{BinaryField1b, BinaryField32b, ExtensionField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_utils::bail;
@@ -16,7 +15,7 @@ impl Boolean {
 		Boolean { n_vars }
 	}
 }
-
+//Multivariate polynomial that maps points in the hypercube to the corresponding B32 element.
 impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Boolean {
 	fn degree(&self) -> usize {
 		self.n_vars

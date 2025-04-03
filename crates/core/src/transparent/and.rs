@@ -1,3 +1,4 @@
+// Copyright 2024-2025 Irreducible Inc.
 use binius_field::{BinaryField1b, BinaryField32b, ExtensionField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_utils::bail;
