@@ -7,7 +7,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B128,
 };
 use bumpalo::Bump;
 
