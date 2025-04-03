@@ -53,6 +53,11 @@ enum EvalcheckProofWithStatus<F: Field> {
 		proof_id: ProofIndex,
 		subclaims: Vec<EvalcheckMultilinearClaimPartial<F>>,
 	},
+	SumcheckInducing {
+		proof_id: ProofIndex,
+		proof: EvalcheckProofEnum<F>,
+		eval: F,
+	},
 }
 
 impl<F: Field> EvalcheckProofWithStatus<F> {
@@ -60,6 +65,7 @@ impl<F: Field> EvalcheckProofWithStatus<F> {
 		match self {
 			EvalcheckProofWithStatus::Completed { proof_id, .. } => *proof_id,
 			EvalcheckProofWithStatus::Incomplete { proof_id, .. } => *proof_id,
+			EvalcheckProofWithStatus::SumcheckInducing { proof_id, .. } => *proof_id,
 		}
 	}
 }
@@ -169,6 +175,25 @@ where
 		idx
 	}
 
+	fn add_sumcheck_inducing(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		proof: EvalcheckProofEnum<F>,
+		eval: F,
+	) -> ProofIndex {
+		let idx = self.next_proof();
+		self.proofs.insert(
+			evalcheck_claim.id,
+			evalcheck_claim.eval_point,
+			EvalcheckProofWithStatus::SumcheckInducing {
+				proof_id: idx,
+				proof,
+				eval,
+			},
+		);
+		idx
+	}
+
 	fn add_incomplete_proof(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
@@ -217,12 +242,13 @@ where
 		idx
 	}
 
+	// TODO: Maybe better to return Result  at this point
 	fn replace_incomplete_with_complete_proof(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		proof: EvalcheckProofEnum<F>,
 		eval: F,
-	) -> Option<EvalcheckProofWithStatus<F>> {
+	) -> Option<()> {
 		self.proofs
 			.get_mut(evalcheck_claim.id, evalcheck_claim.eval_point.as_ref())
 			.map(|old| {
@@ -230,6 +256,9 @@ where
 					EvalcheckProofWithStatus::Completed { .. } => None,
 					// TODO: You can probably add more checks to the subclaim here if need be?? or maybe the caller side??
 					EvalcheckProofWithStatus::Incomplete { proof_id, .. } => Some(*proof_id),
+					EvalcheckProofWithStatus::SumcheckInducing { .. } => {
+						panic!("You can only call this function to replace incomplete proof")
+					}
 				}?;
 				let mut new = EvalcheckProofWithStatus::Completed {
 					proof_id,
@@ -237,7 +266,37 @@ where
 					eval,
 				};
 				std::mem::swap(&mut new, old);
-				Some(new)
+				Some(())
+			})
+			.flatten()
+	}
+
+	// TODO: Maybe better to return Result  at this point
+	fn replace_sumcheck_inducing_with_complete(
+		&mut self,
+		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
+	) -> Option<()> {
+		self.proofs
+			.get_mut(evalcheck_claim.id, evalcheck_claim.eval_point.as_ref())
+			.map(|old| {
+				let mut new = match old {
+					EvalcheckProofWithStatus::Completed { .. } => None,
+					// TODO: You can probably add more checks to the subclaim here if need be?? or maybe the caller side??
+					EvalcheckProofWithStatus::Incomplete { .. } => {
+						panic!("You can only call this function to replace sumcheck proofs")
+					}
+					EvalcheckProofWithStatus::SumcheckInducing {
+						proof_id,
+						proof,
+						eval,
+					} => Some(EvalcheckProofWithStatus::Completed {
+						proof_id: *proof_id,
+						proof: proof.clone(),
+						eval: *eval,
+					}),
+				}?;
+				std::mem::swap(&mut new, old);
+				Some(())
 			})
 			.flatten()
 	}
@@ -267,10 +326,10 @@ where
 			.into_iter()
 			.map(|claim| self.oracles.oracle(claim.id).variant)
 			.collect::<Vec<_>>();
-		println!("Proving claims: "); //with ids: {:?}", evalcheck_claims, with_ids);
-		for claim in evalcheck_claims.iter().enumerate() {
-			println!("\t{}: {:?}, ", claim.0, claim.1);
-		}
+		// println!("Proving claims: ");
+		// for claim in evalcheck_claims.iter().enumerate() {
+		// 	println!("\t{}: {:?}, ", claim.0, claim.1);
+		// }
 		println!("with ids: ");
 		for ids in with_ids.into_iter().enumerate() {
 			println!("\t{}: id({}) {:?}, ", ids.0, evalcheck_claims[ids.0].id, ids.1);
@@ -371,6 +430,8 @@ where
 
 		// Step 3: Process projected_bivariate_claims
 
+		println!("length of projected_bivariate_metas: {}", self.projected_bivariate_claims.len());
+
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
@@ -403,42 +464,10 @@ where
 
 		// Step 4: Find and return the proofs of the original claims.
 
-		// let mut proof_output = vec![None; evalcheck_claims.len()];
-		//
-		// for claim in evalcheck_claims {
-		// 	let proof_with_status = self
-		// 		.proofs
-		// 		.get(claim.id, &claim.eval_point)
-		// 		.expect("Every claim must be proved by now");
-		// 	let idx = proof_with_status.get_proof_id();
-		// 	if proof_output[idx].is_some() {
-		// 		panic!(
-		// 			"Proof index :{} is already occupied by {:?} inplace of {:?}",
-		// 			idx, proof_output[idx], proof_with_status
-		// 		);
-		// 	}
-		// 	match proof_with_status {
-		// 		EvalcheckProofWithStatus::Completed { proof, .. } => {
-		// 			proof_output[idx] = Some(proof.clone());
-		// 		}
-		// 		EvalcheckProofWithStatus::Incomplete { .. } => {
-		// 			panic!("All claimed proofs must be complete by now")
-		// 		}
-		// 	}
-		// }
-		//
-		// let out = match proof_output.into_iter().collect::<Option<Vec<_>>>() {
-		// 	Some(proofs) => Ok(proofs),
-		// 	None => panic!("Not all claims produced a proof"),
-		// };
-
 		let mut output = vec![None; self.proof_context_index];
 
 		for proof_with_status in self.proofs.flatten().into_iter() {
 			match proof_with_status {
-				EvalcheckProofWithStatus::Incomplete { .. } => {
-					panic!("All claimed proofs must be complete by now")
-				}
 				EvalcheckProofWithStatus::Completed {
 					proof_id,
 					proof,
@@ -449,6 +478,12 @@ where
 					}
 					output[proof_id] = Some(proof);
 				}
+				other => {
+					panic!(
+						"All claimed proofs must be complete by now but this claim is not {:?}",
+						other
+					)
+				}
 			}
 		}
 
@@ -456,18 +491,6 @@ where
 			.into_iter()
 			.collect::<Option<Vec<_>>>()
 			.expect("Every proof must be non empty");
-
-		// let unordered = self
-		// 	.proofs
-		// 	.flatten_clear()
-		// 	.into_iter()
-		// 	.map(|x| match x {
-		// 		EvalcheckProofWithStatus::Completed { proof, .. } => proof,
-		// 		EvalcheckProofWithStatus::Incomplete { .. } => {
-		// 			panic!("All claimed proofs must be complete by now")
-		// 		}
-		// 	})
-		// 	.collect::<Vec<_>>();
 
 		println!("Proving output: ");
 		for proof in out.iter().enumerate() {
@@ -494,21 +517,6 @@ where
 		if self.proofs.get(multilinear_id, &eval_point).is_some() {
 			return;
 		}
-		// if self
-		// 	.finalized_proofs
-		// 	.get(multilinear_id, &eval_point)
-		// 	.is_some()
-		// {
-		// 	return;
-		// }
-
-		// if self
-		// 	.incomplete_proof_claims
-		// 	.get(multilinear_id, &eval_point)
-		// 	.is_some()
-		// {
-		// 	return;
-		// }
 
 		let multilinear = self.oracles.oracle(multilinear_id);
 
@@ -518,7 +526,7 @@ where
 			}
 
 			MultilinearPolyVariant::Committed => {
-				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Committed, eval);
+				self.add_sumcheck_inducing(evalcheck_claim, EvalcheckProofEnum::Committed, eval);
 			}
 
 			MultilinearPolyVariant::Repeating { id, .. } => {
@@ -539,15 +547,15 @@ where
 			}
 
 			MultilinearPolyVariant::Shifted { .. } => {
-				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Shifted, eval);
+				self.add_sumcheck_inducing(evalcheck_claim, EvalcheckProofEnum::Shifted, eval);
 			}
 
 			MultilinearPolyVariant::Packed { .. } => {
-				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::Packed, eval);
+				self.add_sumcheck_inducing(evalcheck_claim, EvalcheckProofEnum::Packed, eval);
 			}
 
 			MultilinearPolyVariant::Composite(_) => {
-				self.add_completed_proof(evalcheck_claim, EvalcheckProofEnum::CompositeMLE, eval);
+				self.add_sumcheck_inducing(evalcheck_claim, EvalcheckProofEnum::CompositeMLE, eval);
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
@@ -644,23 +652,12 @@ where
 			MultilinearPolyVariant::Repeating { id: inner_id, .. } => {
 				let n_vars = self.oracles.n_vars(inner_id);
 				let inner_eval_point = &evalcheck_claim.eval_point[..n_vars];
-				// self.finalized_proofs
-				// 	.get(id, inner_eval_point)
-				// 	.map(|(inner_idx, _, subproof)| (*inner_idx, subproof.clone()))
-				// 	.map(move |(inner_idx, _)| {
-				// 		let proof = EvalcheckProofEnum::Repeating(inner_idx);
-				// 		let next_idx = self.next_proof();
-				// 		self.finalized_proofs.insert(
-				// 			evalcheck_claim.id,
-				// 			eval_point,
-				// 			(next_idx, eval, proof),
-				// 		);
-				// 	})
 				self.proofs
 					.get(inner_id, inner_eval_point)
 					.cloned()
 					.map(|proof_with_status| match proof_with_status {
-						EvalcheckProofWithStatus::Completed { proof_id, .. } => self
+						EvalcheckProofWithStatus::Completed { proof_id, .. }
+						| EvalcheckProofWithStatus::SumcheckInducing { proof_id, .. } => self
 							.replace_incomplete_with_complete_proof(
 								evalcheck_claim.clone(),
 								EvalcheckProofEnum::Repeating(proof_id),
@@ -701,7 +698,8 @@ where
 					.get(inner_id, &new_eval_point)
 					.cloned()
 					.map(|proof_with_status| match proof_with_status {
-						EvalcheckProofWithStatus::Completed { proof, .. } => self
+						EvalcheckProofWithStatus::Completed { proof, .. }
+						| EvalcheckProofWithStatus::SumcheckInducing { proof, .. } => self
 							.replace_incomplete_with_complete_proof(
 								evalcheck_claim.clone(),
 								proof.clone(),
@@ -728,6 +726,11 @@ where
 								proof_id,
 								eval: inner_eval,
 								..
+							}
+							| EvalcheckProofWithStatus::SumcheckInducing {
+								proof_id,
+								eval: inner_eval,
+								..
 							} => Some((inner_eval, proof_id)),
 							EvalcheckProofWithStatus::Incomplete { .. } => None,
 						})
@@ -744,26 +747,17 @@ where
 			MultilinearPolyVariant::ZeroPadded(inner_id) => {
 				let inner_n_vars = self.oracles.n_vars(inner_id);
 				let inner_eval_point = &evalcheck_claim.eval_point[..inner_n_vars];
-				// self.finalized_proofs
-				// 	.get(inner_id, inner_eval_point)
-				// 	.map(|(inner_idx, eval, _)| (*inner_idx, *eval))
-				// 	.map(|(inner_idx, internal_eval)| {
-				// 		let next_idx = self.next_proof();
-				// 		self.finalized_proofs.insert(
-				// 			evalcheck_claim.id,
-				// 			eval_point,
-				// 			(
-				// 				next_idx,
-				// 				eval,
-				// 				EvalcheckProofEnum::ZeroPadded(internal_eval, inner_idx),
-				// 			),
-				// 		);
-				// 	})
+
 				self.proofs
 					.get(inner_id, inner_eval_point)
 					.cloned()
 					.map(|proof_with_status| match proof_with_status {
 						EvalcheckProofWithStatus::Completed {
+							proof_id,
+							eval: internal_eval,
+							..
+						}
+						| EvalcheckProofWithStatus::SumcheckInducing {
 							proof_id,
 							eval: internal_eval,
 							..
@@ -794,11 +788,28 @@ where
 			MultilinearPolyVariant::Committed => {
 				let subclaim = EvalcheckMultilinearClaim {
 					id: multilinear.id,
-					eval_point,
+					eval_point: eval_point.clone(),
 					eval,
 				};
 
-				self.committed_eval_claims.push(subclaim);
+				let proof_with_status = self
+					.proofs
+					.get(id, &eval_point)
+					.expect("Sumcheck inducing claims were added in prove_multilinear");
+				if matches!(proof_with_status, EvalcheckProofWithStatus::Completed { .. }) {
+					return;
+				}
+
+				match proof_with_status {
+					EvalcheckProofWithStatus::Completed { .. } => (),
+					EvalcheckProofWithStatus::Incomplete { .. } => {
+						unreachable!("Committed claims cannot be incomplete")
+					}
+					EvalcheckProofWithStatus::SumcheckInducing { .. } => {
+						self.replace_sumcheck_inducing_with_complete(&subclaim);
+						self.committed_eval_claims.push(subclaim)
+					}
+				}
 			}
 			MultilinearPolyVariant::Repeating { id, .. } => {
 				let n_vars = self.oracles.n_vars(id);
@@ -834,7 +845,21 @@ where
 			MultilinearPolyVariant::Shifted { .. }
 			| MultilinearPolyVariant::Packed { .. }
 			| MultilinearPolyVariant::Composite { .. } => {
-				self.projected_bivariate_claims.push(evalcheck_claim)
+				let proof_with_status = self
+					.proofs
+					.get(id, &eval_point)
+					.expect("Sumcheck inducing claims were added in prove_multilinear");
+
+				match proof_with_status {
+					EvalcheckProofWithStatus::Completed { .. } => (),
+					EvalcheckProofWithStatus::Incomplete { .. } => {
+						unreachable!("Sumcheck inducing claims cannot be incomplete")
+					}
+					EvalcheckProofWithStatus::SumcheckInducing { .. } => {
+						self.replace_sumcheck_inducing_with_complete(&evalcheck_claim);
+						self.projected_bivariate_claims.push(evalcheck_claim)
+					}
+				}
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for id in linear_combination.polys() {
@@ -846,7 +871,8 @@ where
 						EvalcheckProofWithStatus::Incomplete { .. } => {
 							panic!("SubProofs of Linear combinations must be completed by now")
 						}
-						EvalcheckProofWithStatus::Completed { eval, .. } => *eval,
+						EvalcheckProofWithStatus::Completed { eval, .. }
+						| EvalcheckProofWithStatus::SumcheckInducing { eval, .. } => *eval,
 					};
 					let subclaim = EvalcheckMultilinearClaim {
 						id,
@@ -868,7 +894,8 @@ where
 					EvalcheckProofWithStatus::Incomplete { .. } => {
 						panic!("SubProof of ZeroPadded must be completed by now")
 					}
-					EvalcheckProofWithStatus::Completed { eval, .. } => *eval,
+					EvalcheckProofWithStatus::Completed { eval, .. }
+					| EvalcheckProofWithStatus::SumcheckInducing { eval, .. } => *eval,
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {
