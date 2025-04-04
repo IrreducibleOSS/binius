@@ -60,6 +60,7 @@ fn packed_512(c: &mut Criterion) {
 fn byte_sliced_128(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_128");
 
+	benchmark_iter!(ByteSliced16x128x1b, group);
 	benchmark_iter!(ByteSlicedAES16x8b, group);
 	benchmark_iter!(ByteSlicedAES16x16b, group);
 	benchmark_iter!(ByteSlicedAES16x32b, group);
@@ -70,6 +71,7 @@ fn byte_sliced_128(c: &mut Criterion) {
 fn byte_sliced_256(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_256");
 
+	benchmark_iter!(ByteSliced16x256x1b, group);
 	benchmark_iter!(ByteSlicedAES32x8b, group);
 	benchmark_iter!(ByteSlicedAES32x16b, group);
 	benchmark_iter!(ByteSlicedAES32x32b, group);
@@ -80,6 +82,7 @@ fn byte_sliced_256(c: &mut Criterion) {
 fn byte_sliced_512(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_512");
 
+	benchmark_iter!(ByteSliced16x512x1b, group);
 	benchmark_iter!(ByteSlicedAES64x8b, group);
 	benchmark_iter!(ByteSlicedAES64x16b, group);
 	benchmark_iter!(ByteSlicedAES64x32b, group);
