@@ -116,7 +116,7 @@ where
 				// Post-switchover, we perform single variable folding (linear interpolation).
 				// NB: Lerp folding in low-to-high evaluation order can be made inplace, but not
 				// easily so if multithreading is desired.
-				let mut new_evals = zeroed_vec(evals.len().div_ceil(2));
+				let mut new_evals = zeroed_vec::<P>(evals.len().div_ceil(2));
 
 				fold_right_lerp(
 					evals.as_slice(),
@@ -126,6 +126,13 @@ where
 					suffix_eval,
 					&mut new_evals,
 				)?;
+
+                // Pad up the result with suffix_eval
+                if !evals.is_empty() && evals.len() % 2 == 1 {
+                    for i in P::WIDTH>>1..P::WIDTH {
+                        new_evals.last_mut().expect("nonemptiness validated above").set(i, suffix_eval);
+                    }
+                }
 
 				*evals = new_evals;
 				Ok(false)
@@ -220,6 +227,7 @@ where
 					n_vars,
 					challenge,
 				)?;
+
 				Ok(false)
 			}
 		}

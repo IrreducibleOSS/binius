@@ -26,7 +26,6 @@ impl<F: Field> GrandProductClaim<F> {
 
 #[derive(Debug, Clone)]
 pub struct GrandProductWitness<P: PackedField> {
-	n_vars: usize,
 	circuit_layers: Vec<Vec<P>>,
 }
 
@@ -88,14 +87,13 @@ impl<P: PackedField> GrandProductWitness<P> {
 		});
 
 		Ok(Self {
-			n_vars,
 			circuit_layers,
 		})
 	}
 
 	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
-	pub const fn n_vars(&self) -> usize {
-		self.n_vars
+	pub fn n_vars(&self) -> usize {
+		self.circuit_layers.len() - 1
 	}
 
 	/// Returns the evaluation of the GKR grand product circuit

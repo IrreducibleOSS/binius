@@ -226,7 +226,7 @@ where
 				.expect("not staging more than n_vars times");
 
 			let multilinear_pair =
-				if n_vars >= P::LOG_WIDTH && layer.len() <= 1 << (n_vars - P::LOG_WIDTH) {
+				if n_vars >= P::LOG_WIDTH && layer.len() < 1 << (n_vars - P::LOG_WIDTH) {
 					[layer, vec![]]
 				} else if n_vars >= P::LOG_WIDTH {
 					let mut evals_0 = layer;
