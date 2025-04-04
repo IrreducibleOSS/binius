@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{BinaryField, PackedField};
-use binius_math::{MLEDirectAdapter, MultilinearExtension};
+use binius_field::{BinaryField, PackedField, RepackedExtension};
+use binius_math::MultilinearExtension;
 use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, IntoParallelIterator},
 	prelude::ParallelIterator,
@@ -29,16 +29,16 @@ pub enum BaseWitness<'a, P: PackedField> {
 }
 
 #[instrument(skip_all, name = "gkr_exp::evaluate_single_bit_output_packed")]
-fn evaluate_single_bit_output_packed<P>(
+fn evaluate_single_bit_output_packed<P, PExpBase>(
 	exponent_bit_witness: MultilinearWitness<P>,
-	base: Base<P>,
-	previous_single_bit_output: &[P],
-) -> Vec<P>
+	base: Base<P, PExpBase>,
+	previous_single_bit_output: &[PExpBase],
+) -> Vec<PExpBase>
 where
-	P: PackedField,
-	P::Scalar: BinaryField,
+	P: RepackedExtension<PExpBase>,
+	PExpBase: PackedField,
 {
-	let one = P::one();
+	let one = PExpBase::one();
 
 	previous_single_bit_output
 		.into_par_iter()
@@ -47,52 +47,70 @@ where
 			let (base, prev_out) = match &base {
 				Base::Static(g) => (*g, prev_out),
 				Base::Dynamic(poly) => (
-					poly.packed_evals()
-						.expect("base and exponent_bit_witness have the same width")[i],
+					P::cast_bases(
+						poly.packed_evals()
+							.expect("base and exponent_bit_witness have the same width"),
+					)[i],
 					prev_out.square(),
 				),
 			};
 
-			let exponent_bit =
-				P::from_fn(|j| {
-					exponent_bit_witness
-					.evaluate_on_hypercube(P::WIDTH * i + j)
-					.expect("previous_single_bit_output and exponent_bit_witness have the same width")
-				});
+			let exponent_bit = PExpBase::from_fn(|j| {
+				let ext_bit = exponent_bit_witness
+					.evaluate_on_hypercube(PExpBase::WIDTH * i + j)
+					.expect("eval on the hypercube exists");
+
+				if ext_bit == P::Scalar::one() {
+					PExpBase::Scalar::one()
+				} else {
+					PExpBase::Scalar::zero()
+				}
+			});
+
 			prev_out * (one + exponent_bit * (one + base))
 		})
 		.collect::<Vec<_>>()
 }
 
-enum Base<'a, P: PackedField> {
-	Static(P),
+enum Base<'a, P: PackedField, PExpBase: PackedField> {
+	Static(PExpBase),
 	Dynamic(MultilinearWitness<'a, P>),
 }
 
-fn evaluate_first_layer_output_packed<P>(
+fn evaluate_first_layer_output_packed<P, PExpBase>(
 	exponent_bit_witness: MultilinearWitness<P>,
-	base: Base<P>,
-) -> Vec<P>
+	base: Base<P, PExpBase>,
+) -> Vec<PExpBase>
 where
-	P: PackedField,
-	P::Scalar: BinaryField,
+	P: RepackedExtension<PExpBase>,
+	PExpBase: PackedField,
 {
-	let one = P::one();
+	let one = PExpBase::one();
 
-	(0..1 << exponent_bit_witness.n_vars().saturating_sub(P::LOG_WIDTH))
+	(0..1
+		<< exponent_bit_witness
+			.n_vars()
+			.saturating_sub(PExpBase::LOG_WIDTH))
 		.into_par_iter()
 		.map(|i| {
 			let base = match &base {
 				Base::Static(g) => *g,
-				Base::Dynamic(poly) => poly
-					.packed_evals()
-					.expect("base and exponent_bit_witness have the same width")[i],
+				Base::Dynamic(poly) => P::cast_bases(
+					poly.packed_evals()
+						.expect("base and exponent_bit_witness have the same width"),
+				)[i],
 			};
 
-			let exponent_bit = P::from_fn(|j| {
-				exponent_bit_witness
-					.evaluate_on_hypercube(P::WIDTH * i + j)
-					.expect("eval on the hypercube exists")
+			let exponent_bit = PExpBase::from_fn(|j| {
+				let ext_bit = exponent_bit_witness
+					.evaluate_on_hypercube(PExpBase::WIDTH * i + j)
+					.expect("eval on the hypercube exists");
+
+				if ext_bit == P::Scalar::one() {
+					PExpBase::Scalar::one()
+				} else {
+					PExpBase::Scalar::zero()
+				}
 			});
 
 			one + exponent_bit * (one + base)
@@ -106,13 +124,14 @@ where
 {
 	/// Constructs a witness where the base is the static [BinaryField].
 	#[instrument(skip_all, name = "gkr_exp::new_with_static_base")]
-	pub fn new_with_static_base(
+	pub fn new_with_static_base<PExpBase>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
-		base: P::Scalar,
+		base: PExpBase::Scalar,
 	) -> Result<Self, Error>
 	where
-		P: PackedField,
-		P::Scalar: BinaryField,
+		P: RepackedExtension<PExpBase>,
+		PExpBase::Scalar: BinaryField,
+		PExpBase: PackedField,
 	{
 		let exponent_bit_width = exponent.len();
 
@@ -120,7 +139,7 @@ where
 			bail!(Error::EmptyExp)
 		}
 
-		if exponent.len() > P::Scalar::N_BITS {
+		if exponent.len() > PExpBase::Scalar::N_BITS {
 			bail!(Error::SmallBaseField)
 		}
 
@@ -128,7 +147,7 @@ where
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
 
-		let mut packed_base_power_static = P::broadcast(base);
+		let mut packed_base_power_static = PExpBase::broadcast(base);
 
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed(
 			exponent[0].clone(),
@@ -149,27 +168,30 @@ where
 			.into_iter()
 			.map(|single_bit_output_layers_data| {
 				MultilinearExtension::new(exponent[0].n_vars(), single_bit_output_layers_data)
-					.map(MLEDirectAdapter::<P>::from)
-					.map(|mle| mle.upcast_arc_dyn())
+					.map(|me| me.specialize_arc_dyn())
 			})
 			.collect::<Result<Vec<_>, binius_math::Error>>()?;
 
 		Ok(Self {
 			exponent,
 			single_bit_output_layers_data,
-			base: BaseWitness::Static(base),
+			base: BaseWitness::Static(base.into()),
 		})
 	}
 
 	/// Constructs a witness with a specified multilinear base.
+	///
+	/// # Requirements
+	/// For efficiency, the internal base witness data is required to be `PExpBase`.
 	#[instrument(skip_all, name = "gkr_exp::new_with_dynamic_base")]
-	pub fn new_with_dynamic_base(
+	pub fn new_with_dynamic_base<PExpBase>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 		base: MultilinearWitness<'a, P>,
 	) -> Result<Self, Error>
 	where
-		P: PackedField,
-		P::Scalar: BinaryField,
+		P: RepackedExtension<PExpBase>,
+		PExpBase::Scalar: BinaryField,
+		PExpBase: PackedField,
 	{
 		let exponent_bit_width = exponent.len();
 
@@ -177,13 +199,18 @@ where
 			bail!(Error::EmptyExp)
 		}
 
-		if exponent.len() > P::Scalar::N_BITS {
+		if exponent.len() > PExpBase::Scalar::N_BITS {
 			bail!(Error::SmallBaseField)
 		}
 
 		equal_n_vars_check(&exponent)?;
 
 		if exponent[0].n_vars() != base.n_vars() {
+			bail!(Error::NumberOfVariablesMismatch)
+		}
+
+		let base_evals: &[PExpBase] = P::cast_bases(base.packed_evals().unwrap());
+		if base_evals.len() != 1 << (exponent[0].n_vars().saturating_sub(PExpBase::LOG_WIDTH)) {
 			bail!(Error::NumberOfVariablesMismatch)
 		}
 
@@ -206,8 +233,7 @@ where
 			.into_iter()
 			.map(|single_bit_output_layers_data| {
 				MultilinearExtension::new(exponent[0].n_vars(), single_bit_output_layers_data)
-					.map(MLEDirectAdapter::<P>::from)
-					.map(|mle| mle.upcast_arc_dyn())
+					.map(|me| me.specialize_arc_dyn())
 			})
 			.collect::<Result<Vec<_>, binius_math::Error>>()?;
 
