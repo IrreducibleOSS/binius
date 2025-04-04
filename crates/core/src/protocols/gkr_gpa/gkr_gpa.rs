@@ -86,9 +86,7 @@ impl<P: PackedField> GrandProductWitness<P> {
 			}
 		});
 
-		Ok(Self {
-			circuit_layers,
-		})
+		Ok(Self { circuit_layers })
 	}
 
 	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
