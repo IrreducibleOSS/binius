@@ -5,9 +5,9 @@ use binius_utils::bail;
 
 use crate::polynomial::{Error, MultivariatePoly};
 
-///Given a query of size 17, of the form (cin || i || j) the multivariate polynomial returns
+///Given a query of size 17, of the form (i || j || cin ) the multivariate polynomial returns
 ///a B32 element whose representation is of the form:
-///(cout || cin ||(i+j added as 8 bit integers without the overflow)|| i || j )
+///(i || j || (i+j added as 8 bit integers without the overflow)|| cin || cout )
 ///where cin and cout represent carry in and carry out of bitwise addition of integers  
 
 #[derive(Debug, Copy, Clone, SerializeBytes, DeserializeBytes)]
@@ -22,30 +22,41 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Add
 		17
 	}
 
-	//Given a query of size n_vars, split it into two halves and evaluates the polynomial
+	///Given a query of size 17 which is, of the form $( i || j  || cin)$
+	///where i and j are of length 8 and cin is a single variable, the multivariate polynomial returns
+	///a B32 element whose representation is of the form $(i || j ||$ $(i+j$ added as 8 bit integers without the overflow)$|| cin || cout )$.
+	///
+	///Let $b_i$ be the enumeration of the basis of B32 over B1 and let $(x; y; cin) = (x_0 \dots x_7; y_0 \dots y_7; cin)$ denote the query.
+	///Consider the following recursively defined (multilinear) polynomials:
+	///$$carry_i(x;y;cin) = (x_{i - 1} + carry_{i-1}(x,y,cin))*(y_{i - 1} + carry_{i-1}(x,y,cin)) + carry_{i-1}(x,y,cin)$$
+	/// if $i > 0$ and $i \leq 8$,
+	///$$carry_i(x;y;cin) = cin $$ if $i = 0$.
+	///
+	///The polynomial can then be defined as:
+	///$$P(x; y; cin) =  cin.b_{24} + carry_8(x; y; cin).b_{25} + \sum_{i=0}^{7} x_ib_i + y_ib_{i+8} + \left(x_i + y_i + carry_i(x;y;cin)\right)b_{i+16} $$
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != 17 {
 			bail!(Error::IncorrectQuerySize { expected: 17 });
 		}
 
-		let (mut cin, a, b) = (query[0], &query[1..9], &query[9..17]);
+		let (a, b, mut cin) = (&query[0..8], &query[8..16], query[16]);
 
-		let mut result = cin * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(1);
+		let mut result = cin * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(24);
 
 		for i in 0..8 {
+			//Computing the initial part of the output, which is the concatenation of a and b
+			result += a[i] * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i);
+			result += b[i] * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i + 8);
+
 			//Computing the sum of a and b as integers with bitwise add and carry logic
 			result += (a[i] + b[i] + cin)
-				* <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i + 2);
+				* <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i + 16);
 			cin = (a[i] + cin) * (b[i] + cin) + cin;
-
-			//Computing the latter part of the output, which is the concatenation of a and b
-			result += a[i] * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i + 10);
-			result += b[i] * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(i + 18);
 		}
 
 		//Final value of cin is the carry out
-		result += cin;
+		result += cin * <BinaryField32b as ExtensionField<BinaryField1b>>::basis(25);
 
 		Ok(result)
 	}
@@ -58,7 +69,7 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Add
 #[cfg(test)]
 mod tests {
 	use binius_field::BinaryField32b;
-	use rand::{thread_rng, Rng};
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
 
@@ -74,7 +85,7 @@ mod tests {
 	//We compare the result of the polynomial with the result of bitwise addition as integers.
 	#[test]
 	fn test_add_with_carry() {
-		let mut rng = thread_rng();
+		let mut rng = StdRng::seed_from_u64(0);
 		let a_int = rng.gen::<u8>();
 		let b_int = rng.gen::<u8>();
 		let cin_int = rng.gen::<bool>() as u8;
@@ -88,14 +99,15 @@ mod tests {
 			(res_int, c_out_int) = res_int.overflowing_add(b_int)
 		}
 
-		let (a_int, b_int, cin_int, res_int) =
-			(a_int as u32, b_int as u32, cin_int as u32, res_int as u32);
+		let (a_int, b_int, cin_int, res_int, c_out_int) =
+			(a_int as u32, b_int as u32, cin_int as u32, res_int as u32, c_out_int as u32);
+
 		let result_int =
-			(c_out_int as u32) + (cin_int << 1) + (res_int << 2) + (a_int << 10) + (b_int << 18);
+			a_int + (b_int << 8) + (res_int << 16) + (cin_int << 24) + (c_out_int << 25);
 		let a = int_to_query(a_int);
 		let b = int_to_query(b_int);
 		let cin = vec![BinaryField32b::from(cin_int)];
-		let query = [cin, a, b].concat();
+		let query = [a, b, cin].concat();
 
 		let add_with_carry = AddWithCarry;
 		let result = add_with_carry.evaluate(&query).unwrap();

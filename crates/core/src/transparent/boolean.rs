@@ -24,7 +24,10 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Boo
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
-
+	///Let $b_i$ be the enumeration of the basis of B32 over B1 and let (x) denote the query.
+	///let $\mu$ = n_vars
+	///   
+	///$P(x) = \sum_{i=0}^{\mu - 1} x_ib_i$
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() > 32 {
 			bail!(Error::IncorrectQuerySize { expected: 32 });
@@ -46,7 +49,7 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Boo
 #[cfg(test)]
 mod tests {
 	use binius_field::BinaryField32b;
-	use rand::{thread_rng, Rng};
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
 
@@ -59,10 +62,10 @@ mod tests {
 		query
 	}
 
-	//We compare the result of the polynomial with the result of bitwise addition as integers.
+	//We compare the result of the polynomial with the integer that represents the hypercube point.
 	#[test]
 	fn test_hypercube() {
-		let mut rng = thread_rng();
+		let mut rng = StdRng::seed_from_u64(0);
 		let n_vars = 21;
 		let index = rng.gen_range(0..1 << n_vars);
 		let query = int_to_query(index, n_vars);

@@ -11,11 +11,12 @@ pub struct And {
 }
 
 impl And {
-	pub fn new(n_vars: usize) -> Self {
-		assert!(n_vars > 0, "n_vars must be greater than 0");
-		assert!(n_vars <= 16, "n_vars must be less than or equal to 16");
-		assert!(n_vars % 2 == 0, "n_vars must be even");
-		Self { n_vars }
+	pub fn new(n_bits: usize) -> Self {
+		assert!(n_bits > 0, "n_bits must be greater than 0");
+		assert!(n_bits <= 8, "n_bits must be less than or equal to 8");
+		Self {
+			n_vars: n_bits << 1,
+		}
 	}
 }
 
@@ -28,8 +29,13 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for And
 		self.n_vars
 	}
 
-	///Given a query of size n even, of the form (i || j) the multivariate polynomial returns
-	///a B32 element whose representation is of the form (i||j||(i & j))
+	///Given a query of size n_vars which is even, of the form $(i || j)$
+	///where i and j are of equal length, the multivariate polynomial returns
+	///a B32 element whose representation is of the form $(i || j || (i & j))$.
+	///
+	///Let $b_i$ be the enumeration of the basis of B32 over B1 and let (x) denote the query.
+	///let $\mu$ = n_vars$/2$  
+	///$P(x) = \sum_{i=0}^{\mu - 1} x_ib_i +  x_{i + \mu}b_{i + \mu} + x_i x_{i + \mu} b_{i + 2\mu}$
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() & 1 != 0 {
 			bail!(Error::IncorrectQuerySize {
@@ -59,7 +65,7 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for And
 #[cfg(test)]
 mod tests {
 	use binius_field::BinaryField32b;
-	use rand::{thread_rng, Rng};
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
 
@@ -72,10 +78,10 @@ mod tests {
 		query
 	}
 
-	//We compare the result of the polynomial with the result of bitwise addition as integers.
+	//We compare the result of the polynomial with the result of bitwise and as integers.
 	#[test]
 	fn test_and() {
-		let mut rng = thread_rng();
+		let mut rng = StdRng::seed_from_u64(0);
 		let a_int = rng.gen::<u8>() as u32;
 		let b_int = rng.gen::<u8>() as u32;
 		let c_int = a_int & b_int;
