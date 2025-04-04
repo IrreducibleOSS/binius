@@ -34,7 +34,6 @@ impl<F: TowerField + ExtensionField<BinaryField32b>> MultivariatePoly<F> for Add
 	///
 	///The polynomial can then be defined as:
 	///$$P(x; y; cin) =  cin.b_{24} + carry_8(x; y; cin).b_{25} + \sum_{i=0}^{7} x_ib_i + y_ib_{i+8} + \left(x_i + y_i + carry_i(x;y;cin)\right)b_{i+16} $$
-
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != 17 {
 			bail!(Error::IncorrectQuerySize { expected: 17 });
