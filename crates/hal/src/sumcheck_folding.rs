@@ -60,7 +60,7 @@ where
 
 					assert!(tensor_query.n_vars() > 0);
 
-					let non_const_prefix = (1 << n_vars) - suffix_len;
+					let non_const_prefix = (1 << multilinear.n_vars()) - suffix_len;
 
 					let large_field_folded_evals = if non_const_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(
@@ -157,7 +157,7 @@ where
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
 
-					let non_const_prefix = (1 << n_vars) - suffix_len;
+					let non_const_prefix = (1 << multilinear.n_vars()) - suffix_len;
 
 					let large_field_folded_evals = if non_const_prefix < 1 << n_vars {
 						let subcube_vars = subcube_vars_for_bits::<P>(
