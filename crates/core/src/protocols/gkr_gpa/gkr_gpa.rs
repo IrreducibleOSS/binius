@@ -57,7 +57,8 @@ impl<P: PackedField> GrandProductWitness<P> {
 							});
 					}
 
-					layer[pivot..].copy_from_slice(&prev_layer[pivot..packed_len.min(prev_layer.len())]);
+					layer[pivot..]
+						.copy_from_slice(&prev_layer[pivot..packed_len.min(prev_layer.len())]);
 				} else if prev_layer.len() > 0 {
 					let layer = layer
 						.first_mut()

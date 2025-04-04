@@ -226,23 +226,24 @@ where
 				.pop()
 				.expect("not staging more than n_vars times");
 
-			let multilinear_pair = if n_vars >= P::LOG_WIDTH && layer.len() <= 1 << (n_vars - P::LOG_WIDTH) {
-				[layer, vec![]]
-			} else if n_vars >= P::LOG_WIDTH {
-				let mut evals_0 = layer;
-				let evals_1 = evals_0.split_off(1 << (n_vars - P::LOG_WIDTH));
-				[evals_0, evals_1]
-			} else {
-				let mut evals_0 = P::zero();
-				let mut evals_1 = P::zero();
+			let multilinear_pair =
+				if n_vars >= P::LOG_WIDTH && layer.len() <= 1 << (n_vars - P::LOG_WIDTH) {
+					[layer, vec![]]
+				} else if n_vars >= P::LOG_WIDTH {
+					let mut evals_0 = layer;
+					let evals_1 = evals_0.split_off(1 << (n_vars - P::LOG_WIDTH));
+					[evals_0, evals_1]
+				} else {
+					let mut evals_0 = P::zero();
+					let mut evals_1 = P::zero();
 
-				for i in 0..1 << n_vars {
-					evals_0.set(i, get_packed_slice(&layer, i));
-					evals_1.set(i, get_packed_slice(&layer, i | 1 << n_vars));
-				}
+					for i in 0..1 << n_vars {
+						evals_0.set(i, get_packed_slice(&layer, i));
+						evals_1.set(i, get_packed_slice(&layer, i | 1 << n_vars));
+					}
 
-				[vec![evals_0], vec![evals_1]]
-			};
+					[vec![evals_0], vec![evals_1]]
+				};
 
 			for multilinear in multilinear_pair {
 				let suffix_len = (1usize << n_vars).saturating_sub(multilinear.len() * P::WIDTH);
@@ -250,8 +251,6 @@ where
 				multilinears.push(multilinear);
 			}
 		}
-
-		println!("const_suffixes {:#?}", const_suffixes);
 
 		// REVIEW: comment on first_round_eval_1s
 		let prover = EqIndSumcheckProverBuilder::without_switchover(n_vars, multilinears, backend)
