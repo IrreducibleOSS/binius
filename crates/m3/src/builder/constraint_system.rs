@@ -191,7 +191,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 			});
 		}
 
-		// TODO: new -> with_capacity
 		let mut oracles = MultilinearOracleSet::new();
 		let mut table_constraints = Vec::new();
 		let mut compiled_flushes = Vec::new();
@@ -408,4 +407,24 @@ fn add_oracle_for_column<F: TowerField>(
 		)?,
 	};
 	Ok(oracle_id)
+}
+
+#[cfg(test)]
+mod tests {
+	use assert_matches::assert_matches;
+
+	use super::*;
+
+	#[test]
+	fn test_unsatisfied_po2_requirement() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let mut table_builder = cs.add_table("fibonacci");
+		table_builder.require_power_of_two_size();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![15],
+		};
+		assert_matches!(cs.compile(&statement), Err(Error::TableSizePowerOfTwoRequired { .. }));
+	}
 }
