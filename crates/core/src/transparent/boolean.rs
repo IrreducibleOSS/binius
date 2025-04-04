@@ -54,7 +54,7 @@ mod tests {
 		let mut query = vec![];
 		for i in 0..n_vars {
 			let bit = (int >> i) & 1;
-			query.push(BinaryField32b::from(bit as u32));
+			query.push(BinaryField32b::from(bit));
 		}
 		query
 	}

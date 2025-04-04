@@ -67,7 +67,7 @@ mod tests {
 		let mut query = vec![];
 		for i in 0..8 {
 			let bit = (int >> i) & 1;
-			query.push(BinaryField32b::from(bit as u32));
+			query.push(BinaryField32b::from(bit));
 		}
 		query
 	}
@@ -82,7 +82,7 @@ mod tests {
 		let result_int = a_int + (b_int << 8) + (c_int << 16);
 		let a = int_to_query(a_int);
 		let b = int_to_query(b_int);
-		let query = vec![a.clone(), b.clone()].concat();
+		let query = [a, b].concat();
 
 		let and = And::new(16);
 		let result = and.evaluate(&query).unwrap();

@@ -66,7 +66,7 @@ mod tests {
 		let mut query = vec![];
 		for i in 0..8 {
 			let bit = (int >> i) & 1;
-			query.push(BinaryField32b::from(bit as u32));
+			query.push(BinaryField32b::from(bit));
 		}
 		query
 	}
@@ -82,7 +82,7 @@ mod tests {
 		//Covers the possibility of a = 255 and cin = 1
 		let (mut res_int, mut c_out_int) = a_int.overflowing_add(cin_int);
 
-		if c_out_int == true {
+		if c_out_int{
 			res_int += b_int
 		} else {
 			(res_int, c_out_int) = res_int.overflowing_add(b_int)
@@ -95,7 +95,7 @@ mod tests {
 		let a = int_to_query(a_int);
 		let b = int_to_query(b_int);
 		let cin = vec![BinaryField32b::from(cin_int)];
-		let query = vec![cin.clone(), a.clone(), b.clone()].concat();
+		let query = [cin, a, b].concat();
 
 		let add_with_carry = AddWithCarry;
 		let result = add_with_carry.evaluate(&query).unwrap();
