@@ -188,6 +188,21 @@ pub fn can_iterate_bytes<P: PackedField>() -> bool {
 		x if x == TypeId::of::<ByteSlicedAES8x64x16b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES64x8b>() => true,
 		x if x == TypeId::of::<ByteSlicedAES16x64x8b>() => true,
+		x if x == TypeId::of::<ByteSliced16x128x1b>() => true,
+		x if x == TypeId::of::<ByteSliced8x128x1b>() => true,
+		x if x == TypeId::of::<ByteSliced4x128x1b>() => true,
+		x if x == TypeId::of::<ByteSliced2x128x1b>() => true,
+		x if x == TypeId::of::<ByteSliced1x128x1b>() => true,
+		x if x == TypeId::of::<ByteSliced16x256x1b>() => true,
+		x if x == TypeId::of::<ByteSliced8x256x1b>() => true,
+		x if x == TypeId::of::<ByteSliced4x256x1b>() => true,
+		x if x == TypeId::of::<ByteSliced2x256x1b>() => true,
+		x if x == TypeId::of::<ByteSliced1x256x1b>() => true,
+		x if x == TypeId::of::<ByteSliced16x512x1b>() => true,
+		x if x == TypeId::of::<ByteSliced8x512x1b>() => true,
+		x if x == TypeId::of::<ByteSliced4x512x1b>() => true,
+		x if x == TypeId::of::<ByteSliced2x512x1b>() => true,
+		x if x == TypeId::of::<ByteSliced1x512x1b>() => true,
 		_ => false,
 	}
 }
@@ -310,6 +325,51 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 			}
 			x if x == TypeId::of::<ByteSlicedAES16x64x8b>() => {
 				iterate_byte_sliced!(ByteSlicedAES16x64x8b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced16x128x1b>() => {
+				iterate_byte_sliced!(ByteSliced16x128x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced8x128x1b>() => {
+				iterate_byte_sliced!(ByteSliced8x128x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced4x128x1b>() => {
+				iterate_byte_sliced!(ByteSliced4x128x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced2x128x1b>() => {
+				iterate_byte_sliced!(ByteSliced2x128x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced1x128x1b>() => {
+				iterate_byte_sliced!(ByteSliced1x128x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced16x256x1b>() => {
+				iterate_byte_sliced!(ByteSliced16x256x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced8x256x1b>() => {
+				iterate_byte_sliced!(ByteSliced8x256x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced4x256x1b>() => {
+				iterate_byte_sliced!(ByteSliced4x256x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced2x256x1b>() => {
+				iterate_byte_sliced!(ByteSliced2x256x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced1x256x1b>() => {
+				iterate_byte_sliced!(ByteSliced1x256x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced16x512x1b>() => {
+				iterate_byte_sliced!(ByteSliced16x512x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced8x512x1b>() => {
+				iterate_byte_sliced!(ByteSliced8x512x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced4x512x1b>() => {
+				iterate_byte_sliced!(ByteSliced4x512x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced2x512x1b>() => {
+				iterate_byte_sliced!(ByteSliced2x512x1b, data, callback);
+			}
+			x if x == TypeId::of::<ByteSliced1x512x1b>() => {
+				iterate_byte_sliced!(ByteSliced1x512x1b, data, callback);
 			}
 
 			_ => unreachable!("packed field doesn't support byte iteration"),
