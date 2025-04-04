@@ -209,7 +209,7 @@ mod arithmetization {
 	fn compile_validate_prove_verify(
 		cs: &ConstraintSystem,
 		statement: &Statement,
-		witness: WitnessIndex,
+		witness: WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
 	) {
 		let compiled_cs = cs.compile(statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
