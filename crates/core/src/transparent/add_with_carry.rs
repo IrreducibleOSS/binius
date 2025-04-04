@@ -82,7 +82,7 @@ mod tests {
 		//Covers the possibility of a = 255 and cin = 1
 		let (mut res_int, mut c_out_int) = a_int.overflowing_add(cin_int);
 
-		if c_out_int{
+		if c_out_int {
 			res_int += b_int
 		} else {
 			(res_int, c_out_int) = res_int.overflowing_add(b_int)
