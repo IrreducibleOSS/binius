@@ -274,14 +274,21 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
-					let selectors =
+					let mut selectors =
 						chain!(selector.map(|column_idx| oracle_lookup[column_idx]), step_down)
 							.collect::<Vec<_>>();
+					if selectors.len() > 1 {
+						unimplemented!(
+							"Multiple selectors are not supported yet. \
+							Custom selectors are only allowed on tables with power-of-two size."
+						);
+					}
+					let selector = selectors.pop();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
-						selectors,
+						selector,
 						multiplicity: *multiplicity as u64,
 					});
 				}

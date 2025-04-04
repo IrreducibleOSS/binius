@@ -7,7 +7,7 @@ use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
-use itertools::{izip, multiunzip, Itertools};
+use itertools::{chain, izip, multiunzip, Itertools};
 use tracing::instrument;
 
 use super::{
@@ -174,19 +174,23 @@ where
 			flush_final_layer_claims,
 		);
 
-	let flush_sumcheck_metas = get_flush_dedup_sumcheck_metas(
-		&oracles,
+	let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
 		&flush_oracle_ids,
 		&flush_selectors,
 		&flush_final_layer_claims,
-	)?;
+	);
 
 	let DedupEqIndSumcheckClaims {
 		eq_ind_sumcheck_claims,
 		gkr_eval_points,
 		flush_selectors_unique_by_claim,
 		flush_oracle_ids_by_claim,
-	} = get_flush_dedup_eq_ind_sumcheck_claims(flush_sumcheck_metas)?;
+	} = get_flush_dedup_eq_ind_sumcheck_claims(
+		&oracles,
+		&flush_oracle_ids,
+		&flush_selectors,
+		&flush_final_layer_claims,
+	)?;
 
 	let regular_sumcheck_claims =
 		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
@@ -301,11 +305,13 @@ where
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(
 		&mut oracles,
-		[non_zero_prodcheck_eval_claims, flush_eval_claims]
-			.concat()
-			.into_iter()
-			.chain(zerocheck_eval_claims)
-			.chain(exp_eval_claims),
+		chain!(
+			non_zero_prodcheck_eval_claims,
+			unmasked_flush_eval_claims,
+			flush_eval_claims,
+			zerocheck_eval_claims,
+			exp_eval_claims,
+		),
 		&mut transcript,
 	)?;
 
@@ -532,6 +538,24 @@ pub fn make_flush_oracles<F: TowerField>(
 		.collect()
 }
 
+pub fn reduce_unmasked_flush_eval_claims<F: TowerField>(
+	flush_oracle_ids: &[OracleId],
+	flush_selectors: &[Option<OracleId>],
+	final_layer_claims: &[LayerClaim<F>],
+) -> Vec<EvalcheckMultilinearClaim<F>> {
+	izip!(flush_oracle_ids, flush_selectors, final_layer_claims)
+		.filter_map(|(flush_oracle_id, flush_selector, LayerClaim { eval, eval_point })| {
+			flush_selector
+				.is_none()
+				.then(move || EvalcheckMultilinearClaim {
+					id: *flush_oracle_id,
+					eval_point: eval_point.clone().into(),
+					eval: *eval,
+				})
+		})
+		.collect()
+}
+
 #[derive(Debug)]
 pub struct FlushSumcheckMeta<F: TowerField> {
 	pub composite_sum_claims:
@@ -541,7 +565,7 @@ pub struct FlushSumcheckMeta<F: TowerField> {
 	pub eval_point: Vec<F>,
 }
 
-pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
+pub fn make_flush_sumcheck_metas<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: &[OracleId],
 	flush_selectors: &[Option<OracleId>],
@@ -566,7 +590,11 @@ pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
 		let n_vars = eval_point.len();
 
 		// deduplicate selector oracles
-		let mut flush_selectors_unique = flush_selectors[begin..end].to_vec();
+		let mut flush_selectors_unique = flush_selectors[begin..end]
+			.iter()
+			.filter_map(Option::as_ref)
+			.copied()
+			.collect::<Vec<_>>();
 		flush_selectors_unique.sort();
 		flush_selectors_unique.dedup();
 
@@ -582,6 +610,10 @@ pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
 		)
 		.enumerate()
 		{
+			let Some(flush_selector) = flush_selector else {
+				continue;
+			};
+
 			debug_assert_eq!(n_vars, oracles.n_vars(oracle_id));
 
 			let Some(selector_index) = flush_selectors_unique
@@ -705,8 +737,14 @@ pub struct DedupEqIndSumcheckClaims<F: TowerField, Composition: CompositionPoly<
 
 #[allow(clippy::type_complexity)]
 pub fn get_flush_dedup_eq_ind_sumcheck_claims<F: TowerField>(
-	flush_sumcheck_metas: Vec<FlushSumcheckMeta<F>>,
+	oracles: &MultilinearOracleSet<F>,
+	flush_oracle_ids: &[OracleId],
+	flush_selectors: &[Option<OracleId>],
+	final_layer_claims: &[LayerClaim<F>],
 ) -> Result<DedupEqIndSumcheckClaims<F, impl CompositionPoly<F>>, Error> {
+	let flush_sumcheck_metas =
+		make_flush_sumcheck_metas(oracles, flush_oracle_ids, flush_selectors, final_layer_claims)?;
+
 	let n_claims = flush_sumcheck_metas.len();
 	let mut eq_ind_sumcheck_claims = Vec::with_capacity(n_claims);
 	let mut gkr_eval_points = Vec::with_capacity(n_claims);
@@ -748,6 +786,6 @@ pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
 	let mut zipped: Vec<_> =
 		izip!(flush_oracle_ids.iter().copied(), flush_selectors, flush_final_layer_claims)
 			.collect();
-	zipped.sort_by_key(|&(id, flush_selector, _)| Reverse(oracles.n_vars(id)));
+	zipped.sort_by_key(|&(id, _, _)| Reverse(oracles.n_vars(id)));
 	multiunzip(zipped)
 }

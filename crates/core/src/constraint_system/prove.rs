@@ -27,7 +27,8 @@ use super::{
 	error::Error,
 	verify::{
 		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles,
-		max_n_vars_and_skip_rounds, reorder_for_flushing_by_n_vars,
+		max_n_vars_and_skip_rounds, reduce_unmasked_flush_eval_claims,
+		reorder_for_flushing_by_n_vars,
 	},
 	ConstraintSystem, Proof,
 };
@@ -35,7 +36,7 @@ use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp,
-		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta},
+		verify::{make_flush_sumcheck_metas, FlushSumcheckMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -288,6 +289,12 @@ where
 			flush_final_layer_claims,
 		);
 
+	let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
+		&flush_oracle_ids,
+		&flush_selectors,
+		&flush_final_layer_claims,
+	);
+
 	let FlushSumcheckProvers {
 		provers,
 		flush_selectors_unique_by_claim,
@@ -458,11 +465,13 @@ where
 	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
-		[non_zero_prodcheck_eval_claims, flush_eval_claims]
-			.concat()
-			.into_iter()
-			.chain(zerocheck_eval_claims)
-			.chain(exp_eval_claims),
+		chain!(
+			non_zero_prodcheck_eval_claims,
+			unmasked_flush_eval_claims,
+			flush_eval_claims,
+			zerocheck_eval_claims,
+			exp_eval_claims,
+		),
 		switchover_fn,
 		&mut transcript,
 		&domain_factory,
@@ -648,8 +657,7 @@ where
 	flush_oracles
 		.par_iter()
 		.zip(flush_selectors)
-		.enumerate()
-		.map(|(i, (&flush_oracle_id, &flush_selector))| {
+		.map(|(&flush_oracle_id, &flush_selector)| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
@@ -685,7 +693,7 @@ where
 						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
 					}
 
-					if let Some(selector) = selector {
+					if let Some(ref selector) = selector {
 						let fast_subcube =
 							PackedType::<U, FFastExt<Tower>>::from_underliers_ref_mut(underliers);
 
@@ -746,12 +754,8 @@ where
 	PackedType<U, Tower::B128>: PackedFieldIndexable,
 	'a: 'b,
 {
-	let flush_sumcheck_metas = get_flush_dedup_sumcheck_metas(
-		oracles,
-		flush_oracle_ids,
-		flush_selectors,
-		final_layer_claims,
-	)?;
+	let flush_sumcheck_metas =
+		make_flush_sumcheck_metas(oracles, flush_oracle_ids, flush_selectors, final_layer_claims)?;
 
 	let n_claims = flush_sumcheck_metas.len();
 	let mut provers = Vec::with_capacity(n_claims);
