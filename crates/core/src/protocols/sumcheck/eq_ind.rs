@@ -330,7 +330,7 @@ mod tests {
 			&backend,
 		)
 		.unwrap()
-		.with_nonzero_scalars_prefixes(&[nonzero_prefix, 1 << n_vars])
+		.with_const_suffixes(&[(F::ZERO, (1 << n_vars) - nonzero_prefix), (F::ZERO, 0)])
 		.unwrap()
 		.build(
 			evaluation_order,

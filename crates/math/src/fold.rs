@@ -57,7 +57,7 @@ where
 
 	if is_lerp {
 		let lerp_query = get_packed_slice(query, 1);
-		fold_right_lerp(evals, 1 << log_evals_size, lerp_query, out)?;
+		fold_right_lerp(evals, 1 << log_evals_size, lerp_query, P::Scalar::ZERO, out)?;
 	} else {
 		fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -109,7 +109,14 @@ where
 			unsafe { std::mem::transmute::<&mut [MaybeUninit<PE>], &mut [MaybeUninit<P>]>(out) };
 
 		let lerp_query_p = lerp_query.try_into().ok().expect("P == PE");
-		fold_left_lerp(evals, 1 << log_evals_size, log_evals_size, lerp_query_p, out_p)?;
+		fold_left_lerp(
+			evals,
+			1 << log_evals_size,
+			P::Scalar::ZERO,
+			log_evals_size,
+			lerp_query_p,
+			out_p,
+		)?;
 	} else {
 		fold_left_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -187,7 +194,7 @@ where
 #[inline]
 fn check_left_lerp_fold_arguments<P, PE, POut>(
 	evals: &[P],
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
 	log_evals_size: usize,
 	out: &[POut],
 ) -> Result<(), Error>
@@ -199,24 +206,24 @@ where
 		bail!(Error::IncorrectQuerySize { expected: 1 });
 	}
 
-	if nonzero_scalars_prefix > 1 << log_evals_size {
+	if non_const_prefix > 1 << log_evals_size {
 		bail!(Error::IncorrectNonzeroScalarPrefix {
 			expected: 1 << log_evals_size,
 		});
 	}
 
-	if P::WIDTH * evals.len() < nonzero_scalars_prefix {
+	if P::WIDTH * evals.len() < non_const_prefix {
 		bail!(Error::IncorrectArgumentLength {
 			arg: "evals".into(),
-			expected: nonzero_scalars_prefix,
+			expected: non_const_prefix,
 		});
 	}
 
-	let folded_nonzero_scalars_prefix = nonzero_scalars_prefix.min(1 << (log_evals_size - 1));
+	let folded_non_const_prefix = non_const_prefix.min(1 << (log_evals_size - 1));
 
-	if PE::WIDTH * out.len() < folded_nonzero_scalars_prefix {
+	if PE::WIDTH * out.len() < folded_non_const_prefix {
 		bail!(Error::IncorrectOutputPolynomialSize {
-			expected: folded_nonzero_scalars_prefix,
+			expected: folded_non_const_prefix,
 		});
 	}
 
@@ -401,6 +408,7 @@ pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
 	evals_size: usize,
 	lerp_query: PE::Scalar,
+	suffix_eval: P::Scalar,
 	out: &mut [PE],
 ) -> Result<(), Error>
 where
@@ -435,11 +443,11 @@ where
 		});
 
 	if evals_size % 2 == 1 {
+		let eval0 = get_packed_slice(evals, folded_evals_size << 1);
 		set_packed_slice(
 			out,
 			folded_evals_size,
-			PE::Scalar::from(get_packed_slice(evals, folded_evals_size << 1))
-				* (PE::Scalar::ONE - lerp_query),
+			PE::Scalar::from(suffix_eval - eval0) * lerp_query + PE::Scalar::from(eval0),
 		);
 	}
 
@@ -460,7 +468,8 @@ where
 /// a lerp query of its scalar (and not a nontrivial extension field!).
 pub fn fold_left_lerp<P>(
 	evals: &[P],
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
+	suffix_eval: P::Scalar,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 	out: &mut [MaybeUninit<P>],
@@ -468,15 +477,15 @@ pub fn fold_left_lerp<P>(
 where
 	P: PackedField,
 {
-	check_left_lerp_fold_arguments::<_, P, _>(evals, nonzero_scalars_prefix, log_evals_size, out)?;
+	check_left_lerp_fold_arguments::<_, P, _>(evals, non_const_prefix, log_evals_size, out)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let pivot = nonzero_scalars_prefix
+		let pivot = non_const_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+		let upper_bound = non_const_prefix.div_ceil(P::WIDTH).min(packed_len);
 
 		if pivot > 0 {
 			let (evals_0, evals_1) = evals.split_at(packed_len);
@@ -485,14 +494,15 @@ where
 			}
 		}
 
+		let broadcast_suffix_eval = P::broadcast(suffix_eval);
 		for (out, eval) in izip!(&mut out[pivot..upper_bound], &evals[pivot..]) {
-			out.write(*eval * (P::Scalar::ONE - lerp_query));
+			out.write(*eval + (broadcast_suffix_eval - *eval) * lerp_query);
 		}
 
 		for out in &mut out[upper_bound..] {
 			out.write(P::zero());
 		}
-	} else if nonzero_scalars_prefix > 0 {
+	} else if non_const_prefix > 0 {
 		let only_packed = *evals.first().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 
@@ -516,27 +526,23 @@ where
 /// function, we can implement it separately.
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
+	suffix_eval: P::Scalar,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 ) -> Result<(), Error>
 where
 	P: PackedField,
 {
-	check_left_lerp_fold_arguments::<_, P, _>(
-		evals,
-		nonzero_scalars_prefix,
-		log_evals_size,
-		evals,
-	)?;
+	check_left_lerp_fold_arguments::<_, P, _>(evals, non_const_prefix, log_evals_size, evals)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let pivot = nonzero_scalars_prefix
+		let pivot = non_const_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+		let upper_bound = non_const_prefix.div_ceil(P::WIDTH).min(packed_len);
 
 		if pivot > 0 {
 			let (evals_0, evals_1) = evals.split_at_mut(packed_len);
@@ -545,12 +551,13 @@ where
 			}
 		}
 
+		let broadcast_suffix_eval = P::broadcast(suffix_eval);
 		for eval in &mut evals[pivot..upper_bound] {
-			*eval *= P::Scalar::ONE - lerp_query;
+			*eval += (broadcast_suffix_eval - *eval) * lerp_query;
 		}
 
 		evals.truncate(upper_bound);
-	} else if nonzero_scalars_prefix > 0 {
+	} else if non_const_prefix > 0 {
 		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 		let half_size = 1 << (log_evals_size - 1);
@@ -1115,8 +1122,14 @@ mod tests {
 				1 << log_evals_size.saturating_sub(B128bOptimal::LOG_WIDTH + 1)
 			];
 			fold_left(&evals, log_evals_size, &query, 1, &mut out).unwrap();
-			fold_left_lerp_inplace(&mut evals, 1 << log_evals_size, log_evals_size, lerp_query)
-				.unwrap();
+			fold_left_lerp_inplace(
+				&mut evals,
+				1 << log_evals_size,
+				Field::ZERO,
+				log_evals_size,
+				lerp_query,
+			)
+			.unwrap();
 
 			for (out, &inplace) in izip!(&out, &evals) {
 				unsafe {
