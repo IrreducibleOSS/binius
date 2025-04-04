@@ -5,9 +5,10 @@ use cfg_if::cfg_if;
 use crate::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::WithUnderlier,
-	Field, PackedField,
+	ByteSlicedUnderlier, Field, PackedField,
 };
 
+/// A trait to retrieve the optimal throughput `ordinal` packed field for a given architecture.
 pub trait ArchOptimal: Field {
 	type OptimalThroughputPacked: PackedField<Scalar = Self>
 		+ WithUnderlier<Underlier = OptimalUnderlier>;
@@ -19,6 +20,20 @@ where
 	OptimalUnderlier: PackScalar<F>,
 {
 	type OptimalThroughputPacked = PackedType<OptimalUnderlier, F>;
+}
+
+/// A trait to retrieve the optimal throughput packed byte-sliced field for a given architecture
+pub trait ArchOptimalByteSliced: Field {
+	type OptimalByteSliced: PackedField<Scalar = Self>
+		+ WithUnderlier<Underlier = OptimalUnderlierByteSliced>;
+}
+
+impl<F> ArchOptimalByteSliced for F
+where
+	F: Field,
+	OptimalUnderlierByteSliced: PackScalar<F>,
+{
+	type OptimalByteSliced = PackedType<OptimalUnderlierByteSliced, F>;
 }
 
 cfg_if! {
@@ -67,3 +82,7 @@ cfg_if! {
 		pub type OptimalUnderlier = OptimalUnderlier128b;
 	}
 }
+
+/// Optimal underlier for byte-sliced packed field for the current architecture.
+/// This underlier can pack up to 128b scalars.
+pub type OptimalUnderlierByteSliced = ByteSlicedUnderlier<OptimalUnderlier, 16>;

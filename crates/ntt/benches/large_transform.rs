@@ -3,9 +3,10 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField128b, AESTowerField32b,
-	BinaryField128b, BinaryField128bPolyval, BinaryField32b, ByteSlicedAES32x128b, PackedExtension,
-	TowerField,
+	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
+	as_packed_field::PackedType,
+	AESTowerField128b, AESTowerField32b, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
+	PackedExtension, TowerField,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -44,10 +45,10 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 
 // We are ignoring the transposition associated with byte slicing
 fn bench_byte_sliced(c: &mut Criterion) {
-	bench_large_transform::<AESTowerField32b, ByteSlicedAES32x128b>(
-		c,
-		"bytesliced=ByteSlicedAES32x128b",
-	);
+	bench_large_transform::<
+		AESTowerField32b,
+		PackedType<OptimalUnderlierByteSliced, AESTowerField128b>,
+	>(c, "bytesliced=AESTowerField128b");
 }
 
 fn bench_packed128b(c: &mut Criterion) {
