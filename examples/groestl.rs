@@ -7,17 +7,18 @@ use binius_circuits::builder::types::U;
 use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
 	arch::{OptimalUnderlier, OptimalUnderlier128b},
-	as_packed_field::{PackScalar, PackedType},
+	as_packed_field::PackedType,
 	linear_transformation::PackedTransformationFactory,
-	Field,
+	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
-	builder::{ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B8},
+	builder::{
+		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B8,
+	},
 	gadgets::hash::groestl,
 };
 use binius_utils::rayon::adjust_thread_pool;
-use bytemuck::Pod;
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
 use rand::thread_rng;
@@ -53,10 +54,10 @@ impl PermutationTable {
 	}
 }
 
-impl<U> TableFiller<U> for PermutationTable
+impl<P> TableFiller<P> for PermutationTable
 where
-	U: Pod + PackScalar<B1> + PackScalar<B8>,
-	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, B8>>,
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
 	type Event = [B8; 64];
 
@@ -67,7 +68,7 @@ where
 	fn fill<'a>(
 		&self,
 		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessSegment<U>,
+		witness: &mut TableWitnessSegment<P>,
 	) -> Result<()> {
 		self.permutation.populate_state_in(witness, rows)?;
 		self.permutation.populate(witness)?;
@@ -105,7 +106,7 @@ fn main() -> Result<()> {
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let mut witness = cs
-		.build_witness::<OptimalUnderlier>(&allocator, &statement)
+		.build_witness::<PackedType<OptimalUnderlier, B128>>(&allocator, &statement)
 		.unwrap();
 	witness.fill_table_sequential(&table, &events)?;
 	drop(trace_gen_scope);
