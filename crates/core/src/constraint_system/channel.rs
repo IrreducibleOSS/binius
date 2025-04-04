@@ -180,6 +180,7 @@ where
 
 		for i in 0..1 << n_vars {
 			let selector_off = selector_poly
+				.as_ref()
 				.map(|selector_poly| {
 					selector_poly
 						.evaluate_on_hypercube(i)
