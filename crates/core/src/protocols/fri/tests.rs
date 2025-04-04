@@ -7,7 +7,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField,
-	PackedBinaryField16x16b, PackedField, PackedFieldIndexable, TowerField,
+	PackedBinaryField16x16b, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -37,8 +37,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	U: UnderlierType + PackScalar<F> + PackScalar<FA>,
 	F: TowerField + ExtensionField<FA> + PackedField<Scalar = F>,
 	FA: BinaryField,
-	PackedType<U, F>: PackedFieldIndexable,
-	PackedType<U, FA>: PackedFieldIndexable,
+	PackedType<U, F>: PackedField,
+	PackedType<U, FA>: PackedField,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
@@ -74,13 +74,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	} = fri::commit_interleaved(&committed_rs_code_packed, &params, &merkle_prover, &msg).unwrap();
 
 	// Run the prover to generate the proximity proof
-	let mut round_prover = FRIFolder::new(
-		&params,
-		&merkle_prover,
-		<PackedType<U, F>>::unpack_scalars(&codeword),
-		&codeword_committed,
-	)
-	.unwrap();
+	let mut round_prover =
+		FRIFolder::new(&params, &merkle_prover, &codeword, &codeword_committed).unwrap();
 
 	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	prover_challenger.message().write(&codeword_commitment);

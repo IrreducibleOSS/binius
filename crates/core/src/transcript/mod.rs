@@ -364,25 +364,32 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 		self.write_scalar_slice(slice::from_ref(&f));
 	}
 
-	pub fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
-		self.proof_size_event_wrapper(|buffer| {
-			for elem in elems {
-				SerializeBytes::serialize(elem, &mut *buffer, SerializationMode::CanonicalTower)
+	pub fn write_scalar_iter<F: TowerField>(&mut self, it: impl IntoIterator<Item = F>) {
+		self.proof_size_event_wrapper(move |buffer| {
+			for elem in it {
+				SerializeBytes::serialize(&elem, &mut *buffer, SerializationMode::CanonicalTower)
 					.expect("TODO: propagate error");
 			}
 		});
 	}
 
+	pub fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
+		self.write_scalar_iter(elems.iter().copied());
+	}
+
 	pub fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
-		for scalar in packed.iter() {
-			self.write_scalar(scalar);
-		}
+		self.write_scalar_iter(packed.into_iter());
+	}
+
+	pub fn write_packed_iter<P: PackedField<Scalar: TowerField>>(
+		&mut self,
+		it: impl IntoIterator<Item = P>,
+	) {
+		self.write_scalar_iter(it.into_iter().flat_map(|packed| packed.into_iter()));
 	}
 
 	pub fn write_packed_slice<P: PackedField<Scalar: TowerField>>(&mut self, packed_slice: &[P]) {
-		for &packed in packed_slice {
-			self.write_packed(packed)
-		}
+		self.write_scalar_iter(P::iter_slice(packed_slice));
 	}
 
 	pub fn write_debug(&mut self, msg: &str) {
@@ -391,7 +398,7 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 		}
 	}
 
-	fn proof_size_event_wrapper<F: Fn(&mut B)>(&mut self, f: F) {
+	fn proof_size_event_wrapper<F: FnOnce(&mut B)>(&mut self, f: F) {
 		let buffer = self.buffer();
 		let start_bytes = buffer.remaining_mut();
 		f(buffer);

@@ -36,6 +36,77 @@ where
 	}
 }
 
+/// Check if `P` implements `PackedFieldIndexable`.
+/// This functions gets optimized out by the compiler so if it is used in a generic context
+/// as an `if` condition, the non-meaningful branch will be optimized out.
+#[inline(always)]
+#[allow(clippy::redundant_clone)]
+pub fn is_packed_field_indexable<P: PackedField>() -> bool {
+	// Use a hack that array of copyable elements won't call clone when the array is cloned.
+
+	struct X<T> {
+		cloned: bool,
+		_pd: std::marker::PhantomData<T>,
+	}
+
+	impl<T> Clone for X<T> {
+		fn clone(&self) -> Self {
+			Self {
+				cloned: true,
+				_pd: std::marker::PhantomData,
+			}
+		}
+	}
+
+	impl<T: PackedFieldIndexable> Copy for X<T> {}
+
+	let arr = [X::<P> {
+		cloned: false,
+		_pd: std::marker::PhantomData,
+	}];
+	let cloned = arr.clone();
+
+	!cloned[0].cloned
+}
+
+#[inline(always)]
+pub fn unpack_if_possible<P: PackedField, R>(
+	slice: &[P],
+	unpacked_fn: impl FnOnce(&[P::Scalar]) -> R,
+	fallback_fn: impl FnOnce(&[P]) -> R,
+) -> R {
+	if is_packed_field_indexable::<P>() {
+		let unpacked = unsafe {
+			std::slice::from_raw_parts(
+				slice.as_ptr() as *const P::Scalar,
+				slice.len() << P::LOG_WIDTH,
+			)
+		};
+		unpacked_fn(unpacked)
+	} else {
+		fallback_fn(slice)
+	}
+}
+
+#[inline(always)]
+pub fn unpack_if_possible_mut<P: PackedField, R>(
+	slice: &mut [P],
+	unpacked_fn: impl FnOnce(&mut [P::Scalar]) -> R,
+	fallback_fn: impl FnOnce(&mut [P]) -> R,
+) -> R {
+	if is_packed_field_indexable::<P>() {
+		let unpacked = unsafe {
+			std::slice::from_raw_parts_mut(
+				slice.as_mut_ptr() as *mut P::Scalar,
+				slice.len() << P::LOG_WIDTH,
+			)
+		};
+		unpacked_fn(unpacked)
+	} else {
+		fallback_fn(slice)
+	}
+}
+
 /// Trait represents a relationship between a packed struct of field elements and a packed struct
 /// of elements from an extension field.
 ///
@@ -287,5 +358,35 @@ where
 		let underliers = PT1::to_underliers_ref_mut(packed);
 		let underliers: &mut [PT2::Underlier] = PT1::Underlier::split_slice_mut(underliers);
 		PT2::from_underliers_ref_mut(underliers)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::{PackedBinaryField2x8b, PackedBinaryField8x2b};
+
+	#[test]
+	fn test_unpack_if_possible() {
+		let slice = [PackedBinaryField2x8b::zero(); 4];
+
+		let len = unpack_if_possible(&slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 8);
+
+		let slice = [PackedBinaryField8x2b::zero(); 4];
+		let len = unpack_if_possible(&slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 4);
+	}
+
+	#[test]
+	fn test_unpack_if_possible_mut() {
+		let mut slice = [PackedBinaryField2x8b::zero(); 4];
+
+		let len = unpack_if_possible_mut(&mut slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 8);
+
+		let mut slice = [PackedBinaryField8x2b::zero(); 4];
+		let len = unpack_if_possible_mut(&mut slice, |slice| slice.len(), |slice| slice.len());
+		assert_eq!(len, 4);
 	}
 }

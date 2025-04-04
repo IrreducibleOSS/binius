@@ -1,6 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField, TowerField};
+use binius_field::{
+	packed::{iter_packed_slice_with_offset, len_packed_slice},
+	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
+};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::{bail, SerializeBytes};
@@ -75,17 +78,19 @@ where
 /// * `challenges` - the folding challenges. The length must be at least `log_batch_size`.
 /// * `log_batch_size` - the base-2 logarithm of the batch size of the interleaved code.
 #[instrument(skip_all, level = "debug")]
-fn fold_interleaved<F, FS>(
+fn fold_interleaved<F, FS, P>(
 	rs_code: &ReedSolomonCode<FS>,
-	codeword: &[F],
+	codeword: &[P],
 	challenges: &[F],
 	log_batch_size: usize,
 ) -> Vec<F>
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	P: PackedField<Scalar = F>,
 {
-	assert_eq!(codeword.len(), 1 << (rs_code.log_len() + log_batch_size));
+	assert_eq!(len_packed_slice(codeword), 1 << (rs_code.log_len() + log_batch_size));
+	assert!(P::LOG_WIDTH <= log_batch_size);
 	assert!(challenges.len() >= log_batch_size);
 
 	let backend = make_portable_backend();
@@ -97,8 +102,7 @@ where
 
 	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
 	let fold_chunk_size = 1 << fold_challenges.len();
-	let interleave_chunk_size = 1 << log_batch_size;
-	let chunk_size = fold_chunk_size * interleave_chunk_size;
+	let chunk_size = 1 << (fold_challenges.len() + log_batch_size - P::LOG_WIDTH);
 	codeword
 		.par_chunks(chunk_size)
 		.enumerate()
@@ -263,16 +267,17 @@ pub enum FoldRoundOutput<VCSCommitment> {
 }
 
 /// A stateful prover for the FRI fold phase.
-pub struct FRIFolder<'a, F, FA, MerkleProver, VCS>
+pub struct FRIFolder<'a, F, FA, P, MerkleProver, VCS>
 where
 	FA: BinaryField,
 	F: BinaryField,
+	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
 	params: &'a FRIParams<F, FA>,
 	merkle_prover: &'a MerkleProver,
-	codeword: &'a [F],
+	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
 	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
 	curr_round: usize,
@@ -280,10 +285,11 @@ where
 	unprocessed_challenges: Vec<F>,
 }
 
-impl<'a, F, FA, MerkleProver, VCS> FRIFolder<'a, F, FA, MerkleProver, VCS>
+impl<'a, F, FA, P, MerkleProver, VCS> FRIFolder<'a, F, FA, P, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
+	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
 {
@@ -291,10 +297,10 @@ where
 	pub fn new(
 		params: &'a FRIParams<F, FA>,
 		merkle_prover: &'a MerkleProver,
-		committed_codeword: &'a [F],
+		committed_codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
 	) -> Result<Self, Error> {
-		if committed_codeword.len() != 1 << params.log_len() {
+		if len_packed_slice(committed_codeword) < 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match interleaved codeword length".to_string(),
 			));
@@ -403,7 +409,7 @@ where
 	#[allow(clippy::type_complexity)]
 	pub fn finalize(
 		mut self,
-	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, MerkleProver, VCS>), Error> {
+	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, P, MerkleProver, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
 			bail!(Error::EarlyProverFinish);
 		}
@@ -412,7 +418,7 @@ where
 			.round_committed
 			.last()
 			.map(|(codeword, _)| codeword.clone())
-			.unwrap_or_else(|| self.codeword.to_vec());
+			.unwrap_or_else(|| PackedField::iter_slice(self.codeword).collect());
 
 		self.unprocessed_challenges.clear();
 
@@ -463,24 +469,26 @@ where
 }
 
 /// A prover for the FRI query phase.
-pub struct FRIQueryProver<'a, F, FA, MerkleProver, VCS>
+pub struct FRIQueryProver<'a, F, FA, P, MerkleProver, VCS>
 where
 	F: BinaryField,
 	FA: BinaryField,
+	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
 	params: &'a FRIParams<F, FA>,
-	codeword: &'a [F],
+	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
 	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
 	merkle_prover: &'a MerkleProver,
 }
 
-impl<F, FA, MerkleProver, VCS> FRIQueryProver<'_, F, FA, MerkleProver, VCS>
+impl<F, FA, P, MerkleProver, VCS> FRIQueryProver<'_, F, FA, P, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
+	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
@@ -563,9 +571,9 @@ where
 	}
 }
 
-fn prove_coset_opening<F, MTProver, B>(
+fn prove_coset_opening<F, P, MTProver, B>(
 	merkle_prover: &MTProver,
-	codeword: &[F],
+	codeword: &[P],
 	committed: &MTProver::Committed,
 	coset_index: usize,
 	log_coset_size: usize,
@@ -574,11 +582,13 @@ fn prove_coset_opening<F, MTProver, B>(
 ) -> Result<(), Error>
 where
 	F: TowerField,
+	P: PackedField<Scalar = F>,
 	MTProver: MerkleTreeProver<F>,
 	B: BufMut,
 {
-	let values = &codeword[(coset_index << log_coset_size)..((coset_index + 1) << log_coset_size)];
-	advice.write_scalar_slice(values);
+	let values = iter_packed_slice_with_offset(codeword, coset_index << log_coset_size)
+		.take(1 << log_coset_size);
+	advice.write_scalar_iter(values);
 
 	merkle_prover
 		.prove_opening(committed, optimal_layer_depth, coset_index, advice)

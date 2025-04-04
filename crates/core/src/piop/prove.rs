@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::{get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked},
-	BinaryField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -134,7 +134,7 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 where
 	F: BinaryField,
 	FEncode: BinaryField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -201,7 +201,7 @@ where
 	F: TowerField,
 	FDomain: Field,
 	FEncode: BinaryField,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>,
@@ -286,13 +286,12 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 where
 	F: TowerField,
 	FEncode: BinaryField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover =
-		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), committed)?;
+	let mut fri_prover = FRIFolder::new(fri_params, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

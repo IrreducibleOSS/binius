@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
+use binius_field::{util::eq, Field, PackedField, TowerField};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -112,7 +112,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 
 	fn multilinear_extension_circular<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
-		P: PackedFieldIndexable<Scalar = F>,
+		P: PackedField<Scalar = F>,
 	{
 		let (ps, pps) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
@@ -126,7 +126,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 
 	fn multilinear_extension_logical_left<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
-		P: PackedFieldIndexable<Scalar = F>,
+		P: PackedField<Scalar = F>,
 	{
 		let (ps, _) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
@@ -135,7 +135,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 
 	fn multilinear_extension_logical_right<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
-		P: PackedFieldIndexable<Scalar = F>,
+		P: PackedField<Scalar = F>,
 	{
 		let right_shift_offset = get_left_shift_offset(self.block_size, self.shift_offset);
 		let (_, pps) =
@@ -147,7 +147,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 	/// over the entire $b$-variate hypercube
 	pub fn multilinear_extension<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
-		P: PackedFieldIndexable<Scalar = F>,
+		P: PackedField<Scalar = F>,
 	{
 		match self.shift_variant {
 			ShiftVariant::CircularLeft => self.multilinear_extension_circular(),
@@ -266,7 +266,7 @@ fn evaluate_shift_ind_help<F: Field>(
 /// Total time is O(2^b) field operations (optimal in light of output size)
 /// Requires length of $r$ is exactly block_size
 /// Requires shift offset is at most $2^b$ where $b$ is block_size
-fn partial_evaluate_hypercube_impl<P: PackedFieldIndexable>(
+fn partial_evaluate_hypercube_impl<P: PackedField>(
 	block_size: usize,
 	shift_offset: usize,
 	r: &[P::Scalar],
@@ -275,12 +275,12 @@ fn partial_evaluate_hypercube_impl<P: PackedFieldIndexable>(
 	let mut s_ind_p = vec![P::one(); 1 << (block_size - P::LOG_WIDTH)];
 	let mut s_ind_pp = vec![P::zero(); 1 << (block_size - P::LOG_WIDTH)];
 
-	partial_evaluate_hypercube_with_buffers(
+	partial_evaluate_hypercube_with_buffers_within_packed(
 		block_size.min(P::LOG_WIDTH),
 		shift_offset,
 		r,
-		P::unpack_scalars_mut(&mut s_ind_p),
-		P::unpack_scalars_mut(&mut s_ind_pp),
+		&mut s_ind_p[0],
+		&mut s_ind_pp[0],
 	);
 	if block_size > P::LOG_WIDTH {
 		partial_evaluate_hypercube_with_buffers(
@@ -295,7 +295,34 @@ fn partial_evaluate_hypercube_impl<P: PackedFieldIndexable>(
 	Ok((s_ind_p, s_ind_pp))
 }
 
-fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
+#[inline(always)]
+fn shift_offset_odd_step<P: PackedField>(s_ind_p: &P, s_ind_pp: &P, r_k: P) -> (P, P, P) {
+	let mut pp_lo = *s_ind_pp;
+	let mut pp_hi = pp_lo * r_k;
+
+	pp_lo -= pp_hi;
+
+	let p_lo = *s_ind_p;
+	let p_hi = p_lo * r_k;
+	pp_hi += p_lo - p_hi; // * 1 - r
+
+	(pp_lo, pp_hi, p_hi)
+}
+
+#[inline(always)]
+fn shift_offset_even_step<P: PackedField>(s_ind_p: &P, s_ind_pp: &P, r_k: P) -> (P, P, P) {
+	let mut p_lo = *s_ind_p;
+	let p_hi = p_lo * r_k;
+	p_lo -= p_hi;
+
+	let pp_lo = *s_ind_pp;
+	let pp_hi = pp_lo * (P::one() - r_k);
+	p_lo += pp_lo - pp_hi;
+
+	(p_lo, p_hi, pp_hi)
+}
+
+fn partial_evaluate_hypercube_with_buffers<P: PackedField>(
 	block_size: usize,
 	shift_offset: usize,
 	r: &[P::Scalar],
@@ -303,17 +330,13 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 	s_ind_pp: &mut [P],
 ) {
 	for k in 0..block_size {
+		// Save broadcasts inside the loop
+		let r_k = P::broadcast(r[k]);
+
 		// complexity: just two multiplications per iteration!
 		if (shift_offset >> k) % 2 == 1 {
 			for i in 0..(1 << k) {
-				let mut pp_lo = s_ind_pp[i];
-				let mut pp_hi = pp_lo * r[k];
-
-				pp_lo -= pp_hi;
-
-				let p_lo = s_ind_p[i];
-				let p_hi = p_lo * r[k];
-				pp_hi += p_lo - p_hi; // * 1 - r
+				let (pp_lo, pp_hi, p_hi) = shift_offset_odd_step(&s_ind_p[i], &s_ind_pp[i], r_k);
 
 				s_ind_pp[i] = pp_lo;
 				s_ind_pp[1 << k | i] = pp_hi;
@@ -323,13 +346,7 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 			}
 		} else {
 			for i in 0..(1 << k) {
-				let mut p_lo = s_ind_p[i];
-				let p_hi = p_lo * r[k];
-				p_lo -= p_hi;
-
-				let pp_lo = s_ind_pp[i];
-				let pp_hi = pp_lo * (P::one() - r[k]);
-				p_lo += pp_lo - pp_hi;
+				let (p_lo, p_hi, pp_hi) = shift_offset_even_step(&s_ind_p[i], &s_ind_pp[i], r_k);
 
 				s_ind_p[i] = p_lo;
 				s_ind_p[1 << k | i] = p_hi;
@@ -337,6 +354,70 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 				s_ind_pp[i] = P::zero(); // clear lower half
 				s_ind_pp[1 << k | i] = pp_hi;
 			}
+		}
+	}
+}
+
+/// This is a variation of the previous function for the case when block_size <= P::LOG_WIDTH,
+/// i.e. all the changes are applied within the first packed element.
+// Suppress clippy warning as applying it makes the code less readable.
+#[allow(clippy::needless_range_loop)]
+fn partial_evaluate_hypercube_with_buffers_within_packed<P: PackedField>(
+	block_size: usize,
+	shift_offset: usize,
+	r: &[P::Scalar],
+	s_ind_p: &mut P,
+	s_ind_pp: &mut P,
+) {
+	debug_assert!(block_size <= P::LOG_WIDTH);
+
+	for k in 0..block_size {
+		// Save broadcasts inside
+		let r_k = P::broadcast(r[k]);
+
+		// complexity: just two multiplications per iteration!
+		if (shift_offset >> k) % 2 == 1 {
+			let (pp_lo, pp_hi, p_hi) = shift_offset_odd_step(s_ind_p, s_ind_pp, r_k);
+
+			*s_ind_pp = PackedField::from_fn(|i| {
+				if i < 1 << k {
+					unsafe { pp_lo.get_unchecked(i) }
+				} else if i < 1 << (k + 1) {
+					unsafe { pp_hi.get_unchecked(i - (1 << k)) }
+				} else {
+					unsafe { s_ind_pp.get_unchecked(i) }
+				}
+			});
+			*s_ind_p = PackedField::from_fn(|i| {
+				if i < 1 << k {
+					unsafe { p_hi.get_unchecked(i) }
+				} else if i < 1 << (k + 1) {
+					Field::ZERO
+				} else {
+					unsafe { s_ind_p.get_unchecked(i) }
+				}
+			});
+		} else {
+			let (p_lo, p_hi, pp_hi) = shift_offset_even_step(s_ind_p, s_ind_pp, r_k);
+
+			*s_ind_p = PackedField::from_fn(|i| {
+				if i < 1 << k {
+					unsafe { p_lo.get_unchecked(i) }
+				} else if i < 1 << (k + 1) {
+					unsafe { p_hi.get_unchecked(i - (1 << k)) }
+				} else {
+					unsafe { s_ind_p.get_unchecked(i) }
+				}
+			});
+			*s_ind_pp = PackedField::from_fn(|i| {
+				if i < 1 << k {
+					Field::ZERO
+				} else if i < 1 << (k + 1) {
+					unsafe { pp_hi.get_unchecked(i - (1 << k)) }
+				} else {
+					unsafe { s_ind_pp.get_unchecked(i) }
+				}
+			});
 		}
 	}
 }
@@ -353,10 +434,7 @@ mod tests {
 	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;
 
 	// Consistency Tests for each shift variant
-	fn test_circular_left_shift_consistency_help<
-		F: TowerField,
-		P: PackedFieldIndexable<Scalar = F>,
-	>(
+	fn test_circular_left_shift_consistency_help<F: TowerField, P: PackedField<Scalar = F>>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -384,10 +462,7 @@ mod tests {
 		assert_eq!(eval_mle, eval_mvp);
 	}
 
-	fn test_logical_left_shift_consistency_help<
-		F: TowerField,
-		P: PackedFieldIndexable<Scalar = F>,
-	>(
+	fn test_logical_left_shift_consistency_help<F: TowerField, P: PackedField<Scalar = F>>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -415,10 +490,7 @@ mod tests {
 		assert_eq!(eval_mle, eval_mvp);
 	}
 
-	fn test_logical_right_shift_consistency_help<
-		F: TowerField,
-		P: PackedFieldIndexable<Scalar = F>,
-	>(
+	fn test_logical_right_shift_consistency_help<F: TowerField, P: PackedField<Scalar = F>>(
 		block_size: usize,
 		left_shift_offset: usize,
 	) {

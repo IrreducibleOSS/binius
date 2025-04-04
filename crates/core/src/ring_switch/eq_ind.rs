@@ -7,8 +7,7 @@ use binius_field::{
 		can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes, ByteIteratorCallback,
 	},
 	util::inner_product_unchecked,
-	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	TowerField,
+	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
 use binius_maybe_rayon::prelude::*;
@@ -90,17 +89,18 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<P: PackedFieldIndexable<Scalar = F>>(
+	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
 	) -> Result<MultilinearExtension<P>, Error> {
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
-		P::unpack_scalars_mut(&mut evals)
-			.par_iter_mut()
-			.for_each(|val| {
-				*val = inner_product_subfield(*val, &self.row_batch_coeffs);
-			});
+		evals.par_iter_mut().for_each(|val| {
+			*val = P::from_scalars(
+				val.iter()
+					.map(|v| inner_product_subfield(v, &self.row_batch_coeffs)),
+			);
+		});
 		Ok(MultilinearExtension::from_values(evals)?)
 	}
 }
