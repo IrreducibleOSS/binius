@@ -89,18 +89,13 @@ fn create_claims_witnesses_helper<
 
 	let mut new_claims = Vec::with_capacity(n_multilins);
 	let mut new_witnesses = Vec::with_capacity(n_multilins);
-	(0..n_multilins).for_each(|index| {
-		let claim = GrandProductClaim {
-			n_vars,
-			product: mles_with_product[index].1,
-		};
-		let witness_poly = witness_index
-			.get_multilin_poly(multilin_oracles[index].id())
-			.unwrap();
-		let witness = GrandProductWitness::new(witness_poly).unwrap();
+
+	for (mle, product) in mles_with_product {
+		let claim = GrandProductClaim { n_vars, product };
+		let witness = GrandProductWitness::new(n_vars, mle.into_evals()).unwrap();
 		new_claims.push(claim);
 		new_witnesses.push(witness);
-	});
+	}
 
 	CreateClaimsWitnessesOutput {
 		new_claims,
@@ -182,9 +177,7 @@ where
 	let _ = (oracle_set, witness_index, rng);
 
 	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let GrandProductBatchProveOutput {
-		final_layer_claims: final_layer_claim,
-	} = batch_prove::<_, _, FS, _, _>(
+	let GrandProductBatchProveOutput { final_layer_claims } = batch_prove::<_, _, FS, _, _>(
 		evaluation_order,
 		witnesses,
 		&claims,
@@ -198,15 +191,15 @@ where
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(evaluation_order, claims.clone(), &mut verify_transcript).unwrap();
 
-	assert_eq!(final_layer_claim.len(), verified_evalcheck_multilinear_claims.len());
-	for (proved_eval_claim, verified_layer_laim) in final_layer_claim
+	assert_eq!(final_layer_claims.len(), verified_evalcheck_multilinear_claims.len());
+	for (proved_eval_claim, verified_layer_claim) in final_layer_claims
 		.iter()
 		.zip(verified_evalcheck_multilinear_claims.iter())
 	{
 		// Evaluations match
-		assert_eq!(proved_eval_claim.eval, verified_layer_laim.eval);
+		assert_eq!(proved_eval_claim.eval, verified_layer_claim.eval);
 		// Evaluation Points match
-		assert_eq!(proved_eval_claim.eval_point, verified_layer_laim.eval_point);
+		assert_eq!(proved_eval_claim.eval_point, verified_layer_claim.eval_point);
 	}
 }
 

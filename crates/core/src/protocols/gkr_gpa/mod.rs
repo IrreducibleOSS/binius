@@ -25,7 +25,6 @@ mod error;
 #[allow(clippy::module_inception)]
 mod gkr_gpa;
 mod oracles;
-mod packed_field_storage;
 mod prove;
 #[cfg(test)]
 mod tests;
