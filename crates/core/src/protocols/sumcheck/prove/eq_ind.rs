@@ -3,10 +3,13 @@
 use std::{cmp::Reverse, marker::PhantomData, ops::Range};
 
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
+use binius_hal::{
+	make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator,
+	SumcheckMultilinear,
+};
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
-	MultilinearPoly, RowsBatchRef,
+	MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -16,25 +19,21 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{
-		ArithCircuitPoly, Error as PolynomialError, MultilinearComposite, MultivariatePoly,
-	},
+	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultivariatePoly},
 	protocols::sumcheck::{
 		common::{
 			equal_n_vars_check, get_nontrivial_evaluation_points,
 			interpolation_domains_for_composition_degrees, RoundCoeffs,
 		},
-		prove::{
-			common::fold_partial_eq_ind, MultilinearInput, ProverState, SumcheckInterpolator,
-			SumcheckProver,
-		},
+		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
 		CompositeSumClaim, Error,
 	},
 	transparent::{eq_ind::EqIndPartialEval, step_up::StepUp},
 };
 
 pub fn validate_witness<F, P, M, Composition>(
-	multilinears: &[M],
+	n_vars: usize,
+	multilinears: &[SumcheckMultilinear<P, M>],
 	eq_ind_challenges: &[F],
 	eq_ind_sum_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 ) -> Result<(), Error>
@@ -44,11 +43,40 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Composition: CompositionPoly<P>,
 {
-	let n_vars = equal_n_vars_check(multilinears)?;
-	let multilinears = multilinears.iter().collect::<Vec<_>>();
-
 	if eq_ind_challenges.len() != n_vars {
 		bail!(Error::IncorrectEqIndChallengesLength);
+	}
+
+	for multilinear in multilinears {
+		match multilinear {
+			SumcheckMultilinear::Transparent {
+				multilinear,
+				zero_scalars_suffix,
+				..
+			} => {
+				if multilinear.n_vars() != n_vars {
+					bail!(Error::NumberOfVariablesMismatch);
+				}
+
+				let first_zero = (1usize << n_vars)
+					.checked_sub(*zero_scalars_suffix)
+					.ok_or(Error::IncorrectZeroScalarsSuffixes)?;
+
+				for i in first_zero..1 << n_vars {
+					if multilinear.evaluate_on_hypercube(i)? != F::ZERO {
+						bail!(Error::IncorrectZeroScalarsSuffixes);
+					}
+				}
+			}
+
+			SumcheckMultilinear::Folded {
+				large_field_folded_evals,
+			} => {
+				if large_field_folded_evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+					bail!(Error::IncorrectZeroScalarsSuffixes);
+				}
+			}
+		}
 	}
 
 	let backend = make_portable_backend();
@@ -60,12 +88,32 @@ where
 			composition,
 			sum: expected_sum,
 		} = claim;
-		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
 		let sum = (0..(1 << n_vars))
 			.into_par_iter()
-			.map(|j| -> Result<F, Error> {
-				Ok(eq_ind.evaluate_on_hypercube(j)? * witness.evaluate_on_hypercube(j)?)
-			})
+			.try_fold(
+				|| (vec![P::zero(); multilinears.len()], F::ZERO),
+				|(mut multilinear_evals, mut running_sum), j| -> Result<_, Error> {
+					for (eval, multilinear) in izip!(&mut multilinear_evals, multilinears) {
+						*eval = P::broadcast(match multilinear {
+							SumcheckMultilinear::Transparent { multilinear, .. } => {
+								multilinear.evaluate_on_hypercube(j)?
+							}
+							SumcheckMultilinear::Folded {
+								large_field_folded_evals,
+							} => binius_field::packed::get_packed_slice_checked(
+								large_field_folded_evals,
+								j,
+							)
+							.unwrap_or(F::ZERO),
+						});
+					}
+
+					running_sum += eq_ind.evaluate_on_hypercube(j)?
+						* composition.evaluate(&multilinear_evals)?.get(0);
+					Ok((multilinear_evals, running_sum))
+				},
+			)
+			.map(|fold_state| -> Result<_, Error> { Ok(fold_state?.1) })
 			.try_reduce(|| F::ZERO, |a, b| Ok(a + b))?;
 
 		if sum != expected_sum {
@@ -92,30 +140,70 @@ where
 /// equality indicator and potentially known evaluations at one in first round.
 ///
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
-pub struct EqIndSumcheckProverBuilder<'a, P, Backend>
+pub struct EqIndSumcheckProverBuilder<'a, P, M, Backend>
 where
 	P: PackedField,
+	M: MultilinearPoly<P>,
 	Backend: ComputationBackend,
 {
+	n_vars: usize,
 	eq_ind_partial_evals: Option<Backend::Vec<P>>,
-	nonzero_scalars_prefixes: Option<Vec<usize>>,
 	first_round_eval_1s: Option<Vec<P::Scalar>>,
+	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	backend: &'a Backend,
 }
 
-impl<'a, F, P, Backend> EqIndSumcheckProverBuilder<'a, P, Backend>
+impl<'a, F, P, Backend> EqIndSumcheckProverBuilder<'a, P, MLEDirectAdapter<P, Vec<P>>, Backend>
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
-	pub fn new(backend: &'a Backend) -> Self {
+	pub fn without_switchover(
+		n_vars: usize,
+		multilinears: Vec<Vec<P>>,
+		backend: &'a Backend,
+	) -> Self {
+		let multilinears = multilinears
+			.into_iter()
+			.map(SumcheckMultilinear::folded)
+			.collect();
+
 		Self {
-			backend,
+			n_vars,
 			eq_ind_partial_evals: None,
-			nonzero_scalars_prefixes: None,
 			first_round_eval_1s: None,
+			multilinears,
+			backend,
 		}
+	}
+}
+
+impl<'a, F, P, M, Backend> EqIndSumcheckProverBuilder<'a, P, M, Backend>
+where
+	F: TowerField,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	pub fn with_switchover(
+		multilinears: Vec<M>,
+		switchover_fn: impl Fn(usize) -> usize,
+		backend: &'a Backend,
+	) -> Result<Self, Error> {
+		let n_vars = equal_n_vars_check(&multilinears)?;
+		let multilinears = multilinears
+			.into_iter()
+			.map(|multilinear| SumcheckMultilinear::transparent(multilinear, &switchover_fn))
+			.collect();
+
+		Ok(Self {
+			n_vars,
+			eq_ind_partial_evals: None,
+			first_round_eval_1s: None,
+			multilinears,
+			backend,
+		})
 	}
 
 	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids duplicate work.
@@ -138,31 +226,48 @@ where
 	///
 	/// The provided array specifies the nonzero scalars at the beginning of each multilinear.
 	/// Prover is able to reduce multilinear storage and compute using this information.
-	pub fn with_nonzero_scalars_prefixes(mut self, nonzero_scalars_prefixes: &[usize]) -> Self {
-		self.nonzero_scalars_prefixes = Some(nonzero_scalars_prefixes.to_vec());
-		self
+	pub fn with_nonzero_scalars_prefixes(
+		mut self,
+		nonzero_scalars_prefixes: &[usize],
+	) -> Result<Self, Error> {
+		if nonzero_scalars_prefixes.len() != self.multilinears.len() {
+			bail!(Error::IncorrectZeroScalarsSuffixes);
+		}
+
+		for (multilinear, &nonzero_scalars_prefix) in
+			izip!(&mut self.multilinears, nonzero_scalars_prefixes)
+		{
+			let zero_scalars_suffix = (1usize << self.n_vars)
+				.checked_sub(nonzero_scalars_prefix)
+				.ok_or(Error::IncorrectZeroScalarsSuffixes)?;
+
+			multilinear.update_zero_scalars_suffix(self.n_vars, zero_scalars_suffix);
+		}
+
+		Ok(self)
 	}
 
 	#[instrument(skip_all, level = "debug", name = "EqIndSumcheckProverBuilder::build")]
-	pub fn build<FDomain, Composition, M>(
+	pub fn build<FDomain, Composition>(
 		self,
 		evaluation_order: EvaluationOrder,
-		multilinears: Vec<M>,
 		eq_ind_challenges: &[F],
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		domain_factory: impl EvaluationDomainFactory<FDomain>,
-		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>, Error>
 	where
 		F: ExtensionField<FDomain>,
 		P: PackedExtension<FDomain>,
 		FDomain: Field,
-		M: MultilinearPoly<P> + Send + Sync,
 		Composition: CompositionPoly<P>,
 	{
-		let n_vars = equal_n_vars_check(&multilinears)?;
+		let Self {
+			n_vars,
+			backend,
+			multilinears,
+			..
+		} = self;
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
-		let backend = self.backend;
 
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
@@ -173,7 +278,7 @@ where
 					sum: composite_claim.sum,
 				})
 				.collect::<Vec<_>>();
-			validate_witness(&multilinears, eq_ind_challenges, composite_claims.clone())?;
+			validate_witness(n_vars, &multilinears, eq_ind_challenges, composite_claims.clone())?;
 		}
 
 		if eq_ind_challenges.len() != n_vars {
@@ -207,15 +312,12 @@ where
 			}
 		}
 
-		let zero_scalars_suffixes = self
-			.nonzero_scalars_prefixes
-			.unwrap_or_else(|| vec![1 << n_vars; multilinears.len()])
-			.into_iter()
-			.map(|prefix| (1 << n_vars) - prefix)
-			.collect::<Vec<_>>();
-
-		let (compositions, claimed_sums) =
-			determine_const_eval_suffixes(composite_claims, &zero_scalars_suffixes);
+		let (compositions, claimed_sums) = determine_const_eval_suffixes(
+			composite_claims,
+			multilinears
+				.iter()
+				.map(|multilinear| multilinear.zero_scalars_suffix(n_vars)),
+		);
 
 		let domains = interpolation_domains_for_composition_degrees(
 			domain_factory,
@@ -226,19 +328,12 @@ where
 
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
-		let multilinears_input = izip!(multilinears, &zero_scalars_suffixes)
-			.map(|(multilinear, &zero_scalars_suffix)| MultilinearInput {
-				multilinear,
-				zero_scalars_suffix,
-			})
-			.collect();
-
 		let state = ProverState::new(
 			evaluation_order,
-			multilinears_input,
+			n_vars,
+			multilinears,
 			claimed_sums,
 			nontrivial_evaluation_points,
-			switchover_fn,
 			backend,
 		)?;
 
@@ -361,7 +456,7 @@ type CompositionsAndSums<F, Composition> = (Vec<(Composition, ConstEvalSuffix<F>
 //  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this suffix
 fn determine_const_eval_suffixes<F, P, Composition>(
 	composite_claims: Vec<CompositeSumClaim<F, Composition>>,
-	zero_scalars_suffixes: &[usize],
+	zero_scalars_suffixes: impl IntoIterator<Item = usize>,
 ) -> CompositionsAndSums<F, Composition>
 where
 	F: Field,
@@ -369,8 +464,7 @@ where
 	Composition: CompositionPoly<P>,
 {
 	let mut zero_scalars_suffixes = zero_scalars_suffixes
-		.iter()
-		.copied()
+		.into_iter()
 		.enumerate()
 		.collect::<Vec<_>>();
 
@@ -380,6 +474,7 @@ where
 		.into_iter()
 		.map(|claim| {
 			let CompositeSumClaim { composition, sum } = claim;
+			assert_eq!(zero_scalars_suffixes.len(), composition.n_vars());
 
 			let mut const_eval_suffix = Default::default();
 

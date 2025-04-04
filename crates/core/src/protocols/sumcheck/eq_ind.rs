@@ -324,17 +324,21 @@ mod tests {
 
 		let composite_claim = CompositeSumClaim { sum, composition };
 
-		let prover = EqIndSumcheckProverBuilder::new(&backend)
-			.with_nonzero_scalars_prefixes(&[nonzero_prefix, 1 << n_vars])
-			.build(
-				evaluation_order,
-				vec![a_mle, b_mle],
-				&eq_ind_challenges,
-				[composite_claim.clone()],
-				evaluation_domain_factory,
-				immediate_switchover_heuristic,
-			)
-			.unwrap();
+		let prover = EqIndSumcheckProverBuilder::with_switchover(
+			vec![a_mle, b_mle],
+			immediate_switchover_heuristic,
+			&backend,
+		)
+		.unwrap()
+		.with_nonzero_scalars_prefixes(&[nonzero_prefix, 1 << n_vars])
+		.unwrap()
+		.build(
+			evaluation_order,
+			&eq_ind_challenges,
+			[composite_claim.clone()],
+			evaluation_domain_factory,
+		)
+		.unwrap();
 
 		let (_, const_eval_suffix) = prover.compositions().first().unwrap();
 		assert_eq!(
