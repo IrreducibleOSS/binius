@@ -72,7 +72,7 @@ impl<P: PackedField> GrandProductWitness<P> {
 					// due to implicit multiplication by one.
 					layer[pivot..]
 						.copy_from_slice(&prev_layer[pivot..packed_len.min(prev_layer.len())]);
-				} else if prev_layer.len() > 0 {
+				} else if !prev_layer.is_empty() {
 					let layer = layer
 						.first_mut()
 						.expect("layer.len() >= 1 iff prev_layer.len() >= 1");
@@ -101,7 +101,7 @@ impl<P: PackedField> GrandProductWitness<P> {
 	/// Returns the evaluation of the GKR grand product circuit
 	pub fn grand_product_evaluation(&self) -> P::Scalar {
 		let first_layer = self.circuit_layers.last().expect("always n_vars+1 layers");
-		let first_packed = first_layer.get(0).copied().unwrap_or(P::one());
+		let first_packed = first_layer.first().copied().unwrap_or_else(P::one);
 		first_packed.get(0)
 	}
 
