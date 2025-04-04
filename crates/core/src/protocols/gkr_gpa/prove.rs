@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::get_packed_slice, Field, PackedExtension, PackedField, TowerField};
+use binius_field::{Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::{
@@ -235,10 +235,11 @@ where
 				} else {
 					let mut evals_0 = P::zero();
 					let mut evals_1 = P::zero();
+					let only_packed = layer.first().copied().unwrap_or_else(P::one);
 
 					for i in 0..1 << n_vars {
-						evals_0.set(i, get_packed_slice(&layer, i));
-						evals_1.set(i, get_packed_slice(&layer, i | 1 << n_vars));
+						evals_0.set(i, only_packed.get(i));
+						evals_1.set(i, only_packed.get(i | 1 << n_vars));
 					}
 
 					[vec![evals_0], vec![evals_1]]
