@@ -4,7 +4,7 @@ use std::array;
 
 use anyhow::anyhow;
 use binius_core::{
-	oracle::{OracleId, ProjectionVariant, ShiftVariant},
+	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 };
 use binius_field::{
@@ -114,7 +114,7 @@ pub fn keccakf(
 			"packed projected state input",
 			packed_state_in[xy],
 			vec![F::ZERO; LOG_STATE_ROWS_PER_PERMUTATION],
-			ProjectionVariant::FirstVars,
+			0,
 		)
 	})?;
 
@@ -127,7 +127,7 @@ pub fn keccakf(
 			"output",
 			packed_state_out[xy],
 			vec![Field::ONE; LOG_STATE_ROWS_PER_PERMUTATION],
-			ProjectionVariant::FirstVars,
+			0,
 		)
 	})?;
 

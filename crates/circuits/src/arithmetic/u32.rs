@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::{
-	oracle::{OracleId, ProjectionVariant, ShiftVariant},
+	oracle::{OracleId, ShiftVariant},
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
@@ -269,7 +269,7 @@ pub fn select_bit(
 	anyhow::ensure!(index < 32, "Only index values between 0 and 32 are allowed. Got {index}");
 
 	let query = binius_core::polynomial::test_utils::decompose_index_to_hypercube_point(5, index);
-	let bits = builder.add_projected(name, input, query, ProjectionVariant::FirstVars)?;
+	let bits = builder.add_projected(name, input, query, 0)?;
 
 	if let Some(witness) = builder.witness() {
 		let mut bits = witness.new_column::<B1>(bits);

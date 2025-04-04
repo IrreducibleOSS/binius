@@ -17,7 +17,7 @@ use super::{
 };
 use crate::oracle::{
 	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-	MultilinearPolyVariant, OracleId, ProjectionVariant,
+	MultilinearPolyVariant, OracleId,
 };
 
 /// A mutable verifier state.
@@ -137,20 +137,18 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut eval_point = eval_point.to_vec();
-						eval_point.extend(values);
-						eval_point
-					}
-					ProjectionVariant::FirstVars => {
-						values.iter().copied().chain(eval_point.to_vec()).collect()
-					}
+
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.clone());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
 
 				let new_claim = EvalcheckMultilinearClaim {
 					id,
-					eval_point: eval_point.into(),
+					eval_point: new_eval_point.into(),
 					eval,
 				};
 

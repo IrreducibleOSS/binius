@@ -117,6 +117,72 @@ where
 	Ok(())
 }
 
+/// Execute the middle fold operation.
+///
+/// Every consequent `1 << start_index` scalar values are considered as a row. Then each column
+/// is dot-producted in chunks (of size `1 << log_query_size`) with the `query` slice.
+/// The results are written to the `output`.
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem.
+pub fn fold_middle<P, PE>(
+	evals: &[P],
+	log_evals_size: usize,
+	query: &[PE],
+	log_query_size: usize,
+	start_index: usize,
+	out: &mut [MaybeUninit<PE>],
+) -> Result<(), Error>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	check_fold_arguments(evals, log_evals_size, query, log_query_size, out)?;
+
+	if log_evals_size < log_query_size + start_index {
+		bail!(Error::IncorrectStartIndex {
+			expected: log_evals_size
+		});
+	}
+
+	let lower_indices_size = 1 << start_index;
+	let new_n_vars = log_evals_size - log_query_size;
+
+	out.iter_mut()
+		.enumerate()
+		.for_each(|(outer_index, out_val)| {
+			let mut res = PE::default();
+			// Index of the Scalar at the start of the current Packed element in `out`.
+			let outer_word_start = outer_index << PE::LOG_WIDTH;
+			for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
+				// Index of the current Scalar in `out`.
+				let outer_scalar_index = outer_word_start + inner_index;
+				// Column index, within the reshaped `evals`, where we start the dot-product with the query elements.
+				let inner_i = outer_scalar_index % lower_indices_size;
+				// Row index.
+				let inner_j = outer_scalar_index / lower_indices_size;
+				res.set(
+					inner_index,
+					PackedField::iter_slice(query)
+						.take(1 << log_query_size)
+						.enumerate()
+						.map(|(query_index, basis_eval)| {
+							// The reshaped `evals` "matrix" is subdivided in chunks of size
+							// `1 << (start_index + log_query_size)` for the dot-product.
+							let offset = inner_j << (start_index + log_query_size) | inner_i;
+							let eval_index = offset + (query_index << start_index);
+							let subpoly_eval_i = get_packed_slice(evals, eval_index);
+							basis_eval * subpoly_eval_i
+						})
+						.sum(),
+				);
+			}
+			out_val.write(res);
+		});
+
+	Ok(())
+}
+
 #[inline]
 fn check_fold_arguments<P, PE, POut>(
 	evals: &[P],
@@ -826,7 +892,8 @@ mod tests {
 
 	use binius_field::{
 		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
-		PackedBinaryField16x8b, PackedBinaryField512x1b, PackedBinaryField64x8b,
+		PackedBinaryField16x8b, PackedBinaryField32x1b, PackedBinaryField512x1b,
+		PackedBinaryField64x8b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
 
@@ -961,6 +1028,65 @@ mod tests {
 				&query,
 				log_query_size,
 			);
+		}
+	}
+
+	#[test]
+	fn test_lower_higher_bits() {
+		const LOG_EVALS_SIZE: usize = 7;
+		let mut rng = StdRng::seed_from_u64(0);
+		// We have four elements of 32 bits each. Overall, that gives us 128 bits.
+		let evals = [
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+		];
+
+		// We get the lower bits of all elements (`log_query_size` = 1, so only the first
+		// two bits of `query` are used).
+		let log_query_size = 1;
+		let query = [PackedBinaryField32x1b::from(
+			0b00000000_00000000_00000000_00000001u32,
+		)];
+		let mut out = vec![
+			PackedBinaryField32x1b::zero();
+			(1 << (LOG_EVALS_SIZE - log_query_size)) / PackedBinaryField32x1b::WIDTH
+		];
+		out.clear();
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
+		unsafe {
+			out.set_len(out.capacity());
+		}
+
+		// Every 16 consecutive bits in `out` should be equal to the lower bits of an element.
+		for (i, out_val) in out.iter().enumerate() {
+			let first_lower = (evals[2 * i].0 as u16) as u32;
+			let second_lower = (evals[2 * i + 1].0 as u16) as u32;
+			let expected_out = first_lower + (second_lower << 16);
+			assert!(out_val.0 == expected_out);
+		}
+
+		// We get the higher bits of all elements (`log_query_size` = 1, so only the first
+		// two bits of `query` are used).
+		let query = [PackedBinaryField32x1b::from(
+			0b00000000_00000000_00000000_00000010u32,
+		)];
+
+		out.clear();
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
+		unsafe {
+			out.set_len(out.capacity());
+		}
+
+		// Every 16 consecutive bits in `out` should be equal to the higher bits of an element.
+		for (i, out_val) in out.iter().enumerate() {
+			let first_higher = evals[2 * i].0 >> 16;
+			let second_higher = evals[2 * i + 1].0 >> 16;
+			let expected_out = first_higher + (second_higher << 16);
+			assert!(out_val.0 == expected_out);
 		}
 	}
 
