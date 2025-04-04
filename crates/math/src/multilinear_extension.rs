@@ -497,9 +497,9 @@ mod tests {
 	#[test]
 	fn test_evaluate_middle_32b_to_16b() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let values: Vec<_> = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
+		let values = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
 			.take(1 << 2)
-			.collect();
+			.collect::<Vec<_>>();
 
 		let expected_lower_bits =
 			get_bits::<PackedBinaryField16x1b, PackedBinaryField32x1b>(&values, 0);
@@ -534,9 +534,9 @@ mod tests {
 	#[test]
 	fn test_evaluate_middle_32b_to_8b() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let values: Vec<_> = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
+		let values = repeat_with(|| PackedBinaryField32x1b::random(&mut rng))
 			.take(1 << 2)
-			.collect();
+			.collect::<Vec<_>>();
 
 		let expected_first_quarter =
 			get_bits::<PackedBinaryField8x1b, PackedBinaryField32x1b>(&values, 0);
@@ -599,6 +599,44 @@ mod tests {
 		assert_eq!(evals_second_quarter, expected_second_quarter);
 		assert_eq!(evals_third_quarter, expected_third_quarter);
 		assert_eq!(evals_fourth_quarter, expected_fourth_quarter);
+	}
+
+	#[test]
+	fn test_evaluate_partial_match_evaluate_partial_low() {
+		type P = PackedBinaryField16x8b;
+		type F = BinaryField8b;
+
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let n_vars: usize = 7;
+
+		let values = repeat_with(|| P::random(&mut rng))
+			.take(1 << (n_vars.saturating_sub(P::LOG_WIDTH)))
+			.collect();
+
+		let query_n_minus_1 = repeat_with(|| <F as PackedField>::random(&mut rng))
+			.take(n_vars - 1)
+			.collect::<Vec<_>>();
+
+		let (q_low, q_high) = query_n_minus_1.split_at(query_n_minus_1.len() / 2);
+
+		// Get expanded query to project on lower bits.
+		let query_low = multilinear_query::<P>(q_low);
+		// Get expanded query to project on higher bits.
+		let query_high = multilinear_query::<P>(q_high);
+
+		let me = MultilinearExtension::from_values(values).unwrap();
+
+		assert_eq!(
+			me.evaluate_partial_low(query_low.to_ref())
+				.unwrap()
+				.evaluate_partial_low(query_high.to_ref())
+				.unwrap(),
+			me.evaluate_partial(query_high.to_ref(), q_low.len())
+				.unwrap()
+				.evaluate_partial_low(query_low.to_ref())
+				.unwrap()
+		)
 	}
 
 	#[test]
