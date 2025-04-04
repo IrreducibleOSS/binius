@@ -46,8 +46,8 @@ where
 {
 	assert!(n_vars > 0);
 	parallel_map(multilinears, |sumcheck_multilinear| -> Result<_, Error> {
-		match sumcheck_multilinear {
-			&mut SumcheckMultilinear::Transparent {
+		match *sumcheck_multilinear {
+			SumcheckMultilinear::Transparent {
 				ref multilinear,
 				ref mut switchover_round,
 				const_suffix: (suffix_eval, suffix_len),
@@ -109,7 +109,7 @@ where
 				}
 			}
 
-			&mut SumcheckMultilinear::Folded {
+			SumcheckMultilinear::Folded {
 				large_field_folded_evals: ref mut evals,
 				suffix_eval,
 			} => {
@@ -145,8 +145,8 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 {
 	parallel_map(multilinears, |sumcheck_multilinear| -> Result<_, Error> {
-		match sumcheck_multilinear {
-			&mut SumcheckMultilinear::Transparent {
+		match *sumcheck_multilinear {
+			SumcheckMultilinear::Transparent {
 				ref multilinear,
 				ref mut switchover_round,
 				const_suffix: (suffix_eval, suffix_len),
@@ -207,7 +207,7 @@ where
 				}
 			}
 
-			&mut SumcheckMultilinear::Folded {
+			SumcheckMultilinear::Folded {
 				large_field_folded_evals: ref mut evals,
 				suffix_eval,
 			} => {

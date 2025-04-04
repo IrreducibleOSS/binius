@@ -48,8 +48,8 @@ where
 	}
 
 	for multilinear in multilinears {
-		match multilinear {
-			&SumcheckMultilinear::Transparent {
+		match *multilinear {
+			SumcheckMultilinear::Transparent {
 				ref multilinear,
 				const_suffix: (suffix_eval, suffix_len),
 				..
@@ -69,7 +69,7 @@ where
 				}
 			}
 
-			&SumcheckMultilinear::Folded {
+			SumcheckMultilinear::Folded {
 				large_field_folded_evals: ref evals,
 				..
 			} => {
