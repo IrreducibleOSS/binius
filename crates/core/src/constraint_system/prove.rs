@@ -27,7 +27,8 @@ use super::{
 	error::Error,
 	verify::{
 		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles,
-		max_n_vars_and_skip_rounds, reorder_for_flushing_by_n_vars,
+		max_n_vars_and_skip_rounds, reduce_unmasked_flush_eval_claims,
+		reorder_for_flushing_by_n_vars,
 	},
 	ConstraintSystem, Proof,
 };
@@ -35,7 +36,7 @@ use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp,
-		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta},
+		verify::{make_flush_sumcheck_metas, FlushSumcheckMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -187,8 +188,12 @@ where
 
 	// Grand product arguments
 	// Grand products for non-zero checking
-	let non_zero_fast_witnesses =
-		make_fast_masked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids, None)?;
+	let non_zero_fast_witnesses = make_fast_masked_flush_witnesses::<U, _>(
+		&oracles,
+		&witness,
+		&non_zero_oracle_ids,
+		&vec![None; non_zero_oracle_ids.len()],
+	)?;
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
 		.map(GrandProductWitness::new)
@@ -231,7 +236,7 @@ where
 		&oracles,
 		&witness,
 		&flush_oracle_ids,
-		Some(&flush_selectors),
+		&flush_selectors,
 	)?;
 
 	// This is important to do in parallel.
@@ -280,9 +285,15 @@ where
 		reorder_for_flushing_by_n_vars(
 			&oracles,
 			&flush_oracle_ids,
-			flush_selectors,
+			&flush_selectors,
 			flush_final_layer_claims,
 		);
+
+	let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
+		&flush_oracle_ids,
+		&flush_selectors,
+		&flush_final_layer_claims,
+	);
 
 	let FlushSumcheckProvers {
 		provers,
@@ -454,11 +465,13 @@ where
 	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
-		[non_zero_prodcheck_eval_claims, flush_eval_claims]
-			.concat()
-			.into_iter()
-			.chain(zerocheck_eval_claims)
-			.chain(exp_eval_claims),
+		chain!(
+			non_zero_prodcheck_eval_claims,
+			unmasked_flush_eval_claims,
+			flush_eval_claims,
+			zerocheck_eval_claims,
+			exp_eval_claims,
+		),
 		switchover_fn,
 		&mut transcript,
 		&domain_factory,
@@ -631,7 +644,7 @@ fn make_fast_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracles: &[OracleId],
-	flush_selectors: Option<&[OracleId]>,
+	flush_selectors: &[Option<OracleId>],
 ) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
@@ -643,8 +656,8 @@ where
 	// The function is on the critical path, parallelize.
 	flush_oracles
 		.par_iter()
-		.enumerate()
-		.map(|(i, &flush_oracle_id)| {
+		.zip(flush_selectors)
+		.map(|(&flush_oracle_id, &flush_selector)| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
@@ -654,8 +667,8 @@ where
 			let mut fast_ext_result = vec![PackedType::<U, FFastExt<Tower>>::one(); packed_len];
 
 			let poly = witness.get_multilin_poly(flush_oracle_id)?;
-			let selector = flush_selectors
-				.map(|flush_selectors| witness.get_multilin_poly(flush_selectors[i]))
+			let selector = flush_selector
+				.map(|flush_selector| witness.get_multilin_poly(flush_selector))
 				.transpose()?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
@@ -680,7 +693,7 @@ where
 						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
 					}
 
-					if let Some(selector) = &selector {
+					if let Some(ref selector) = selector {
 						let fast_subcube =
 							PackedType::<U, FFastExt<Tower>>::from_underliers_ref_mut(underliers);
 
@@ -725,7 +738,7 @@ pub struct FlushSumcheckProvers<Prover> {
 fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>(
 	oracles: &mut MultilinearOracleSet<Tower::B128>,
 	flush_oracle_ids: &[OracleId],
-	flush_selectors: &[OracleId],
+	flush_selectors: &[Option<OracleId>],
 	final_layer_claims: &[LayerClaim<Tower::B128>],
 	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, Tower::B128>>,
 	domain_factory: DomainFactory,
@@ -741,12 +754,8 @@ where
 	PackedType<U, Tower::B128>: PackedFieldIndexable,
 	'a: 'b,
 {
-	let flush_sumcheck_metas = get_flush_dedup_sumcheck_metas(
-		oracles,
-		flush_oracle_ids,
-		flush_selectors,
-		final_layer_claims,
-	)?;
+	let flush_sumcheck_metas =
+		make_flush_sumcheck_metas(oracles, flush_oracle_ids, flush_selectors, final_layer_claims)?;
 
 	let n_claims = flush_sumcheck_metas.len();
 	let mut provers = Vec::with_capacity(n_claims);

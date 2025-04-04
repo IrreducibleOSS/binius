@@ -178,7 +178,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.flushes.push(Flush {
 			channel_id,
 			direction,
-			selector,
+			selector: Some(selector),
 			oracles,
 			multiplicity,
 		});

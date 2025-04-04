@@ -93,6 +93,7 @@ mod tests {
 		let chan = cs.add_channel("values");
 
 		let mut lookup_table = cs.add_table("lookup");
+		lookup_table.require_power_of_two_size();
 		let lookup_table_id = lookup_table.id();
 		let values_col = lookup_table.add_committed::<B128, 1>("values");
 		let lookup_producer = LookupProducer::new(&mut lookup_table, chan, &[values_col], 8);
@@ -107,7 +108,7 @@ mod tests {
 		let looker_2_vals = looker_2.add_committed::<B128, 1>("values");
 		looker_2.pull(chan, [looker_2_vals]);
 
-		let lookup_table_size = 45;
+		let lookup_table_size = 64;
 		let mut rng = StdRng::seed_from_u64(0);
 		let values = repeat_with(|| B128::random(&mut rng))
 			.take(lookup_table_size)

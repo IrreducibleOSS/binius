@@ -124,19 +124,21 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				count += 1;
 			}
 
-			// Every table partition has a step_down appended to the end of the table to support
-			// non-power of two height tables.
-			for log_values_per_row in table.partitions.keys() {
-				let oracle_id = first_oracle_id_in_table + count;
-				let size = table_witness.size << log_values_per_row;
-				let log_size = table_witness.log_capacity + log_values_per_row;
-				let witness = StepDown::new(log_size, size)
-					.unwrap()
-					.multilinear_extension::<PackedSubfield<P, B1>>()
-					.unwrap()
-					.specialize_arc_dyn();
-				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
-				count += 1;
+			if !table.po2_sized {
+				// Every table partition has a step_down appended to the end of the table to support
+				// non-power of two height tables.
+				for log_values_per_row in table.partitions.keys() {
+					let oracle_id = first_oracle_id_in_table + count;
+					let size = table_witness.size << log_values_per_row;
+					let log_size = table_witness.log_capacity + log_values_per_row;
+					let witness = StepDown::new(log_size, size)
+						.unwrap()
+						.multilinear_extension::<PackedSubfield<P, B1>>()
+						.unwrap()
+						.specialize_arc_dyn();
+					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+					count += 1;
+				}
 			}
 
 			first_oracle_id_in_table += count;
