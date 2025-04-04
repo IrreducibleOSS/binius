@@ -90,7 +90,7 @@ mod tests {
 		let b = int_to_query(b_int);
 		let query = [a, b].concat();
 
-		let and = And::new(16);
+		let and = And::new(8);
 		let result = and.evaluate(&query).unwrap();
 
 		assert_eq!(result_int, result.val())
