@@ -127,12 +127,15 @@ where
 					&mut new_evals,
 				)?;
 
-                // Pad up the result with suffix_eval
-                if !evals.is_empty() && evals.len() % 2 == 1 {
-                    for i in P::WIDTH>>1..P::WIDTH {
-                        new_evals.last_mut().expect("nonemptiness validated above").set(i, suffix_eval);
-                    }
-                }
+				// Pad up the result with suffix_eval
+				if !evals.is_empty() && evals.len() % 2 == 1 && P::LOG_WIDTH > 0 {
+					for i in P::WIDTH >> 1..P::WIDTH {
+						new_evals
+							.last_mut()
+							.expect("nonemptiness validated above")
+							.set(i, suffix_eval);
+					}
+				}
 
 				*evals = new_evals;
 				Ok(false)
