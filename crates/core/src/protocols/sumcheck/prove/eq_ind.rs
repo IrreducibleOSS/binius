@@ -479,7 +479,10 @@ where
 
 			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
 				expr = expr.const_subst(var_index, suffix_eval).optimize();
-				expr_at_inf = expr_at_inf.const_subst(var_index, suffix_eval).optimize();
+				// NB: infinity point has a different interpolation result; in characteristic 2, it's always zero.
+				expr_at_inf = expr_at_inf
+					.const_subst(var_index, suffix_eval + suffix_eval)
+					.optimize();
 
 				if let Some((value, value_at_inf)) = expr.constant().zip(expr_at_inf.constant()) {
 					const_eval_suffix = ConstEvalSuffix {
