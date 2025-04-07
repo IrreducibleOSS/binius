@@ -196,6 +196,30 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_projected<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		query_size: usize,
+		query_bits: usize,
+		start_index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(start_index < VALUES_PER_ROW);
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Projected {
+				col: col.id(),
+				start_index,
+				query_size,
+				query_bits,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
