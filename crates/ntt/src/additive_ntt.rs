@@ -46,29 +46,35 @@ pub trait AdditiveNTT<F: BinaryField> {
 
 	/// Forward transformation defined in [LCH14] on a batch of inputs.
 	///
-	/// Input is the vector of polynomial coefficients in novel basis, output is in Lagrange basis.
-	/// The batched inputs are interleaved, which improves the cache-efficiency of the computation.
+	/// Given 2^(log_stride_batch + log_batch) polynomials in novel basis, transform them into Lagrange basis.
+	/// The scalars of the input, viewed in natural order, are subdivided into 2^log_batch chunks
+	/// Within each chunk 2^log_stride_batch instances of size 2^log_n are interleaved
+	/// The output adheres to the same shape.
 	///
 	/// [LCH14]: <https://arxiv.org/abs/1404.3458>
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error>;
 
 	/// Inverse transformation defined in [LCH14] on a batch of inputs.
 	///
-	/// Input is the vector of polynomial coefficients in Lagrange basis, output is in novel basis.
-	/// The batched inputs are interleaved, which improves the cache-efficiency of the computation.
+	/// Given 2^(log_stride_batch + log_batch) polynomials in Lagrange basis, transform them into novel basis.
+	/// The scalars of the input, viewed in natural order, are subdivided into 2^log_batch chunks
+	/// Within each chunk 2^log_stride_batch instances of size 2^log_n are interleaved
+	/// The output adheres to the same shape.
 	///
 	/// [LCH14]: https://arxiv.org/abs/1404.3458
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error>;
 
@@ -76,13 +82,15 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [PE],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
 		self.forward_transform(
 			PE::cast_bases_mut(data),
 			coset,
-			PE::Scalar::LOG_DEGREE + log_batch_size,
+			PE::Scalar::LOG_DEGREE + log_stride_batch,
+			log_batch,
 			log_n,
 		)
 	}
@@ -91,13 +99,15 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [PE],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
 		self.inverse_transform(
 			PE::cast_bases_mut(data),
 			coset,
-			PE::Scalar::LOG_DEGREE + log_batch_size,
+			PE::Scalar::LOG_DEGREE + log_stride_batch,
+			log_batch,
 			log_n,
 		)
 	}

@@ -62,7 +62,8 @@ where
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
 		forward_transform(
@@ -70,7 +71,8 @@ where
 			self.single_threaded.twiddles(),
 			data,
 			coset,
-			log_batch_size,
+			log_stride_batch,
+			log_batch,
 			log_n,
 			self.log_max_threads,
 		)
@@ -80,7 +82,8 @@ where
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
@@ -88,22 +91,34 @@ where
 			self.single_threaded.twiddles(),
 			data,
 			coset,
-			log_batch_size,
+			log_stride_batch,
+			log_batch,
 			log_n,
 			self.log_max_threads,
 		)
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
 	coset: u32,
-	log_batch_size: usize,
+	log_stride_batch: usize,
+	log_batch: usize,
 	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(
+		log_domain_size,
+		data,
+		coset,
+		log_stride_batch,
+		log_batch,
+		log_n,
+	)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
@@ -114,7 +129,8 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					s_evals,
 					data,
 					coset,
-					log_batch_size,
+					log_stride_batch,
+					log_batch,
 					log_n,
 				),
 			};
@@ -122,19 +138,19 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		_ => {}
 	};
 
+	let log_s = log_stride_batch;
+	let log_b = log_batch;
+
 	let log_w = P::LOG_WIDTH;
-
-	let log_b = log_batch_size;
-
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_s);
 
-	let par_rounds = (log_n - cutoff).min(log_max_threads);
-	let log_height = par_rounds;
-	let log_width = log_n + log_b - log_w - log_height;
+	let log_height = (log_n + log_b).saturating_sub(cutoff).min(log_max_threads);
+	let log_width = (log_n + log_b + log_s).saturating_sub(log_w + log_height);
+
+	let par_rounds = log_height.saturating_sub(log_b);
 
 	// Perform the column-wise NTTs in parallel over vertical strides of the matrix.
 	{
@@ -151,8 +167,9 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					let coset_twiddle = s_evals[log_n - par_rounds + i]
 						.coset(log_domain_size - log_n, coset as usize);
 
-					for j in 0..1 << (par_rounds - 1 - i) {
-						let twiddle = P::broadcast(coset_twiddle.get(j));
+					let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
+					for j in 0..1 << (log_b + coset_twiddle.log_n()) {
+						let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
 						for k in 0..1 << i {
 							for l in 0..1 << log_stride_len {
 								let idx0 = j << (i + 1) | k;
@@ -171,8 +188,10 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 			});
 	}
 
-	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
+	let log_row_batch = log_b.saturating_sub(log_height);
+	let single_thread_log_n = log_width + log_w - log_s - log_row_batch;
 
+	let inner_coset_mask = (1 << par_rounds) - 1;
 	data.par_chunks_mut(1 << log_width)
 		.enumerate()
 		.try_for_each(|(inner_coset, chunk)| {
@@ -180,8 +199,9 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				log_domain_size,
 				&s_evals[0..log_n - par_rounds],
 				chunk,
-				coset << par_rounds | (inner_coset as u32),
-				log_batch_size,
+				coset << par_rounds | (inner_coset as u32) & inner_coset_mask,
+				log_s,
+				log_row_batch,
 				single_thread_log_n,
 			)
 		})?;
@@ -189,15 +209,26 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
 	coset: u32,
-	log_batch_size: usize,
+	log_stride_batch: usize,
+	log_batch: usize,
 	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(
+		log_domain_size,
+		data,
+		coset,
+		log_stride_batch,
+		log_batch,
+		log_n,
+	)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
@@ -208,7 +239,8 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					s_evals,
 					data,
 					coset,
-					log_batch_size,
+					log_stride_batch,
+					log_batch,
 					log_n,
 				),
 			};
@@ -216,21 +248,24 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		_ => {}
 	};
 
+	let log_s = log_stride_batch;
+	let log_b = log_batch;
+
 	let log_w = P::LOG_WIDTH;
-
-	let log_b = log_batch_size;
-
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_s);
 
-	let par_rounds = (log_n - cutoff).min(log_max_threads);
-	let log_height = par_rounds;
-	let log_width = log_n + log_b - log_w - log_height;
-	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
+	let log_height = (log_n + log_b).saturating_sub(cutoff).min(log_max_threads);
+	let log_width = (log_n + log_b + log_s).saturating_sub(log_w + log_height);
 
+	let par_rounds = log_height.saturating_sub(log_b);
+	let log_row_batch = log_b.saturating_sub(log_height);
+
+	let single_thread_log_n = log_width + log_w - log_s - log_row_batch;
+
+	let inner_coset_mask = (1 << par_rounds) - 1;
 	data.par_chunks_mut(1 << log_width)
 		.enumerate()
 		.try_for_each(|(inner_coset, chunk)| {
@@ -238,8 +273,9 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				log_domain_size,
 				&s_evals[0..log_n - par_rounds],
 				chunk,
-				coset << par_rounds | (inner_coset as u32),
-				log_batch_size,
+				coset << par_rounds | (inner_coset as u32) & inner_coset_mask,
+				log_s,
+				log_row_batch,
 				single_thread_log_n,
 			)
 		})?;
@@ -258,8 +294,9 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				let coset_twiddle =
 					s_evals[log_n - par_rounds + i].coset(log_domain_size - log_n, coset as usize);
 
-				for j in 0..1 << (par_rounds - 1 - i) {
-					let twiddle = P::broadcast(coset_twiddle.get(j));
+				let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
+				for j in 0..1 << (log_b + coset_twiddle.log_n()) {
+					let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
 					for k in 0..1 << i {
 						for l in 0..1 << log_stride_len {
 							let idx0 = j << (i + 1) | k;

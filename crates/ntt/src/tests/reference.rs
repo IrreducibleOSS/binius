@@ -36,14 +36,16 @@ impl<T: Clone> DataAccess<T> for [T] {
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
 struct BatchedPackedFieldSlice<'a, P> {
 	data: &'a mut [P],
+	log_n: usize,
 	log_batch_count: usize,
 	batch_index: usize,
 }
 
 impl<'a, P> BatchedPackedFieldSlice<'a, P> {
-	fn new(data: &'a mut [P], log_batch_count: usize, batch_index: usize) -> Self {
+	fn new(data: &'a mut [P], log_n: usize, log_batch_count: usize, batch_index: usize) -> Self {
 		Self {
 			data,
+			log_n,
 			log_batch_count,
 			batch_index,
 		}
@@ -63,7 +65,7 @@ where
 	}
 
 	fn len(&self) -> usize {
-		(self.data.len() * P::WIDTH) >> self.log_batch_count
+		1 << self.log_n
 	}
 }
 
@@ -179,18 +181,26 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
-		for batch_index in 0..1 << log_batch_size {
-			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			forward_transform_simple(
-				self.log_domain_size(),
-				&self.s_evals,
-				&mut batch,
-				coset,
-				log_n,
-			)?;
+		for stride_batch_index in 0..1 << log_stride_batch {
+			for batch_index in 0..1 << log_batch {
+				let mut batch = BatchedPackedFieldSlice::new(
+					data,
+					log_n,
+					log_stride_batch,
+					stride_batch_index | batch_index << (log_n + log_stride_batch),
+				);
+				forward_transform_simple(
+					self.log_domain_size(),
+					&self.s_evals,
+					&mut batch,
+					coset,
+					log_n,
+				)?;
+			}
 		}
 
 		Ok(())
@@ -200,18 +210,26 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
-		for batch_index in 0..1 << log_batch_size {
-			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			inverse_transform_simple(
-				self.log_domain_size(),
-				&self.s_evals,
-				&mut batch,
-				coset,
-				log_n,
-			)?;
+		for stride_batch_index in 0..1 << log_stride_batch {
+			for batch_index in 0..1 << log_batch {
+				let mut batch = BatchedPackedFieldSlice::new(
+					data,
+					log_n,
+					log_stride_batch,
+					stride_batch_index | batch_index << (log_n + log_stride_batch),
+				);
+				inverse_transform_simple(
+					self.log_domain_size(),
+					&self.s_evals,
+					&mut batch,
+					coset,
+					log_n,
+				)?;
+			}
 		}
 
 		Ok(())
