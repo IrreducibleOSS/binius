@@ -140,14 +140,14 @@ where
 				.zip(code.par_chunks_exact_mut(msgs_len))
 				.try_for_each(|(i, data)| {
 					self.ntt
-						.forward_transform(data, i, log_batch_size, self.log_dim())
+						.forward_transform(data, i, log_batch_size, 0, self.log_dim())
 				})
 		} else {
 			(0..(1 << self.log_inv_rate))
 				.zip(code.chunks_exact_mut(msgs_len))
 				.try_for_each(|(i, data)| {
 					self.ntt
-						.forward_transform(data, i, log_batch_size, self.log_dim())
+						.forward_transform(data, i, log_batch_size, 0, self.log_dim())
 				})
 		}
 	}
