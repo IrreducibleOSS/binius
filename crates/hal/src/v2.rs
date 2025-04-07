@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 
-use binius_field::{BinaryField, ExtensionField};
-use binius_math::ArithExpr;
+use binius_field::{BinaryField, ExtensionField, Field};
+use binius_math::{ArithExpr, EvaluationDomainFactory};
 
 struct TwiddleAccess<F: BinaryField> {}
 
@@ -36,6 +36,8 @@ pub trait HAL<F: BinaryField> {
 	type FSlice: DevSlice<F>;
 	type FSliceMut: DevSliceMut<F, ConstSlice = Self::FSlice>; // Needs indexing
 	type ExprEvaluator;
+	type Exec;
+	type MapIter<Item>: ExactSizeIterator<Item = Item>;
 
 	fn alloc_host(&self, size: usize) -> Result<&mut [F], Error>;
 	fn alloc_device(&self, size: usize) -> Result<Self::FSliceMut, Error>;
@@ -190,7 +192,7 @@ pub trait HAL<F: BinaryField> {
 		mat: Self::FSlice,
 		vec: Self::FSlice,
 		out: &mut Self::FSliceMut,
-	) -> Result<(), Error>;
+	) -> impl Fn(&mut Self::Exec); //Result<(), Error>;
 
 	/// Computes right vector-matrix multiplication of a horizontal stride of a subfield matrix
 	/// with a big field vector.
@@ -293,7 +295,7 @@ pub trait HAL<F: BinaryField> {
 		evals_0: &mut Self::FSliceMut,
 		evals_1: Self::FSlice,
 		z: FSub,
-	) -> Result<(), Error>
+	) -> impl Fn(&mut Self::Exec)
 	where
 		F: ExtensionField<FSub>;
 
@@ -304,4 +306,95 @@ pub trait HAL<F: BinaryField> {
 		inputs: &[Self::FSlice],
 		composition: &Self::ExprEvaluator,
 	) -> Result<F, Error>;
+
+	// sumcheck high-level:
+	//
+	// has an n_vars for the round
+	// 2^n <---
+	// chooses chunk_vars
+	// for i in 0..1 << (n_vars - chunk_vars): <----
+	//     for each multilinear:
+	//        get local memory segment
+	//        sub slice the arguments
+	//        either right_fold_with_stride into temp buffer into local mem
+	//        either extrapolate_line on sub-slices
+	//     // we have the rowBuffers for 0 and 1 now
+	//     for i in domain:
+	//        if i is infinity:
+	//           add the local buffers
+	//        else:
+	//           extrapolate_line_at_subfield
+	//        acc = 0
+	//        for each (coeff, composition):
+	//           F = call sum_composition_evals(inputs, composition)
+	//           accs[i] += F * coeff
+
+	fn join<In1, Out1, In2, Out2>(
+		&self,
+		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
+		rhs: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
+	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<(Out1, Out2), Error>;
+
+	fn then<In1, Out1, In2, Out2>(
+		&self,
+		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
+		rhs: impl Fn(&mut Self::Exec, Out1, In2) -> Result<Out2, Error>,
+	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<Out2, Error>;
+
+	fn map<Out, I: ExactSizeIterator>(
+		&self,
+		inputs: I,
+		map: impl Fn(&mut Self::Exec, I::Item) -> Out,
+	) -> impl Fn(&mut Self::Exec, I) -> Self::MapIter<Result<Out, Error>>;
+
+	fn map_reduce<Out, I: ExactSizeIterator>(
+		&self,
+		inputs: I,
+		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
+		reduce: impl Fn(&mut Self::Exec, Out, Out) -> Result<Out, Error>,
+	) -> impl Fn(&mut Self::Exec, I) -> Result<Out, Error> {
+		self.chain(self.map(inputs, map), |exec, items, _| {
+			items.reduce(move |a, b| reduce(exec, a?, b?))
+		})
+	}
+
+	fn execute<T>(&self, f: impl Fn(Self::Exec) -> Result<T, Error>) -> Result<T, Error>;
+}
+
+pub fn sumcheck_round<F: BinaryField, H: HAL<F>>(
+	hal: &H,
+	n_vars: usize,
+	multilinears: Vec<(H::FSliceMut, usize)>, // First is the data, the second is the field size
+	batch_coeffs: &[F],
+	domain_factory: impl EvaluationDomainFactory<F>,
+	claims: CompositeSumClaim<F>,
+) -> Result<Vec<F>, Error> {
+	let chunk_size = 5; // query this somehow
+	let max_degree = 2;
+	let domain = domain_factory.create(max_degree);
+	hal.map_reduce(
+		0..1 << (n_vars - chunk_size),
+		|exec, i| {
+			let size;
+			exec.alloc_local(size)?;
+			multilinears
+				.iter()
+				.map(|(mle_data, _)| {
+					let evals_0 = mle_data.try_slice(todo!());
+					let evals_1 = mle_data.try_slice(todo!());
+					// copy to local memory
+					// copy to local memory
+					(evals_0, evals_1)
+				})
+				.unzip();
+
+			Ok(Vec::new())
+		},
+		|_exec, mut a, b| {
+			for (a_i, b_i) in a.iter_mut().zip(b) {
+				*a_i += b_i;
+			}
+			Ok(a)
+		},
+	)
 }
