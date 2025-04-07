@@ -89,19 +89,19 @@ impl<P: PackedField> GrandProductWitness<P> {
 		Ok(Self { circuit_layers })
 	}
 
-	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
+	/// Base-two logarithm of the number of inputs to the GKR grand product circuit
 	pub fn n_vars(&self) -> usize {
 		self.circuit_layers.len() - 1
 	}
 
-	/// Returns the evaluation of the GKR grand product circuit
+	/// Final evaluation of the GKR grand product circuit
 	pub fn grand_product_evaluation(&self) -> P::Scalar {
 		let first_layer = self.circuit_layers.last().expect("always n_vars+1 layers");
 		let first_packed = first_layer.first().copied().unwrap_or_else(P::one);
 		first_packed.get(0)
 	}
 
-	/// TODO: comment
+	/// Consume the witness, returning the vector of layer multilinears in non-ascending length order.
 	pub fn into_circuit_layers(self) -> Vec<Vec<P>> {
 		self.circuit_layers
 	}
