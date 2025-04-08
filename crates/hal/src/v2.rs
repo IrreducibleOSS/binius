@@ -1,6 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::{Range, RangeBounds};
+use std::{
+	marker::PhantomData,
+	ops::{Range, RangeBounds},
+};
 
 use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::{ArithExpr, EvaluationDomain, EvaluationDomainFactory};
@@ -33,19 +36,35 @@ pub trait DevSliceMut<T>: Into<Self::ConstSlice> {
 	fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self, Self)>;
 }
 
+// impl DevSliceMut for &'a mut [F] {}
+
+trait DevAllocation {} // Opaque thing
+
+struct ObjectRef<T> {
+	pub offset: usize,
+	/// The number of T elements in this reference.
+	pub len: usize,
+	_marker: PhantomData<T>,
+}
+
 pub trait HALExecutor {
 	fn alloc_local(&mut self);
 }
 
 pub trait HAL<F: BinaryField> {
-	type FSlice: DevSlice<F>;
-	type FSliceMut: DevSliceMut<F, ConstSlice = Self::FSlice>; // Needs indexing
+	type FSlice<'a>: DevSlice<'a, F>;
+	type FSliceMut<'a>: DevSliceMut<'a, F, ConstSlice = Self::FSlice>; // Needs indexing
+
 	type ExprEvaluator;
-	type Exec;
 	type MapIter<Item>: ExactSizeIterator<Item = Item>;
 
-	fn alloc_host(&self, size: usize) -> Result<&mut [F], Error>;
+	type Exec: HALExecutor;
+
+	//fn alloc_host(&self, size: usize) -> Result<&mut [F], Error>;
+
 	fn alloc_device(&self, size: usize) -> Result<Self::FSliceMut, Error>;
+
+	fn copy_h2d(&self, src: &[F], dst: &DataOffset<T>) -> Result<(), Error>;
 
 	fn copy_h2d(&self, src: &[F], dst: &mut Self::FSliceMut) -> Result<(), Error>;
 	fn copy_d2h(&self, src: Self::FSlice, dst: &mut [F]) -> Result<(), Error>;
@@ -127,9 +146,9 @@ pub trait HAL<F: BinaryField> {
 	fn tensor_expand(
 		&self,
 		log_n: usize,
-		data: &mut Self::FSliceMut,
+		//data: &mut Self::FSliceMut,
 		coordinates: &[F],
-	) -> Result<(), Error>;
+	) -> impl Fn(&mut Self::Exec, &mut Self::FSliceMut) -> Result<(), Error>;
 
 	/// Computes left matrix-vector multiplication of a subfield matrix with a big field vector.
 	///
@@ -372,6 +391,13 @@ pub trait HAL<F: BinaryField> {
 	fn execute<T>(&self, f: impl Fn(&mut Self::Exec) -> Result<T, Error>) -> Result<T, Error>;
 }
 
+enum MolecularExecutor {
+	// This is created with the DAG output by the analyzer.
+	RealExecution,
+	// This collects information about the tasks and outputs the DAG.
+	ExecAnalyzer,
+}
+
 /// A round of the sumcheck protocol for the most basic special case of sumcheck.
 ///
 /// This computes the round evaluations for a round of the sumcheck protocol executed over the
@@ -388,32 +414,50 @@ where
 	FDomain: BinaryField,
 	H: HAL<F>,
 {
-	let chunk_size = 5; // query this somehow
-	hal.map_reduce(
-		0..1 << (n_vars - chunk_size),
-		|exec, i| {
-			let size;
-			let scratchpad = exec.alloc_local(size)?;
-			multilinears
-				.iter()
-				.map(|(mle_data, _)| {
-					let evals_0 = mle_data.try_slice(todo!());
-					let evals_1 = mle_data.try_slice(todo!());
-					// copy to local memory
-					// copy to local memory
-					(evals_0, evals_1)
-				})
-				.unzip();
+	let tensor_expand_op = hal.tensor_expand(5, &[]);
+	let tensor_expand_op_2 = hal.tensor_expand(5, &[]);
+	let mut data: H::FSliceMut;
+	//hal.execute(move |exec| tensor_expand_op(exec, &mut data)).unwrap();
+	let parallel_op = hal.join(tensor_expand_op, tensor_expand_op_2);
+	let mut data: H::FSliceMut;
+	let mut data2: H::FSliceMut;
+	hal.execute(move |exec| parallel_op(exec, &mut data, &mut data2))
+		.unwrap();
 
-			Ok(Vec::new())
-		},
-		|_exec, mut a, b| {
-			for (a_i, b_i) in a.iter_mut().zip(b) {
-				*a_i += b_i;
-			}
-			Ok(a)
-		},
-	)
+	// A is expensive
+	// B & C depend on A
+	// Executor for A passed to B & C
+	// B & C block on A
+	// A > (B || C)
+
+	/*
+	   let chunk_size = 5; // query this somehow
+	   hal.map_reduce(
+		   0..1 << (n_vars - chunk_size),
+		   |exec, i| {
+			   let size;
+			   let scratchpad = exec.alloc_local(size)?;
+			   multilinears
+				   .iter()
+				   .map(|(mle_data, _)| {
+					   let evals_0 = mle_data.try_slice(todo!());
+					   let evals_1 = mle_data.try_slice(todo!());
+					   // copy to local memory
+					   // copy to local memory
+					   (evals_0, evals_1)
+				   })
+				   .unzip();
+
+			   Ok(Vec::new())
+		   },
+		   |_exec, mut a, b| {
+			   for (a_i, b_i) in a.iter_mut().zip(b) {
+				   *a_i += b_i;
+			   }
+			   Ok(a)
+		   },
+	   )
+	*/
 }
 
 /*
