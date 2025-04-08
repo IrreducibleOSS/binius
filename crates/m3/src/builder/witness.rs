@@ -11,8 +11,8 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackedType, packed::TryRepackSlice, ExtensionField,
+	PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
@@ -93,6 +93,21 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			+ PackedExtension<B64>
 			+ PackedExtension<B128>,
 	{
+		self.into_multilinear_extension_index_repack::<P>()
+			.expect("repacking must succeed")
+	}
+
+	pub fn into_multilinear_extension_index_repack<P2: TryRepackSlice<P>>(
+		self,
+	) -> Result<MultilinearExtensionIndex<'alloc, P2>, super::error::Error>
+	where
+		P2: PackedExtension<B1>
+			+ PackedExtension<B8>
+			+ PackedExtension<B16>
+			+ PackedExtension<B32>
+			+ PackedExtension<B64>
+			+ PackedExtension<B128>,
+	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table_witness in self.tables {
@@ -119,7 +134,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 					&col.data[..underlier_count],
 					n_vars,
 					col.shape.tower_height,
-				);
+				)?;
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -132,7 +147,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				let log_size = table_witness.log_capacity + log_values_per_row;
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
-					.multilinear_extension::<PackedSubfield<P, B1>>()
+					.multilinear_extension::<PackedSubfield<P2, B1>>()
 					.unwrap()
 					.specialize_arc_dyn();
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -141,24 +156,28 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 
 			first_oracle_id_in_table += count;
 		}
-		index
+		Ok(index)
 	}
 }
 
-fn multilin_poly_from_underlier_data<P>(
+fn multilin_poly_from_underlier_data<P, P2>(
 	data: &[P],
 	n_vars: usize,
 	tower_height: usize,
-) -> Arc<dyn MultilinearPoly<P> + Send + Sync + '_>
+) -> Result<Arc<dyn MultilinearPoly<P2> + Send + Sync + '_>, super::Error>
 where
-	P: PackedExtension<B1>
+	P: PackedField,
+	P2: PackedExtension<B1>
 		+ PackedExtension<B8>
 		+ PackedExtension<B16>
 		+ PackedExtension<B32>
 		+ PackedExtension<B64>
-		+ PackedExtension<B128>,
+		+ PackedExtension<B128>
+		+ TryRepackSlice<P>,
 {
-	match tower_height {
+	let data = P2::try_repack_slice(data).map_err(super::Error::Repacking)?;
+
+	let result = match tower_height {
 		0 => MultilinearExtension::new(n_vars, PackedExtension::<B1>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
@@ -180,7 +199,9 @@ where
 		_ => {
 			panic!("Unsupported tower height: {tower_height}");
 		}
-	}
+	};
+
+	Ok(result)
 }
 
 /// Holds witness column data for a table, indexed by column index.

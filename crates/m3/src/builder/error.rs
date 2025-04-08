@@ -44,4 +44,6 @@ pub enum Error {
 	Oracle(#[from] OracleError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+	#[error("repacking error: {0}")]
+	Repacking(#[from] binius_field::Error),
 }
