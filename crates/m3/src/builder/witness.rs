@@ -84,24 +84,42 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		Ok(())
 	}
 
+	pub fn repack<P2: TryRepackSlice<P>>(
+		self,
+	) -> Result<WitnessIndex<'cs, 'alloc, P2>, super::Error> {
+		let mut tables = Vec::with_capacity(self.tables.len());
+		for table in self.tables {
+			if let Some(table) = table {
+				let cols = table
+					.cols
+					.into_iter()
+					.map(|col| {
+						let data = col.data.try_repack::<P2>()?;
+						Ok(WitnessIndexColumn::<'_, P2> {
+							shape: col.shape,
+							data,
+							is_single_row: col.is_single_row,
+						})
+					})
+					.collect::<Result<Vec<_>, super::Error>>()?;
+				tables.push(Some(TableWitnessIndex {
+					table: table.table,
+					oracle_offset: table.oracle_offset,
+					cols,
+					size: table.size,
+					log_capacity: table.log_capacity,
+					min_log_segment_size: table.min_log_segment_size,
+				}));
+			} else {
+				tables.push(None);
+			}
+		}
+		Ok(WitnessIndex { tables })
+	}
+
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
 	where
 		P: PackedExtension<B1>
-			+ PackedExtension<B8>
-			+ PackedExtension<B16>
-			+ PackedExtension<B32>
-			+ PackedExtension<B64>
-			+ PackedExtension<B128>,
-	{
-		self.into_multilinear_extension_index_repack::<P>()
-			.expect("repacking must succeed")
-	}
-
-	pub fn into_multilinear_extension_index_repack<P2: TryRepackSlice<P>>(
-		self,
-	) -> Result<MultilinearExtensionIndex<'alloc, P2>, super::error::Error>
-	where
-		P2: PackedExtension<B1>
 			+ PackedExtension<B8>
 			+ PackedExtension<B16>
 			+ PackedExtension<B32>
@@ -134,7 +152,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 					&col.data[..underlier_count],
 					n_vars,
 					col.shape.tower_height,
-				)?;
+				);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -147,7 +165,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				let log_size = table_witness.log_capacity + log_values_per_row;
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
-					.multilinear_extension::<PackedSubfield<P2, B1>>()
+					.multilinear_extension::<PackedSubfield<P, B1>>()
 					.unwrap()
 					.specialize_arc_dyn();
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -156,28 +174,24 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 
 			first_oracle_id_in_table += count;
 		}
-		Ok(index)
+		index
 	}
 }
 
-fn multilin_poly_from_underlier_data<P, P2>(
+fn multilin_poly_from_underlier_data<P>(
 	data: &[P],
 	n_vars: usize,
 	tower_height: usize,
-) -> Result<Arc<dyn MultilinearPoly<P2> + Send + Sync + '_>, super::Error>
+) -> Arc<dyn MultilinearPoly<P> + Send + Sync + '_>
 where
-	P: PackedField,
-	P2: PackedExtension<B1>
+	P: PackedExtension<B1>
 		+ PackedExtension<B8>
 		+ PackedExtension<B16>
 		+ PackedExtension<B32>
 		+ PackedExtension<B64>
-		+ PackedExtension<B128>
-		+ TryRepackSlice<P>,
+		+ PackedExtension<B128>,
 {
-	let data = P2::try_repack_slice(data).map_err(super::Error::Repacking)?;
-
-	let result = match tower_height {
+	match tower_height {
 		0 => MultilinearExtension::new(n_vars, PackedExtension::<B1>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
@@ -199,9 +213,7 @@ where
 		_ => {
 			panic!("Unsupported tower height: {tower_height}");
 		}
-	};
-
-	Ok(result)
+	}
 }
 
 /// Holds witness column data for a table, indexed by column index.
@@ -246,6 +258,17 @@ type WitnessDataMut<'a, P> = WitnessColumnInfo<&'a mut [P]>;
 impl<'a, P: PackedField> WitnessDataMut<'a, P> {
 	pub fn new_owned(allocator: &'a bumpalo::Bump, log_underlier_count: usize) -> Self {
 		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
+	}
+
+	pub fn try_repack<P2: TryRepackSlice<P>>(self) -> Result<WitnessDataMut<'a, P2>, super::Error> {
+		match self {
+			WitnessColumnInfo::Owned(data) => Ok(WitnessColumnInfo::Owned(
+				P2::try_repack_slice(data).map_err(super::Error::Repacking)?,
+			)),
+			WitnessColumnInfo::SameAsOracleIndex(index) => {
+				Ok(WitnessColumnInfo::SameAsOracleIndex(index))
+			}
+		}
 	}
 }
 
