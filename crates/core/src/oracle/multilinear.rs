@@ -162,7 +162,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		self,
 		inner_id: OracleId,
 		values: Vec<F>,
-		variant: ProjectionVariant,
+		start_index: usize,
 	) -> Result<OracleId, Error> {
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		let values_len = values.len();
@@ -176,7 +176,38 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = self.mut_ref.get_from_set(inner_id);
 		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(&inner, values, variant)?;
+		let projected = Projected::new(&inner, values, start_index)?;
+
+		let oracle = |id: OracleId| MultilinearPolyOracle {
+			id,
+			n_vars: inner_n_vars - values_len,
+			tower_level,
+			name: self.name,
+			variant: MultilinearPolyVariant::Projected(projected),
+		};
+
+		Ok(self.mut_ref.add_to_set(oracle))
+	}
+
+	pub fn projected_last_vars(
+		self,
+		inner_id: OracleId,
+		values: Vec<F>,
+	) -> Result<OracleId, Error> {
+		let inner_n_vars = self.mut_ref.n_vars(inner_id);
+		let start_index = inner_n_vars - values.len();
+		let values_len = values.len();
+		if values_len > inner_n_vars {
+			bail!(Error::InvalidProjection {
+				n_vars: inner_n_vars,
+				values_len,
+			});
+		}
+
+		let inner = self.mut_ref.get_from_set(inner_id);
+		// TODO: This is wrong, should be F::TOWER_LEVEL
+		let tower_level = inner.binary_tower_level();
+		let projected = Projected::new(&inner, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -423,13 +454,23 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().packed(id, log_degree)
 	}
 
+	/// Adds a projection to the variables starting at `start_index`.
 	pub fn add_projected(
 		&mut self,
 		id: OracleId,
 		values: Vec<F>,
-		variant: ProjectionVariant,
+		start_index: usize,
 	) -> Result<OracleId, Error> {
-		self.add().projected(id, values, variant)
+		self.add().projected(id, values, start_index)
+	}
+
+	/// Adds a projection to the last variables.
+	pub fn add_projected_last_vars(
+		&mut self,
+		id: OracleId,
+		values: Vec<F>,
+	) -> Result<OracleId, Error> {
+		self.add().projected_last_vars(id, values)
 	}
 
 	pub fn add_linear_combination(
@@ -630,12 +671,6 @@ impl<F: Field> PartialEq for TransparentPolyOracle<F> {
 
 impl<F: Field> Eq for TransparentPolyOracle<F> {}
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
-pub enum ProjectionVariant {
-	FirstVars,
-	LastVars,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct Projected<F: TowerField> {
 	#[get_copy = "pub"]
@@ -643,16 +678,16 @@ pub struct Projected<F: TowerField> {
 	#[get = "pub"]
 	values: Vec<F>,
 	#[get_copy = "pub"]
-	projection_variant: ProjectionVariant,
+	start_index: usize,
 }
 
 impl<F: TowerField> Projected<F> {
 	fn new(
 		oracle: &MultilinearPolyOracle<F>,
 		values: Vec<F>,
-		projection_variant: ProjectionVariant,
+		start_index: usize,
 	) -> Result<Self, Error> {
-		if values.len() > oracle.n_vars() {
+		if values.len() + start_index > oracle.n_vars() {
 			bail!(Error::InvalidProjection {
 				n_vars: oracle.n_vars(),
 				values_len: values.len()
@@ -661,7 +696,7 @@ impl<F: TowerField> Projected<F> {
 		Ok(Self {
 			id: oracle.id(),
 			values,
-			projection_variant,
+			start_index,
 		})
 	}
 }
@@ -873,19 +908,16 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 mod tests {
 	use binius_field::{BinaryField128b, BinaryField1b, Field, TowerField};
 
-	use super::{MultilinearOracleSet, ProjectionVariant};
+	use super::MultilinearOracleSet;
 
 	#[test]
 	fn add_projection_with_all_vars() {
 		type F = BinaryField128b;
 		let mut oracles = MultilinearOracleSet::<F>::new();
 		let data = oracles.add_committed(5, BinaryField1b::TOWER_LEVEL);
+		let start_index = 0;
 		let projected = oracles
-			.add_projected(
-				data,
-				vec![F::ONE, F::ONE, F::ONE, F::ONE, F::ONE],
-				ProjectionVariant::FirstVars,
-			)
+			.add_projected(data, vec![F::ONE, F::ONE, F::ONE, F::ONE, F::ONE], start_index)
 			.unwrap();
 		let _ = oracles.oracle(projected);
 	}
