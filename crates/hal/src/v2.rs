@@ -3,7 +3,7 @@
 use std::ops::{Range, RangeBounds};
 
 use binius_field::{BinaryField, ExtensionField, Field};
-use binius_math::{ArithExpr, EvaluationDomainFactory};
+use binius_math::{ArithExpr, EvaluationDomain, EvaluationDomainFactory};
 
 struct TwiddleAccess<F: BinaryField> {}
 
@@ -30,6 +30,11 @@ pub trait DevSliceMut<T>: Into<Self::ConstSlice> {
 
 	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice>;
 	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self>;
+	fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self, Self)>;
+}
+
+pub trait HALExecutor {
+	fn alloc_local(&mut self);
 }
 
 pub trait HAL<F: BinaryField> {
@@ -329,18 +334,21 @@ pub trait HAL<F: BinaryField> {
 	//           F = call sum_composition_evals(inputs, composition)
 	//           accs[i] += F * coeff
 
+	/// Creates an operation that depends on the concurrent execution of two inner operations.
 	fn join<In1, Out1, In2, Out2>(
 		&self,
 		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
 		rhs: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
 	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<(Out1, Out2), Error>;
 
+	/// Creates an operation that depends on the sequential execution of two inner operations.
 	fn then<In1, Out1, In2, Out2>(
 		&self,
 		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
 		rhs: impl Fn(&mut Self::Exec, Out1, In2) -> Result<Out2, Error>,
 	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<Out2, Error>;
 
+	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
 		inputs: I,
@@ -358,9 +366,57 @@ pub trait HAL<F: BinaryField> {
 		})
 	}
 
-	fn execute<T>(&self, f: impl Fn(Self::Exec) -> Result<T, Error>) -> Result<T, Error>;
+	/// Executes an operation.
+	///
+	/// A HAL operation is an abstract function that runs with an executor reference.
+	fn execute<T>(&self, f: impl Fn(&mut Self::Exec) -> Result<T, Error>) -> Result<T, Error>;
 }
 
+/// A round of the sumcheck protocol for the most basic special case of sumcheck.
+///
+/// This computes the round evaluations for a round of the sumcheck protocol executed over the
+/// product of two big-field multilinear polynomials.
+pub fn basic_sumcheck_round<F, FDomain, H>(
+	hal: &H,
+	n_vars: usize,
+	multilinears: [H::FSlice; 2],
+	domain: &EvaluationDomain<F>,
+	sum: F,
+) -> Result<Vec<F>, Error>
+where
+	F: BinaryField + ExtensionField<FDomain>,
+	FDomain: BinaryField,
+	H: HAL<F>,
+{
+	let chunk_size = 5; // query this somehow
+	hal.map_reduce(
+		0..1 << (n_vars - chunk_size),
+		|exec, i| {
+			let size;
+			let scratchpad = exec.alloc_local(size)?;
+			multilinears
+				.iter()
+				.map(|(mle_data, _)| {
+					let evals_0 = mle_data.try_slice(todo!());
+					let evals_1 = mle_data.try_slice(todo!());
+					// copy to local memory
+					// copy to local memory
+					(evals_0, evals_1)
+				})
+				.unzip();
+
+			Ok(Vec::new())
+		},
+		|_exec, mut a, b| {
+			for (a_i, b_i) in a.iter_mut().zip(b) {
+				*a_i += b_i;
+			}
+			Ok(a)
+		},
+	)
+}
+
+/*
 pub fn sumcheck_round<F: BinaryField, H: HAL<F>>(
 	hal: &H,
 	n_vars: usize,
@@ -398,3 +454,4 @@ pub fn sumcheck_round<F: BinaryField, H: HAL<F>>(
 		},
 	)
 }
+*/
