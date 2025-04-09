@@ -25,6 +25,8 @@ itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
+pyroscope.workspace = true
+pyroscope_pprofrs.workspace = true
 
 [[example]]
 name = "keccakf_circuit"
