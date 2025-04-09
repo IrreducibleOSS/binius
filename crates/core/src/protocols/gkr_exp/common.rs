@@ -105,7 +105,7 @@ impl<F: Field> BaseExpReductionOutput<F> {
 	}
 }
 
-pub type GKRExpProverBuilder<'a, P, Backend> = EqIndSumcheckProverBuilder<'a, P, Backend>;
+pub type GKRExpProverBuilder<'a, P, M, Backend> = EqIndSumcheckProverBuilder<'a, P, M, Backend>;
 
 pub type GKRExpProver<'a, FDomain, P, Composition, M, Backend> =
 	EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>;
