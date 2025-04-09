@@ -214,10 +214,12 @@ where
 			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
 			.collect::<Result<Vec<_>, Error>>()?;
 
+		let projected_bivariate_claims = std::mem::take(&mut self.projected_bivariate_claims);
+
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
@@ -225,22 +227,20 @@ where
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
 
-		for (claim, meta, projected) in izip!(
-			std::mem::take(&mut self.projected_bivariate_claims),
-			&projected_bivariate_metas,
-			projected_mles
-		) {
+		for (claim, meta, projected) in
+			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
+		{
 			self.process_sumcheck(claim, meta, projected)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
 			&projected_bivariate_metas,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.oracles,
 			self.witness_index,
 		);
@@ -584,7 +584,7 @@ where
 
 	fn process_sumcheck(
 		&mut self,
-		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
 		meta: &ProjectedBivariateMeta,
 		projected: Option<MultilinearExtension<P>>,
 	) -> Result<(), Error> {
@@ -594,12 +594,12 @@ where
 			eval,
 		} = evalcheck_claim;
 
-		match self.oracles.oracle(id).variant {
+		match self.oracles.oracle(*id).variant {
 			MultilinearPolyVariant::Shifted(shifted) => process_shifted_sumcheck(
 				&shifted,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -609,8 +609,8 @@ where
 				self.oracles,
 				&packed,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -622,7 +622,7 @@ where
 					meta,
 					&mut self.new_sumchecks_constraints,
 					&composite,
-					eval,
+					*eval,
 				);
 				Ok(())
 			}
