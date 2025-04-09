@@ -580,7 +580,6 @@ mod tests {
 	/// Run the test for all the packed fields defined in this crate.
 	fn run_for_all_packed_fields(test: &impl PackedFieldTest) {
 		// canonical tower
-
 		test.run::<BinaryField1b>();
 		test.run::<BinaryField2b>();
 		test.run::<BinaryField4b>();
@@ -688,6 +687,13 @@ mod tests {
 		test.run::<ByteSlicedAES8x16x16b>();
 		test.run::<ByteSlicedAES16x8b>();
 		test.run::<ByteSlicedAES16x16x8b>();
+
+		test.run::<ByteSliced16x128x1b>();
+		test.run::<ByteSliced8x128x1b>();
+		test.run::<ByteSliced4x128x1b>();
+		test.run::<ByteSliced2x128x1b>();
+		test.run::<ByteSliced1x128x1b>();
+
 		test.run::<ByteSlicedAES32x128b>();
 		test.run::<ByteSlicedAES32x64b>();
 		test.run::<ByteSlicedAES2x32x64b>();
@@ -697,6 +703,13 @@ mod tests {
 		test.run::<ByteSlicedAES8x32x16b>();
 		test.run::<ByteSlicedAES32x8b>();
 		test.run::<ByteSlicedAES16x32x8b>();
+
+		test.run::<ByteSliced16x256x1b>();
+		test.run::<ByteSliced8x256x1b>();
+		test.run::<ByteSliced4x256x1b>();
+		test.run::<ByteSliced2x256x1b>();
+		test.run::<ByteSliced1x256x1b>();
+
 		test.run::<ByteSlicedAES64x128b>();
 		test.run::<ByteSlicedAES64x64b>();
 		test.run::<ByteSlicedAES2x64x64b>();
@@ -706,6 +719,12 @@ mod tests {
 		test.run::<ByteSlicedAES8x64x16b>();
 		test.run::<ByteSlicedAES64x8b>();
 		test.run::<ByteSlicedAES16x64x8b>();
+
+		test.run::<ByteSliced16x512x1b>();
+		test.run::<ByteSliced8x512x1b>();
+		test.run::<ByteSliced4x512x1b>();
+		test.run::<ByteSliced2x512x1b>();
+		test.run::<ByteSliced1x512x1b>();
 
 		// polyval tower
 		test.run::<BinaryField128bPolyval>();
