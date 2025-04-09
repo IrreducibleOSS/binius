@@ -22,7 +22,7 @@ use binius_m3::{
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use rand::thread_rng;
+use rand::{rngs::StdRng, SeedableRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	let n_permutations = args.n_permutations as usize;
 	println!("Verifying {} Grøstl-256 P permutations", n_permutations);
@@ -100,7 +100,10 @@ fn main() -> Result<()> {
 		table_sizes: vec![n_permutations],
 	};
 
-	let mut rng = thread_rng();
+	// let mut rng = thread_rng();
+	// Use a fixed seed for deterministic RNG
+	let seed = [42u8; 32]; // You can change this seed value as needed
+	let mut rng = StdRng::from_seed(seed);
 	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
 		.take(n_permutations)
 		.collect::<Vec<_>>();

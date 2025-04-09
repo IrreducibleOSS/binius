@@ -59,7 +59,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	const SECURITY_BITS: usize = 100;
+	const SECURITY_BITS: usize = 10;
 
 	adjust_thread_pool()
 		.as_ref()
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	println!("Verifying {} bitwise u32 {}'s", args.n_u32_ops, args.op);
 

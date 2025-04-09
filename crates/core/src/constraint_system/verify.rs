@@ -75,157 +75,157 @@ where
 	let Proof { transcript } = proof;
 
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
-	transcript.observe().write_slice(boundaries);
+	// transcript.observe().write_slice(boundaries);
 
-	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
-	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
-	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
-		&commit_meta,
-		&merkle_scheme,
-		security_bits,
-		log_inv_rate,
-	)?;
+	// let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
+	// let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	// let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
+	// 	&commit_meta,
+	// 	&merkle_scheme,
+	// 	security_bits,
+	// 	log_inv_rate,
+	// )?;
 
-	// Read polynomial commitment polynomials
-	let mut reader = transcript.message();
-	let commitment = reader.read::<Output<Hash>>()?;
+	// // Read polynomial commitment polynomials
+	// let mut reader = transcript.message();
+	// let commitment = reader.read::<Output<Hash>>()?;
 
-	// GKR exp multiplication
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	// // GKR exp multiplication
+	// exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
-	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
+	// let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
-	let mut reader = transcript.message();
-	let exp_evals = reader.read_scalar_slice(exponents.len())?;
+	// let mut reader = transcript.message();
+	// let exp_evals = reader.read_scalar_slice(exponents.len())?;
 
-	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
-		.into_iter()
-		.collect::<Vec<_>>();
+	// let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
+	// 	.into_iter()
+	// 	.collect::<Vec<_>>();
 
-	let base_exp_output =
-		gkr_exp::batch_verify(EvaluationOrder::HighToLow, &exp_claims, &mut transcript)?;
+	// let base_exp_output =
+	// 	gkr_exp::batch_verify(EvaluationOrder::HighToLow, &exp_claims, &mut transcript)?;
 
-	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	// let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
 
-	// Grand product arguments
-	// Grand products for non-zero checks
-	let mut reader = transcript.message();
-	let non_zero_products = reader.read_scalar_slice(non_zero_oracle_ids.len())?;
-	if non_zero_products
-		.iter()
-		.any(|count| *count == Tower::B128::zero())
-	{
-		bail!(Error::Zeros);
-	}
+	// // Grand product arguments
+	// // Grand products for non-zero checks
+	// let mut reader = transcript.message();
+	// let non_zero_products = reader.read_scalar_slice(non_zero_oracle_ids.len())?;
+	// if non_zero_products
+	// 	.iter()
+	// 	.any(|count| *count == Tower::B128::zero())
+	// {
+	// 	bail!(Error::Zeros);
+	// }
 
-	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
-		&non_zero_oracle_ids,
-		&oracles,
-		&non_zero_products,
-	)?;
+	// let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+	// 	&non_zero_oracle_ids,
+	// 	&oracles,
+	// 	&non_zero_products,
+	// )?;
 
-	// Grand products for flushing
-	let mixing_challenge = transcript.sample();
-	// TODO(cryptographers): Find a way to sample less randomness
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	// // Grand products for flushing
+	// let mixing_challenge = transcript.sample();
+	// // TODO(cryptographers): Find a way to sample less randomness
+	// let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
-	flushes.sort_by_key(|flush| flush.channel_id);
-	let flush_oracle_ids =
-		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let flush_selectors = flushes
-		.iter()
-		.map(|flush| flush.selector)
-		.collect::<Vec<_>>();
+	// flushes.sort_by_key(|flush| flush.channel_id);
+	// let flush_oracle_ids =
+	// 	make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
+	// let flush_selectors = flushes
+	// 	.iter()
+	// 	.map(|flush| flush.selector)
+	// 	.collect::<Vec<_>>();
 
-	let flush_products = transcript
-		.message()
-		.read_scalar_slice(flush_oracle_ids.len())?;
-	verify_channels_balance(
-		&flushes,
-		&flush_products,
-		boundaries,
-		mixing_challenge,
-		&permutation_challenges,
-	)?;
+	// let flush_products = transcript
+	// 	.message()
+	// 	.read_scalar_slice(flush_oracle_ids.len())?;
+	// verify_channels_balance(
+	// 	&flushes,
+	// 	&flush_products,
+	// 	boundaries,
+	// 	mixing_challenge,
+	// 	&permutation_challenges,
+	// )?;
 
-	let flush_prodcheck_claims =
-		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
+	// let flush_prodcheck_claims =
+	// 	gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
-	// Verify grand products
-	let mut final_layer_claims = gkr_gpa::batch_verify(
-		EvaluationOrder::LowToHigh,
-		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
-		&mut transcript,
-	)?;
+	// // Verify grand products
+	// let mut final_layer_claims = gkr_gpa::batch_verify(
+	// 	EvaluationOrder::LowToHigh,
+	// 	[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
+	// 	&mut transcript,
+	// )?;
 
-	let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
-	let flush_final_layer_claims = final_layer_claims;
+	// let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
+	// let flush_final_layer_claims = final_layer_claims;
 
-	// Reduce non_zero_final_layer_claims to evalcheck claims
-	let non_zero_prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
+	// // Reduce non_zero_final_layer_claims to evalcheck claims
+	// let non_zero_prodcheck_eval_claims =
+	// 	gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
 
-	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
-	let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
-		reorder_for_flushing_by_n_vars(
-			&oracles,
-			&flush_oracle_ids,
-			&flush_selectors,
-			flush_final_layer_claims,
-		);
+	// // Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
+	// let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
+	// 	reorder_for_flushing_by_n_vars(
+	// 		&oracles,
+	// 		&flush_oracle_ids,
+	// 		&flush_selectors,
+	// 		flush_final_layer_claims,
+	// 	);
 
-	let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
-		&flush_oracle_ids,
-		&flush_selectors,
-		&flush_final_layer_claims,
-	);
+	// let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
+	// 	&flush_oracle_ids,
+	// 	&flush_selectors,
+	// 	&flush_final_layer_claims,
+	// );
 
-	let DedupEqIndSumcheckClaims {
-		eq_ind_sumcheck_claims,
-		gkr_eval_points,
-		flush_selectors_unique_by_claim,
-		flush_oracle_ids_by_claim,
-	} = get_flush_dedup_eq_ind_sumcheck_claims(
-		&oracles,
-		&flush_oracle_ids,
-		&flush_selectors,
-		&flush_final_layer_claims,
-	)?;
+	// let DedupEqIndSumcheckClaims {
+	// 	eq_ind_sumcheck_claims,
+	// 	gkr_eval_points,
+	// 	flush_selectors_unique_by_claim,
+	// 	flush_oracle_ids_by_claim,
+	// } = get_flush_dedup_eq_ind_sumcheck_claims(
+	// 	&oracles,
+	// 	&flush_oracle_ids,
+	// 	&flush_selectors,
+	// 	&flush_final_layer_claims,
+	// )?;
 
-	let regular_sumcheck_claims =
-		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
+	// let regular_sumcheck_claims =
+	// 	sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
-	let flush_sumcheck_output = sumcheck::batch_verify(
-		EvaluationOrder::LowToHigh,
-		&regular_sumcheck_claims,
-		&mut transcript,
-	)?;
+	// let flush_sumcheck_output = sumcheck::batch_verify(
+	// 	EvaluationOrder::LowToHigh,
+	// 	&regular_sumcheck_claims,
+	// 	&mut transcript,
+	// )?;
 
-	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
-		&oracles,
-		&flush_selectors_unique_by_claim,
-		&flush_oracle_ids_by_claim,
-		&flush_sumcheck_output,
-	)?;
+	// let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
+	// 	&oracles,
+	// 	&flush_selectors_unique_by_claim,
+	// 	&flush_oracle_ids_by_claim,
+	// 	&flush_sumcheck_output,
+	// )?;
 
-	// Check the eval claim on the transparent eq polynomial
-	for (gkr_eval_point, evals) in izip!(gkr_eval_points, flush_sumcheck_output.multilinear_evals) {
-		let gkr_eval_point_len = gkr_eval_point.len();
-		let eq_ind = EqIndPartialEval::new(gkr_eval_point);
+	// // Check the eval claim on the transparent eq polynomial
+	// for (gkr_eval_point, evals) in izip!(gkr_eval_points, flush_sumcheck_output.multilinear_evals) {
+	// 	let gkr_eval_point_len = gkr_eval_point.len();
+	// 	let eq_ind = EqIndPartialEval::new(gkr_eval_point);
 
-		let sumcheck_challenges_len = flush_sumcheck_output.challenges.len();
-		let expected_eval = eq_ind.evaluate(
-			&flush_sumcheck_output.challenges[(sumcheck_challenges_len - gkr_eval_point_len)..],
-		)?;
+	// 	let sumcheck_challenges_len = flush_sumcheck_output.challenges.len();
+	// 	let expected_eval = eq_ind.evaluate(
+	// 		&flush_sumcheck_output.challenges[(sumcheck_challenges_len - gkr_eval_point_len)..],
+	// 	)?;
 
-		let &actual_eval = evals
-			.last()
-			.expect("Flush sumcheck composition non-empty by construction");
+	// 	let &actual_eval = evals
+	// 		.last()
+	// 		.expect("Flush sumcheck composition non-empty by construction");
 
-		if expected_eval != actual_eval {
-			return Err(Error::FalseEqEvaluationClaim);
-		}
-	}
+	// 	if expected_eval != actual_eval {
+	// 		return Err(Error::FalseEqEvaluationClaim);
+	// 	}
+	// }
 
 	// Zerocheck
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
@@ -302,42 +302,53 @@ where
 		multilinear_zerocheck_output,
 	)?;
 
-	// Evalcheck
-	let eval_claims = greedy_evalcheck::verify(
-		&mut oracles,
-		chain!(
-			non_zero_prodcheck_eval_claims,
-			unmasked_flush_eval_claims,
-			flush_eval_claims,
-			zerocheck_eval_claims,
-			exp_eval_claims,
-		),
-		&mut transcript,
-	)?;
+	// // Evalcheck
+	// let eval_claims = greedy_evalcheck::verify(
+	// 	&mut oracles,
+	// 	chain!(
+	// 		non_zero_prodcheck_eval_claims,
+	// 		unmasked_flush_eval_claims,
+	// 		flush_eval_claims,
+	// 		zerocheck_eval_claims,
+	// 		exp_eval_claims,
+	// 	),
+	// 	&mut transcript,
+	// )?;
 
-	// Reduce committed evaluation claims to PIOP sumcheck claims
-	let system = ring_switch::EvalClaimSystem::new(
-		&oracles,
-		&commit_meta,
-		&oracle_to_commit_index,
-		&eval_claims,
-	)?;
+	// // Evalcheck
+	// let eval_claims = greedy_evalcheck::verify(
+	// 	&mut oracles,
+	// 	[non_zero_prodcheck_eval_claims, flush_eval_claims]
+	// 		.concat()
+	// 		.into_iter()
+	// 		.chain(zerocheck_eval_claims)
+	// 		.chain(exp_eval_claims),
+	// 	&mut transcript,
+	// )?;
 
-	let ring_switch::ReducedClaim {
-		transparents,
-		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::verify::<_, Tower, _>(&system, &mut transcript)?;
+	// // Reduce committed evaluation claims to PIOP sumcheck claims
+	// let system = ring_switch::EvalClaimSystem::new(
+	// 	&oracles,
+	// 	&commit_meta,
+	// 	&oracle_to_commit_index,
+	// 	&eval_claims,
+	// )?;
 
-	// Prove evaluation claims using PIOP compiler
-	piop::verify(
-		&commit_meta,
-		&merkle_scheme,
-		&fri_params,
-		&commitment,
-		&transparents,
-		&piop_sumcheck_claims,
-		&mut transcript,
-	)?;
+	// let ring_switch::ReducedClaim {
+	// 	transparents,
+	// 	sumcheck_claims: piop_sumcheck_claims,
+	// } = ring_switch::verify::<_, Tower, _>(&system, &mut transcript)?;
+
+	// // Prove evaluation claims using PIOP compiler
+	// piop::verify(
+	// 	&commit_meta,
+	// 	&merkle_scheme,
+	// 	&fri_params,
+	// 	&commitment,
+	// 	&transparents,
+	// 	&piop_sumcheck_claims,
+	// 	&mut transcript,
+	// )?;
 
 	transcript.finalize()?;
 

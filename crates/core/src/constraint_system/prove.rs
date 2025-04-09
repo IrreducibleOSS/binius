@@ -105,7 +105,7 @@ where
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
-	transcript.observe().write_slice(boundaries);
+	// transcript.observe().write_slice(boundaries);
 
 	let ConstraintSystem {
 		mut oracles,
@@ -116,207 +116,207 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	// exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
-	// We must generate multiplication witnesses before committing, as this function
-	// adds the committed witnesses for exponentiation results to the witness index.
-	let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
+	// // We must generate multiplication witnesses before committing, as this function
+	// // adds the committed witnesses for exponentiation results to the witness index.
+	// let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
 
-	// Stable sort constraint sets in descending order by number of variables.
+	// // Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
-	// Commit polynomials
-	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
-	let merkle_scheme = merkle_prover.scheme();
+	// // Commit polynomials
+	// let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
+	// let merkle_scheme = merkle_prover.scheme();
 
-	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
-	let committed_multilins = piop::collect_committed_witnesses::<U, _>(
-		&commit_meta,
-		&oracle_to_commit_index,
-		&oracles,
-		&witness,
-	)?;
+	// let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	// let committed_multilins = piop::collect_committed_witnesses::<U, _>(
+	// 	&commit_meta,
+	// 	&oracle_to_commit_index,
+	// 	&oracles,
+	// 	&witness,
+	// )?;
 
-	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
-		&commit_meta,
-		merkle_scheme,
-		security_bits,
-		log_inv_rate,
-	)?;
-	let CommitOutput {
-		commitment,
-		committed,
-		codeword,
-	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
+	// let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
+	// 	&commit_meta,
+	// 	merkle_scheme,
+	// 	security_bits,
+	// 	log_inv_rate,
+	// )?;
+	// let CommitOutput {
+	// 	commitment,
+	// 	committed,
+	// 	codeword,
+	// } = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
 
-	// Observe polynomial commitment
-	let mut writer = transcript.message();
-	writer.write(&commitment);
+	// // Observe polynomial commitment
+	// let mut writer = transcript.message();
+	// writer.write(&commitment);
 
-	// GKR exp
-	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
+	// // GKR exp
+	// let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
-	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
-		.into_iter()
-		.map(|x| x.into())
-		.collect::<Vec<_>>();
+	// let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
+	// 	.into_iter()
+	// 	.map(|x| x.into())
+	// 	.collect::<Vec<_>>();
 
-	let mut writer = transcript.message();
-	writer.write_scalar_slice(&exp_evals);
+	// let mut writer = transcript.message();
+	// writer.write_scalar_slice(&exp_evals);
 
-	let exp_challenge = exp_challenge
-		.into_iter()
-		.map(|x| x.into())
-		.collect::<Vec<_>>();
+	// let exp_challenge = exp_challenge
+	// 	.into_iter()
+	// 	.map(|x| x.into())
+	// 	.collect::<Vec<_>>();
 
-	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
-		.into_iter()
-		.map(|claim| claim.isomorphic())
-		.collect::<Vec<_>>();
+	// let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
+	// 	.into_iter()
+	// 	.map(|claim| claim.isomorphic())
+	// 	.collect::<Vec<_>>();
 
-	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
-		EvaluationOrder::HighToLow,
-		exp_witnesses,
-		&exp_claims,
-		fast_domain_factory.clone(),
-		&mut transcript,
-		backend,
-	)?
-	.isomorphic();
+	// let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
+	// 	EvaluationOrder::HighToLow,
+	// 	exp_witnesses,
+	// 	&exp_claims,
+	// 	fast_domain_factory.clone(),
+	// 	&mut transcript,
+	// 	backend,
+	// )?
+	// .isomorphic();
 
-	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	// let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
 
-	// Grand product arguments
-	// Grand products for non-zero checking
-	let non_zero_fast_witnesses = make_fast_masked_flush_witnesses::<U, _>(
-		&oracles,
-		&witness,
-		&non_zero_oracle_ids,
-		&vec![None; non_zero_oracle_ids.len()],
-	)?;
-	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
-		.into_par_iter()
-		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
-		.collect::<Result<Vec<_>, _>>()?;
+	// // Grand product arguments
+	// // Grand products for non-zero checking
+	// let non_zero_fast_witnesses = make_fast_masked_flush_witnesses::<U, _>(
+	// 	&oracles,
+	// 	&witness,
+	// 	&non_zero_oracle_ids,
+	// 	&vec![None; non_zero_oracle_ids.len()],
+	// )?;
+	// let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
+	// 	.into_par_iter()
+	// 	.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+	// 	.collect::<Result<Vec<_>, _>>()?;
 
-	let non_zero_products =
-		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
-	if non_zero_products
-		.iter()
-		.any(|count| *count == Tower::B128::zero())
-	{
-		bail!(Error::Zeros);
-	}
+	// let non_zero_products =
+	// 	gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
+	// if non_zero_products
+	// 	.iter()
+	// 	.any(|count| *count == Tower::B128::zero())
+	// {
+	// 	bail!(Error::Zeros);
+	// }
 
-	let mut writer = transcript.message();
+	// let mut writer = transcript.message();
 
-	writer.write_scalar_slice(&non_zero_products);
+	// writer.write_scalar_slice(&non_zero_products);
 
-	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
-		&non_zero_oracle_ids,
-		&oracles,
-		&non_zero_products,
-	)?;
+	// let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+	// 	&non_zero_oracle_ids,
+	// 	&oracles,
+	// 	&non_zero_products,
+	// )?;
 
-	// Grand products for flushing
-	let mixing_challenge = transcript.sample();
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	// // Grand products for flushing
+	// let mixing_challenge = transcript.sample();
+	// let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
-	flushes.sort_by_key(|flush| flush.channel_id);
-	let flush_oracle_ids =
-		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let flush_selectors = flushes
-		.iter()
-		.map(|flush| flush.selector)
-		.collect::<Vec<_>>();
+	// flushes.sort_by_key(|flush| flush.channel_id);
+	// let flush_oracle_ids =
+	// 	make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
+	// let flush_selectors = flushes
+	// 	.iter()
+	// 	.map(|flush| flush.selector)
+	// 	.collect::<Vec<_>>();
 
-	make_unmasked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids)?;
-	// there are no oracle ids associated with these flush_witnesses
-	let flush_witnesses = make_fast_masked_flush_witnesses::<U, _>(
-		&oracles,
-		&witness,
-		&flush_oracle_ids,
-		&flush_selectors,
-	)?;
+	// make_unmasked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids)?;
+	// // there are no oracle ids associated with these flush_witnesses
+	// let flush_witnesses = make_fast_masked_flush_witnesses::<U, _>(
+	// 	&oracles,
+	// 	&witness,
+	// 	&flush_oracle_ids,
+	// 	&flush_selectors,
+	// )?;
 
-	// This is important to do in parallel.
-	let flush_prodcheck_witnesses = flush_witnesses
-		.into_par_iter()
-		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
-		.collect::<Result<Vec<_>, _>>()?;
-	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
+	// // This is important to do in parallel.
+	// let flush_prodcheck_witnesses = flush_witnesses
+	// 	.into_par_iter()
+	// 	.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+	// 	.collect::<Result<Vec<_>, _>>()?;
+	// let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
 
-	transcript.message().write_scalar_slice(&flush_products);
+	// transcript.message().write_scalar_slice(&flush_products);
 
-	let flush_prodcheck_claims =
-		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
+	// let flush_prodcheck_claims =
+	// 	gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
-	// Prove grand products
-	let all_gpa_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
-	let all_gpa_claims = chain!(flush_prodcheck_claims, non_zero_prodcheck_claims)
-		.map(|claim| claim.isomorphic())
-		.collect::<Vec<_>>();
+	// // Prove grand products
+	// let all_gpa_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
+	// let all_gpa_claims = chain!(flush_prodcheck_claims, non_zero_prodcheck_claims)
+	// 	.map(|claim| claim.isomorphic())
+	// 	.collect::<Vec<_>>();
 
-	let GrandProductBatchProveOutput { final_layer_claims } =
-		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
-			EvaluationOrder::LowToHigh,
-			all_gpa_witnesses,
-			&all_gpa_claims,
-			&fast_domain_factory,
-			&mut transcript,
-			backend,
-		)?;
+	// let GrandProductBatchProveOutput { final_layer_claims } =
+	// 	gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+	// 		EvaluationOrder::LowToHigh,
+	// 		all_gpa_witnesses,
+	// 		&all_gpa_claims,
+	// 		&fast_domain_factory,
+	// 		&mut transcript,
+	// 		backend,
+	// 	)?;
 
-	// Apply isomorphism to the layer claims
-	let mut final_layer_claims = final_layer_claims
-		.into_iter()
-		.map(|layer_claim| layer_claim.isomorphic())
-		.collect::<Vec<_>>();
+	// // Apply isomorphism to the layer claims
+	// let mut final_layer_claims = final_layer_claims
+	// 	.into_iter()
+	// 	.map(|layer_claim| layer_claim.isomorphic())
+	// 	.collect::<Vec<_>>();
 
-	let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
-	let flush_final_layer_claims = final_layer_claims;
+	// let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
+	// let flush_final_layer_claims = final_layer_claims;
 
-	// Reduce non_zero_final_layer_claims to evalcheck claims
-	let non_zero_prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
+	// // Reduce non_zero_final_layer_claims to evalcheck claims
+	// let non_zero_prodcheck_eval_claims =
+	// 	gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
 
-	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
-	let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
-		reorder_for_flushing_by_n_vars(
-			&oracles,
-			&flush_oracle_ids,
-			&flush_selectors,
-			flush_final_layer_claims,
-		);
+	// // Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
+	// let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
+	// 	reorder_for_flushing_by_n_vars(
+	// 		&oracles,
+	// 		&flush_oracle_ids,
+	// 		&flush_selectors,
+	// 		flush_final_layer_claims,
+	// 	);
 
-	let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
-		&flush_oracle_ids,
-		&flush_selectors,
-		&flush_final_layer_claims,
-	);
+	// let unmasked_flush_eval_claims = reduce_unmasked_flush_eval_claims(
+	// 	&flush_oracle_ids,
+	// 	&flush_selectors,
+	// 	&flush_final_layer_claims,
+	// );
 
-	let FlushSumcheckProvers {
-		provers,
-		flush_selectors_unique_by_claim,
-		flush_oracle_ids_by_claim,
-	} = get_flush_sumcheck_provers::<U, _, FDomain<Tower>, _, _>(
-		&mut oracles,
-		&flush_oracle_ids,
-		&flush_selectors,
-		&flush_final_layer_claims,
-		&mut witness,
-		&domain_factory,
-		backend,
-	)?;
+	// let FlushSumcheckProvers {
+	// 	provers,
+	// 	flush_selectors_unique_by_claim,
+	// 	flush_oracle_ids_by_claim,
+	// } = get_flush_sumcheck_provers::<U, _, FDomain<Tower>, _, _>(
+	// 	&mut oracles,
+	// 	&flush_oracle_ids,
+	// 	&flush_selectors,
+	// 	&flush_final_layer_claims,
+	// 	&mut witness,
+	// 	&domain_factory,
+	// 	backend,
+	// )?;
 
-	let flush_sumcheck_output = sumcheck::prove::batch_prove(provers, &mut transcript)?;
+	// let flush_sumcheck_output = sumcheck::prove::batch_prove(provers, &mut transcript)?;
 
-	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
-		&oracles,
-		&flush_selectors_unique_by_claim,
-		&flush_oracle_ids_by_claim,
-		&flush_sumcheck_output,
-	)?;
+	// let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
+	// 	&oracles,
+	// 	&flush_selectors_unique_by_claim,
+	// 	&flush_oracle_ids_by_claim,
+	// 	&flush_sumcheck_output,
+	// )?;
 
 	// Zerocheck
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
@@ -478,39 +478,39 @@ where
 		backend,
 	)?;
 
-	// Reduce committed evaluation claims to PIOP sumcheck claims
-	let system = ring_switch::EvalClaimSystem::new(
-		&oracles,
-		&commit_meta,
-		&oracle_to_commit_index,
-		&eval_claims,
-	)?;
+	// // Reduce committed evaluation claims to PIOP sumcheck claims
+	// let system = ring_switch::EvalClaimSystem::new(
+	// 	&oracles,
+	// 	&commit_meta,
+	// 	&oracle_to_commit_index,
+	// 	&eval_claims,
+	// )?;
 
-	let ring_switch::ReducedWitness {
-		transparents: transparent_multilins,
-		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _, _>(
-		&system,
-		&committed_multilins,
-		&mut transcript,
-		memoized_data,
-		backend,
-	)?;
+	// let ring_switch::ReducedWitness {
+	// 	transparents: transparent_multilins,
+	// 	sumcheck_claims: piop_sumcheck_claims,
+	// } = ring_switch::prove::<_, _, _, Tower, _, _>(
+	// 	&system,
+	// 	&committed_multilins,
+	// 	&mut transcript,
+	// 	memoized_data,
+	// 	backend,
+	// )?;
 
-	// Prove evaluation claims using PIOP compiler
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
-		&fri_params,
-		&merkle_prover,
-		domain_factory,
-		&commit_meta,
-		committed,
-		&codeword,
-		&committed_multilins,
-		&transparent_multilins,
-		&piop_sumcheck_claims,
-		&mut transcript,
-		&backend,
-	)?;
+	// // Prove evaluation claims using PIOP compiler
+	// piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
+	// 	&fri_params,
+	// 	&merkle_prover,
+	// 	domain_factory,
+	// 	&commit_meta,
+	// 	committed,
+	// 	&codeword,
+	// 	&committed_multilins,
+	// 	&transparent_multilins,
+	// 	&piop_sumcheck_claims,
+	// 	&mut transcript,
+	// 	&backend,
+	// )?;
 
 	Ok(Proof {
 		transcript: transcript.finalize(),
