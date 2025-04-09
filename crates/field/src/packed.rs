@@ -20,7 +20,8 @@ use super::{
 	Error,
 };
 use crate::{
-	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, Field, PackedExtension,
+	arithmetic_traits::InvertOrZero, is_packed_field_indexable, underlier::WithUnderlier,
+	unpack_if_possible_mut, BinaryField, Field, PackedExtension,
 };
 
 /// A packed field represents a vector of underlying field elements.
@@ -289,6 +290,7 @@ pub trait PackedField:
 /// Iterate over scalar values in a packed field slice.
 ///
 /// The iterator skips the first `offset` elements. This is more efficient than skipping elements of the iterator returned.
+#[inline]
 pub fn iter_packed_slice_with_offset<P: PackedField>(
 	packed: &[P],
 	offset: usize,
@@ -302,71 +304,107 @@ pub fn iter_packed_slice_with_offset<P: PackedField>(
 	P::iter_slice(packed).skip(offset)
 }
 
-#[inline]
+#[inline(always)]
 pub fn get_packed_slice<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
-	// Safety: `i % P::WIDTH` is always less than `P::WIDTH
-	unsafe { packed[i / P::WIDTH].get_unchecked(i % P::WIDTH) }
+	assert!(i >> P::LOG_WIDTH < packed.len(), "index out of bounds");
+
+	unsafe { get_packed_slice_unchecked(packed, i) }
 }
 
 /// Returns the scalar at the given index without bounds checking.
 /// # Safety
 /// The caller must ensure that `i` is less than `P::WIDTH * packed.len()`.
-#[inline]
+#[inline(always)]
 pub unsafe fn get_packed_slice_unchecked<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
-	packed
-		.get_unchecked(i / P::WIDTH)
-		.get_unchecked(i % P::WIDTH)
+	if is_packed_field_indexable::<P>() {
+		// Safety:
+		//  - We can safely cast the pointer to `P::Scalar` because `P` is `PackedFieldIndexable`
+		//  - `i` is guaranteed to be less than `len_packed_slice(packed)`
+		unsafe { *(packed.as_ptr() as *const P::Scalar).add(i) }
+	} else {
+		// Safety:
+		// - `i / P::WIDTH` is within the bounds of `packed` if `i` is less than `len_packed_slice(packed)`
+		// - `i % P::WIDTH` is always less than `P::WIDTH
+		unsafe {
+			packed
+				.get_unchecked(i >> P::LOG_WIDTH)
+				.get_unchecked(i % P::WIDTH)
+		}
+	}
 }
 
+#[inline]
 pub fn get_packed_slice_checked<P: PackedField>(
 	packed: &[P],
 	i: usize,
 ) -> Result<P::Scalar, Error> {
-	packed
-		.get(i / P::WIDTH)
-		.map(|el| el.get(i % P::WIDTH))
-		.ok_or(Error::IndexOutOfRange {
+	if i >> P::LOG_WIDTH < packed.len() {
+		// Safety: `i` is guaranteed to be less than `len_packed_slice(packed)`
+		Ok(unsafe { get_packed_slice_unchecked(packed, i) })
+	} else {
+		Err(Error::IndexOutOfRange {
 			index: i,
-			max: packed.len() * P::WIDTH,
+			max: len_packed_slice(packed),
 		})
+	}
 }
 
 /// Sets the scalar at the given index without bounds checking.
 /// # Safety
 /// The caller must ensure that `i` is less than `P::WIDTH * packed.len()`.
+#[inline]
 pub unsafe fn set_packed_slice_unchecked<P: PackedField>(
 	packed: &mut [P],
 	i: usize,
 	scalar: P::Scalar,
 ) {
-	unsafe {
-		packed
-			.get_unchecked_mut(i / P::WIDTH)
-			.set_unchecked(i % P::WIDTH, scalar)
+	if is_packed_field_indexable::<P>() {
+		// Safety:
+		//  - We can safely cast the pointer to `P::Scalar` because `P` is `PackedFieldIndexable`
+		//  - `i` is guaranteed to be less than `len_packed_slice(packed)`
+		unsafe {
+			*(packed.as_mut_ptr() as *mut P::Scalar).add(i) = scalar;
+		}
+	} else {
+		// Safety: if `i` is less than `len_packed_slice(packed)`, then
+		// - `i / P::WIDTH` is within the bounds of `packed`
+		// - `i % P::WIDTH` is always less than `P::WIDTH
+		unsafe {
+			packed
+				.get_unchecked_mut(i >> P::LOG_WIDTH)
+				.set_unchecked(i % P::WIDTH, scalar)
+		}
 	}
 }
 
+#[inline]
 pub fn set_packed_slice<P: PackedField>(packed: &mut [P], i: usize, scalar: P::Scalar) {
-	// Safety: `i % P::WIDTH` is always less than `P::WIDTH
-	unsafe { packed[i / P::WIDTH].set_unchecked(i % P::WIDTH, scalar) }
+	assert!(i >> P::LOG_WIDTH < packed.len(), "index out of bounds");
+
+	unsafe { set_packed_slice_unchecked(packed, i, scalar) }
 }
 
+#[inline]
 pub fn set_packed_slice_checked<P: PackedField>(
 	packed: &mut [P],
 	i: usize,
 	scalar: P::Scalar,
 ) -> Result<(), Error> {
-	packed
-		.get_mut(i / P::WIDTH)
-		.map(|el| el.set(i % P::WIDTH, scalar))
-		.ok_or(Error::IndexOutOfRange {
+	if i >> P::LOG_WIDTH < packed.len() {
+		// Safety: `i` is guaranteed to be less than `len_packed_slice(packed)`
+		unsafe { set_packed_slice_unchecked(packed, i, scalar) };
+		Ok(())
+	} else {
+		Err(Error::IndexOutOfRange {
 			index: i,
-			max: packed.len() * P::WIDTH,
+			max: len_packed_slice(packed),
 		})
+	}
 }
 
+#[inline(always)]
 pub const fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
-	packed.len() * P::WIDTH
+	packed.len() << P::LOG_WIDTH
 }
 
 /// Construct a packed field element from a function that returns scalar values by index with the
@@ -396,11 +434,38 @@ pub fn mul_by_subfield_scalar<P: PackedExtension<FS>, FS: Field>(val: P, multipl
 	}
 }
 
+/// Pack a slice of scalars into a vector of packed field elements.
 pub fn pack_slice<P: PackedField>(scalars: &[P::Scalar]) -> Vec<P> {
 	scalars
 		.chunks(P::WIDTH)
 		.map(|chunk| P::from_scalars(chunk.iter().copied()))
 		.collect()
+}
+
+/// Copy scalar elements to a vector of packed field elements.
+pub fn copy_packed_from_scalars_slice<P: PackedField>(src: &[P::Scalar], dst: &mut [P]) {
+	unpack_if_possible_mut(
+		dst,
+		|scalars| {
+			scalars[0..src.len()].copy_from_slice(src);
+		},
+		|packed| {
+			let chunks = src.chunks_exact(P::WIDTH);
+			let remainder = chunks.remainder();
+			for (chunk, packed) in chunks.zip(packed.iter_mut()) {
+				*packed = P::from_scalars(chunk.iter().copied());
+			}
+
+			if !remainder.is_empty() {
+				let offset = (src.len() >> P::LOG_WIDTH) << P::LOG_WIDTH;
+				let packed = &mut packed[offset];
+				for (i, scalar) in remainder.iter().enumerate() {
+					// Safety: `i` is guaranteed to be less than `P::WIDTH`
+					unsafe { packed.set_unchecked(i, *scalar) };
+				}
+			}
+		},
+	);
 }
 
 impl<F: Field> Broadcast<F> for F {
@@ -708,5 +773,32 @@ mod tests {
 	#[test]
 	fn test_iteration() {
 		run_for_all_packed_fields(&PackedFieldIterationTest);
+	}
+
+	fn check_copy_from_scalars<P: PackedField>(mut rng: impl RngCore) {
+		let scalars = (0..100)
+			.map(|_| <<P as PackedField>::Scalar as Field>::random(&mut rng))
+			.collect::<Vec<_>>();
+
+		let mut packed_copy = vec![P::zero(); 100];
+
+		for len in [0, 2, 4, 8, 12, 16] {
+			copy_packed_from_scalars_slice(&scalars[0..len], &mut packed_copy);
+
+			for (i, &scalar) in scalars[0..len].iter().enumerate() {
+				assert_eq!(get_packed_slice(&packed_copy, i), scalar);
+			}
+			for i in len..100 {
+				assert_eq!(get_packed_slice(&packed_copy, i), P::Scalar::ZERO);
+			}
+		}
+	}
+
+	#[test]
+	fn test_copy_from_scalars() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		check_copy_from_scalars::<PackedBinaryField16x8b>(&mut rng);
+		check_copy_from_scalars::<PackedBinaryField32x4b>(&mut rng);
 	}
 }
