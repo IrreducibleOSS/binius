@@ -200,7 +200,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.po2_sized && !count.is_power_of_two() {
+			if table.power_of_two_sized && !count.is_power_of_two() {
 				return Err(Error::TableSizePowerOfTwoRequired {
 					table_id: table.id,
 					size: count,
@@ -253,7 +253,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down = (!table.po2_sized)
+				let step_down = (!table.power_of_two_sized)
 					.then(|| {
 						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
 						oracles.add_transparent(step_down_poly)

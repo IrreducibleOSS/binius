@@ -44,7 +44,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	pub fn require_power_of_two_size(&mut self) {
-		self.table.po2_sized = true;
+		self.table.power_of_two_sized = true;
 	}
 
 	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
@@ -325,7 +325,7 @@ pub struct Table<F: TowerField = B128> {
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
 	/// Whether the table size is required to be a power of two.
-	pub po2_sized: bool,
+	pub power_of_two_sized: bool,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
@@ -403,7 +403,7 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
-			po2_sized: false,
+			power_of_two_sized: false,
 			partitions: SparseIndex::new(),
 		}
 	}
