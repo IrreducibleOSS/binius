@@ -37,7 +37,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	println!("Verifying {} sha256 compressions", args.n_compressions);
 

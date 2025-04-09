@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	println!("Verifying {} u8 multiplications", args.n_multiplications);
 

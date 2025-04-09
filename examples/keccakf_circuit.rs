@@ -15,7 +15,7 @@ use tracing_profile::init_tracing;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 128, value_parser = value_parser!(u32).range(1 << 3..))]
+	#[arg(short, long, default_value_t = 8, value_parser = value_parser!(u32).range(1 << 3..))]
 	n_permutations: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -23,7 +23,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	const SECURITY_BITS: usize = 100;
+	const SECURITY_BITS: usize = 10;
 
 	adjust_thread_pool()
 		.as_ref()
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	println!("Verifying {} Keccak-f permutations", args.n_permutations);
 
