@@ -7,7 +7,7 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{HybridRecursiveStrategy, PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -50,7 +50,7 @@ cfg_if! {
 		impl_mul_with!(PackedBinaryField2x16b => crate::PackedBinaryField8x16b);
 		impl_mul_with!(PackedBinaryField1x32b => crate::PackedBinaryField4x32b);
 	} else {
-		use crate::arch::PairwiseTableStrategy;
+		use crate::arch::{HybridRecursiveStrategy, PairwiseTableStrategy};
 
 		impl_mul_with!(PackedBinaryField4x8b @ PairwiseTableStrategy);
 		impl_mul_with!(PackedBinaryField2x16b @ HybridRecursiveStrategy);

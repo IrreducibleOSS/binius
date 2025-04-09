@@ -8,10 +8,7 @@ use binius_core::{
 		channel::{ChannelId, OracleOrConst},
 		ConstraintSystem as CompiledConstraintSystem,
 	},
-	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
-		ProjectionVariant,
-	},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
@@ -341,11 +338,7 @@ fn add_oracle_for_column<F: TowerField>(
 					}
 				})
 				.collect();
-			addition.projected(
-				oracle_lookup[col.table_index],
-				index_values,
-				ProjectionVariant::FirstVars,
-			)?
+			addition.projected(oracle_lookup[col.table_index], index_values, 0)?
 		}
 		ColumnDef::Shifted {
 			col,
