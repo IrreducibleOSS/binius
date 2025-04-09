@@ -486,7 +486,7 @@ pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 
-pub trait TryRepackSlice<P: PackedField>: PackedField<Scalar = P::Scalar> {
+pub trait TryRepackSlice<P: PackedField>: PackedField {
 	fn try_repack_slice(slice: &mut [P]) -> Result<&mut [Self], Error>;
 }
 

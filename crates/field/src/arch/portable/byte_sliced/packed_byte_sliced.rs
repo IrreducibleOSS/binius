@@ -17,13 +17,14 @@ use crate::{
 	linear_transformation::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
+	packed::TryRepackSlice,
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
 	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
-	PackedField,
+	PackedField, TowerField,
 };
 
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
@@ -303,7 +304,7 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
-		byte_sliced_common!($name, $packed_storage, $scalar_type);
+		byte_sliced_common!($name, $packed_storage, $scalar_type, $storage_tower_level);
 
 		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$scalar_tower_level as TowerLevel>::WIDTH}> {
 			fn transform(&self, data: &$name) -> $name {
@@ -344,11 +345,70 @@ macro_rules! define_byte_sliced_3d {
 				TransformationWrapperNxN(transformations_8b)
 			}
 		}
+
+		impl TryRepackSlice<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
+			#[inline(always)]
+			fn try_repack_slice(
+				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed],
+			) -> Result<&mut [Self], crate::Error> {
+				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] =
+					WithUnderlier::to_underliers_ref_mut(slice);
+
+				for chunk in underliers.chunks_exact_mut(Self::HEIGHT_BYTES) {
+					let chunk_array: &mut [<$packed_storage as WithUnderlier>::Underlier; Self::HEIGHT_BYTES] =
+						chunk.try_into().expect("slice length is correct");
+					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_to_byte_sliced::<$storage_tower_level>(chunk_array);
+				}
+
+				Ok(bytemuck::must_cast_slice_mut(
+					underliers,
+				))
+			}
+		}
 	};
 }
 
 macro_rules! byte_sliced_common {
-	($name:ident, $packed_storage:ty, $scalar_type:ty) => {
+	($name:ident, $packed_storage:ty, $scalar_type:ty, $storage_tower_level:ty) => {
+		impl TryRepackSlice<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
+			#[inline(always)]
+			fn try_repack_slice(
+				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed],
+			) -> Result<&mut [Self], crate::Error> {
+				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] =
+					WithUnderlier::to_underliers_ref_mut(slice);
+
+				for chunk in underliers.chunks_exact_mut(Self::HEIGHT_BYTES) {
+					let chunk_array: &mut [<$packed_storage as WithUnderlier>::Underlier; Self::HEIGHT_BYTES] =
+						chunk.try_into().expect("slice length is correct");
+					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_to_byte_sliced::<$storage_tower_level>(chunk_array);
+				}
+
+				Ok(bytemuck::must_cast_slice_mut(
+					underliers,
+				))
+			}
+		}
+
+		impl TryRepackSlice<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
+			#[inline(always)]
+			fn try_repack_slice(
+				slice: &mut [$name],
+			) -> Result<&mut [Self], crate::Error> {
+				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] = bytemuck::must_cast_slice_mut(slice);
+
+				for chunk in underliers.chunks_exact_mut($name::HEIGHT_BYTES) {
+					let chunk_array: &mut [<$packed_storage as WithUnderlier>::Underlier; $name::HEIGHT_BYTES] =
+						chunk.try_into().expect("slice length is correct");
+					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_from_byte_sliced::<$storage_tower_level>(chunk_array);
+				}
+
+				Ok(WithUnderlier::from_underliers_ref_mut(
+					underliers,
+				))
+			}
+		}
+
 		impl Add<$scalar_type> for $name {
 			type Output = Self;
 
@@ -759,7 +819,7 @@ macro_rules! define_byte_sliced_3d_1b {
 			}
 		}
 
-		byte_sliced_common!($name, $packed_storage, BinaryField1b);
+		byte_sliced_common!($name, $packed_storage, BinaryField1b, $storage_tower_level);
 
 		impl PackedTransformationFactory<$name> for $name {
 			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> =
