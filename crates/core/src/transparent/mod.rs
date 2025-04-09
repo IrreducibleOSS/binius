@@ -1,5 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+pub mod add_with_carry;
+pub mod and;
+pub mod boolean;
 pub mod constant;
 pub mod disjoint_product;
 pub mod eq_ind;
