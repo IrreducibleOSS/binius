@@ -100,10 +100,7 @@ fn main() -> Result<()> {
 		table_sizes: vec![n_permutations],
 	};
 
-	// let mut rng = thread_rng();
-	// Use a fixed seed for deterministic RNG
-	let seed = [42u8; 32]; // You can change this seed value as needed
-	let mut rng = StdRng::from_seed(seed);
+	let mut rng = StdRng::from_seed([42u8; 32]);
 	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
