@@ -1,10 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{as_packed_field::PackScalar, packed::set_packed_slice, Field};
-use bytemuck::Pod;
+use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedFieldIndexable};
 
-use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder};
+use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128};
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
 ///
@@ -83,9 +82,9 @@ impl U32Add {
 		}
 	}
 
-	pub fn populate<U>(&self, index: &mut TableWitnessSegment<U>) -> Result<(), anyhow::Error>
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
 	where
-		U: Pod + PackScalar<B1>,
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
 		let xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
 		let yin = index.get_mut_as(self.yin)?;
