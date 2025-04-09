@@ -1,6 +1,6 @@
 // Copyright 2023-2025 Irreducible Inc.
 
-use binius_utils::checked_arithmetics::log2_strict_usize;
+use binius_utils::checked_arithmetics::checked_log_2;
 
 use super::{packed::PackedField, Field, PackedFieldIndexable, RepackedExtension};
 
@@ -38,7 +38,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 			msg: "power of two size required".to_string(),
 		});
 	}
-	let log_size = log2_strict_usize(size);
+	let log_size = checked_log_2(size);
 	if log_size < log_n {
 		return Err(Error::InvalidBufferSize {
 			param: "elems",
@@ -94,7 +94,7 @@ where
 	}
 
 	let log_d = FE::LOG_DEGREE;
-	let log_n = log2_strict_usize(src.len()) + PE::LOG_WIDTH;
+	let log_n = checked_log_2(src.len()) + PE::LOG_WIDTH;
 
 	if log_n < log_d {
 		return Err(Error::InvalidBufferSize {

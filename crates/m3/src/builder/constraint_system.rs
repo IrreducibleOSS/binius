@@ -16,7 +16,7 @@ use binius_core::{
 };
 use binius_field::{PackedField, TowerField};
 use binius_math::LinearNormalForm;
-use binius_utils::checked_arithmetics::log2_strict_usize;
+use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
 
 use super::{
@@ -238,7 +238,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					..
 				} = partition;
 
-				let n_vars = log_capacity + log2_strict_usize(*values_per_row);
+				let n_vars = log_capacity + checked_log_2(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()

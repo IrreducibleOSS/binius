@@ -6,7 +6,7 @@ use binius_field::TowerField;
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
 use binius_utils::{
 	bail,
-	checked_arithmetics::{log2_ceil_usize, log2_strict_usize},
+	checked_arithmetics::{checked_log_2, log2_ceil_usize},
 	SerializationMode, SerializeBytes,
 };
 use bytes::Buf;
@@ -55,7 +55,7 @@ where
 			bail!(Error::PowerOfTwoLengthRequired)
 		}
 
-		let log_len = log2_strict_usize(len);
+		let log_len = checked_log_2(len);
 
 		if layer_depth > log_len {
 			bail!(Error::IncorrectLayerDepth)

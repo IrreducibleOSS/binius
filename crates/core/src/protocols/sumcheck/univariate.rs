@@ -8,7 +8,7 @@ use std::{
 use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{BinarySubspace, EvaluationDomain, MultilinearExtension};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
+use binius_utils::{bail, checked_arithmetics::checked_log_2, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 
 use crate::{
@@ -207,7 +207,7 @@ where
 {
 	let lagrange_evals = evaluation_domain.lagrange_evals(univariate_challenge);
 
-	let n_vars = log2_strict_usize(lagrange_evals.len());
+	let n_vars = checked_log_2(lagrange_evals.len());
 	let mut packed = zeroed_vec(lagrange_evals.len().div_ceil(P::WIDTH));
 	let scalars = P::unpack_scalars_mut(packed.as_mut_slice());
 	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());

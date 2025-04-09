@@ -14,7 +14,7 @@ use binius_field::{
 	ExtensionField, TowerField,
 };
 use binius_utils::{
-	checked_arithmetics::{checked_log_2, log2_ceil_usize, log2_strict_usize},
+	checked_arithmetics::{checked_log_2, log2_ceil_usize},
 	sparse_index::SparseIndex,
 };
 
@@ -93,7 +93,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(log_block_size <= log2_strict_usize(VALUES_PER_ROW));
+		assert!(log_block_size <= checked_log_2(VALUES_PER_ROW));
 		assert!(offset <= 1 << log_block_size);
 		self.table.new_column(
 			self.namespaced_name(name),
@@ -119,8 +119,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		assert!(FSubSub::TOWER_LEVEL < FSub::TOWER_LEVEL);
 		assert!(VALUES_PER_ROW_SUB > VALUES_PER_ROW);
 		assert_eq!(
-			FSub::TOWER_LEVEL + log2_strict_usize(VALUES_PER_ROW),
-			FSubSub::TOWER_LEVEL + log2_strict_usize(VALUES_PER_ROW_SUB)
+			FSub::TOWER_LEVEL + checked_log_2(VALUES_PER_ROW),
+			FSubSub::TOWER_LEVEL + checked_log_2(VALUES_PER_ROW_SUB)
 		);
 		self.table.new_column(
 			self.namespaced_name(name),
@@ -191,7 +191,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			ColumnDef::Selected {
 				col: col.id(),
 				index,
-				index_bits: log2_strict_usize(VALUES_PER_ROW),
+				index_bits: checked_log_2(VALUES_PER_ROW),
 			},
 		)
 	}
@@ -207,7 +207,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
 	{
 		let namespaced_name = self.namespaced_name(name);
-		let n_vars = log2_strict_usize(VALUES_PER_ROW);
+		let n_vars = checked_log_2(VALUES_PER_ROW);
 		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
 		let mle = MultilinearExtensionTransparent::<
 			PackedType<OptimalUnderlier, FSub>,
@@ -457,7 +457,7 @@ impl<F: TowerField> Table<F> {
 			name: name.to_string(),
 			shape: ColumnShape {
 				tower_height: FSub::TOWER_LEVEL,
-				log_values_per_row: log2_strict_usize(V),
+				log_values_per_row: checked_log_2(V),
 			},
 			is_nonzero: false,
 		};
@@ -470,7 +470,7 @@ impl<F: TowerField> Table<F> {
 
 	fn partition_mut(&mut self, values_per_row: usize) -> &mut TablePartition<F> {
 		self.partitions
-			.entry(log2_strict_usize(values_per_row))
+			.entry(checked_log_2(values_per_row))
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
 }

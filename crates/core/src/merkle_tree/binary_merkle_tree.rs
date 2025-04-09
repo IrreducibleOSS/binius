@@ -5,7 +5,7 @@ use std::{array, fmt::Debug, mem::MaybeUninit};
 use binius_field::TowerField;
 use binius_hash::{multi_digest::ParallelDigest, PseudoCompressionFunction};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
+use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use digest::{crypto_common::BlockSizeUser, FixedOutputReset, Output};
 use tracing::instrument;
 
@@ -44,7 +44,7 @@ where
 		bail!(Error::PowerOfTwoLengthRequired);
 	}
 
-	let log_len = log2_strict_usize(len);
+	let log_len = checked_log_2(len);
 
 	internal_build(
 		compression,

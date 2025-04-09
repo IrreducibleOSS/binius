@@ -10,6 +10,11 @@ pub const fn checked_int_div(a: usize, b: usize) -> usize {
 }
 
 /// log2 implementation that fails when `val` is not a power of 2.
+///
+/// # Panics
+/// Panics if `val` is not a power of two.
+#[must_use]
+#[inline]
 pub const fn checked_log_2(val: usize) -> usize {
 	let result = val.ilog2();
 	assert!(2usize.pow(result) == val);
@@ -22,19 +27,6 @@ pub const fn checked_log_2(val: usize) -> usize {
 pub const fn log2_ceil_usize(n: usize) -> usize {
 	(usize::BITS - n.saturating_sub(1).leading_zeros()) as usize
 }
-
-/// Computes `log_2(n)`
-///
-/// # Panics
-/// Panics if `n` is not a power of two.
-#[must_use]
-#[inline]
-pub fn log2_strict_usize(n: usize) -> usize {
-	let res = n.trailing_zeros();
-	assert_eq!(n.wrapping_shr(res), 1, "Not a power of two: {n}");
-	res as usize
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
