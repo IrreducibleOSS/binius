@@ -111,6 +111,14 @@ where
 		self.0.evaluate_partial_high(query)
 	}
 
+	fn evaluate_partial(
+		&self,
+		query: MultilinearQueryRef<PE>,
+		start_index: usize,
+	) -> Result<MultilinearExtension<PE>, Error> {
+		self.0.evaluate_partial(query, start_index)
+	}
+
 	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<PE>,
@@ -390,6 +398,14 @@ where
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error> {
 		self.0.evaluate_partial_high(query)
+	}
+
+	fn evaluate_partial(
+		&self,
+		query: MultilinearQueryRef<P>,
+		start_index: usize,
+	) -> Result<MultilinearExtension<P>, Error> {
+		self.0.evaluate_partial(query, start_index)
 	}
 
 	fn subcube_partial_low_evals(
