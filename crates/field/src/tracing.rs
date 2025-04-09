@@ -6,7 +6,7 @@ cfg_if! {
 		use std::cell::Cell;
 
 		thread_local! {
-			static IS_IN_MULT_FUNCTION: Cell<bool> = Cell::new(false);
+			static IS_IN_MULT_FUNCTION: Cell<bool> = const { Cell::new(false) };
 		}
 
 		/// This guard is used to remove the duplicated items when one field multiplication
@@ -14,6 +14,7 @@ cfg_if! {
 		pub(crate) struct TraceGuard(bool);
 
 		impl TraceGuard {
+			#[allow(clippy::if_not_else)] // I'd like to keep the first branch the main one
 			pub fn new(lhs: &'static str, rhs: &'static str) -> Self {
 				let val = IS_IN_MULT_FUNCTION.with(|v| {
 					if !v.get() {
