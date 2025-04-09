@@ -19,7 +19,7 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use rand::thread_rng;
+use rand::{rngs::StdRng, SeedableRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -51,7 +51,8 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = log2_ceil_usize(args.n_multiplications as usize);
 
-	let mut rng = thread_rng();
+	// let mut rng = thread_rng();
+	let mut rng = StdRng::from_seed([42u8; 32]);
 
 	let mult_a = builder.add_committed_multiple::<WIDTH>("a", log_size, B8::TOWER_LEVEL);
 	let mult_b = builder.add_committed_multiple::<WIDTH>("b", log_size, B8::TOWER_LEVEL);
