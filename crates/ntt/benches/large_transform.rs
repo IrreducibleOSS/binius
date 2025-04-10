@@ -15,21 +15,21 @@ use rand::thread_rng;
 fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterion, field: &str) {
 	let mut group = c.benchmark_group("NTT");
 	for log_dim in [16, 20] {
-		for log_batch_size in [1, 4] {
-			let data_len = 1 << (log_dim + log_batch_size - PE::LOG_WIDTH);
+		for log_stride_batch in [1, 4] {
+			let data_len = 1 << (log_dim + log_stride_batch - PE::LOG_WIDTH);
 			let mut rng = thread_rng();
 			let mut data = repeat_with(|| PE::random(&mut rng))
 				.take(data_len)
 				.collect::<Vec<_>>();
 
-			let params = format!("{field}/log_dim={log_dim}/log_b={log_batch_size}");
+			let params = format!("{field}/log_dim={log_dim}/log_s={log_stride_batch}");
 			group.throughput(Throughput::Bytes((data_len * size_of::<PE>()) as u64));
 
 			let ntt = SingleThreadedNTT::<F>::new(log_dim)
 				.unwrap()
 				.precompute_twiddles();
 			group.bench_function(BenchmarkId::new("single-thread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_batch_size, log_dim));
+				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_stride_batch, 0, log_dim));
 			});
 
 			let ntt = SingleThreadedNTT::<F>::new(log_dim)
@@ -37,7 +37,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 				.precompute_twiddles()
 				.multithreaded();
 			group.bench_function(BenchmarkId::new("multithread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_batch_size, log_dim));
+				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_stride_batch, 0, log_dim));
 			});
 		}
 	}

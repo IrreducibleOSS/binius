@@ -87,20 +87,38 @@ where
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
-		forward_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
+		forward_transform(
+			self.log_domain_size(),
+			&self.s_evals,
+			data,
+			coset,
+			log_stride_batch,
+			log_batch,
+			log_n,
+		)
 	}
 
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
-		log_batch_size: usize,
+		log_stride_batch: usize,
+		log_batch: usize,
 		log_n: usize,
 	) -> Result<(), Error> {
-		inverse_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
+		inverse_transform(
+			self.log_domain_size(),
+			&self.s_evals,
+			data,
+			coset,
+			log_stride_batch,
+			log_batch,
+			log_n,
+		)
 	}
 }
 
@@ -109,9 +127,19 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut [P],
 	coset: u32,
-	log_batch_size: usize,
+	log_stride_batch: usize,
+	log_batch: usize,
 	log_n: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(
+		log_domain_size,
+		data,
+		coset,
+		log_stride_batch,
+		log_batch,
+		log_n,
+	)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
@@ -131,7 +159,8 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 						s_evals,
 						&mut buffer,
 						coset,
-						log_batch_size,
+						log_stride_batch,
+						log_batch,
 						log_n,
 					)?;
 
@@ -144,24 +173,24 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		_ => {}
 	};
 
-	let log_b = log_batch_size;
+	let log_s = log_stride_batch;
+	let log_b = log_batch;
 
 	let log_w = P::LOG_WIDTH;
 
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_batch_size, log_n)?;
-
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_s);
 
 	for i in (cutoff..log_n).rev() {
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
-		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = P::broadcast(coset_twiddle.get(j));
-			for k in 0..1 << (i + log_b - log_w) {
-				let idx0 = j << (i + log_b - log_w + 1) | k;
-				let idx1 = idx0 | 1 << (i + log_b - log_w);
+		let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
+		for j in 0..1 << (log_b + coset_twiddle.log_n()) {
+			let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
+			for k in 0..1 << (i + log_s - log_w) {
+				let idx0 = j << (i + log_s - log_w + 1) | k;
+				let idx1 = idx0 | 1 << (i + log_s - log_w);
 				data[idx0] += data[idx1] * twiddle;
 				data[idx1] += data[idx0];
 			}
@@ -176,14 +205,19 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
-		let log_block_len = i + log_b;
-		let block_twiddle = calculate_twiddle::<P>(
+		let block_twiddle = calculate_packed_additive_twiddle::<P>(
 			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
-			log_block_len,
+			log_s,
+			log_b,
+			log_n,
+			i,
 		);
 
+		let log_block_len = i + log_s;
+		let twiddle_index_mask = (1 << (coset_twiddle.log_n() + i).saturating_sub(cutoff)) - 1;
 		for j in 0..data.len() / 2 {
-			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
+			let twiddle = P::broadcast(coset_twiddle.get((j & twiddle_index_mask) << (cutoff - i)))
+				+ block_twiddle;
 			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 			u += v * twiddle;
 			v += u;
@@ -199,9 +233,19 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut [P],
 	coset: u32,
-	log_batch_size: usize,
+	log_stride_batch: usize,
+	log_batch: usize,
 	log_n: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(
+		log_domain_size,
+		data,
+		coset,
+		log_stride_batch,
+		log_batch,
+		log_n,
+	)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
@@ -221,7 +265,8 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 						s_evals,
 						&mut buffer,
 						coset,
-						log_batch_size,
+						log_stride_batch,
+						log_batch,
 						log_n,
 					)?;
 
@@ -233,15 +278,14 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		_ => {}
 	};
 
+	let log_s = log_stride_batch;
+	let log_b = log_batch;
+
 	let log_w = P::LOG_WIDTH;
-
-	let log_b = log_batch_size;
-
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_batch_size, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_s);
 
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..cutoff.min(log_n) {
@@ -252,14 +296,19 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
-		let log_block_len = i + log_b;
-		let block_twiddle = calculate_twiddle::<P>(
+		let block_twiddle = calculate_packed_additive_twiddle::<P>(
 			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
-			log_block_len,
+			log_s,
+			log_b,
+			log_n,
+			i,
 		);
 
+		let log_block_len = i + log_s;
+		let twiddle_index_mask = (1 << (coset_twiddle.log_n() + i).saturating_sub(cutoff)) - 1;
 		for j in 0..data.len() / 2 {
-			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
+			let twiddle = P::broadcast(coset_twiddle.get((j & twiddle_index_mask) << (cutoff - i)))
+				+ block_twiddle;
 			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 			v += u;
 			u += v * twiddle;
@@ -271,11 +320,12 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	for i in cutoff..log_n {
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
-		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = P::broadcast(coset_twiddle.get(j));
-			for k in 0..1 << (i + log_b - log_w) {
-				let idx0 = j << (i + log_b - log_w + 1) | k;
-				let idx1 = idx0 | 1 << (i + log_b - log_w);
+		let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
+		for j in 0..1 << (log_b + coset_twiddle.log_n()) {
+			let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
+			for k in 0..1 << (i + log_s - log_w) {
+				let idx0 = j << (i + log_s - log_w + 1) | k;
+				let idx1 = idx0 | 1 << (i + log_s - log_w);
 				data[idx1] += data[idx0];
 				data[idx0] += data[idx1] * twiddle;
 			}
@@ -289,17 +339,15 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	log_domain_size: usize,
 	data: &[PB],
 	coset: u32,
-	log_batch_size: usize,
+	log_stride_batch: usize,
+	log_batch: usize,
 	log_n: usize,
 ) -> Result<(), Error> {
 	if !data.len().is_power_of_two() {
 		return Err(Error::PowerOfTwoLengthRequired);
 	}
-	if !PB::WIDTH.is_power_of_two() {
-		return Err(Error::PackingWidthMustDivideDimension);
-	}
 
-	let full_sized_n = (data.len() * PB::WIDTH) >> log_batch_size;
+	let full_sized_n = (data.len() * PB::WIDTH) >> (log_batch + log_stride_batch);
 
 	// Verify that our log_n exactly matches the data length, except when we are NTT-ing one packed field
 	if (1 << log_n != full_sized_n && data.len() > 2) || (1 << log_n > full_sized_n) {
@@ -314,7 +362,7 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	// at least min(PB::LOG_WIDTH + 1 - log_batch_size, 0).
 	// Not enforcing this bound makes some twiddle values unavailable.
 	let log_required_domain_size =
-		(log_n + coset_bits).max((PB::LOG_WIDTH + 1).saturating_sub(log_batch_size));
+		(log_n + coset_bits).max((PB::LOG_WIDTH + 1).saturating_sub(log_stride_batch));
 	if log_required_domain_size > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size,
@@ -325,15 +373,38 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 }
 
 #[inline]
-fn calculate_twiddle<P>(s_evals: &impl TwiddleAccess<P::Scalar>, log_block_len: usize) -> P
+fn calculate_packed_additive_twiddle<P>(
+	s_evals: &impl TwiddleAccess<P::Scalar>,
+	log_stride_batch: usize,
+	log_batch: usize,
+	log_n: usize,
+	ntt_round: usize,
+) -> P
 where
 	P: PackedField<Scalar: BinaryField>,
 {
-	let log_blocks_count = P::LOG_WIDTH - log_block_len - 1;
+	debug_assert!(log_n > 0);
+
+	let log_block_len = ntt_round + log_stride_batch;
+	debug_assert!(log_block_len < P::LOG_WIDTH);
+
+	let packed_log_len = (log_n + log_batch + log_stride_batch).min(P::LOG_WIDTH);
+	let log_blocks_count = packed_log_len.saturating_sub(log_block_len + 1);
+
+	let packed_log_batch = packed_log_len.saturating_sub(log_n + log_stride_batch);
+	let packed_log_n = packed_log_len - packed_log_batch - log_stride_batch;
+
+	let twiddle_stride = s_evals.log_n().min(log_blocks_count - packed_log_batch);
+	let twiddle_index_mask = (1 << twiddle_stride) - 1;
 
 	let mut twiddle = P::default();
 	for k in 0..1 << log_blocks_count {
-		let (subblock_twiddle_0, subblock_twiddle_1) = s_evals.get_pair(log_blocks_count, k);
+		let (subblock_twiddle_0, subblock_twiddle_1) = if packed_log_n == log_n {
+			let same_twiddle = s_evals.get(k & twiddle_index_mask);
+			(same_twiddle, same_twiddle)
+		} else {
+			s_evals.get_pair(twiddle_stride, k)
+		};
 		let idx0 = k << (log_block_len + 1);
 		let idx1 = idx0 | 1 << log_block_len;
 
@@ -380,9 +451,9 @@ mod tests {
 
 		let unpacked = PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy);
 
-		let _ = s.forward_transform(&mut packed, 3, 0, 3);
+		let _ = s.forward_transform(&mut packed, 3, 0, 0, 3);
 
-		let _ = s.forward_transform(unpacked, 3, 0, 3);
+		let _ = s.forward_transform(unpacked, 3, 0, 0, 3);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -398,9 +469,9 @@ mod tests {
 
 		let unpacked = PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy);
 
-		let _ = s.inverse_transform(&mut packed, 3, 0, 3);
+		let _ = s.inverse_transform(&mut packed, 3, 0, 0, 3);
 
-		let _ = s.inverse_transform(unpacked, 3, 0, 3);
+		let _ = s.inverse_transform(unpacked, 3, 0, 0, 3);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -416,9 +487,9 @@ mod tests {
 
 		let unpacked = &mut PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy)[0..4];
 
-		let _ = forward_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 2);
+		let _ = forward_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 0, 2);
 
-		let _ = s.forward_transform(unpacked, 3, 0, 2);
+		let _ = s.forward_transform(unpacked, 3, 0, 0, 2);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -434,9 +505,9 @@ mod tests {
 
 		let unpacked = &mut PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy)[0..4];
 
-		let _ = inverse_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 2);
+		let _ = inverse_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 0, 2);
 
-		let _ = s.inverse_transform(unpacked, 3, 0, 2);
+		let _ = s.inverse_transform(unpacked, 3, 0, 0, 2);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
