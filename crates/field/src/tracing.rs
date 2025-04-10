@@ -6,11 +6,17 @@ cfg_if! {
 		use std::cell::Cell;
 
 		thread_local! {
+			/// Thread-local flag to check if we are in a multiplication function.
+			/// This is used to avoid logging calls to the multiplication functions
+			/// multiple times.
 			static IS_IN_MULT_FUNCTION: Cell<bool> = const { Cell::new(false) };
 		}
 
 		/// This guard is used to remove the duplicated items when one field multiplication
 		/// re-uses several other ones.
+		/// When we enter the multiplication function, we check if the thread-local flag is set,
+		/// if not, we set it and log the multiplication otherwise we skip it.
+		/// When we leave the multiplication function, we reset the flag if it was set.
 		pub(crate) struct TraceGuard(bool);
 
 		impl TraceGuard {
