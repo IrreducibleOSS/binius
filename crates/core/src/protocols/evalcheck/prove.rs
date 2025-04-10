@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::ops::Range;
+
 use binius_field::{Field, PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;

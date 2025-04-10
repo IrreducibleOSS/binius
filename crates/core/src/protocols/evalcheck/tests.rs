@@ -620,7 +620,7 @@ fn test_evalcheck_duplicate_claims() {
 		},
 	];
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(transp1_id, stepdown1_witness.specialize_arc_dyn()),
@@ -740,7 +740,7 @@ fn test_evalcheck_existing_claims() {
 		},
 	];
 
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(transp1_id, stepdown1_witness.specialize_arc_dyn()),

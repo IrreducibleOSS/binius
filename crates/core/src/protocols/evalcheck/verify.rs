@@ -78,7 +78,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		self.round_claims.extend(evalcheck_claims.clone());
 
 		let mut proof_idx = 0;
-		// proof_len <= total_claim_len == advice_len
+		// proof_len <= len(self.round_claims) == advice_len
 		for (current_claim_idx, advice) in advices.into_iter().enumerate() {
 			if self.round_claims.len() <= current_claim_idx {
 				return Err(VerificationError::ClaimIndexOutOfRange {
