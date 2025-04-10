@@ -485,3 +485,34 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		Ok(log_rows)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::ConstraintSystem;
+	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
+
+	use super::ConstraintSystemBuilder;
+	use crate::u32fib::u32fib;
+
+	#[test]
+	fn test_serialize_roundtrip() {
+		let mut builder = ConstraintSystemBuilder::new();
+		let log_size_1b = 14;
+		let _ = u32fib(&mut builder, "u32fib", log_size_1b).unwrap();
+
+		let prover_constraint_system = builder.build().unwrap();
+		let mut write_buf = vec![];
+		prover_constraint_system
+			.serialize(&mut write_buf, SerializationMode::Native)
+			.unwrap();
+		let constraint_system =
+			ConstraintSystem::deserialize(&mut write_buf.as_slice(), SerializationMode::Native)
+				.unwrap();
+		assert_eq!(constraint_system.exponents.len(), 0);
+		assert_eq!(constraint_system.flushes.len(), 0);
+		assert_eq!(constraint_system.max_channel_id, 0);
+		assert_eq!(constraint_system.non_zero_oracle_ids.len(), 0);
+		assert_eq!(constraint_system.table_constraints.len(), 2);
+		assert_eq!(constraint_system.oracles.size(), 9);
+	}
+}

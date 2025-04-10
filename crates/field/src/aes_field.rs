@@ -307,7 +307,7 @@ macro_rules! serialize_deserialize_non_canonical {
 		impl SerializeBytes for $field {
 			fn serialize(
 				&self,
-				write_buf: impl BufMut,
+				write_buf: &mut dyn BufMut,
 				mode: SerializationMode,
 			) -> Result<(), SerializationError> {
 				match mode {
@@ -321,7 +321,7 @@ macro_rules! serialize_deserialize_non_canonical {
 
 		impl DeserializeBytes for $field {
 			fn deserialize(
-				read_buf: impl Buf,
+				read_buf: &mut dyn Buf,
 				mode: SerializationMode,
 			) -> Result<Self, SerializationError>
 			where

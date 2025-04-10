@@ -466,7 +466,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 impl SerializeBytes for BinaryField128bPolyval {
 	fn serialize(
 		&self,
-		write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		match mode {
@@ -479,7 +479,10 @@ impl SerializeBytes for BinaryField128bPolyval {
 }
 
 impl DeserializeBytes for BinaryField128bPolyval {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{

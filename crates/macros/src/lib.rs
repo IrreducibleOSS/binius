@@ -94,7 +94,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 		Data::Struct(data) => {
 			let fields = field_names(data.fields, None);
 			quote! {
-				#(binius_utils::SerializeBytes::serialize(&self.#fields, &mut write_buf, mode)?;)*
+				#(binius_utils::SerializeBytes::serialize(&self.#fields, write_buf, mode)?;)*
 			}
 		}
 		Data::Enum(data) => {
@@ -107,8 +107,8 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 					let variant_index = i as u8;
 					let fields = field_names(variant.fields.clone(), Some("field_"));
 					let serialize_variant = quote! {
-						binius_utils::SerializeBytes::serialize(&#variant_index, &mut write_buf, mode)?;
-						#(binius_utils::SerializeBytes::serialize(#fields, &mut write_buf, mode)?;)*
+						binius_utils::SerializeBytes::serialize(&#variant_index, write_buf, mode)?;
+						#(binius_utils::SerializeBytes::serialize(#fields, write_buf, mode)?;)*
 					};
 					match variant.fields {
 						Fields::Named(_) => quote! {
@@ -139,7 +139,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 	};
 	quote! {
 		impl #impl_generics binius_utils::SerializeBytes for #name #ty_generics #where_clause {
-			fn serialize(&self, mut write_buf: impl binius_utils::bytes::BufMut, mode: binius_utils::SerializationMode) -> Result<(), binius_utils::SerializationError> {
+			fn serialize(&self, write_buf: &mut dyn binius_utils::bytes::BufMut, mode: binius_utils::SerializationMode) -> Result<(), binius_utils::SerializationError> {
 				#body
 				Ok(())
 			}
@@ -166,7 +166,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 /// let value = MyEnum::B { x: 42, y: 1337 };
 /// MyEnum::serialize(&value, &mut buf, SerializationMode::Native).unwrap();
 /// assert_eq!(
-///     MyEnum::deserialize(buf.as_slice(), SerializationMode::Native).unwrap(),
+///     MyEnum::deserialize(&mut buf.as_slice(), SerializationMode::Native).unwrap(),
 ///     value
 /// );
 ///
@@ -182,7 +182,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 /// };
 /// MyStruct::serialize(&value, &mut buf, SerializationMode::CanonicalTower).unwrap();
 /// assert_eq!(
-///     MyStruct::<BinaryField128b>::deserialize(buf.as_slice(), SerializationMode::CanonicalTower).unwrap(),
+///     MyStruct::<BinaryField128b>::deserialize(&mut buf.as_slice(), SerializationMode::CanonicalTower).unwrap(),
 ///     value
 /// );
 /// ```
@@ -199,7 +199,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	});
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
-		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
+		binius_utils::DeserializeBytes::deserialize(read_buf, mode)?
 	};
 	let body = match input.data {
 		Data::Union(_) => syn::Error::new(span, "Unions are not supported").into_compile_error(),
@@ -267,7 +267,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	};
 	quote! {
 		impl #impl_generics binius_utils::DeserializeBytes for #name #ty_generics #where_clause {
-			fn deserialize(mut read_buf: impl binius_utils::bytes::Buf, mode: binius_utils::SerializationMode) -> Result<Self, binius_utils::SerializationError>
+			fn deserialize(read_buf: &mut dyn binius_utils::bytes::Buf, mode: binius_utils::SerializationMode) -> Result<Self, binius_utils::SerializationError>
 			where
 				Self: Sized
 			{

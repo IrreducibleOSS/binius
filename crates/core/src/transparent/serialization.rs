@@ -18,24 +18,24 @@ use crate::polynomial::MultivariatePoly;
 impl<F: TowerField> SerializeBytes for Box<dyn MultivariatePoly<F>> {
 	fn serialize(
 		&self,
-		mut write_buf: impl bytes::BufMut,
+		write_buf: &mut dyn bytes::BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		self.erased_serialize(&mut write_buf, mode)
+		self.erased_serialize(write_buf, mode)
 	}
 }
 
 impl DeserializeBytes for Box<dyn MultivariatePoly<BinaryField128b>> {
 	fn deserialize(
-		mut read_buf: impl bytes::Buf,
+		read_buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		let name = String::deserialize(&mut read_buf, mode)?;
+		let name = String::deserialize(read_buf, mode)?;
 		match REGISTRY.get(name.as_str()) {
-			Some(Some(erased_deserialize)) => erased_deserialize(&mut read_buf, mode),
+			Some(Some(erased_deserialize)) => erased_deserialize(read_buf, mode),
 			Some(None) => Err(SerializationError::DeserializerNameConflict { name }),
 			None => Err(SerializationError::DeserializerNotImplented),
 		}

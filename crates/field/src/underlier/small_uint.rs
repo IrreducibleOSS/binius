@@ -251,7 +251,7 @@ impl From<U1> for bool {
 impl<const N: usize> SerializeBytes for SmallU<N> {
 	fn serialize(
 		&self,
-		write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		self.val().serialize(write_buf, mode)
@@ -259,7 +259,10 @@ impl<const N: usize> SerializeBytes for SmallU<N> {
 }
 
 impl<const N: usize> DeserializeBytes for SmallU<N> {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{

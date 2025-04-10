@@ -361,7 +361,10 @@ pub struct MultilinearOracleSet<F: TowerField> {
 }
 
 impl DeserializeBytes for MultilinearOracleSet<BinaryField128b> {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
@@ -553,18 +556,18 @@ pub struct MultilinearPolyOracle<F: TowerField> {
 
 impl DeserializeBytes for MultilinearPolyOracle<BinaryField128b> {
 	fn deserialize(
-		mut read_buf: impl bytes::Buf,
+		read_buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
 		Ok(Self {
-			id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			name: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			n_vars: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			tower_level: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			variant: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			id: DeserializeBytes::deserialize(read_buf, mode)?,
+			name: DeserializeBytes::deserialize(read_buf, mode)?,
+			n_vars: DeserializeBytes::deserialize(read_buf, mode)?,
+			tower_level: DeserializeBytes::deserialize(read_buf, mode)?,
+			variant: DeserializeBytes::deserialize(read_buf, mode)?,
 		})
 	}
 }
@@ -584,17 +587,17 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 
 impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
 	fn deserialize(
-		mut buf: impl bytes::Buf,
+		buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		Ok(match u8::deserialize(&mut buf, mode)? {
+		Ok(match u8::deserialize(buf, mode)? {
 			0 => Self::Committed,
 			1 => Self::Transparent(DeserializeBytes::deserialize(buf, mode)?),
 			2 => Self::Repeating {
-				id: DeserializeBytes::deserialize(&mut buf, mode)?,
+				id: DeserializeBytes::deserialize(buf, mode)?,
 				log_count: DeserializeBytes::deserialize(buf, mode)?,
 			},
 			3 => Self::Projected(DeserializeBytes::deserialize(buf, mode)?),
@@ -624,16 +627,16 @@ pub struct TransparentPolyOracle<F: Field> {
 impl<F: TowerField> SerializeBytes for TransparentPolyOracle<F> {
 	fn serialize(
 		&self,
-		mut write_buf: impl bytes::BufMut,
+		write_buf: &mut dyn bytes::BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		self.poly.erased_serialize(&mut write_buf, mode)
+		self.poly.erased_serialize(write_buf, mode)
 	}
 }
 
 impl DeserializeBytes for TransparentPolyOracle<BinaryField128b> {
 	fn deserialize(
-		read_buf: impl bytes::Buf,
+		read_buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
