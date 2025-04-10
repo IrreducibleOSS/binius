@@ -84,38 +84,38 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		Ok(())
 	}
 
-	// pub fn repack<P2: TryRepackSlice<P>>(
-	// 	self,
-	// ) -> Result<WitnessIndex<'cs, 'alloc, P2>, super::Error> {
-	// 	let mut tables = Vec::with_capacity(self.tables.len());
-	// 	for table in self.tables {
-	// 		if let Some(table) = table {
-	// 			let cols = table
-	// 				.cols
-	// 				.into_iter()
-	// 				.map(|col| {
-	// 					let data = col.data.try_repack::<P2>()?;
-	// 					Ok(WitnessIndexColumn::<'_, P2> {
-	// 						shape: col.shape,
-	// 						data,
-	// 						is_single_row: col.is_single_row,
-	// 					})
-	// 				})
-	// 				.collect::<Result<Vec<_>, super::Error>>()?;
-	// 			tables.push(Some(TableWitnessIndex {
-	// 				table: table.table,
-	// 				oracle_offset: table.oracle_offset,
-	// 				cols,
-	// 				size: table.size,
-	// 				log_capacity: table.log_capacity,
-	// 				min_log_segment_size: table.min_log_segment_size,
-	// 			}));
-	// 		} else {
-	// 			tables.push(None);
-	// 		}
-	// 	}
-	// 	Ok(WitnessIndex { tables })
-	// }
+	pub fn repack<P2: TryRepackSlice<P, Scalar = P::Scalar>>(
+		self,
+	) -> Result<WitnessIndex<'cs, 'alloc, P2>, super::Error> {
+		let mut tables = Vec::with_capacity(self.tables.len());
+		for table in self.tables {
+			if let Some(table) = table {
+				let cols = table
+					.cols
+					.into_iter()
+					.map(|col| {
+						let data = col.data.try_repack::<P2>()?;
+						Ok(WitnessIndexColumn::<'_, P2> {
+							shape: col.shape,
+							data,
+							is_single_row: col.is_single_row,
+						})
+					})
+					.collect::<Result<Vec<_>, super::Error>>()?;
+				tables.push(Some(TableWitnessIndex {
+					table: table.table,
+					oracle_offset: table.oracle_offset,
+					cols,
+					size: table.size,
+					log_capacity: table.log_capacity,
+					min_log_segment_size: table.min_log_segment_size,
+				}));
+			} else {
+				tables.push(None);
+			}
+		}
+		Ok(WitnessIndex { tables })
+	}
 
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
 	where
