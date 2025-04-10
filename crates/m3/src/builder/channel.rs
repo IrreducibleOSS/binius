@@ -6,7 +6,7 @@ use super::column::ColumnIndex;
 use crate::builder::{Col, B1};
 
 /// A flushing rule within a table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Flush {
 	pub column_indices: Vec<ColumnIndex>,
 	pub channel_id: ChannelId,
@@ -44,7 +44,7 @@ impl Default for FlushOpts {
 }
 
 /// A channel.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Channel {
 	pub name: String,
 }

@@ -12,6 +12,7 @@ use binius_core::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		ProjectionVariant,
 	},
+	tower::TowerFamily,
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
@@ -149,6 +150,27 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
+	pub fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+		&self,
+	) -> ConstraintSystem<TargetTower::B128>
+	where
+		TargetTower::B1: From<SourceTower::B1>,
+		TargetTower::B8: From<SourceTower::B8>,
+		TargetTower::B16: From<SourceTower::B16>,
+		TargetTower::B32: From<SourceTower::B32>,
+		TargetTower::B64: From<SourceTower::B64>,
+		TargetTower::B128: From<SourceTower::B128>,
+	{
+		let channels = self.channels.clone();
+		let tables = self
+			.tables
+			.iter()
+			.map(|table| table.convert_to_tower::<SourceTower, TargetTower>())
+			.collect::<Vec<_>>();
+
+		ConstraintSystem { tables, channels }
+	}
+
 	/// Creates and allocates the witness index for a statement.
 	///
 	/// The statement includes information about the tables sizes, which this requires in order to
@@ -204,7 +226,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Constant { poly } = &info.col {
+				if let ColumnDef::Constant { poly, .. } = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
 						.transparent(poly.clone())?;

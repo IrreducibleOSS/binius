@@ -1,9 +1,14 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{any::Any, fmt::Debug, marker::PhantomData, sync::Arc};
 
-use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
-use binius_field::{ExtensionField, TowerField};
+use binius_core::{
+	oracle::ShiftVariant, polynomial::MultivariatePoly, tower::TowerFamily,
+	transparent::MultilinearExtensionTransparent,
+};
+use binius_field::{
+	arch::ArchOptimal, packed::pack_slice, ExtensionField, RepackedExtension, TowerField,
+};
 use binius_math::ArithExpr;
 
 use super::{table::TableId, types::B128};
@@ -92,6 +97,31 @@ pub struct ColumnInfo<F: TowerField = B128> {
 	pub is_nonzero: bool,
 }
 
+impl<F: TowerField> ColumnInfo<F> {
+	pub(super) fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+		&self,
+	) -> ColumnInfo<TargetTower::B128>
+	where
+		TargetTower::B1: From<SourceTower::B1>,
+		TargetTower::B8: From<SourceTower::B8>,
+		TargetTower::B16: From<SourceTower::B16>,
+		TargetTower::B32: From<SourceTower::B32>,
+		TargetTower::B64: From<SourceTower::B64>,
+		TargetTower::B128: From<SourceTower::B128>,
+	{
+		ColumnInfo {
+			id: self.id.clone(),
+			col: self.col.convert_to_tower::<SourceTower, TargetTower>(),
+			name: self.name.clone(),
+			shape: ColumnShape {
+				tower_height: TargetTower::B128::TOWER_LEVEL,
+				log_values_per_row: self.shape.log_values_per_row,
+			},
+			is_nonzero: self.is_nonzero,
+		}
+	}
+}
+
 /// The shape of each cell in a column.
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnShape {
@@ -144,6 +174,107 @@ pub enum ColumnDef<F: TowerField = B128> {
 		expr: ArithExpr<F>,
 	},
 	Constant {
+		data: Box<dyn Any + Send + Sync>,
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
+}
+
+impl<F: TowerField> ColumnDef<F> {
+	pub(super) fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+		&self,
+	) -> ColumnDef<TargetTower::B128>
+	where
+		TargetTower::B1: From<SourceTower::B1>,
+		TargetTower::B8: From<SourceTower::B8>,
+		TargetTower::B16: From<SourceTower::B16>,
+		TargetTower::B32: From<SourceTower::B32>,
+		TargetTower::B64: From<SourceTower::B64>,
+		TargetTower::B128: From<SourceTower::B128>,
+	{
+		match self {
+			&Self::Committed { tower_level } => ColumnDef::Committed { tower_level },
+			&Self::Selected {
+				col,
+				index,
+				index_bits,
+			} => ColumnDef::Selected {
+				col,
+				index,
+				index_bits,
+			},
+			&Self::Shifted {
+				col,
+				offset,
+				log_block_size,
+				variant,
+			} => ColumnDef::Shifted {
+				col,
+				offset,
+				log_block_size,
+				variant,
+			},
+			&Self::Packed { col, log_degree } => ColumnDef::Packed { col, log_degree },
+			Self::Computed { cols, expr } => ColumnDef::Computed {
+				cols: cols.clone(),
+				expr: expr.convert_field::<TargetTower::B128>(),
+			},
+			Self::Constant { data, .. } => {
+				let (data, poly) = if let Some(data) = data.downcast_ref::<Vec<SourceTower::B1>>() {
+					convert_column_constant::<SourceTower::B1, TargetTower::B1, TargetTower::B128>(
+						&data,
+					)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B8>>() {
+					convert_column_constant::<SourceTower::B8, TargetTower::B8, TargetTower::B128>(
+						&data,
+					)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B16>>() {
+					convert_column_constant::<SourceTower::B16, TargetTower::B16, TargetTower::B128>(
+						&data,
+					)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B32>>() {
+					convert_column_constant::<SourceTower::B32, TargetTower::B32, TargetTower::B128>(
+						&data,
+					)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B64>>() {
+					convert_column_constant::<SourceTower::B64, TargetTower::B64, TargetTower::B128>(
+						&data,
+					)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B128>>() {
+					convert_column_constant::<SourceTower::B128, TargetTower::B128, TargetTower::B128>(
+						&data,
+					)
+				} else {
+					panic!("constant column must be a vector of tower field elements");
+				};
+
+				ColumnDef::Constant { data, poly }
+			}
+		}
+	}
+}
+
+fn convert_column_constant<F: TowerField, TargetField: TowerField, TowerFieldExt: TowerField>(
+	source: &[F],
+) -> (Box<dyn Any + Send + Sync>, Arc<dyn MultivariatePoly<TowerFieldExt>>)
+where
+	TargetField: From<F> + ArchOptimal,
+	TowerFieldExt: ArchOptimal<
+		OptimalThroughputPacked: RepackedExtension<TargetField::OptimalThroughputPacked>,
+	>,
+{
+	let data = source
+		.iter()
+		.copied()
+		.map(TargetField::from)
+		.collect::<Vec<_>>();
+
+	let packed_data = pack_slice(&data);
+	let mle = MultilinearExtensionTransparent::<
+		<TargetField as ArchOptimal>::OptimalThroughputPacked,
+		<TowerFieldExt as ArchOptimal>::OptimalThroughputPacked,
+		_,
+	>::from_values_and_mu(packed_data, source.len())
+	.unwrap();
+
+	(Box::new(data), Arc::new(mle))
 }

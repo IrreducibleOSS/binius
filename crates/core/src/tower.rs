@@ -3,6 +3,7 @@
 //! Traits for working with field towers.
 
 use binius_field::{
+	arch::ArchOptimal,
 	as_packed_field::PackScalar,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
@@ -12,32 +13,93 @@ use binius_field::{
 	underlier::UnderlierType,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
+	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, RepackedExtension,
+	TowerField,
 };
 use trait_set::trait_set;
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
 pub trait TowerFamily: Sized {
-	type B1: TowerField + TryFrom<Self::B128>;
-	type B8: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1>;
-	type B16: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1> + ExtensionField<Self::B8>;
+	type B1: TowerField + TryFrom<Self::B128> + ArchOptimal;
+	type B8: TowerField
+		+ TryFrom<Self::B128>
+		+ ExtensionField<Self::B1>
+		+ ArchOptimal<
+			OptimalThroughputPacked: RepackedExtension<
+				<Self::B8 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B1 as ArchOptimal>::OptimalThroughputPacked,
+			>,
+		>;
+	type B16: TowerField
+		+ TryFrom<Self::B128>
+		+ ExtensionField<Self::B1>
+		+ ExtensionField<Self::B8>
+		+ ArchOptimal<
+			OptimalThroughputPacked: RepackedExtension<
+				<Self::B16 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B8 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B1 as ArchOptimal>::OptimalThroughputPacked,
+			>,
+		>;
 	type B32: TowerField
 		+ TryFrom<Self::B128>
 		+ ExtensionField<Self::B1>
 		+ ExtensionField<Self::B8>
-		+ ExtensionField<Self::B16>;
+		+ ExtensionField<Self::B16>
+		+ ArchOptimal<
+			OptimalThroughputPacked: RepackedExtension<
+				<Self::B32 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B16 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B8 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B1 as ArchOptimal>::OptimalThroughputPacked,
+			>,
+		>;
 	type B64: TowerField
 		+ TryFrom<Self::B128>
 		+ ExtensionField<Self::B1>
 		+ ExtensionField<Self::B8>
 		+ ExtensionField<Self::B16>
-		+ ExtensionField<Self::B32>;
+		+ ExtensionField<Self::B32>
+		+ ArchOptimal<
+			OptimalThroughputPacked: RepackedExtension<
+				<Self::B64 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B32 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B16 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B8 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B1 as ArchOptimal>::OptimalThroughputPacked,
+			>,
+		>;
 	type B128: TowerField
 		+ ExtensionField<Self::B1>
 		+ ExtensionField<Self::B8>
 		+ ExtensionField<Self::B16>
 		+ ExtensionField<Self::B32>
-		+ ExtensionField<Self::B64>;
+		+ ExtensionField<Self::B64>
+		+ ArchOptimal<
+			OptimalThroughputPacked: RepackedExtension<
+				<Self::B128 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B64 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B32 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B16 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B8 as ArchOptimal>::OptimalThroughputPacked,
+			> + RepackedExtension<
+				<Self::B1 as ArchOptimal>::OptimalThroughputPacked,
+			>,
+		>;
 }
 
 pub trait ProverTowerFamily: TowerFamily {
@@ -52,6 +114,32 @@ pub trait ProverTowerFamily: TowerFamily {
 	where
 		FastTop: PackedTransformationFactory<Top>,
 		Top: PackedField<Scalar = Self::B128>;
+}
+
+pub trait PackedTowerFamily {
+	type Tower: TowerFamily;
+
+	type PackedB1: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B1>;
+	type PackedB8: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB16: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB32: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB64: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B64>
+		+ RepackedExtension<Self::PackedB32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB128: PackedField<Scalar = <<Self as PackedTowerFamily>::Tower as TowerFamily>::B128>
+		+ RepackedExtension<Self::PackedB64>
+		+ RepackedExtension<Self::PackedB32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
 }
 
 /// The canonical Fan-Paar tower family.

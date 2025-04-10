@@ -5,6 +5,7 @@ use std::sync::Arc;
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
+	tower::TowerFamily,
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
@@ -218,6 +219,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::Constant {
+				data: Box::new(constants.to_vec()),
 				poly: Arc::new(mle),
 			},
 		)
@@ -323,6 +325,38 @@ pub struct Table<F: TowerField = B128> {
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
+impl<F: TowerField> Table<F> {
+	pub fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+		&self,
+	) -> Table<TargetTower::B128>
+	where
+		TargetTower::B1: From<SourceTower::B1>,
+		TargetTower::B8: From<SourceTower::B8>,
+		TargetTower::B16: From<SourceTower::B16>,
+		TargetTower::B32: From<SourceTower::B32>,
+		TargetTower::B64: From<SourceTower::B64>,
+		TargetTower::B128: From<SourceTower::B128>,
+	{
+		let columns = self
+			.columns
+			.iter()
+			.map(|col| col.convert_to_tower::<SourceTower, TargetTower>())
+			.collect();
+		let partitions = self
+			.partitions
+			.iter()
+			.map(|(key, partition)| (key, partition.convert_to_field()))
+			.collect();
+
+		Table {
+			id: self.id,
+			name: self.name.clone(),
+			columns,
+			partitions,
+		}
+	}
+}
+
 /// A table partition describes a part of a table where everything has the same pack factor (as well as height)
 /// Tower level does not need to be the same.
 ///
@@ -388,6 +422,25 @@ impl<F: TowerField> TablePartition<F> {
 			multiplicity: opts.multiplicity,
 			selector,
 		});
+	}
+
+	fn convert_to_field<TargetField: TowerField + From<F>>(&self) -> TablePartition<TargetField> {
+		let zero_constraints = self
+			.zero_constraints
+			.iter()
+			.map(|constraint| ZeroConstraint {
+				name: constraint.name.clone(),
+				expr: constraint.expr.convert_field(),
+			})
+			.collect();
+
+		TablePartition {
+			table_id: self.table_id,
+			values_per_row: self.values_per_row,
+			flushes: self.flushes.clone(),
+			columns: self.columns.clone(),
+			zero_constraints,
+		}
 	}
 }
 
