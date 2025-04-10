@@ -9,14 +9,17 @@ use thiserror::Error;
 pub trait SerializeBytes {
 	fn serialize(
 		&self,
-		write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError>;
 }
 
 /// Deserialize data according to Mode param
 pub trait DeserializeBytes {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized;
 }
@@ -55,7 +58,10 @@ pub enum SerializationError {
 use generic_array::{ArrayLength, GenericArray};
 
 impl<T: DeserializeBytes> DeserializeBytes for Box<T> {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
@@ -66,22 +72,22 @@ impl<T: DeserializeBytes> DeserializeBytes for Box<T> {
 impl SerializeBytes for usize {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		SerializeBytes::serialize(&(*self as u64), &mut write_buf, mode)
+		SerializeBytes::serialize(&(*self as u64), write_buf, mode)
 	}
 }
 
 impl DeserializeBytes for usize {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		let value: u64 = DeserializeBytes::deserialize(&mut read_buf, mode)?;
+		let value: u64 = DeserializeBytes::deserialize(read_buf, mode)?;
 		Ok(value as Self)
 	}
 }
@@ -89,7 +95,7 @@ impl DeserializeBytes for usize {
 impl SerializeBytes for u128 {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
@@ -100,7 +106,7 @@ impl SerializeBytes for u128 {
 
 impl DeserializeBytes for u128 {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -114,7 +120,7 @@ impl DeserializeBytes for u128 {
 impl SerializeBytes for u64 {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
@@ -125,7 +131,7 @@ impl SerializeBytes for u64 {
 
 impl DeserializeBytes for u64 {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -139,7 +145,7 @@ impl DeserializeBytes for u64 {
 impl SerializeBytes for u32 {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
@@ -150,7 +156,7 @@ impl SerializeBytes for u32 {
 
 impl DeserializeBytes for u32 {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -164,7 +170,7 @@ impl DeserializeBytes for u32 {
 impl SerializeBytes for u16 {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
@@ -175,7 +181,7 @@ impl SerializeBytes for u16 {
 
 impl DeserializeBytes for u16 {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -189,7 +195,7 @@ impl DeserializeBytes for u16 {
 impl SerializeBytes for u8 {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
@@ -200,7 +206,7 @@ impl SerializeBytes for u8 {
 
 impl DeserializeBytes for u8 {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -214,7 +220,7 @@ impl DeserializeBytes for u8 {
 impl SerializeBytes for bool {
 	fn serialize(
 		&self,
-		write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		u8::serialize(&(*self as u8), write_buf, mode)
@@ -222,7 +228,10 @@ impl SerializeBytes for bool {
 }
 
 impl DeserializeBytes for bool {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	fn deserialize(
+		read_buf: &mut dyn Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
@@ -233,7 +242,7 @@ impl DeserializeBytes for bool {
 impl<T> SerializeBytes for std::marker::PhantomData<T> {
 	fn serialize(
 		&self,
-		_write_buf: impl BufMut,
+		_write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		Ok(())
@@ -242,7 +251,7 @@ impl<T> SerializeBytes for std::marker::PhantomData<T> {
 
 impl<T> DeserializeBytes for std::marker::PhantomData<T> {
 	fn deserialize(
-		_read_buf: impl Buf,
+		_read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
@@ -255,11 +264,11 @@ impl<T> DeserializeBytes for std::marker::PhantomData<T> {
 impl SerializeBytes for &str {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		let bytes = self.as_bytes();
-		SerializeBytes::serialize(&bytes.len(), &mut write_buf, mode)?;
+		SerializeBytes::serialize(&bytes.len(), write_buf, mode)?;
 		assert_enough_space_for(&write_buf, bytes.len())?;
 		write_buf.put_slice(bytes);
 		Ok(())
@@ -269,22 +278,22 @@ impl SerializeBytes for &str {
 impl SerializeBytes for String {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		SerializeBytes::serialize(&self.as_str(), &mut write_buf, mode)
+		SerializeBytes::serialize(&self.as_str(), write_buf, mode)
 	}
 }
 
 impl DeserializeBytes for String {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		let len = DeserializeBytes::deserialize(&mut read_buf, mode)?;
+		let len = DeserializeBytes::deserialize(read_buf, mode)?;
 		assert_enough_data_for(&read_buf, len)?;
 		Ok(Self::from_utf8(read_buf.copy_to_bytes(len).to_vec())?)
 	}
@@ -293,26 +302,26 @@ impl DeserializeBytes for String {
 impl<T: SerializeBytes> SerializeBytes for Vec<T> {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		SerializeBytes::serialize(&self.len(), &mut write_buf, mode)?;
+		SerializeBytes::serialize(&self.len(), write_buf, mode)?;
 		self.iter()
-			.try_for_each(|item| SerializeBytes::serialize(item, &mut write_buf, mode))
+			.try_for_each(|item| SerializeBytes::serialize(item, write_buf, mode))
 	}
 }
 
 impl<T: DeserializeBytes> DeserializeBytes for Vec<T> {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		let len: usize = DeserializeBytes::deserialize(&mut read_buf, mode)?;
+		let len: usize = DeserializeBytes::deserialize(read_buf, mode)?;
 		(0..len)
-			.map(|_| DeserializeBytes::deserialize(&mut read_buf, mode))
+			.map(|_| DeserializeBytes::deserialize(read_buf, mode))
 			.collect()
 	}
 }
@@ -320,13 +329,13 @@ impl<T: DeserializeBytes> DeserializeBytes for Vec<T> {
 impl<T: SerializeBytes> SerializeBytes for Option<T> {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		match self {
 			Some(value) => {
-				SerializeBytes::serialize(&true, &mut write_buf, mode)?;
-				SerializeBytes::serialize(value, &mut write_buf, mode)?;
+				SerializeBytes::serialize(&true, write_buf, mode)?;
+				SerializeBytes::serialize(value, write_buf, mode)?;
 			}
 			None => {
 				SerializeBytes::serialize(&false, write_buf, mode)?;
@@ -338,14 +347,14 @@ impl<T: SerializeBytes> SerializeBytes for Option<T> {
 
 impl<T: DeserializeBytes> DeserializeBytes for Option<T> {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		Ok(match bool::deserialize(&mut read_buf, mode)? {
-			true => Some(T::deserialize(&mut read_buf, mode)?),
+		Ok(match bool::deserialize(read_buf, mode)? {
+			true => Some(T::deserialize(read_buf, mode)?),
 			false => None,
 		})
 	}
@@ -354,30 +363,30 @@ impl<T: DeserializeBytes> DeserializeBytes for Option<T> {
 impl<U: SerializeBytes, V: SerializeBytes> SerializeBytes for (U, V) {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		U::serialize(&self.0, &mut write_buf, mode)?;
+		U::serialize(&self.0, write_buf, mode)?;
 		V::serialize(&self.1, write_buf, mode)
 	}
 }
 
 impl<U: DeserializeBytes, V: DeserializeBytes> DeserializeBytes for (U, V) {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		Ok((U::deserialize(&mut read_buf, mode)?, V::deserialize(read_buf, mode)?))
+		Ok((U::deserialize(read_buf, mode)?, V::deserialize(read_buf, mode)?))
 	}
 }
 
 impl<N: ArrayLength<u8>> SerializeBytes for GenericArray<u8, N> {
 	fn serialize(
 		&self,
-		mut write_buf: impl BufMut,
+		write_buf: &mut dyn BufMut,
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, N::USIZE)?;
@@ -388,7 +397,7 @@ impl<N: ArrayLength<u8>> SerializeBytes for GenericArray<u8, N> {
 
 impl<N: ArrayLength<u8>> DeserializeBytes for GenericArray<u8, N> {
 	fn deserialize(
-		mut read_buf: impl Buf,
+		read_buf: &mut dyn Buf,
 		_mode: SerializationMode,
 	) -> Result<Self, SerializationError> {
 		assert_enough_data_for(&read_buf, N::USIZE)?;
