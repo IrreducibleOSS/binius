@@ -2,120 +2,88 @@
 
 use std::ops::{Bound, RangeBounds};
 
-use binius_field::{BinaryField, Field, PackedField};
+use binius_field::BinaryField;
 
-/// Immutable slice of elements in a compute-abstracted device.
-pub trait DevSlice<'a, T>: Copy {
-	const MIN_LEN: usize;
+pub trait ComputeLayer<F: BinaryField> {
+	const MIN_SLICE_LEN: usize;
 
-	// This doesn't work for ranges too small or unaligned
-	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self>;
+	type FSlice<'a>: Copy;
+	type FSliceMut<'a>;
+
+	fn as_const<'a, 'b>(data: &'a Self::FSliceMut<'b>) -> Self::FSlice<'a>;
+
+	fn try_slice<'a>(
+		data: Self::FSlice<'a>,
+		range: impl RangeBounds<usize>,
+	) -> Option<Self::FSlice<'a>>;
+
+	fn try_slice_mut<'a, 'b>(
+		data: &'a mut Self::FSliceMut<'b>,
+		range: impl RangeBounds<usize>,
+	) -> Option<Self::FSliceMut<'a>>;
+
+	fn try_split_at_mut<'a, 'b>(
+		data: &'a mut Self::FSliceMut<'b>,
+		mid: usize,
+	) -> Option<(Self::FSliceMut<'a>, Self::FSliceMut<'a>)>;
 }
 
-/// Mutable slice of elements in a compute-abstracted device.
-pub trait DevSliceMut<'a, T>: Sized {
-	const MIN_LEN: usize = Self::ConstSlice::MIN_LEN;
+#[derive(Debug)]
+pub struct BasicCpuBackend;
 
-	type ConstSlice<'b>: DevSlice<'b, T>
-	where
-		Self: 'b;
-	type MutSlice<'b>: DevSliceMut<'b, T>
-	where
-		Self: 'b;
+impl<F: BinaryField> ComputeLayer<F> for BasicCpuBackend {
+	const MIN_SLICE_LEN: usize = 1;
 
-	fn as_const(&self) -> Self::ConstSlice<'_>;
-
-	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice<'_>> {
-		self.as_const().try_slice(range)
-	}
-
-	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self::MutSlice<'_>>;
-
-	fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self::MutSlice<'_>, Self::MutSlice<'_>)>;
-}
-
-pub trait HAL<F: BinaryField> {
-	type FSlice<'a>: DevSlice<'a, F>;
-	type FSliceMut<'a>: DevSliceMut<'a, F>;
-
-	fn extrapolate_line(&self, evals_0: &mut Self::FSliceMut<'_>, evals_1: Self::FSlice<'_>, z: F);
-}
-
-struct BasicCpuBackend;
-
-impl<F: BinaryField> HAL<F> for BasicCpuBackend {
 	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];
 
-	fn extrapolate_line(&self, evals_0: &mut Self::FSliceMut<'_>, evals_1: Self::FSlice<'_>, z: F) {
-		todo!()
+	fn as_const<'a, 'b>(data: &'a &'b mut [F]) -> &'a [F] {
+		data
+	}
+
+	fn try_slice<'a>(
+		data: Self::FSlice<'a>,
+		range: impl RangeBounds<usize>,
+	) -> Option<Self::FSlice<'a>> {
+		let start = match range.start_bound() {
+			Bound::Included(&start) => start,
+			Bound::Excluded(&start) => start + 1,
+			Bound::Unbounded => 0,
+		};
+		let end = match range.end_bound() {
+			Bound::Included(&end) => end + 1,
+			Bound::Excluded(&end) => end,
+			Bound::Unbounded => data.len(),
+		};
+		Some(&data[start..end])
+	}
+
+	fn try_slice_mut<'a, 'b>(
+		data: &'a mut &'b mut [F],
+		range: impl RangeBounds<usize>,
+	) -> Option<&'a mut [F]> {
+		let start = match range.start_bound() {
+			Bound::Included(&start) => start,
+			Bound::Excluded(&start) => start + 1,
+			Bound::Unbounded => 0,
+		};
+		let end = match range.end_bound() {
+			Bound::Included(&end) => end + 1,
+			Bound::Excluded(&end) => end,
+			Bound::Unbounded => data.len(),
+		};
+		Some(&mut data[start..end])
+	}
+
+	fn try_split_at_mut<'a, 'b>(
+		fslice: &'a mut Self::FSliceMut<'b>,
+		mid: usize,
+	) -> Option<(Self::FSliceMut<'a>, Self::FSliceMut<'a>)> {
+		Some(fslice.split_at_mut(mid))
 	}
 }
 
 /*
-/// General slice of data elements in host memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MemorySlice<'a, T>(&'a [T]);
- */
-
-impl<'a, T> DevSlice<'a, T> for &'a [T] {
-	const MIN_LEN: usize = 1;
-
-	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self> {
-		let start = match range.start_bound() {
-			Bound::Included(&start) => start,
-			Bound::Excluded(&start) => start + 1,
-			Bound::Unbounded => 0,
-		};
-		let end = match range.end_bound() {
-			Bound::Included(&end) => end + 1,
-			Bound::Excluded(&end) => end,
-			Bound::Unbounded => self.len(),
-		};
-		Some(&self[start..end])
-	}
-}
-
-impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
-	const MIN_LEN: usize = 1;
-
-	type ConstSlice<'b>
-		= &'b [T]
-	where
-		Self: 'b;
-
-	type MutSlice<'b>
-		= &'b mut [T]
-	where
-		Self: 'b;
-
-	fn as_const(&self) -> Self::ConstSlice<'_> {
-		self
-	}
-
-	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<&mut [T]> {
-		let start = match range.start_bound() {
-			Bound::Included(&start) => start,
-			Bound::Excluded(&start) => start + 1,
-			Bound::Unbounded => 0,
-		};
-		let end = match range.end_bound() {
-			Bound::Included(&end) => end + 1,
-			Bound::Excluded(&end) => end,
-			Bound::Unbounded => self.len(),
-		};
-		Some(&mut self[start..end])
-	}
-
-	fn try_split_at_mut(&mut self, mid: usize) -> Option<(&mut [T], &mut [T])> {
-		Some(self.split_at_mut(mid))
-	}
-}
-
-/// Slice of SIMD-optimized packed field elements in host memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PackedFieldSlice<'a, P: PackedField>(pub &'a [P]);
-
 impl<'a, F, P> DevSlice<'a, F> for PackedFieldSlice<'a, P>
 where
 	F: Field,
@@ -144,6 +112,7 @@ where
 		Some(PackedFieldSlice(&self.0[start / P::WIDTH..end / P::WIDTH]))
 	}
 }
+ */
 
 /*
 impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
@@ -166,44 +135,40 @@ impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
 
 #[cfg(test)]
 mod tests {
-	use std::iter::repeat_with;
-
-	use binius_field::PackedBinaryField4x32b;
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_field::BinaryField32b;
 
 	use super::*;
 
 	#[test]
 	fn test_try_slice_on_mem_slice() {
-		let data = &vec![4u32, 5, 6];
-		assert_eq!(DevSlice::try_slice(&data.as_slice(), 0..2), Some(&data[0..2]));
-		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..2), Some(&data[..2]));
-		assert_eq!(DevSlice::try_slice(&data.as_slice(), 1..), Some(&data[1..]));
-		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..), Some(&data[..]));
+		let data = [4, 5, 6].map(BinaryField32b::new);
+		assert_eq!(BasicCpuBackend::try_slice(&data, 0..2), Some(&data[0..2]));
+		assert_eq!(BasicCpuBackend::try_slice(&data, ..2), Some(&data[..2]));
+		assert_eq!(BasicCpuBackend::try_slice(&data, 1..), Some(&data[1..]));
+		assert_eq!(BasicCpuBackend::try_slice(&data, ..), Some(&data[..]));
 	}
 
 	#[test]
 	fn test_convert_mut_mem_slice_to_const() {
-		let mut data = vec![4u32, 5, 6];
+		let mut data = [4, 5, 6].map(BinaryField32b::new);
 		let data_clone = data.clone();
-		let fslice = &mut data[..];
-		assert_eq!(fslice.as_const().try_slice(0..2), Some(&data_clone[0..2]));
-		assert_eq!(fslice.as_const().try_slice(..2), Some(&data_clone[..2]));
-		assert_eq!(fslice.as_const().try_slice(1..), Some(&data_clone[1..]));
-		assert_eq!(fslice.as_const().try_slice(..), Some(&data_clone[..]));
+		let data = &mut data[..];
+		let data = BasicCpuBackend::as_const(&data);
+		assert_eq!(data, &data_clone);
 	}
 
 	#[test]
 	fn test_try_slice_on_mut_mem_slice() {
-		let mut data = vec![4u32, 5, 6];
+		let mut data = [4, 5, 6].map(BinaryField32b::new);
 		let mut data_clone = data.clone();
-		let mut fslice = &mut data[..];
-		assert_eq!(fslice.try_slice_mut(0..2), Some(&mut data_clone[0..2]));
-		assert_eq!(fslice.try_slice_mut(..2), Some(&mut data_clone[..2]));
-		assert_eq!(fslice.try_slice_mut(1..), Some(&mut data_clone[1..]));
-		assert_eq!(fslice.try_slice_mut(..), Some(&mut data_clone[..]));
+		let mut data = &mut data[..];
+		assert_eq!(BasicCpuBackend::try_slice_mut(&mut data, 0..2), Some(&mut data_clone[0..2]));
+		assert_eq!(BasicCpuBackend::try_slice_mut(&mut data, ..2), Some(&mut data_clone[..2]));
+		assert_eq!(BasicCpuBackend::try_slice_mut(&mut data, 1..), Some(&mut data_clone[1..]));
+		assert_eq!(BasicCpuBackend::try_slice_mut(&mut data, ..), Some(&mut data_clone[..]));
 	}
 
+	/*
 	#[test]
 	fn test_try_slice_on_packed_slice() {
 		let mut rng = StdRng::seed_from_u64(0);
@@ -218,8 +183,9 @@ mod tests {
 		assert_eq!(fslice.try_slice(..11), None);
 	}
 
-	fn extrapolate<F: BinaryField, H: HAL<F>>(hal: &H, mut data: H::FSliceMut<'_>) {
-		let (mut lhs, rhs) = data.try_split_at_mut(16).unwrap();
-		hal.extrapolate_line(&mut lhs, rhs, F::ONE);
+	fn extrapolate<'a, F: BinaryField, H: ComputeLayer<F>>(hal: &'a H, mut data: H::FSliceMut<'a>) {
+		let (mut lhs, rhs) = H::try_split_at_mut(&mut data, 16).unwrap();
+		hal.extrapolate_line(&mut lhs, H::as_const(&rhs), F::ONE);
 	}
+	 */
 }
