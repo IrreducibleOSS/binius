@@ -13,16 +13,22 @@ pub trait DevSlice<'a, T>: Copy {
 }
 
 /// Mutable slice of elements in a compute-abstracted device.
-pub trait DevSliceMut<'a, T>: 'a + Into<Self::ConstSlice<'a>> {
+pub trait DevSliceMut<'a, T>: Sized {
 	const MIN_LEN: usize = Self::ConstSlice::MIN_LEN;
 	type ConstSlice<'b>: DevSlice<'b, T>
 	where
 		Self: 'b;
+	type MutSlice<'b>: DevSliceMut<'b, T>
+	where
+		Self: 'b;
+	//type Subslice<'b>: DevSliceMut<'b, T>;
 
-	fn try_slice<'b>(&'b self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice<'b>>;
-	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self>;
+	fn as_const(&self) -> Self::ConstSlice<'_>;
 
-	fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self, Self)>;
+	//fn try_slice<'b>(&'b self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice>;
+	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self::MutSlice<'_>>;
+
+	//fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self::Subslice, Self::Subslice)>;
 }
 
 /*
@@ -61,6 +67,45 @@ impl<'a, T> DevSlice<'a, T> for &'a [T] {
 		};
 		Some(&self[start..end])
 	}
+}
+
+impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
+	const MIN_LEN: usize = 1;
+
+	type ConstSlice<'b>
+		= &'b [T]
+	where
+		Self: 'b;
+
+	type MutSlice<'b>
+		= &'b mut [T]
+	where
+		Self: 'b;
+
+	fn as_const(&self) -> Self::ConstSlice<'_> {
+		self
+	}
+
+	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<&mut [T]> {
+		let start = match range.start_bound() {
+			Bound::Included(&start) => start,
+			Bound::Excluded(&start) => start + 1,
+			Bound::Unbounded => 0,
+		};
+		let end = match range.end_bound() {
+			Bound::Included(&end) => end + 1,
+			Bound::Excluded(&end) => end,
+			Bound::Unbounded => self.len(),
+		};
+		Some(&mut self[start..end])
+	}
+
+	/*
+	fn try_split_at_mut(&mut self, mid: usize) -> Option<(&mut [T], &mut [T])> {
+		let (lhs, rhs) = self.split_at_mut(mid);
+		Self((lhs, rhs))
+	}
+	 */
 }
 
 /// Slice of SIMD-optimized packed field elements in host memory.
@@ -131,6 +176,28 @@ mod tests {
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..2), Some(&data[..2]));
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), 1..), Some(&data[1..]));
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..), Some(&data[..]));
+	}
+
+	#[test]
+	fn test_convert_mut_mem_slice_to_const() {
+		let mut data = vec![4u32, 5, 6];
+		let data_clone = data.clone();
+		let fslice = &mut data[..];
+		assert_eq!(fslice.as_const().try_slice(0..2), Some(&data_clone[0..2]));
+		assert_eq!(fslice.as_const().try_slice(..2), Some(&data_clone[..2]));
+		assert_eq!(fslice.as_const().try_slice(1..), Some(&data_clone[1..]));
+		assert_eq!(fslice.as_const().try_slice(..), Some(&data_clone[..]));
+	}
+
+	#[test]
+	fn test_try_slice_on_mut_mem_slice() {
+		let mut data = vec![4u32, 5, 6];
+		let mut data_clone = data.clone();
+		let mut fslice = &mut data[..];
+		assert_eq!(fslice.try_slice_mut(0..2), Some(&mut data_clone[0..2]));
+		assert_eq!(fslice.try_slice_mut(..2), Some(&mut data_clone[..2]));
+		assert_eq!(fslice.try_slice_mut(1..), Some(&mut data_clone[1..]));
+		assert_eq!(fslice.try_slice_mut(..), Some(&mut data_clone[..]));
 	}
 
 	#[test]
