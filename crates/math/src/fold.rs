@@ -57,7 +57,7 @@ where
 
 	if is_lerp {
 		let lerp_query = get_packed_slice(query, 1);
-		fold_right_lerp(evals, 1 << log_evals_size, lerp_query, out)?;
+		fold_right_lerp(evals, 1 << log_evals_size, lerp_query, P::Scalar::ZERO, out)?;
 	} else {
 		fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -109,10 +109,83 @@ where
 			unsafe { std::mem::transmute::<&mut [MaybeUninit<PE>], &mut [MaybeUninit<P>]>(out) };
 
 		let lerp_query_p = lerp_query.try_into().ok().expect("P == PE");
-		fold_left_lerp(evals, 1 << log_evals_size, log_evals_size, lerp_query_p, out_p)?;
+		fold_left_lerp(
+			evals,
+			1 << log_evals_size,
+			P::Scalar::ZERO,
+			log_evals_size,
+			lerp_query_p,
+			out_p,
+		)?;
 	} else {
 		fold_left_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
+
+	Ok(())
+}
+
+/// Execute the middle fold operation.
+///
+/// Every consequent `1 << start_index` scalar values are considered as a row. Then each column
+/// is dot-producted in chunks (of size `1 << log_query_size`) with the `query` slice.
+/// The results are written to the `output`.
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem.
+pub fn fold_middle<P, PE>(
+	evals: &[P],
+	log_evals_size: usize,
+	query: &[PE],
+	log_query_size: usize,
+	start_index: usize,
+	out: &mut [MaybeUninit<PE>],
+) -> Result<(), Error>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	check_fold_arguments(evals, log_evals_size, query, log_query_size, out)?;
+
+	if log_evals_size < log_query_size + start_index {
+		bail!(Error::IncorrectStartIndex {
+			expected: log_evals_size
+		});
+	}
+
+	let lower_indices_size = 1 << start_index;
+	let new_n_vars = log_evals_size - log_query_size;
+
+	out.iter_mut()
+		.enumerate()
+		.for_each(|(outer_index, out_val)| {
+			let mut res = PE::default();
+			// Index of the Scalar at the start of the current Packed element in `out`.
+			let outer_word_start = outer_index << PE::LOG_WIDTH;
+			for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
+				// Index of the current Scalar in `out`.
+				let outer_scalar_index = outer_word_start + inner_index;
+				// Column index, within the reshaped `evals`, where we start the dot-product with the query elements.
+				let inner_i = outer_scalar_index % lower_indices_size;
+				// Row index.
+				let inner_j = outer_scalar_index / lower_indices_size;
+				res.set(
+					inner_index,
+					PackedField::iter_slice(query)
+						.take(1 << log_query_size)
+						.enumerate()
+						.map(|(query_index, basis_eval)| {
+							// The reshaped `evals` "matrix" is subdivided in chunks of size
+							// `1 << (start_index + log_query_size)` for the dot-product.
+							let offset = inner_j << (start_index + log_query_size) | inner_i;
+							let eval_index = offset + (query_index << start_index);
+							let subpoly_eval_i = get_packed_slice(evals, eval_index);
+							basis_eval * subpoly_eval_i
+						})
+						.sum(),
+				);
+			}
+			out_val.write(res);
+		});
 
 	Ok(())
 }
@@ -187,7 +260,7 @@ where
 #[inline]
 fn check_left_lerp_fold_arguments<P, PE, POut>(
 	evals: &[P],
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
 	log_evals_size: usize,
 	out: &[POut],
 ) -> Result<(), Error>
@@ -199,24 +272,24 @@ where
 		bail!(Error::IncorrectQuerySize { expected: 1 });
 	}
 
-	if nonzero_scalars_prefix > 1 << log_evals_size {
+	if non_const_prefix > 1 << log_evals_size {
 		bail!(Error::IncorrectNonzeroScalarPrefix {
 			expected: 1 << log_evals_size,
 		});
 	}
 
-	if P::WIDTH * evals.len() < nonzero_scalars_prefix {
+	if P::WIDTH * evals.len() < non_const_prefix {
 		bail!(Error::IncorrectArgumentLength {
 			arg: "evals".into(),
-			expected: nonzero_scalars_prefix,
+			expected: non_const_prefix,
 		});
 	}
 
-	let folded_nonzero_scalars_prefix = nonzero_scalars_prefix.min(1 << (log_evals_size - 1));
+	let folded_non_const_prefix = non_const_prefix.min(1 << (log_evals_size - 1));
 
-	if PE::WIDTH * out.len() < folded_nonzero_scalars_prefix {
+	if PE::WIDTH * out.len() < folded_non_const_prefix {
 		bail!(Error::IncorrectOutputPolynomialSize {
-			expected: folded_nonzero_scalars_prefix,
+			expected: folded_non_const_prefix,
 		});
 	}
 
@@ -401,6 +474,7 @@ pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
 	evals_size: usize,
 	lerp_query: PE::Scalar,
+	suffix_eval: P::Scalar,
 	out: &mut [PE],
 ) -> Result<(), Error>
 where
@@ -435,11 +509,11 @@ where
 		});
 
 	if evals_size % 2 == 1 {
+		let eval0 = get_packed_slice(evals, folded_evals_size << 1);
 		set_packed_slice(
 			out,
 			folded_evals_size,
-			PE::Scalar::from(get_packed_slice(evals, folded_evals_size << 1))
-				* (PE::Scalar::ONE - lerp_query),
+			PE::Scalar::from(suffix_eval - eval0) * lerp_query + PE::Scalar::from(eval0),
 		);
 	}
 
@@ -460,7 +534,8 @@ where
 /// a lerp query of its scalar (and not a nontrivial extension field!).
 pub fn fold_left_lerp<P>(
 	evals: &[P],
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
+	suffix_eval: P::Scalar,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 	out: &mut [MaybeUninit<P>],
@@ -468,15 +543,15 @@ pub fn fold_left_lerp<P>(
 where
 	P: PackedField,
 {
-	check_left_lerp_fold_arguments::<_, P, _>(evals, nonzero_scalars_prefix, log_evals_size, out)?;
+	check_left_lerp_fold_arguments::<_, P, _>(evals, non_const_prefix, log_evals_size, out)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let pivot = nonzero_scalars_prefix
+		let pivot = non_const_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+		let upper_bound = non_const_prefix.div_ceil(P::WIDTH).min(packed_len);
 
 		if pivot > 0 {
 			let (evals_0, evals_1) = evals.split_at(packed_len);
@@ -485,14 +560,15 @@ where
 			}
 		}
 
+		let broadcast_suffix_eval = P::broadcast(suffix_eval);
 		for (out, eval) in izip!(&mut out[pivot..upper_bound], &evals[pivot..]) {
-			out.write(*eval * (P::Scalar::ONE - lerp_query));
+			out.write(*eval + (broadcast_suffix_eval - *eval) * lerp_query);
 		}
 
 		for out in &mut out[upper_bound..] {
 			out.write(P::zero());
 		}
-	} else if nonzero_scalars_prefix > 0 {
+	} else if non_const_prefix > 0 {
 		let only_packed = *evals.first().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 
@@ -516,27 +592,23 @@ where
 /// function, we can implement it separately.
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
-	nonzero_scalars_prefix: usize,
+	non_const_prefix: usize,
+	suffix_eval: P::Scalar,
 	log_evals_size: usize,
 	lerp_query: P::Scalar,
 ) -> Result<(), Error>
 where
 	P: PackedField,
 {
-	check_left_lerp_fold_arguments::<_, P, _>(
-		evals,
-		nonzero_scalars_prefix,
-		log_evals_size,
-		evals,
-	)?;
+	check_left_lerp_fold_arguments::<_, P, _>(evals, non_const_prefix, log_evals_size, evals)?;
 
 	if log_evals_size > P::LOG_WIDTH {
-		let pivot = nonzero_scalars_prefix
+		let pivot = non_const_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
 
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
-		let upper_bound = nonzero_scalars_prefix.div_ceil(P::WIDTH).min(packed_len);
+		let upper_bound = non_const_prefix.div_ceil(P::WIDTH).min(packed_len);
 
 		if pivot > 0 {
 			let (evals_0, evals_1) = evals.split_at_mut(packed_len);
@@ -545,12 +617,13 @@ where
 			}
 		}
 
+		let broadcast_suffix_eval = P::broadcast(suffix_eval);
 		for eval in &mut evals[pivot..upper_bound] {
-			*eval *= P::Scalar::ONE - lerp_query;
+			*eval += (broadcast_suffix_eval - *eval) * lerp_query;
 		}
 
 		evals.truncate(upper_bound);
-	} else if nonzero_scalars_prefix > 0 {
+	} else if non_const_prefix > 0 {
 		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 		let half_size = 1 << (log_evals_size - 1);
@@ -826,7 +899,8 @@ mod tests {
 
 	use binius_field::{
 		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
-		PackedBinaryField16x8b, PackedBinaryField512x1b, PackedBinaryField64x8b,
+		PackedBinaryField16x8b, PackedBinaryField32x1b, PackedBinaryField512x1b,
+		PackedBinaryField64x8b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
 
@@ -961,6 +1035,65 @@ mod tests {
 				&query,
 				log_query_size,
 			);
+		}
+	}
+
+	#[test]
+	fn test_lower_higher_bits() {
+		const LOG_EVALS_SIZE: usize = 7;
+		let mut rng = StdRng::seed_from_u64(0);
+		// We have four elements of 32 bits each. Overall, that gives us 128 bits.
+		let evals = [
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+			PackedBinaryField32x1b::random(&mut rng),
+		];
+
+		// We get the lower bits of all elements (`log_query_size` = 1, so only the first
+		// two bits of `query` are used).
+		let log_query_size = 1;
+		let query = [PackedBinaryField32x1b::from(
+			0b00000000_00000000_00000000_00000001u32,
+		)];
+		let mut out = vec![
+			PackedBinaryField32x1b::zero();
+			(1 << (LOG_EVALS_SIZE - log_query_size)) / PackedBinaryField32x1b::WIDTH
+		];
+		out.clear();
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
+		unsafe {
+			out.set_len(out.capacity());
+		}
+
+		// Every 16 consecutive bits in `out` should be equal to the lower bits of an element.
+		for (i, out_val) in out.iter().enumerate() {
+			let first_lower = (evals[2 * i].0 as u16) as u32;
+			let second_lower = (evals[2 * i + 1].0 as u16) as u32;
+			let expected_out = first_lower + (second_lower << 16);
+			assert!(out_val.0 == expected_out);
+		}
+
+		// We get the higher bits of all elements (`log_query_size` = 1, so only the first
+		// two bits of `query` are used).
+		let query = [PackedBinaryField32x1b::from(
+			0b00000000_00000000_00000000_00000010u32,
+		)];
+
+		out.clear();
+		fold_middle(&evals, LOG_EVALS_SIZE, &query, log_query_size, 4, out.spare_capacity_mut())
+			.unwrap();
+		unsafe {
+			out.set_len(out.capacity());
+		}
+
+		// Every 16 consecutive bits in `out` should be equal to the higher bits of an element.
+		for (i, out_val) in out.iter().enumerate() {
+			let first_higher = evals[2 * i].0 >> 16;
+			let second_higher = evals[2 * i + 1].0 >> 16;
+			let expected_out = first_higher + (second_higher << 16);
+			assert!(out_val.0 == expected_out);
 		}
 	}
 
@@ -1115,8 +1248,14 @@ mod tests {
 				1 << log_evals_size.saturating_sub(B128bOptimal::LOG_WIDTH + 1)
 			];
 			fold_left(&evals, log_evals_size, &query, 1, &mut out).unwrap();
-			fold_left_lerp_inplace(&mut evals, 1 << log_evals_size, log_evals_size, lerp_query)
-				.unwrap();
+			fold_left_lerp_inplace(
+				&mut evals,
+				1 << log_evals_size,
+				Field::ZERO,
+				log_evals_size,
+				lerp_query,
+			)
+			.unwrap();
 
 			for (out, &inplace) in izip!(&out, &evals) {
 				unsafe {

@@ -129,6 +129,7 @@ mod tests {
 		} else {
 			// Create lookup table first
 			let mut lookup_table = cs.add_table("lookup");
+			lookup_table.require_power_of_two_size();
 			lookup_table_id = lookup_table.id();
 			values_col = lookup_table.add_committed::<B128, 1>("values");
 			lookup_producer = LookupProducer::new(&mut lookup_table, chan, &[values_col], 8);
@@ -150,9 +151,9 @@ mod tests {
 		}
 
 		// Use consistent table sizes across test cases
-		let lookup_table_size = 40;
-		let looker_1_size = 50;
-		let looker_2_size = 60;
+		let lookup_table_size = 128;
+		let looker_1_size = 130;
+		let looker_2_size = 120;
 
 		// Generate random values for the lookup table
 		let mut rng = StdRng::seed_from_u64(seed);
@@ -181,6 +182,7 @@ mod tests {
 			let inputs_1 = if matches!(multiplicity, MultiplicityConfig::Complete) {
 				// For AllNonZero, ensure each value is used at least once
 				let mut result = values.clone(); // Start with one of each
+				counts = vec![1; lookup_table_size];
 
 				// Add additional random values to reach the desired size
 				let extra = repeat_with(|| {
@@ -219,6 +221,8 @@ mod tests {
 		let values_and_counts = iter::zip(values, counts)
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
 			.collect::<Vec<_>>();
+
+		println!("{values_and_counts:?}");
 
 		// Table order in statement depends on table creation order
 		let table_sizes = if looker_first {
