@@ -11,8 +11,8 @@ use binius_core::{
 };
 use binius_field::{
 	packed::set_packed_slice, AESTowerField128b, AESTowerField32b, BinaryField, BinaryField128b,
-	BinaryField32b, ByteSlicedAES16x128b, ExtensionField, PackedBinaryField1x128b, PackedExtension,
-	PackedField, TowerField,
+	BinaryField32b, ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b,
+	ExtensionField, PackedBinaryField1x128b, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
@@ -140,7 +140,17 @@ fn bench_poly_commit_binary_field(c: &mut Criterion) {
 fn bench_poly_commit_byte_sliced(c: &mut Criterion) {
 	bench_poly_commit::<AESTowerField128b, ByteSlicedAES16x128b, AESTowerField32b>(
 		c,
-		"byte_sliced",
+		"byte_sliced/ByteSlicedAES16x128b",
+	);
+
+	bench_poly_commit::<AESTowerField128b, ByteSlicedAES32x128b, AESTowerField32b>(
+		c,
+		"byte_sliced/ByteSlicedAES32x128b",
+	);
+
+	bench_poly_commit::<AESTowerField128b, ByteSlicedAES64x128b, AESTowerField32b>(
+		c,
+		"byte_sliced/ByteSlicedAES64x128b",
 	);
 }
 
