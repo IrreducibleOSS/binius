@@ -2,7 +2,8 @@
 
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField128b, AESTowerField8b, BinaryField, ByteSlicedAES32x128b, Field, PackedField,
+	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField1b, ByteSliced16x128x1b,
+	ByteSlicedAES16x128b, ByteSlicedAES16x16x8b, Field, PackedExtension, PackedField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
@@ -20,9 +21,11 @@ use crate::{
 	witness::MultilinearWitness,
 };
 
-type PBits = ByteSlicedAES32x128b;
+type PBits = ByteSliced16x128x1b;
 type F = AESTowerField128b;
-type P = ByteSlicedAES32x128b;
+type PExpBase = ByteSlicedAES16x16x8b;
+type FExpBase = AESTowerField8b;
+type P = ByteSlicedAES16x128b;
 
 fn generate_claim_witness<'a>(
 	exponents_in_each_row: &[u64],
@@ -41,9 +44,9 @@ fn generate_claim_witness<'a>(
 				let this_bit_of_exponent = (this_row_exponent >> i) & 1;
 
 				let single_bit_value = if this_bit_of_exponent == 1 {
-					F::ONE
+					BinaryField1b::ONE
 				} else {
-					F::ZERO
+					BinaryField1b::ZERO
 				};
 
 				set_packed_slice(&mut column_witness, row, single_bit_value);
@@ -62,11 +65,12 @@ fn generate_claim_witness<'a>(
 		.collect::<Vec<_>>();
 
 	let witness = if let Some(base) = base {
-		BaseExpWitness::<'_, P>::new_with_dynamic_base(exponent_witnesses, base).unwrap()
+		BaseExpWitness::<'_, P>::new_with_dynamic_base::<PExpBase>(exponent_witnesses, base)
+			.unwrap()
 	} else {
-		BaseExpWitness::<'_, P>::new_with_static_base(
+		BaseExpWitness::<'_, P>::new_with_static_base::<PExpBase>(
 			exponent_witnesses,
-			F::MULTIPLICATIVE_GENERATOR,
+			FExpBase::MULTIPLICATIVE_GENERATOR,
 		)
 		.unwrap()
 	};
@@ -78,7 +82,7 @@ fn generate_claim_witness<'a>(
 	let static_base = if witness.uses_dynamic_base() {
 		None
 	} else {
-		Some(F::MULTIPLICATIVE_GENERATOR)
+		Some(FExpBase::MULTIPLICATIVE_GENERATOR.into())
 	};
 
 	let claim = ExpClaim {
@@ -158,12 +162,16 @@ fn generate_mul_witnesses_claims_with_different_log_size<'a>(
 fn witness_gen_happens_correctly() {
 	const LOG_SIZE: usize = 13usize;
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
-	const EXPONENT_BIT_WIDTH: usize = 8usize;
+	const EXPONENT_BIT_WIDTH: usize = 4usize;
 
 	let mut rng = thread_rng();
 
-	let a: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u64).collect();
-	let b: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u64).collect();
+	let a: Vec<_> = (0..COLUMN_LEN)
+		.map(|_| (rng.gen_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
+		.collect();
+	let b: Vec<_> = (0..COLUMN_LEN)
+		.map(|_| (rng.gen_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
+		.collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
 	let eval_point = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
@@ -171,11 +179,13 @@ fn witness_gen_happens_correctly() {
 	let (a_witness, _) = generate_claim_witness(&a, EXPONENT_BIT_WIDTH, None, &eval_point);
 	let a_exponentiation_result = a_witness.exponentiation_result_witness();
 
-	let a_exponentiation_result_evals = a_exponentiation_result.packed_evals().unwrap();
+	let a_exponentiation_result_evals = <P as PackedExtension<FExpBase>>::cast_bases(
+		a_exponentiation_result.packed_evals().unwrap(),
+	);
 
 	for (row_idx, this_row_exponent) in a.into_iter().enumerate() {
 		assert_eq!(
-			F::MULTIPLICATIVE_GENERATOR.pow(this_row_exponent),
+			FExpBase::MULTIPLICATIVE_GENERATOR.pow(this_row_exponent),
 			get_packed_slice(a_exponentiation_result_evals, row_idx)
 		);
 	}
@@ -188,12 +198,15 @@ fn witness_gen_happens_correctly() {
 	);
 	let b_exponentiation_result = b_witness.exponentiation_result_witness();
 
-	let b_exponentiation_result_evals = b_exponentiation_result.packed_evals().unwrap();
+	let b_exponentiation_result_evals = <P as PackedExtension<FExpBase>>::cast_bases(
+		b_exponentiation_result.packed_evals().unwrap(),
+	);
 
 	for (row_idx, this_row_exponent) in b.into_iter().enumerate() {
 		assert_eq!(
-			get_packed_slice::<P>(a_exponentiation_result_evals, row_idx).pow(this_row_exponent),
-			get_packed_slice::<P>(b_exponentiation_result_evals, row_idx)
+			get_packed_slice::<PExpBase>(a_exponentiation_result_evals, row_idx)
+				.pow(this_row_exponent),
+			get_packed_slice::<PExpBase>(b_exponentiation_result_evals, row_idx)
 		);
 	}
 
@@ -201,7 +214,11 @@ fn witness_gen_happens_correctly() {
 
 	let c_exponentiation_result = c_witness.exponentiation_result_witness();
 
-	assert_eq!(b_exponentiation_result_evals, c_exponentiation_result.packed_evals().unwrap());
+	let c_exponentiation_result_evals = <P as PackedExtension<FExpBase>>::cast_bases(
+		c_exponentiation_result.packed_evals().unwrap(),
+	);
+
+	assert_eq!(b_exponentiation_result_evals, c_exponentiation_result_evals);
 }
 
 #[test]
