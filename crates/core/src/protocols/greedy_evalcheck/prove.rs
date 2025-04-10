@@ -13,8 +13,8 @@ use crate::{
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
 		serialize_advice, serialize_evalcheck_proof,
-		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData}, EvalcheckMultilinearClaim,
-		EvalcheckProver,
+		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
+		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, ProverTranscript},
 	witness::MultilinearExtensionIndex,
