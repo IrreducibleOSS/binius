@@ -460,11 +460,10 @@ where
 						let subclaims = linear_combination
 							.polys()
 							.map(|suboracle_id| {
-								let window = self.all_claims.len();
 								let subclaim_idx = self
 									.claims_to_index
 									.get(suboracle_id, &eval_point)
-									.and_then(|idxs| idxs.iter().find(|&&idx| idx < window))
+									.and_then(|idxs| idxs.first())
 									.copied();
 								match subclaim_idx {
 									Some(idx) => {
