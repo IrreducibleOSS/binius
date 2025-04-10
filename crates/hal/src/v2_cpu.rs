@@ -2,7 +2,7 @@
 
 use std::ops::{Bound, RangeBounds};
 
-use binius_field::{BinaryField, Field, PackedField};
+use binius_field::{Field, PackedField};
 
 /// Immutable slice of elements in a compute-abstracted device.
 pub trait DevSlice<'a, T>: Copy {
@@ -65,7 +65,7 @@ impl<'a, T> DevSlice<'a, T> for &'a [T] {
 
 /// Slice of SIMD-optimized packed field elements in host memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PackedFieldSlice<'a, P: PackedField>(&'a [P]);
+struct PackedFieldSlice<'a, P: PackedField>(pub &'a [P]);
 
 impl<'a, F, P> DevSlice<'a, F> for PackedFieldSlice<'a, P>
 where
@@ -75,7 +75,24 @@ where
 	const MIN_LEN: usize = P::WIDTH;
 
 	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self> {
-		todo!()
+		let start = match range.start_bound() {
+			Bound::Included(&start) => start,
+			Bound::Excluded(&start) => start + P::WIDTH,
+			Bound::Unbounded => 0,
+		};
+		let end = match range.end_bound() {
+			Bound::Included(&end) => end + P::WIDTH,
+			Bound::Excluded(&end) => end,
+			Bound::Unbounded => self.0.len() * P::WIDTH,
+		};
+
+		if start % P::WIDTH != 0 {
+			return None;
+		}
+		if end % P::WIDTH != 0 {
+			return None;
+		}
+		Some(PackedFieldSlice(&self.0[start / P::WIDTH..end / P::WIDTH]))
 	}
 }
 
@@ -100,14 +117,33 @@ impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
 
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
+	use binius_field::PackedBinaryField4x32b;
+	use rand::{rngs::StdRng, SeedableRng};
+
 	use super::*;
 
 	#[test]
 	fn test_try_slice_on_mem_slice() {
-		let data = vec![4u32, 5, 6];
+		let data = &vec![4u32, 5, 6];
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), 0..2), Some(&data[0..2]));
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..2), Some(&data[..2]));
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), 1..), Some(&data[1..]));
 		assert_eq!(DevSlice::try_slice(&data.as_slice(), ..), Some(&data[..]));
+	}
+
+	#[test]
+	fn test_try_slice_on_packed_slice() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let data = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+			.take(5)
+			.collect::<Vec<_>>();
+		let fslice = PackedFieldSlice(&data);
+		assert_eq!(fslice.try_slice(4..12), Some(PackedFieldSlice(&data[1..3])));
+		assert_eq!(fslice.try_slice(..12), Some(PackedFieldSlice(&data[..3])));
+		assert_eq!(fslice.try_slice(5..12), None);
+		assert_eq!(fslice.try_slice(4..11), None);
+		assert_eq!(fslice.try_slice(..11), None);
 	}
 }
