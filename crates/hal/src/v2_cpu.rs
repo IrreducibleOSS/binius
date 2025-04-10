@@ -2,7 +2,7 @@
 
 use std::ops::{Bound, RangeBounds};
 
-use binius_field::{Field, PackedField};
+use binius_field::{BinaryField, Field, PackedField};
 
 /// Immutable slice of elements in a compute-abstracted device.
 pub trait DevSlice<'a, T>: Copy {
@@ -15,35 +15,42 @@ pub trait DevSlice<'a, T>: Copy {
 /// Mutable slice of elements in a compute-abstracted device.
 pub trait DevSliceMut<'a, T>: Sized {
 	const MIN_LEN: usize = Self::ConstSlice::MIN_LEN;
+
 	type ConstSlice<'b>: DevSlice<'b, T>
 	where
 		Self: 'b;
 	type MutSlice<'b>: DevSliceMut<'b, T>
 	where
 		Self: 'b;
-	//type Subslice<'b>: DevSliceMut<'b, T>;
 
 	fn as_const(&self) -> Self::ConstSlice<'_>;
 
-	//fn try_slice<'b>(&'b self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice>;
+	fn try_slice(&self, range: impl RangeBounds<usize>) -> Option<Self::ConstSlice<'_>> {
+		self.as_const().try_slice(range)
+	}
+
 	fn try_slice_mut(&mut self, range: impl RangeBounds<usize>) -> Option<Self::MutSlice<'_>>;
 
-	//fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self::Subslice, Self::Subslice)>;
+	fn try_split_at_mut(&mut self, mid: usize) -> Option<(Self::MutSlice<'_>, Self::MutSlice<'_>)>;
 }
 
-/*
 pub trait HAL<F: BinaryField> {
 	type FSlice<'a>: DevSlice<'a, F>;
-	type FSliceMut<'a>: DevSliceMut<'a, F, ConstSlice=Self::FSlice>; // Needs indexing
+	type FSliceMut<'a>: DevSliceMut<'a, F>;
+
+	fn extrapolate_line(&self, evals_0: &mut Self::FSliceMut<'_>, evals_1: Self::FSlice<'_>, z: F);
 }
 
 struct BasicCpuBackend;
 
 impl<F: BinaryField> HAL<F> for BasicCpuBackend {
-	//type FSlice = &'a [F];
+	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];
+
+	fn extrapolate_line(&self, evals_0: &mut Self::FSliceMut<'_>, evals_1: Self::FSlice<'_>, z: F) {
+		todo!()
+	}
 }
- */
 
 /*
 /// General slice of data elements in host memory.
@@ -100,12 +107,9 @@ impl<'a, T> DevSliceMut<'a, T> for &'a mut [T] {
 		Some(&mut self[start..end])
 	}
 
-	/*
 	fn try_split_at_mut(&mut self, mid: usize) -> Option<(&mut [T], &mut [T])> {
-		let (lhs, rhs) = self.split_at_mut(mid);
-		Self((lhs, rhs))
+		Some(self.split_at_mut(mid))
 	}
-	 */
 }
 
 /// Slice of SIMD-optimized packed field elements in host memory.
@@ -212,5 +216,10 @@ mod tests {
 		assert_eq!(fslice.try_slice(5..12), None);
 		assert_eq!(fslice.try_slice(4..11), None);
 		assert_eq!(fslice.try_slice(..11), None);
+	}
+
+	fn extrapolate<F: BinaryField, H: HAL<F>>(hal: &H, mut data: H::FSliceMut<'_>) {
+		let (mut lhs, rhs) = data.try_split_at_mut(16).unwrap();
+		hal.extrapolate_line(&mut lhs, rhs, F::ONE);
 	}
 }
