@@ -61,14 +61,12 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		table: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		if !rows.is_empty() {
-			let table_id = table.id();
-			let witness = self
-				.get_table(table_id)
-				.ok_or(Error::MissingTable { table_id })?;
-			witness.fill_sequential(table, rows)?;
+		let table_id = table.id();
+		match self.get_table(table_id) {
+			Some(witness) => witness.fill_sequential(table, rows),
+			None if rows.is_empty() => Ok(()),
+			None => Err(Error::MissingTable { table_id }),
 		}
-		Ok(())
 	}
 
 	pub fn fill_table_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
@@ -77,11 +75,11 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		T::Event: Sync,
 	{
 		let table_id = table.id();
-		let witness = self
-			.get_table(table_id)
-			.ok_or(Error::MissingTable { table_id })?;
-		witness.fill_parallel(table, rows)?;
-		Ok(())
+		match self.get_table(table_id) {
+			Some(witness) => witness.fill_parallel(table, rows),
+			None if rows.is_empty() => Ok(()),
+			None => Err(Error::MissingTable { table_id }),
+		}
 	}
 
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
@@ -1339,5 +1337,25 @@ mod tests {
 		assert_eq!(col0[13].val(), rows[9]);
 		assert_eq!(col0[14].val(), rows[10]);
 		assert_eq!(col0[15].val(), rows[10]);
+	}
+
+	#[test]
+	fn test_fill_empty_rows_non_empty_table() {
+		let mut cs = ConstraintSystem::new();
+		let test_table = TestTable::new(&mut cs);
+
+		let allocator = bumpalo::Bump::new();
+
+		let table_size = 11;
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![table_size],
+		};
+		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+
+		assert_matches!(
+			index.fill_table_sequential(&test_table, &[]),
+			Err(Error::IncorrectNumberOfTableEvents { .. })
+		);
 	}
 }
