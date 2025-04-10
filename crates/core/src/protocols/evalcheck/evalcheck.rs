@@ -105,8 +105,8 @@ impl EvalcheckNumerics {
 impl SubclaimNumerics {
 	const fn from(x: u8) -> Result<Self, Error> {
 		match x {
-			1 => Ok(SubclaimNumerics::ExistingClaim),
-			2 => Ok(SubclaimNumerics::NewClaim),
+			1 => Ok(Self::ExistingClaim),
+			2 => Ok(Self::NewClaim),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -115,8 +115,8 @@ impl SubclaimNumerics {
 impl EvalcheckProofAdviceNumerics {
 	const fn from(x: u8) -> Result<Self, Error> {
 		match x {
-			1 => Ok(EvalcheckProofAdviceNumerics::HandleClaim),
-			2 => Ok(EvalcheckProofAdviceNumerics::DuplicateClaim),
+			1 => Ok(Self::HandleClaim),
+			2 => Ok(Self::DuplicateClaim),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -202,7 +202,6 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 		EvalcheckNumerics::Packed => Ok(EvalcheckProofEnum::Packed),
 		EvalcheckNumerics::Repeating => Ok(EvalcheckProofEnum::Repeating),
 		EvalcheckNumerics::LinearCombination => {
-			// TODO: @anex replace with serialization
 			let len = read_u64(transcript)? as usize;
 			let mut subproofs = Vec::with_capacity(len);
 			for _ in 0..len {
@@ -246,6 +245,12 @@ pub fn deserialize_advice<B: Buf>(
 	}
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum InsertionError {
+	#[error("Value already exists for this slot")]
+	ValueExists,
+}
+
 // Issues with this struct, It should be a Vec<(EvalPoint<F>, Vec<T>)> for better caching
 // What happens if the user tries to insert a different T to same (OracleId, EvalPoint<F>) combo?
 // Find only returns the first EvalPoint<F> it could find, maybe better to return filtered
@@ -268,7 +273,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
-	pub fn get_mut<'a>(&mut self, id: OracleId, eval_point: &[F]) -> Option<&mut T> {
+	pub fn get_mut(&mut self, id: OracleId, eval_point: &[F]) -> Option<&mut T> {
 		self.data
 			.get_mut(id)?
 			.iter_mut()
@@ -276,16 +281,25 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
-	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
-		if self.get(id, eval_point.as_ref()).is_some() {
-			panic!("Value already exists for this slot");
-		}
-
+	pub fn insert_with_duplication(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
 		}
 
 		self.data[id].push((eval_point, val))
+	}
+
+	pub fn insert(
+		&mut self,
+		id: OracleId,
+		eval_point: EvalPoint<F>,
+		val: T,
+	) -> Result<(), InsertionError> {
+		if self.get(id, eval_point.as_ref()).is_some() {
+			return Err(InsertionError::ValueExists);
+		}
+		self.insert_with_duplication(id, eval_point, val);
+		Ok(())
 	}
 
 	pub fn into_flatten(mut self) -> Vec<T> {

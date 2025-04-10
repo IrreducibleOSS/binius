@@ -163,8 +163,11 @@ where
 				.get(claim.id, &claim.eval_point)
 				.is_none()
 			{
-				self.claims_without_evals_dedup
-					.insert(claim.id, claim.eval_point.clone(), ());
+				self.claims_without_evals_dedup.insert_with_duplication(
+					claim.id,
+					claim.eval_point.clone(),
+					(),
+				);
 			}
 		}
 
@@ -193,7 +196,7 @@ where
 			// TODO: @anex figure out if this deduplication is an issue for full unrolling of claims.
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
-				if let Some(_) = self.proofs.get(poly.id(), &eval_point) {
+				if self.proofs.get(poly.id(), &eval_point).is_some() {
 					continue;
 				}
 				if self
@@ -204,8 +207,11 @@ where
 					continue;
 				}
 
-				self.claims_without_evals_dedup
-					.insert(poly.id(), eval_point.clone(), ());
+				self.claims_without_evals_dedup.insert_with_duplication(
+					poly.id(),
+					eval_point.clone(),
+					(),
+				);
 
 				deduplicated_claims_without_evals.push((poly, eval_point.clone()))
 			}
@@ -371,11 +377,9 @@ where
 					eval_point: inner_eval_point,
 					eval,
 				};
-				self.incomplete_proof_claims.insert(
-					multilinear_id,
-					eval_point,
-					evalcheck_claim.clone(),
-				);
+				self.incomplete_proof_claims
+					.insert(multilinear_id, eval_point, evalcheck_claim.clone())
+					.unwrap_or(());
 				self.claims_queue.push(subclaim.clone());
 				EvalcheckProofWithStatus::Incomplete {
 					subclaims: vec![Either::Left(self.update_all_claims(
@@ -416,11 +420,9 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				self.incomplete_proof_claims.insert(
-					multilinear_id,
-					eval_point,
-					evalcheck_claim.clone(),
-				);
+				self.incomplete_proof_claims
+					.insert(multilinear_id, eval_point, evalcheck_claim.clone())
+					.unwrap_or(());
 				self.claims_queue.push(subclaim.clone());
 				EvalcheckProofWithStatus::Incomplete {
 					subclaims: vec![Either::Left(self.update_all_claims(
@@ -465,8 +467,7 @@ where
 								let subclaim_idx = self
 									.claims_to_index
 									.get(suboracle_id, &eval_point)
-									.map(|idxs| idxs.iter().find(|&&idx| idx < window))
-									.flatten()
+									.and_then(|idxs| idxs.iter().find(|&&idx| idx < window))
 									.copied();
 								match subclaim_idx {
 									Some(idx) => {
@@ -492,11 +493,9 @@ where
 						EvalcheckProofWithStatus::Incomplete { subclaims }
 					}
 				};
-				self.incomplete_proof_claims.insert(
-					multilinear_id,
-					eval_point,
-					evalcheck_claim.clone(),
-				);
+				self.incomplete_proof_claims
+					.insert(multilinear_id, eval_point, evalcheck_claim.clone())
+					.unwrap_or(());
 				proof
 			}
 
@@ -506,11 +505,9 @@ where
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 				self.claims_without_evals
 					.push((inner, inner_eval_point.clone()));
-				self.incomplete_proof_claims.insert(
-					multilinear_id,
-					eval_point,
-					evalcheck_claim.clone(),
-				);
+				self.incomplete_proof_claims
+					.insert(multilinear_id, eval_point, evalcheck_claim.clone())
+					.unwrap_or(());
 				EvalcheckProofWithStatus::Incomplete {
 					subclaims: vec![Either::Left(self.update_all_claims(
 						id,
@@ -522,11 +519,13 @@ where
 		};
 
 		// If the proof doesn't exist add it.
-		match self.proofs.get(multilinear_id, &evalcheck_claim.eval_point) {
-			None => self
-				.proofs
-				.insert(multilinear_id, evalcheck_claim.eval_point, proof),
-			_ => (),
+		if self
+			.proofs
+			.get(multilinear_id, &evalcheck_claim.eval_point)
+			.is_none()
+		{
+			self.proofs
+				.insert_with_duplication(multilinear_id, evalcheck_claim.eval_point, proof);
 		}
 	}
 
@@ -540,18 +539,15 @@ where
 		let window = window.unwrap_or(0..self.all_claims.len() + 1);
 		match self.claims_to_index.get_mut(oracle_id, &eval_point) {
 			Some(indicies) => {
-				if indicies
-					.iter()
-					.find(|&&idx| idx == self.claim_index)
-					.is_none()
-				{
+				if !indicies.iter().any(|&idx| idx == self.claim_index) {
 					indicies.push(self.claim_index);
 				}
 			}
-			None => {
-				self.claims_to_index
-					.insert(oracle_id, eval_point.clone(), vec![self.claim_index])
-			}
+			None => self.claims_to_index.insert_with_duplication(
+				oracle_id,
+				eval_point.clone(),
+				vec![self.claim_index],
+			),
 		};
 		let subclaim = EvalcheckClaimPartialWithWindows {
 			id: oracle_id,
@@ -588,7 +584,7 @@ where
 				self.proofs
 					.get(inner_id, inner_eval_point)
 					.cloned()
-					.map(|inner_proof| match inner_proof {
+					.and_then(|inner_proof| match inner_proof {
 						EvalcheckProofWithStatus::Completed { .. } => {
 							let proof = self
 								.proofs
@@ -602,7 +598,6 @@ where
 						}
 						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
-					.flatten()
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (inner_id, values) = (projected.id(), projected.values());
@@ -617,7 +612,7 @@ where
 				self.proofs
 					.get(inner_id, &new_eval_point)
 					.cloned()
-					.map(|inner_proof| match inner_proof {
+					.and_then(|inner_proof| match inner_proof {
 						EvalcheckProofWithStatus::Completed { .. } => {
 							let proof = self
 								.proofs
@@ -631,7 +626,6 @@ where
 						}
 						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
-					.flatten()
 			}
 
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
@@ -643,17 +637,12 @@ where
 				let inner_evals = linear_combination
 					.polys()
 					.map(|suboracle_id| {
-						match self
-							.proofs
+						self.proofs
 							.get(suboracle_id, &evalcheck_claim.eval_point)
 							.cloned()
-						{
-							Some(proof) => Some(proof),
-							None => None,
-						}
 					})
 					.collect::<Option<Vec<_>>>()
-					.map(|proofs_with_status| {
+					.and_then(|proofs_with_status| {
 						proofs_with_status
 							.iter()
 							.map(|inner_proof| match inner_proof {
@@ -661,8 +650,7 @@ where
 								EvalcheckProofWithStatus::Incomplete { .. } => None,
 							})
 							.collect::<Option<Vec<_>>>()
-					})
-					.flatten();
+					});
 				if inner_evals.is_none() {
 					return false;
 				}
@@ -705,7 +693,7 @@ where
 				self.proofs
 					.get(inner_id, inner_eval_point)
 					.cloned()
-					.map(|inner_proof| match inner_proof {
+					.and_then(|inner_proof| match inner_proof {
 						EvalcheckProofWithStatus::Completed {
 							eval: inner_eval, ..
 						} => {
@@ -721,7 +709,6 @@ where
 						}
 						EvalcheckProofWithStatus::Incomplete { .. } => None,
 					})
-					.flatten()
 			}
 
 			_ => unreachable!(),

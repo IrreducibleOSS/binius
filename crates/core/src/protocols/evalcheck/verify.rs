@@ -115,6 +115,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			return Err(Error::Verification(VerificationError::NotAllProofsVerified));
 		}
 
+		if proof_idx == 0 && !evalcheck_claims.is_empty() {
+			return Err(Error::Verification(VerificationError::NotAllClaimsProcessed));
+		}
+
 		Ok(())
 	}
 
@@ -249,6 +253,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 									length: self.round_claims.len(),
 								});
 							}
+							if self.round_claims[*index].id != sub_oracle_id
+								|| self.round_claims[*index].eval_point != eval_point
+							{
+								return Err(VerificationError::DuplicateClaimMismatch);
+							}
 							Ok(self.round_claims[*index].eval)
 						}
 						Subclaim::NewClaim(claim) => {
@@ -265,7 +274,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				// Verify the evaluation of the linear combination over the claimed evaluations
 				let actual_eval = linear_combination.offset()
 					+ inner_product_unchecked::<F, F>(
-						inner_evals.into_iter(),
+						inner_evals,
 						linear_combination.coefficients(),
 					);
 

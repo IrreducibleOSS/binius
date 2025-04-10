@@ -51,6 +51,8 @@ pub enum VerificationError {
 	DuplicateClaimIndexTooSmall,
 	#[error("Existing claim index is the same as current index")]
 	ExistingClaimEqCurrentClaim,
+	#[error("The number of proofs is greater than the initial claims")]
+	NotAllClaimsProcessed,
 }
 
 impl VerificationError {

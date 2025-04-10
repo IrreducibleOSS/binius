@@ -615,7 +615,7 @@ fn test_evalcheck_duplicate_claims() {
 		},
 		EvalcheckMultilinearClaim {
 			id: transp1_id,
-			eval_point: eval_point.clone().into(),
+			eval_point: eval_point.into(),
 			eval: eval_stepdown1,
 		},
 	];
@@ -735,7 +735,7 @@ fn test_evalcheck_existing_claims() {
 		},
 		EvalcheckMultilinearClaim {
 			id: lin_comb1_id,
-			eval_point: eval_point.clone().into(),
+			eval_point: eval_point.into(),
 			eval: eval_lin_comb1,
 		},
 	];

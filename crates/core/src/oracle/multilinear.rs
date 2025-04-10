@@ -779,7 +779,7 @@ impl<F: TowerField> LinearCombination<F> {
 		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
 	) -> Result<Self, Error> {
 		let mut inner_dedup = Vec::new();
-		for (oracle, value) in inner.into_iter() {
+		for (oracle, value) in inner {
 			if oracle.n_vars() == n_vars {
 				match inner_dedup
 					.iter()
