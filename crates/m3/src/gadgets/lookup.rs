@@ -115,6 +115,7 @@ mod tests {
 
 			// Create lookup table second
 			let mut lookup_table = cs.add_table("lookup");
+			lookup_table.require_power_of_two_size();
 			lookup_table_id = lookup_table.id();
 			values_col = lookup_table.add_committed::<B128, 1>("values");
 			lookup_producer = LookupProducer::new(&mut lookup_table, chan, &[values_col], 8);
@@ -151,9 +152,15 @@ mod tests {
 		}
 
 		// Use consistent table sizes across test cases
-		let lookup_table_size = 128;
-		let looker_1_size = 130;
-		let looker_2_size = 120;
+		let lookup_table_size = 16;
+		let looker_1_size = match multiplicity {
+			MultiplicityConfig::None => 0,
+			_ => 20,
+		};
+		let looker_2_size = match multiplicity {
+			MultiplicityConfig::None => 0,
+			_ => 10,
+		};
 
 		// Generate random values for the lookup table
 		let mut rng = StdRng::seed_from_u64(seed);
@@ -260,39 +267,35 @@ mod tests {
 			.unwrap();
 
 		// Fill looker tables if we have inputs
-		if !inputs_1.is_empty() {
-			witness
-				.fill_table_sequential(
-					&ClosureFiller::new(looker_1_id, |inputs, witness| {
-						let mut vals = witness.get_scalars_mut(looker_1_vals)?;
-						for (i, dst) in vals.iter_mut().enumerate() {
-							if i < inputs.len() {
-								*dst = *inputs[i];
-							}
+		witness
+			.fill_table_sequential(
+				&ClosureFiller::new(looker_1_id, |inputs, witness| {
+					let mut vals = witness.get_scalars_mut(looker_1_vals)?;
+					for (i, dst) in vals.iter_mut().enumerate() {
+						if i < inputs.len() {
+							*dst = *inputs[i];
 						}
-						Ok(())
-					}),
-					&inputs_1,
-				)
-				.unwrap();
-		}
+					}
+					Ok(())
+				}),
+				&inputs_1,
+			)
+			.unwrap();
 
-		if !inputs_2.is_empty() {
-			witness
-				.fill_table_sequential(
-					&ClosureFiller::new(looker_2_id, |inputs, witness| {
-						let mut vals = witness.get_scalars_mut(looker_2_vals)?;
-						for (i, dst) in vals.iter_mut().enumerate() {
-							if i < inputs.len() {
-								*dst = *inputs[i];
-							}
+		witness
+			.fill_table_sequential(
+				&ClosureFiller::new(looker_2_id, |inputs, witness| {
+					let mut vals = witness.get_scalars_mut(looker_2_vals)?;
+					for (i, dst) in vals.iter_mut().enumerate() {
+						if i < inputs.len() {
+							*dst = *inputs[i];
 						}
-						Ok(())
-					}),
-					&inputs_2,
-				)
-				.unwrap();
-		}
+					}
+					Ok(())
+				}),
+				&inputs_2,
+			)
+			.unwrap();
 
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();

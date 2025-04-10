@@ -410,6 +410,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 		rows: &[T::Event],
 		log_size: usize,
 	) -> Result<(), Error> {
+		println!("here {} {}", rows.len(), self.size);
 		if rows.len() != self.size {
 			return Err(Error::IncorrectNumberOfTableEvents {
 				expected: self.size,
