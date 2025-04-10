@@ -132,9 +132,6 @@ where
 
 	fn reset_context(&mut self) {
 		self.claim_index = 0;
-		self.all_claims.clear();
-		self.claims_to_index.clear();
-		self.claims_without_evals.clear();
 		self.proofs.clear();
 	}
 
@@ -177,7 +174,7 @@ where
 		self.claims_queue.extend(evalcheck_claims.clone());
 
 		// Add claims to our partial evals
-		let initial_window = 0..evalcheck_claims.len() + 1;
+		let initial_window = 0..evalcheck_claims.len();
 		evalcheck_claims.iter().cloned().for_each(|claim| {
 			self.update_all_claims(claim.id, claim.eval_point, Some(initial_window.clone()));
 		});
@@ -276,9 +273,7 @@ where
 
 		// Step 2: Collect batch_committed_eval_claims and projected_bivariate_claims in right order as well as the proofs
 
-		let proofs = self
-			.all_claims
-			.clone()
+		let proofs = std::mem::take(&mut self.all_claims)
 			.into_iter()
 			.zip(advices.iter())
 			.filter(|(_, advice)| matches!(advice, EvalcheckProofAdvice::HandleClaim))
@@ -653,14 +648,10 @@ where
 							})
 							.collect::<Option<Vec<_>>>()
 					});
-				if inner_evals.is_none() {
-					return false;
-				}
-				let inner_evals = inner_evals.unwrap();
 
 				// For each of the proofs, figure out if it's a NewClaim or ExistingClaim.
-				match proof {
-					EvalcheckProofWithStatus::Incomplete { subclaims } => {
+				match (proof, inner_evals) {
+					(EvalcheckProofWithStatus::Incomplete { subclaims }, Some(inner_evals)) => {
 						let new_proof = subclaims
 							.into_iter()
 							.zip(inner_evals)
@@ -684,6 +675,7 @@ where
 						};
 						Some(())
 					}
+					(_, None) => None,
 					_ => unreachable!(),
 				}
 			}
