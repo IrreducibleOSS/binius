@@ -3,8 +3,8 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, Field, PackedBinaryField2x128b, PackedExtension,
-	PackedField, PackedFieldIndexable, TowerField,
+	AESTowerField16b, AESTowerField8b, BinaryField, BinaryField16b, BinaryField8b,
+	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -106,7 +106,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	F: TowerField,
 	FDomain: BinaryField,
 	FEncode: BinaryField,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
@@ -245,6 +245,21 @@ fn test_commit_prove_verify() {
 	let log_inv_rate = 1;
 
 	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
+}
+
+#[test]
+fn test_commit_prove_verify_byte_sliced() {
+	let commit_meta = CommitMeta::with_vars([11, 12, 13, 14]);
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+	let n_transparents = 2;
+	let log_inv_rate = 1;
+
+	commit_prove_verify::<_, AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
