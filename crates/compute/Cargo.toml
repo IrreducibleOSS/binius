@@ -1,0 +1,14 @@
+[package]
+name = "binius_compute"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+assert_matches.workspace = true
