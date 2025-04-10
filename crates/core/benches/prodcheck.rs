@@ -17,9 +17,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, CpuBackend};
 use binius_hash::groestl::Groestl256;
-use binius_math::{
-	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
-};
+use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory};
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
@@ -89,15 +87,9 @@ where
 			let (gpa_witnesses, gpa_claims): (Vec<_>, Vec<_>) = (0..N_CLAIMS)
 				.into_par_iter()
 				.map(|_| {
-					let numerator =
-						MultilinearExtension::<P, &[P]>::from_values_generic(numerator).unwrap();
-					let gpa_witness = GrandProductWitness::<P>::new(
-						MLEDirectAdapter::from(numerator).upcast_arc_dyn(),
-					)
-					.unwrap();
-
+					let gpa_witness =
+						GrandProductWitness::<P>::new(n_vars, numerator.to_vec()).unwrap();
 					let product = gpa_witness.grand_product_evaluation();
-
 					(gpa_witness, GrandProductClaim { n_vars, product })
 				})
 				.collect::<Vec<_>>()
@@ -146,15 +138,8 @@ fn bench_gpa_polyval_with_isomorphism<U>(
 				.into_par_iter()
 				.map(|_| {
 					let transformed_values = apply_transformation(numerator, &transform_to_polyval);
-					let numerator = MultilinearExtension::from_values(transformed_values).unwrap();
-
-					let gpa_witness = GrandProductWitness::<
-						<U as PackScalar<BinaryField128bPolyval>>::Packed,
-					>::new(numerator.specialize_arc_dyn())
-					.unwrap();
-
+					let gpa_witness = GrandProductWitness::new(n_vars, transformed_values).unwrap();
 					let product = gpa_witness.grand_product_evaluation();
-
 					(gpa_witness, GrandProductClaim { n_vars, product })
 				})
 				.collect::<Vec<_>>()

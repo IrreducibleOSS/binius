@@ -1,23 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::slice;
-
 use binius_field::{packed::get_packed_slice, Field, PackedField};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::{debug_span, instrument};
 
-use super::{packed_field_storage::PackedFieldStorage, Error};
-use crate::witness::MultilinearWitness;
-
-type LayerEvals<'a, PW> = &'a [PW];
-type LayerHalfEvals<'a, PW> = (PackedFieldStorage<'a, PW>, PackedFieldStorage<'a, PW>);
+use super::Error;
+use crate::protocols::sumcheck::Error as SumcheckError;
 
 #[derive(Debug, Clone)]
 pub struct GrandProductClaim<F: Field> {
 	pub n_vars: usize,
-	/// Claimed Product
 	pub product: F,
 }
 
@@ -31,119 +25,85 @@ impl<F: Field> GrandProductClaim<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GrandProductWitness<PW: PackedField> {
-	n_vars: usize,
-	circuit_evals: Vec<Vec<PW>>,
+pub struct GrandProductWitness<P: PackedField> {
+	circuit_layers: Vec<Vec<P>>,
 }
 
-impl<PW: PackedField> GrandProductWitness<PW> {
+/// Grand product witness.
+///
+/// Constructs GKR multiplication circuit layers from an owned packed field witness,
+/// which may be shorter than `2^n_vars` scalars, in which case the absent values are
+/// assumed to be `P::Scalar::ONE`. There is a total on `n_vars + 1` layers, ordered
+/// by decreasing size, with last layer containing a single grand product scalar.
+impl<P: PackedField> GrandProductWitness<P> {
 	#[instrument(skip_all, level = "debug", name = "GrandProductWitness::new")]
-	pub fn new(poly: MultilinearWitness<PW>) -> Result<Self, Error> {
-		// Compute the circuit layers from bottom to top
-		// TODO: Why does this fully copy the input layer?
-		let mut input_layer = zeroed_vec(1 << poly.n_vars().saturating_sub(PW::LOG_WIDTH));
-
-		if poly.n_vars() >= PW::LOG_WIDTH {
-			const LOG_CHUNK_SIZE: usize = 12;
-			let log_chunk_size = (poly.n_vars() - PW::LOG_WIDTH).min(LOG_CHUNK_SIZE);
-			input_layer
-				.par_chunks_mut(1 << (log_chunk_size - PW::LOG_WIDTH))
-				.enumerate()
-				.for_each(|(i, chunk)| {
-					poly.subcube_evals(log_chunk_size, i, 0, chunk).expect(
-						"index is between 0 and 2^{n_vars - log_chunk_size}; \
-						log_embedding degree is 0",
-					)
-				});
-		} else {
-			poly.subcube_evals(poly.n_vars(), 0, 0, slice::from_mut(&mut input_layer[0]))
-				.expect(
-					"index is between 0 and 2^{n_vars - log_chunk_size}; log_embedding degree is 0",
-				);
+	pub fn new(n_vars: usize, input_layer: Vec<P>) -> Result<Self, Error> {
+		if input_layer.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+			bail!(SumcheckError::NumberOfVariablesMismatch);
 		}
 
-		let mut all_layers = vec![input_layer];
+		let mut circuit_layers = Vec::with_capacity(n_vars + 1);
+
+		circuit_layers.push(input_layer);
 		debug_span!("constructing_layers").in_scope(|| {
-			for curr_n_vars in (0..poly.n_vars()).rev() {
-				let layer_below = all_layers.last().expect("layers is not empty by invariant");
-				let mut new_layer = zeroed_vec(1 << curr_n_vars.saturating_sub(PW::LOG_WIDTH));
+			for layer_n_vars in (0..n_vars).rev() {
+				let prev_layer = circuit_layers
+					.last()
+					.expect("all_layers is not empty by invariant");
+				let max_layer_len = 1 << layer_n_vars.saturating_sub(P::LOG_WIDTH);
+				let mut layer = zeroed_vec(prev_layer.len().min(max_layer_len));
 
-				if curr_n_vars >= PW::LOG_WIDTH {
-					let (left_half, right_half) =
-						layer_below.split_at(1 << (curr_n_vars - PW::LOG_WIDTH));
+				// Specialize the _last_ variable to construct the next layer.
+				if layer_n_vars >= P::LOG_WIDTH {
+					let packed_len = 1 << (layer_n_vars - P::LOG_WIDTH);
+					let pivot = prev_layer.len().saturating_sub(packed_len);
 
-					new_layer
-						.par_iter_mut()
-						.zip(left_half.par_iter().zip(right_half.par_iter()))
-						.for_each(|(out_i, (left_i, right_i))| {
-							*out_i = *left_i * *right_i;
-						});
-				} else {
-					let new_layer = &mut new_layer[0];
-					let len = 1 << curr_n_vars;
-					for i in 0..len {
-						new_layer.set(
-							i,
-							get_packed_slice(layer_below, i)
-								* get_packed_slice(layer_below, len + i),
-						);
+					if pivot > 0 {
+						let (evals_0, evals_1) = prev_layer.split_at(packed_len);
+						(layer.as_mut_slice(), evals_0, evals_1)
+							.into_par_iter()
+							.for_each(|(product, &eval_0, &eval_1)| {
+								*product = eval_0 * eval_1;
+							});
+					}
+
+					// In case of truncated witness, some of the scalars may stay unaltered
+					// due to implicit multiplication by one.
+					layer[pivot..]
+						.copy_from_slice(&prev_layer[pivot..packed_len.min(prev_layer.len())]);
+				} else if !prev_layer.is_empty() {
+					let layer = layer
+						.first_mut()
+						.expect("layer.len() >= 1 iff prev_layer.len() >= 1");
+					for i in 0..1 << layer_n_vars {
+						let product = get_packed_slice(prev_layer, i)
+							* get_packed_slice(prev_layer, i | 1 << layer_n_vars);
+						layer.set(i, product);
 					}
 				}
 
-				all_layers.push(new_layer);
+				circuit_layers.push(layer);
 			}
 		});
 
-		// Reverse the layers
-		all_layers.reverse();
-		Ok(Self {
-			n_vars: poly.n_vars(),
-			circuit_evals: all_layers,
-		})
+		Ok(Self { circuit_layers })
 	}
 
-	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
-	pub const fn n_vars(&self) -> usize {
-		self.n_vars
+	/// Base-two logarithm of the number of inputs to the GKR grand product circuit
+	pub fn n_vars(&self) -> usize {
+		self.circuit_layers.len() - 1
 	}
 
-	/// Returns the evaluation of the GKR grand product circuit
-	pub fn grand_product_evaluation(&self) -> PW::Scalar {
-		// By invariant, we will have n_vars + 1 layers, and the ith layer will have 2^i elements.
-		// Therefore, this 2-D array access is safe.
-		self.circuit_evals[0][0].get(0)
+	/// Final evaluation of the GKR grand product circuit
+	pub fn grand_product_evaluation(&self) -> P::Scalar {
+		let first_layer = self.circuit_layers.last().expect("always n_vars+1 layers");
+		let first_packed = first_layer.first().copied().unwrap_or_else(P::one);
+		first_packed.get(0)
 	}
 
-	pub fn ith_layer_evals(&self, i: usize) -> Result<LayerEvals<'_, PW>, Error> {
-		let max_layer_idx = self.n_vars();
-		if i > max_layer_idx {
-			bail!(Error::InvalidLayerIndex);
-		}
-		Ok(&self.circuit_evals[i])
-	}
-
-	/// Returns the evaluations of the ith layer of the GKR grand product circuit, split into two halves
-	/// REQUIRES: 0 <= i < n_vars
-	pub fn ith_layer_eval_halves(&self, i: usize) -> Result<LayerHalfEvals<'_, PW>, Error> {
-		if i == 0 {
-			bail!(Error::CannotSplitOutputLayerIntoHalves);
-		}
-		let layer = self.ith_layer_evals(i)?;
-
-		if layer.len() > 1 {
-			let half = layer.len() / 2;
-			debug_assert_eq!(half << PW::LOG_WIDTH, 1 << (i - 1));
-
-			Ok((layer[..half].into(), layer[half..].into()))
-		} else {
-			let layer_size = 1 << (i - 1);
-
-			let first_half = PackedFieldStorage::new_inline(layer[0].iter().take(layer_size))?;
-			let second_half =
-				PackedFieldStorage::new_inline(layer[0].iter().skip(layer_size).take(layer_size))?;
-
-			Ok((first_half, second_half))
-		}
+	/// Consume the witness, returning the vector of layer multilinears in non-ascending length order.
+	pub fn into_circuit_layers(self) -> Vec<Vec<P>> {
+		self.circuit_layers
 	}
 }
 

@@ -183,7 +183,7 @@ where
 #[cfg(test)]
 pub mod test_plain_lookup {
 	use binius_field::BinaryField32b;
-	use binius_maybe_rayon::prelude::*;
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::transparent;
@@ -205,13 +205,13 @@ pub mod test_plain_lookup {
 
 	fn generate_random_u8_mul_claims(vals: &mut [u32]) {
 		use rand::Rng;
-		vals.par_iter_mut().for_each(|val| {
-			let mut rng = rand::thread_rng();
+		let mut rng = StdRng::seed_from_u64(0);
+		for val in vals {
 			let x = rng.gen_range(0..=255u8);
 			let y = rng.gen_range(0..=255u8);
 			let product = x as u16 * y as u16;
 			*val = into_lookup_claim(x, y, product);
-		});
+		}
 	}
 
 	pub fn test_u8_mul_lookup<const LOG_MAX_MULTIPLICITY: usize>(
