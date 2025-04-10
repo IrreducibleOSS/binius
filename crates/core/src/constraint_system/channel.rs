@@ -244,8 +244,6 @@ impl<F: TowerField> Channel<F> {
 		multiplicity: u64,
 		values: Vec<F>,
 	) -> Result<(), Error> {
-		println!("{direction:?} {multiplicity} {values:?}");
-
 		if self.width.is_none() {
 			self.width = Some(values.len());
 		} else if self.width.expect("checked for None above") != values.len() {

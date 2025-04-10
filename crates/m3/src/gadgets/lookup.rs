@@ -229,8 +229,6 @@ mod tests {
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
 			.collect::<Vec<_>>();
 
-		println!("{values_and_counts:?}");
-
 		// Table order in statement depends on table creation order
 		let table_sizes = if looker_first {
 			vec![looker_1_size, lookup_table_size, looker_2_size]
