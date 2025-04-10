@@ -5,11 +5,11 @@ mod packed_field_utils;
 use std::ops::Mul;
 
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField128b, AESTowerField16b,
-	AESTowerField32b, AESTowerField64b, AESTowerField8b, BinaryField128b, BinaryField128bPolyval,
-	BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
-	ByteSlicedAES32x128b, ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b,
-	ByteSlicedAES32x8b,
+	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
+	as_packed_field::PackedType,
+	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
+	BinaryField64b, BinaryField8b,
 };
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;
@@ -28,6 +28,13 @@ type OptimalPackedAES64b = PackedType<OptimalUnderlier, AESTowerField64b>;
 type OptimalPackedAES128b = PackedType<OptimalUnderlier, AESTowerField128b>;
 
 type OptimalPackedPolyval128b = PackedType<OptimalUnderlier, BinaryField128bPolyval>;
+
+type OptimalByteSliced1b = PackedType<OptimalUnderlierByteSliced, BinaryField1b>;
+type OptimalByteSlicedAES8b = PackedType<OptimalUnderlierByteSliced, AESTowerField8b>;
+type OptimalByteSlicedAES16b = PackedType<OptimalUnderlierByteSliced, AESTowerField16b>;
+type OptimalByteSlicedAES32b = PackedType<OptimalUnderlierByteSliced, AESTowerField32b>;
+type OptimalByteSlicedAES64b = PackedType<OptimalUnderlierByteSliced, AESTowerField64b>;
+type OptimalByteSlicedAES128b = PackedType<OptimalUnderlierByteSliced, AESTowerField128b>;
 
 trait SelfMul: Mul<Self, Output = Self> + Sized {}
 
@@ -63,11 +70,12 @@ benchmark_packed_operation!(
 		OptimalPackedPolyval128b
 
 		// Byte-sliced fields
-		ByteSlicedAES32x8b
-		ByteSlicedAES32x16b
-		ByteSlicedAES32x32b
-		ByteSlicedAES32x64b
-		ByteSlicedAES32x128b
+		OptimalByteSliced1b
+		OptimalByteSlicedAES8b
+		OptimalByteSlicedAES16b
+		OptimalByteSlicedAES32b
+		OptimalByteSlicedAES64b
+		OptimalByteSlicedAES128b
 	]
 );
 
