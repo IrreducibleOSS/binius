@@ -80,19 +80,14 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ PackedFieldIndexable
+		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
 		+ RepackedExtension<PackedType<U, Tower::B32>>
 		+ RepackedExtension<PackedType<U, Tower::B64>>
 		+ RepackedExtension<PackedType<U, Tower::B128>>
 		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
-	PackedType<U, Tower::FastB128>:
-		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, Tower::B128>>,
-	PackedType<U, Tower::B8>: PackedFieldIndexable,
-	PackedType<U, Tower::B16>: PackedFieldIndexable,
-	PackedType<U, Tower::B32>: PackedFieldIndexable,
-	PackedType<U, Tower::B64>: PackedFieldIndexable,
+	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -526,7 +521,7 @@ impl<'a, P, F, FDomain, DomainFactory, SwitchoverFn, Backend>
 	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
 where
 	F: Field,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	FDomain: TowerField,
 	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
 	SwitchoverFn: Fn(usize) -> usize + Clone + 'a,
@@ -539,8 +534,8 @@ where
 	where
 		FBase: TowerField + ExtensionField<FDomain> + TryFrom<F>,
 		P: PackedExtension<F, PackedSubfield = P>
-			+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
-			+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+			+ PackedExtension<FDomain>
+			+ PackedExtension<FBase>,
 		F: TowerField,
 	{
 		let univariate_prover =
@@ -738,7 +733,6 @@ where
 	FDomain: Field,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
-	PackedType<U, Tower::B128>: PackedFieldIndexable,
 	'a: 'b,
 {
 	let flush_sumcheck_metas = get_flush_dedup_sumcheck_metas(

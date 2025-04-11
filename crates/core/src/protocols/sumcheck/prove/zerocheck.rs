@@ -3,7 +3,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	util::powers, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	packed::set_packed_slice, util::powers, ExtensionField, Field, PackedExtension, PackedField,
 	PackedSubfield, TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -145,7 +145,7 @@ where
 	F: TowerField,
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FBase>
 		+ PackedExtension<FDomain>,
@@ -275,10 +275,10 @@ where
 	F: TowerField,
 	FDomain: TowerField,
 	FBase: ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
-		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+		+ PackedExtension<FBase>
+		+ PackedExtension<FDomain>,
 	CompositionBase: CompositionPoly<PackedSubfield<P, FBase>> + 'static,
 	Composition: CompositionPoly<P> + 'static,
 	M: MultilinearPoly<P> + Send + Sync + 'a,
@@ -384,8 +384,10 @@ where
 		//         be a dedicated method for this someday.
 		let mut packed_subcube_lagrange_coeffs =
 			zeroed_vec::<P>(1 << skip_rounds.saturating_sub(P::LOG_WIDTH));
-		P::unpack_scalars_mut(&mut packed_subcube_lagrange_coeffs)[..1 << skip_rounds]
-			.copy_from_slice(&subcube_lagrange_coeffs);
+
+		for (i, &lagrange_coeff) in subcube_lagrange_coeffs.iter().enumerate() {
+			set_packed_slice(&mut packed_subcube_lagrange_coeffs, i, lagrange_coeff);
+		}
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 

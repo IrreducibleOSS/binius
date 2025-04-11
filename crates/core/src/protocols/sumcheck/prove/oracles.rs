@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::bail;
@@ -69,10 +67,10 @@ pub fn constraint_set_zerocheck_prover<
 	Error,
 >
 where
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
-		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+		+ PackedExtension<FDomain>
+		+ PackedExtension<FBase>,
 	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
