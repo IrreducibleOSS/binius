@@ -495,7 +495,8 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 						.get_multilin_poly(projected_id)
 						.expect("witness_index contains projected if projected_id exist");
 
-					self.partial_evals.insert(inner_id, eval_point, projected);
+					self.partial_evals
+						.insert_with_duplication(inner_id, eval_point, projected);
 				}
 			});
 	}
