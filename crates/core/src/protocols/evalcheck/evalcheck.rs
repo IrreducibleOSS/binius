@@ -13,7 +13,7 @@ use bytes::{Buf, BufMut};
 use super::error::Error;
 use crate::{
 	oracle::OracleId,
-	transcript::{TranscriptReader, TranscriptWriter},
+	transcript::{read_u64, write_u64, TranscriptReader, TranscriptWriter},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +24,32 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub eval_point: EvalPoint<F>,
 	/// Claimed Evaluation
 	pub eval: F,
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+enum SubproofNumerics {
+	ExistingClaim = 1,
+	NewProof,
+}
+
+impl SubproofNumerics {
+	const fn from(x: u8) -> Result<Self, Error> {
+		match x {
+			1 => Ok(Self::ExistingClaim),
+			2 => Ok(Self::NewProof),
+			_ => Err(Error::EvalcheckSerializationError),
+		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Subproof<F: Field> {
+	ExistingClaim(usize),
+	NewProof {
+		proof: Option<EvalcheckProof<F>>,
+		eval: F,
+	},
 }
 
 #[repr(u8)]
@@ -48,9 +74,7 @@ pub enum EvalcheckProof<F: Field> {
 	Shifted,
 	Packed,
 	Repeating(Box<Option<EvalcheckProof<F>>>),
-	LinearCombination {
-		subproofs: Vec<(F, Option<EvalcheckProof<F>>)>,
-	},
+	LinearCombination { subproofs: Vec<Subproof<F>> },
 	ZeroPadded(F, Box<Option<EvalcheckProof<F>>>),
 	CompositeMLE,
 	Projected(Box<Option<EvalcheckProof<F>>>),
@@ -69,7 +93,13 @@ impl<F: Field> EvalcheckProof<F> {
 			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
 				subproofs: subproofs
 					.into_iter()
-					.map(|(eval, proof)| (eval.into(), proof.map(|proof| proof.isomorphic())))
+					.map(|subclaim| match subclaim {
+						Subproof::ExistingClaim(id) => Subproof::ExistingClaim(id),
+						Subproof::NewProof { proof, eval } => Subproof::NewProof {
+							proof: proof.map(|proof| proof.isomorphic()),
+							eval: eval.into(),
+						},
+					})
 					.collect(),
 			},
 			Self::ZeroPadded(eval, proof) => EvalcheckProof::ZeroPadded(
@@ -188,11 +218,18 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
 			let len_u64 = subproofs.len() as u64;
 			transcript.write_bytes(&len_u64.to_le_bytes());
-			for (scalar, subproof) in subproofs {
-				// if subproof.is_some() {
-				transcript.write_scalar(scalar);
-				// }
-				serialize_evalcheck_proof(transcript, &subproof)
+			for subclaim in subproofs {
+				match subclaim {
+					Subproof::ExistingClaim(id) => {
+						transcript.write_bytes(&[SubproofNumerics::ExistingClaim as u8]);
+						write_u64(transcript, id as u64);
+					}
+					Subproof::NewProof { proof, eval } => {
+						transcript.write_bytes(&[SubproofNumerics::NewProof as u8]);
+						transcript.write(&eval);
+						serialize_evalcheck_proof(transcript, &proof);
+					}
+				}
 			}
 		}
 		EvalcheckProof::ZeroPadded(val, subproof) => {
@@ -235,11 +272,20 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let mut len = [0u8; 8];
 			transcript.read_bytes(&mut len)?;
 			let len = u64::from_le_bytes(len) as usize;
-			let mut subproofs: Vec<(F, Option<EvalcheckProof<F>>)> = Vec::new();
+			let mut subproofs = Vec::with_capacity(len);
 			for _ in 0..len {
-				let scalar = transcript.read_scalar()?;
-				let subproof = deserialize_evalcheck_proof(transcript)?;
-				subproofs.push((scalar, subproof));
+				let variant: u8 = transcript.read()?;
+				let subproof = match SubproofNumerics::from(variant)? {
+					SubproofNumerics::ExistingClaim => {
+						Subproof::ExistingClaim(read_u64(transcript)? as usize)
+					}
+					SubproofNumerics::NewProof => {
+						let eval = transcript.read()?;
+						let proof = deserialize_evalcheck_proof(transcript)?;
+						Subproof::NewProof { eval, proof }
+					}
+				};
+				subproofs.push(subproof);
 			}
 			EvalcheckProof::LinearCombination { subproofs }
 		}

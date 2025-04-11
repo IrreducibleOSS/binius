@@ -17,7 +17,7 @@ use super::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta,
 	},
-	EvalPoint, EvalPointOracleIdMap, EvalcheckProofAdvice,
+	EvalPoint, EvalPointOracleIdMap, EvalcheckProofAdvice, Subproof,
 };
 use crate::{
 	oracle::{
@@ -439,14 +439,25 @@ where
 					.next()
 				{
 					Some((suboracle_id, coeff)) if n_polys == 1 && !coeff.is_zero() => {
-						let eval = (eval - linear_combination.offset())
-							* coeff.invert().expect("not zero");
-						let subclaim = EvalcheckMultilinearClaim {
-							id: suboracle_id,
-							eval_point,
-							eval,
+						let subclaim = if let Some(claim_index) =
+							self.claim_to_index.get(suboracle_id, &eval_point)
+						{
+							Subproof::ExistingClaim(*claim_index)
+						} else {
+							let eval = (eval - linear_combination.offset())
+								* coeff.invert().expect("not zero");
+							let subclaim = EvalcheckMultilinearClaim {
+								id: suboracle_id,
+								eval_point,
+								eval,
+							};
+
+							let proof = self.prove_multilinear(subclaim).unwrap();
+
+							Subproof::NewProof { proof, eval }
 						};
-						vec![(eval, self.prove_multilinear(subclaim)?)]
+
+						vec![subclaim]
 					}
 					_ => linear_combination
 						.polys()
@@ -461,7 +472,17 @@ where
 								eval_point: eval_point.clone(),
 								eval,
 							};
-							self.prove_multilinear(subclaim).map(|proof| (eval, proof))
+
+							let subclaim = if let Some(claim_index) =
+								self.claim_to_index.get(suboracle_id, &eval_point)
+							{
+								Subproof::ExistingClaim(*claim_index)
+							} else {
+								let proof = self.prove_multilinear(subclaim).unwrap();
+
+								Subproof::NewProof { proof, eval }
+							};
+							Ok(subclaim)
 						})
 						.collect::<Result<Vec<_>, Error>>()?,
 				};

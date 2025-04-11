@@ -234,12 +234,28 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
+				let mut evals = Vec::new();
+
+				for (subclaim, sub_oracle_id) in subproofs.iter().zip(linear_combination.polys()) {
+					match subclaim {
+						super::Subproof::ExistingClaim(index) => {
+							if self.round_claims[*index].id != sub_oracle_id
+								|| self.round_claims[*index].eval_point != eval_point
+							{
+								panic!("137");
+							}
+
+							evals.push(self.round_claims[*index].eval);
+						}
+						super::Subproof::NewProof { eval, .. } => {
+							evals.push(*eval);
+						}
+					}
+				}
+
 				// Verify the evaluation of the linear combination over the claimed evaluations
 				let actual_eval = linear_combination.offset()
-					+ inner_product_unchecked::<F, F>(
-						subproofs.iter().map(|(eval, _)| *eval),
-						linear_combination.coefficients(),
-					);
+					+ inner_product_unchecked::<F, F>(evals, linear_combination.coefficients());
 
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
@@ -248,14 +264,16 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				subproofs
 					.into_iter()
 					.zip(linear_combination.polys())
-					.try_for_each(|((eval, subproof), suboracle_id)| {
-						self.verify_multilinear_subclaim(
-							eval,
-							subproof,
-							suboracle_id,
-							&eval_point,
-							advices,
-						)
+					.try_for_each(|(subclaim, suboracle_id)| match subclaim {
+						super::Subproof::ExistingClaim(_) => Ok(()),
+						super::Subproof::NewProof { proof, eval } => self
+							.verify_multilinear_subclaim(
+								eval,
+								proof,
+								suboracle_id,
+								&eval_point,
+								advices,
+							),
 					})?;
 			}
 			MultilinearPolyVariant::ZeroPadded(inner) => {
