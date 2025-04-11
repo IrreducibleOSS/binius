@@ -1,26 +1,26 @@
-// // Copyright 2024-2025 Irreducible Inc.
+// // // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with, slice};
+// use std::{array, iter::repeat_with, slice};
 
-use assert_matches::assert_matches;
-use binius_field::{
-	as_packed_field::PackedType,
-	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
-	underlier::WithUnderlier,
-	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedField, TowerField,
-};
-use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_hash::groestl::Groestl256;
-use binius_macros::arith_expr;
-use binius_math::{
-	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
-};
-use bytemuck::cast_slice_mut;
-use itertools::Either;
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+// use assert_matches::assert_matches;
+// use binius_field::{
+// 	as_packed_field::PackedType,
+// 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
+// 	underlier::WithUnderlier,
+// 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
+// 	PackedBinaryField1x128b, PackedField, TowerField,
+// };
+// use binius_hal::{make_portable_backend, ComputationBackendExt};
+// use binius_hash::groestl::Groestl256;
+// use binius_macros::arith_expr;
+// use binius_math::{
+// 	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+// };
+// use bytemuck::cast_slice_mut;
+// use itertools::Either;
+// use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
-use crate::protocols::evalcheck::EvalcheckProof;
+// use crate::protocols::evalcheck::EvalcheckProof;
 
 // use crate::{
 // 	oracle::{MultilinearOracleSet, ShiftVariant},

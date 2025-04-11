@@ -4,12 +4,10 @@ use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
 use binius_math::extrapolate_line_scalar;
-use bytes::Buf;
 use getset::{Getters, MutGetters};
 use tracing::instrument;
 
 use super::{
-	deserialize_advice,
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
@@ -18,13 +16,9 @@ use super::{
 	},
 	EvalcheckProofAdvice,
 };
-use crate::{
-	fiat_shamir::Challenger,
-	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyVariant, OracleId,
-	},
-	transcript::{TranscriptReader, VerifierTranscript},
+use crate::oracle::{
+	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
+	MultilinearPolyVariant, OracleId,
 };
 
 /// A mutable verifier state.
@@ -106,7 +100,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 		self.advice_index += 1;
 
-		let evalcheck_proof = match (claim_advice, evalcheck_proof) {
+		let evalcheck_proof = match (claim_advice, evalcheck_proof.clone()) {
 			(super::EvalcheckProofAdvice::HandleClaim, Some(proof)) => {
 				self.round_claims.push(evalcheck_claim.clone());
 
@@ -116,13 +110,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				if self.round_claims[claim_id] == evalcheck_claim {
 					return Ok(());
 				}
-				println!(
-					"{} {} \n \n {:?} \n \n {:?}",
-					claim_id, self.advice_index, evalcheck_claim, self.round_claims[claim_id]
-				);
 				panic!("137")
 			}
-			_ => unreachable!(),
+			_ => {
+				unreachable!()
+			}
 		};
 
 		let EvalcheckMultilinearClaim {
@@ -177,6 +169,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
+				let subproof = match evalcheck_proof {
+					EvalcheckProof::Projected(subproof) => subproof,
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
+
 				let (id, values) = (projected.id(), projected.values());
 
 				let new_eval_point = {
@@ -193,7 +190,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(new_claim, Some(evalcheck_proof), advices)?;
+				self.verify_multilinear(new_claim, *subproof, advices)?;
 			}
 
 			MultilinearPolyVariant::Shifted(shifted) => {
