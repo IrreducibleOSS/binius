@@ -64,6 +64,14 @@ pub(crate) trait IndexedParallelIteratorInner: ParallelIteratorInner {
 			chunk_size,
 		}
 	}
+
+	#[inline]
+	fn take(self, n: usize) -> impl IndexedParallelIteratorInner<Item = Self::Item>
+	where
+		Self: Sized,
+	{
+		Iterator::take(self, n)
+	}
 }
 
 struct Chunks<I> {
@@ -105,6 +113,7 @@ impl<L: IndexedParallelIteratorInner, R: IndexedParallelIteratorInner> IndexedPa
 impl<I: IndexedParallelIteratorInner> IndexedParallelIteratorInner for std::iter::Enumerate<I> {}
 impl<I: IndexedParallelIteratorInner> IndexedParallelIteratorInner for std::iter::StepBy<I> {}
 impl<I: Iterator, R, F: Fn(I::Item) -> R> IndexedParallelIteratorInner for std::iter::Map<I, F> {}
+impl<I: IndexedParallelIteratorInner> IndexedParallelIteratorInner for std::iter::Take<I> {}
 impl<T> IndexedParallelIteratorInner for std::vec::IntoIter<T> {}
 impl<T, const N: usize> IndexedParallelIteratorInner for std::array::IntoIter<T, N> {}
 
@@ -174,6 +183,17 @@ pub trait IndexedParallelIterator: ParallelIterator {
 		assert!(chunk_size != 0, "chunk_size must not be zero");
 
 		ParallelWrapper::new(IndexedParallelIterator::into_inner(self).chunks(chunk_size))
+	}
+
+	#[inline]
+	fn take(self, n: usize) -> impl IndexedParallelIterator<Item = Self::Item>
+	where
+		Self: Sized,
+	{
+		ParallelWrapper::new(IndexedParallelIteratorInner::take(
+			IndexedParallelIterator::into_inner(self),
+			n,
+		))
 	}
 }
 

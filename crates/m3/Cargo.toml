@@ -11,7 +11,7 @@ binius_core = { path = "../core", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
-binius_utils = { path = "../utils" }
+binius_utils = { path = "../utils", default-features = false }
 bumpalo.workspace = true
 bytemuck.workspace = true
 derive_more.workspace = true
