@@ -36,6 +36,7 @@ enum EvalcheckNumerics {
 	LinearCombination,
 	ZeroPadded,
 	CompositeMLE,
+	Projected,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +51,7 @@ pub enum EvalcheckProof<F: Field> {
 	},
 	ZeroPadded(F, Box<Option<EvalcheckProof<F>>>),
 	CompositeMLE,
+	Projected(Box<Option<EvalcheckProof<F>>>),
 }
 
 impl<F: Field> EvalcheckProof<F> {
@@ -73,6 +75,9 @@ impl<F: Field> EvalcheckProof<F> {
 				Box::new(proof.map(|proof| proof.isomorphic())),
 			),
 			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
+			Self::Projected(proof) => {
+				EvalcheckProof::Projected(Box::new(proof.map(|proof| proof.isomorphic())))
+			}
 		}
 	}
 }
@@ -88,6 +93,7 @@ impl EvalcheckNumerics {
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
 			8 => Ok(Self::CompositeMLE),
+			9 => Ok(Self::Projected),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -154,11 +160,10 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 	evalcheck: &Option<EvalcheckProof<F>>,
 ) {
 	if evalcheck.is_none() {
-		transcript.write_bytes(&[0 as u8]);
+		transcript.write_bytes(&[0_u8]);
 		return;
-	} else {
-		transcript.write_bytes(&[1 as u8]);
 	}
+	transcript.write_bytes(&[1_u8]);
 
 	match evalcheck.clone().unwrap() {
 		EvalcheckProof::Transparent => {
@@ -195,6 +200,10 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 		}
 		EvalcheckProof::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
+		}
+		EvalcheckProof::Projected(subproof) => {
+			transcript.write_bytes(&[EvalcheckNumerics::Projected as u8]);
+			serialize_evalcheck_proof(transcript, &subproof);
 		}
 	}
 }
@@ -241,6 +250,10 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			EvalcheckProof::ZeroPadded(scalar, Box::new(subproof))
 		}
 		EvalcheckNumerics::CompositeMLE => EvalcheckProof::CompositeMLE,
+		EvalcheckNumerics::Projected => {
+			let subproof = deserialize_evalcheck_proof(transcript)?;
+			EvalcheckProof::Projected(Box::new(subproof))
+		}
 	};
 
 	Ok(Some(proof))

@@ -4,7 +4,6 @@ use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
-use bytes::BufMut;
 use getset::{Getters, MutGetters};
 use itertools::izip;
 use tracing::instrument;
@@ -12,7 +11,6 @@ use tracing::instrument;
 use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
-	serialize_advice,
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta,
@@ -20,7 +18,6 @@ use super::{
 	EvalPoint, EvalPointOracleIdMap, EvalcheckProofAdvice,
 };
 use crate::{
-	fiat_shamir::Challenger,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
@@ -29,7 +26,6 @@ use crate::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
 		shifted_sumcheck_meta,
 	},
-	transcript::{ProverTranscript, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 
@@ -139,12 +135,10 @@ where
 				.insert(claim.id, claim.eval_point.clone(), claim.eval);
 		}
 
-		// Step 1: Collect proofs
 		self.claims_queue.extend(evalcheck_claims.clone());
 
-		// pre-calculation of subclaims
+		// Step 1: Use modified BFS to memoize new evaluation claims.
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
-			// Prove all available claims
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
 					.into_iter()
@@ -176,11 +170,6 @@ where
 			self.memoized_data
 				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
 
-			println!(
-				"deduplicated_claims_without_evals: {}",
-				deduplicated_claims_without_evals.len()
-			);
-
 			// Make new evaluation claims in parallel.
 			let subclaims = deduplicated_claims_without_evals
 				.into_par_iter()
@@ -207,11 +196,8 @@ where
 				.for_each(|claim| self.collect_subclaims_for_precompute(claim));
 		}
 
-		// Step 2: Collect batch_committed_eval_claims and projected_bivariate_claims in right order
+		// Step 2: Prove multilinears
 
-		// Since we use BFS for collecting proofs and DFS for verifying them,
-		// it imposes restrictions on the correct order of collecting `batch_committed_eval_claims` and `projected_bivariate_claims`.
-		// Therefore, we run a DFS to handle this.
 		let proofs = evalcheck_claims
 			.iter()
 			.cloned()
@@ -261,7 +247,7 @@ where
 
 	#[instrument(
 		skip_all,
-		name = "EvalcheckProverState::prove_multilinear",
+		name = "EvalcheckProverState::collect_subclaims_for_precompute",
 		level = "debug"
 	)]
 	fn collect_subclaims_for_precompute(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
@@ -351,6 +337,11 @@ where
 		};
 	}
 
+	#[instrument(
+		skip_all,
+		name = "EvalcheckProverState::prove_multilinear",
+		level = "debug"
+	)]
 	fn prove_multilinear(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
@@ -417,7 +408,7 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				self.prove_multilinear(subclaim)?
+				Some(EvalcheckProof::Projected(Box::new(self.prove_multilinear(subclaim)?)))
 			}
 			MultilinearPolyVariant::Shifted { .. } => {
 				self.projected_bivariate_claims.push(evalcheck_claim);
@@ -559,6 +550,11 @@ where
 		}
 	}
 
+	#[instrument(
+		skip_all,
+		name = "EvalcheckProverState::make_new_eval_claim",
+		level = "debug"
+	)]
 	fn make_new_eval_claim(
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
