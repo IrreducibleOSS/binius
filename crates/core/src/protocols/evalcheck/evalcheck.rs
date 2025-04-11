@@ -308,8 +308,8 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct EvalPoint<F> {
+#[derive(Debug, Clone, Hash, Eq)]
+pub struct EvalPoint<F: Field> {
 	data: Arc<[F]>,
 	range: Range<usize>,
 }
@@ -320,7 +320,7 @@ impl<F: Field> PartialEq for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> EvalPoint<F> {
+impl<F: Field> EvalPoint<F> {
 	pub fn slice(&self, range: Range<usize>) -> Self {
 		assert!(self.range.len() >= range.len());
 
@@ -337,7 +337,7 @@ impl<F: Clone> EvalPoint<F> {
 	}
 }
 
-impl<F> From<Vec<F>> for EvalPoint<F> {
+impl<F: Field> From<Vec<F>> for EvalPoint<F> {
 	fn from(data: Vec<F>) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -347,7 +347,7 @@ impl<F> From<Vec<F>> for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> From<&[F]> for EvalPoint<F> {
+impl<F: Field> From<&[F]> for EvalPoint<F> {
 	fn from(data: &[F]) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -357,7 +357,7 @@ impl<F: Clone> From<&[F]> for EvalPoint<F> {
 	}
 }
 
-impl<F> Deref for EvalPoint<F> {
+impl<F: Field> Deref for EvalPoint<F> {
 	type Target = [F];
 
 	fn deref(&self) -> &Self::Target {
