@@ -26,7 +26,7 @@ use super::{
 	error::Error,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
-	ColumnDef, ColumnId, ColumnIndex, Expr,
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -84,9 +84,10 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		Ok(())
 	}
 
-	pub fn repack<P2: TryRepackSlice<P, Scalar = P::Scalar>>(
+	pub fn repack<'cs_2, P2: TryRepackSlice<P, Scalar: TowerField>>(
 		self,
-	) -> Result<WitnessIndex<'cs, 'alloc, P2>, super::Error> {
+		converted_cs: &'cs_2 mut ConstraintSystem<P2::Scalar>,
+	) -> Result<WitnessIndex<'cs_2, 'alloc, P2>, super::Error> {
 		let mut tables = Vec::with_capacity(self.tables.len());
 		for table in self.tables {
 			if let Some(table) = table {
@@ -102,8 +103,9 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 						})
 					})
 					.collect::<Result<Vec<_>, super::Error>>()?;
+				let table_id = table.table.id;
 				tables.push(Some(TableWitnessIndex {
-					table: table.table,
+					table: converted_cs.get_table(table_id),
 					oracle_offset: table.oracle_offset,
 					cols,
 					size: table.size,

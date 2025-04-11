@@ -28,7 +28,7 @@ use super::{
 	table::TablePartition,
 	types::B128,
 	witness::{TableWitnessIndex, WitnessIndex},
-	Table, TableBuilder,
+	Table, TableBuilder, TableId,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -318,6 +318,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 			max_channel_id: self.channels.len().saturating_sub(1),
 			exponents: Vec::new(),
 		})
+	}
+
+	pub(super) fn get_table(&self, table_id: TableId) -> &Table<F> {
+		&self.tables[table_id]
 	}
 }
 
