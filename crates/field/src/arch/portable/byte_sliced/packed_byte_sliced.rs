@@ -17,14 +17,15 @@ use crate::{
 	linear_transformation::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
+	make_binary_to_aes_packed_transformer,
 	packed::TryRepackSlice,
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
-	PackedField, TowerField,
+	BinaryField1b, BinaryField8b, ExtensionField, PackedAESBinaryField16x8b,
+	PackedAESBinaryField64x8b, PackedBinaryField128x1b, PackedBinaryField256x1b,
+	PackedBinaryField512x1b, PackedExtension, PackedField, TowerField,
 };
 
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
@@ -351,13 +352,26 @@ macro_rules! define_byte_sliced_3d {
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed],
 			) -> Result<&mut [Self], crate::Error> {
+				if slice.len() % Self::HEIGHT_BYTES != 0 {
+					return Err(crate::Error::MismatchedLengths);
+				}
+
 				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] =
 					WithUnderlier::to_underliers_ref_mut(slice);
+				let transformation = make_binary_to_aes_packed_transformer::<
+					PackedType<<$packed_storage as WithUnderlier>::Underlier, BinaryField8b>,
+					$packed_storage
+				>();
 
 				for chunk in underliers.chunks_exact_mut(Self::HEIGHT_BYTES) {
 					let chunk_array: &mut [<$packed_storage as WithUnderlier>::Underlier; Self::HEIGHT_BYTES] =
 						chunk.try_into().expect("slice length is correct");
 					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_to_byte_sliced::<$storage_tower_level>(chunk_array);
+
+					for v in chunk_array.iter_mut() {
+						let transformed_to_aes: $packed_storage = transformation.transform(PackedType::<<$packed_storage as WithUnderlier>::Underlier, BinaryField8b>::from_underlier_ref(v));
+						*v = transformed_to_aes.to_underlier();
+					}
 				}
 
 				Ok(bytemuck::must_cast_slice_mut(
@@ -375,6 +389,10 @@ macro_rules! byte_sliced_common {
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed],
 			) -> Result<&mut [Self], crate::Error> {
+				if slice.len() % <$storage_tower_level>::WIDTH != 0 {
+					return Err(crate::Error::MismatchedLengths);
+				}
+
 				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] =
 					WithUnderlier::to_underliers_ref_mut(slice);
 
@@ -395,6 +413,10 @@ macro_rules! byte_sliced_common {
 			fn try_repack_slice(
 				slice: &mut [$name],
 			) -> Result<&mut [Self], crate::Error> {
+				if slice.len() % <$storage_tower_level>::WIDTH != 0 {
+					return Err(crate::Error::MismatchedLengths);
+				}
+
 				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] = bytemuck::must_cast_slice_mut(slice);
 
 				for chunk in underliers.chunks_exact_mut($name::HEIGHT_BYTES) {
