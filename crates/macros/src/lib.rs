@@ -6,7 +6,7 @@ mod arith_expr;
 mod composition_poly;
 mod deserialize_bytes;
 
-use deserialize_bytes::apply_container_attributes;
+use deserialize_bytes::{get_generics, GenericsSplit};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
@@ -205,11 +205,14 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			.bounds
 			.push(parse_quote!(binius_utils::DeserializeBytes))
 	});
-	let (impl_generics, ty_generics, where_clause) =
-		match apply_container_attributes(&input.attrs, &generics) {
-			Ok(x) => x,
-			Err(e) => return Err(e.into_compile_error()),
-		};
+	let GenericsSplit {
+		impl_generics,
+		type_generics: ty_generics,
+		where_clause,
+	} = match get_generics(&input.attrs, &generics) {
+		Ok(x) => x,
+		Err(e) => return e.into_compile_error(),
+	};
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
