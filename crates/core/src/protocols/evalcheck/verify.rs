@@ -4,20 +4,27 @@ use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
 use binius_math::extrapolate_line_scalar;
+use bytes::Buf;
 use getset::{Getters, MutGetters};
 use tracing::instrument;
 
 use super::{
+	deserialize_advice,
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
 		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
+	EvalcheckProofAdvice,
 };
-use crate::oracle::{
-	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-	MultilinearPolyVariant, OracleId,
+use crate::{
+	fiat_shamir::Challenger,
+	oracle::{
+		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
+		MultilinearPolyVariant, OracleId,
+	},
+	transcript::{TranscriptReader, VerifierTranscript},
 };
 
 /// A mutable verifier state.
@@ -36,6 +43,10 @@ where
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
+
+	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
+
+	advice_index: usize,
 }
 
 impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
@@ -47,6 +58,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			oracles,
 			committed_eval_claims: Vec::new(),
 			new_sumcheck_constraints: Vec::new(),
+			round_claims: Vec::new(),
+			advice_index: 0,
 		}
 	}
 
@@ -67,13 +80,17 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	pub fn verify(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-		evalcheck_proofs: Vec<EvalcheckProof<F>>,
+		evalcheck_proofs: Vec<Option<EvalcheckProof<F>>>,
+		advices: Vec<EvalcheckProofAdvice>,
 	) -> Result<(), Error> {
+		self.advice_index = 0;
+		self.round_claims.clear();
+
 		for (claim, proof) in evalcheck_claims
 			.into_iter()
 			.zip(evalcheck_proofs.into_iter())
 		{
-			self.verify_multilinear(claim, proof)?;
+			self.verify_multilinear(claim, proof, &advices)?;
 		}
 
 		Ok(())
@@ -82,8 +99,32 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	fn verify_multilinear(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-		evalcheck_proof: EvalcheckProof<F>,
+		evalcheck_proof: Option<EvalcheckProof<F>>,
+		advices: &[EvalcheckProofAdvice],
 	) -> Result<(), Error> {
+		let claim_advice = advices[self.advice_index];
+
+		self.advice_index += 1;
+
+		let evalcheck_proof = match (claim_advice, evalcheck_proof) {
+			(super::EvalcheckProofAdvice::HandleClaim, Some(proof)) => {
+				self.round_claims.push(evalcheck_claim.clone());
+
+				proof
+			}
+			(super::EvalcheckProofAdvice::DuplicateClaim(claim_id), _) => {
+				if self.round_claims[claim_id] == evalcheck_claim {
+					return Ok(());
+				}
+				println!(
+					"{} {} \n \n {:?} \n \n {:?}",
+					claim_id, self.advice_index, evalcheck_claim, self.round_claims[claim_id]
+				);
+				panic!("137")
+			}
+			_ => unreachable!(),
+		};
+
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
@@ -132,7 +173,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(subclaim, *subproof)?;
+				self.verify_multilinear(subclaim, *subproof, advices)?;
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
@@ -152,7 +193,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.verify_multilinear(new_claim, evalcheck_proof)?;
+				self.verify_multilinear(new_claim, Some(evalcheck_proof), advices)?;
 			}
 
 			MultilinearPolyVariant::Shifted(shifted) => {
@@ -208,7 +249,13 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					.into_iter()
 					.zip(linear_combination.polys())
 					.try_for_each(|((eval, subproof), suboracle_id)| {
-						self.verify_multilinear_subclaim(eval, subproof, suboracle_id, &eval_point)
+						self.verify_multilinear_subclaim(
+							eval,
+							subproof,
+							suboracle_id,
+							&eval_point,
+							advices,
+						)
 					})?;
 			}
 			MultilinearPolyVariant::ZeroPadded(inner) => {
@@ -237,6 +284,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					*subproof,
 					inner,
 					subclaim_eval_point,
+					advices,
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {
@@ -260,15 +308,16 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	fn verify_multilinear_subclaim(
 		&mut self,
 		eval: F,
-		subproof: EvalcheckProof<F>,
+		subproof: Option<EvalcheckProof<F>>,
 		oracle_id: OracleId,
 		eval_point: &[F],
+		advices: &[EvalcheckProofAdvice],
 	) -> Result<(), Error> {
 		let subclaim = EvalcheckMultilinearClaim {
 			id: oracle_id,
 			eval_point: eval_point.into(),
 			eval,
 		};
-		self.verify_multilinear(subclaim, subproof)
+		self.verify_multilinear(subclaim, subproof, advices)
 	}
 }
