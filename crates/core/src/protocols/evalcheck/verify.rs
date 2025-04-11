@@ -75,19 +75,15 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		advices: Vec<EvalcheckProofAdvice>,
 	) -> Result<(), Error> {
 		self.round_claims.clear();
-		self.round_claims.extend(evalcheck_claims.clone());
+		self.round_claims.extend(evalcheck_claims);
 
+		let mut advices = advices.into_iter();
 		let mut proof_idx = 0;
+		let mut current_claim_idx = 0;
 		// proof_len <= len(self.round_claims) == advice_len
-		for (current_claim_idx, advice) in advices.into_iter().enumerate() {
-			if self.round_claims.len() <= current_claim_idx {
-				return Err(VerificationError::ClaimIndexOutOfRange {
-					index: current_claim_idx,
-					length: self.round_claims.len(),
-				}
-				.into());
-			}
+		while current_claim_idx < self.round_claims.len() {
 			let claim = &self.round_claims[current_claim_idx];
+			let advice = advices.next().ok_or(VerificationError::OutOfAdvices)?;
 			match advice {
 				EvalcheckProofAdvice::DuplicateClaim(claim_idx) => {
 					if claim_idx >= self.round_claims.len() {
@@ -109,14 +105,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					proof_idx += 1;
 				}
 			};
+			current_claim_idx += 1;
 		}
 
 		if proof_idx != proofs.len() {
 			return Err(Error::Verification(VerificationError::NotAllProofsVerified));
-		}
-
-		if proof_idx == 0 && !evalcheck_claims.is_empty() {
-			return Err(Error::Verification(VerificationError::NotAllClaimsProcessed));
 		}
 
 		Ok(())
