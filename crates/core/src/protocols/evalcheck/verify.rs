@@ -100,7 +100,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 		self.advice_index += 1;
 
-		let evalcheck_proof = match (claim_advice, evalcheck_proof.clone()) {
+		let evalcheck_proof = match (claim_advice, evalcheck_proof) {
 			(super::EvalcheckProofAdvice::HandleClaim, Some(proof)) => {
 				self.round_claims.push(evalcheck_claim.clone());
 
