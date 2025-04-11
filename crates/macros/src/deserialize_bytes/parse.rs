@@ -29,7 +29,7 @@ impl Parse for ContainerAttributes {
 #[derive(Debug, Clone)]
 pub struct GenericBinding {
 	pub from_generic: Ident,
-	pub eq: Eq,
+	pub _eq: Eq,
 	pub to_generic: Ident,
 }
 
@@ -40,7 +40,7 @@ impl Parse for GenericBinding {
 		let to_generic = input.parse()?;
 		Ok(Self {
 			from_generic,
-			eq,
+			_eq: eq,
 			to_generic,
 		})
 	}
