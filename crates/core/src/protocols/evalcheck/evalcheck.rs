@@ -26,7 +26,7 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 }
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum EvalcheckNumerics {
 	Transparent = 1,
 	Committed,
@@ -37,6 +37,7 @@ enum EvalcheckNumerics {
 	ZeroPadded,
 	CompositeMLE,
 	Projected,
+	Duplicated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +95,7 @@ impl EvalcheckNumerics {
 			7 => Ok(Self::ZeroPadded),
 			8 => Ok(Self::CompositeMLE),
 			9 => Ok(Self::Projected),
+			10 => Ok(Self::Duplicated),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -160,10 +162,9 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 	evalcheck: &Option<EvalcheckProof<F>>,
 ) {
 	if evalcheck.is_none() {
-		transcript.write_bytes(&[0_u8]);
+		transcript.write_bytes(&[EvalcheckNumerics::Duplicated as u8]);
 		return;
 	}
-	transcript.write_bytes(&[1_u8]);
 
 	match evalcheck.clone().unwrap() {
 		EvalcheckProof::Transparent => {
@@ -212,16 +213,13 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	transcript: &mut TranscriptReader<B>,
 ) -> Result<Option<EvalcheckProof<F>>, Error> {
-	let mut some_none = 0;
-	transcript.read_bytes(slice::from_mut(&mut some_none))?;
-
-	if some_none == 0 {
-		return Ok(None);
-	}
-
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
+
+	if as_enum == EvalcheckNumerics::Duplicated {
+		return Ok(None);
+	}
 
 	let proof = match as_enum {
 		EvalcheckNumerics::Transparent => EvalcheckProof::Transparent,
@@ -254,6 +252,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			EvalcheckProof::Projected(Box::new(subproof))
 		}
+		EvalcheckNumerics::Duplicated => unreachable!(),
 	};
 
 	Ok(Some(proof))
