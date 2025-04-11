@@ -7,13 +7,14 @@ use tracing::instrument;
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		prove::{batch_prove::BatchProveStart, SumcheckProver},
-		univariate::LagrangeRoundEvals,
+		prove::{batch_prove_sumcheck::BatchProveStart, SumcheckProver},
+		univariate::ZerocheckRoundEvals,
 		Error,
 	},
 	transcript::ProverTranscript,
 };
 
+/// TODO: rework comment
 /// A univariate zerocheck prover interface.
 ///
 /// The primary reason for providing this logic via a trait is the ability to type erase univariate
@@ -27,7 +28,7 @@ use crate::{
 /// that can be driven to completion to prove the remaining multilinear rounds.
 ///
 /// This trait is object-safe.
-pub trait UnivariateZerocheckProver<'a, F: Field> {
+pub trait ZerocheckProver<'a, F: Field> {
 	/// The number of variables in the multivariate polynomial.
 	fn n_vars(&self) -> usize;
 
@@ -46,7 +47,7 @@ pub trait UnivariateZerocheckProver<'a, F: Field> {
 		skip_rounds: usize,
 		max_domain_size: usize,
 		batch_coeff: F,
-	) -> Result<LagrangeRoundEvals<F>, Error>;
+	) -> Result<ZerocheckRoundEvals<F>, Error>;
 
 	/// Folds into a regular multilinear prover for the remaining rounds.
 	fn fold_univariate_round(
@@ -56,9 +57,7 @@ pub trait UnivariateZerocheckProver<'a, F: Field> {
 }
 
 // NB: auto_impl does not currently handle ?Sized bound on Box<Self> receivers correctly.
-impl<'a, F: Field, Prover: UnivariateZerocheckProver<'a, F> + ?Sized>
-	UnivariateZerocheckProver<'a, F> for Box<Prover>
-{
+impl<'a, F: Field, Prover: ZerocheckProver<'a, F> + ?Sized> ZerocheckProver<'a, F> for Box<Prover> {
 	fn n_vars(&self) -> usize {
 		(**self).n_vars()
 	}
@@ -85,7 +84,7 @@ impl<'a, F: Field, Prover: UnivariateZerocheckProver<'a, F> + ?Sized>
 }
 
 #[derive(Debug)]
-pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
+pub struct BatchZerocheckOutput<F: Field, Prover> {
 	pub univariate_challenge: F,
 	pub batch_prove_start: BatchProveStart<F, Prover>,
 }

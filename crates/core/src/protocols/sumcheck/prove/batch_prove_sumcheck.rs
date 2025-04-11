@@ -107,28 +107,14 @@ where
 	Prover: SumcheckProver<F>,
 	Challenger_: Challenger,
 {
-	let start = BatchProveStart {
-		batch_coeffs: Vec::new(),
-		reduction_provers: Vec::<Prover>::new(),
-	};
-
-	batch_prove_with_start(start, provers, transcript)
-}
-
-/// A struct describing the starting state of batched sumcheck prove invocation.
-#[derive(Debug)]
-pub struct BatchProveStart<F: Field, Prover> {
-	/// Batching coefficients for the already batched provers.
-	pub batch_coeffs: Vec<F>,
-	/// Reduced provers which can complete sumchecks from an intermediate state.
-	pub reduction_provers: Vec<Prover>,
+	batch_prove_with_start(Vec::new(), provers, transcript)
 }
 
 /// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove_with_start<F, Prover, Challenger_>(
-	start: BatchProveStart<F, Prover>,
-	mut provers: Vec<Prover>,
+	batch_coeffs: Vec<F>,
+	provers: Vec<Prover>,
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
@@ -136,13 +122,7 @@ where
 	Prover: SumcheckProver<F>,
 	Challenger_: Challenger,
 {
-	let BatchProveStart {
-		mut batch_coeffs,
-		reduction_provers,
-	} = start;
-
-	provers.splice(0..0, reduction_provers);
-
+	// TODO: validate batch_coeffs
 	let Some(first_prover) = provers.first() else {
 		return Ok(BatchSumcheckOutput {
 			challenges: Vec::new(),

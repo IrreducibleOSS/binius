@@ -27,9 +27,9 @@ use crate::{
 				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
 				ZerocheckUnivariateFoldResult,
 			},
-			SumcheckProver, UnivariateZerocheckProver,
+			SumcheckProver, ZerocheckProver,
 		},
-		univariate::LagrangeRoundEvals,
+		univariate::ZerocheckRoundEvals,
 		univariate_zerocheck::domain_size,
 		Error,
 	},
@@ -72,6 +72,7 @@ where
 	Ok(())
 }
 
+/// TODO: this comment can be so much more
 /// A prover that is capable of performing univariate skip.
 ///
 /// By recasting `skip_rounds` first variables in a multilinear sumcheck into a univariate domain,
@@ -84,7 +85,7 @@ where
 /// [`UnivariateZerocheckProver`] trait, where folding results in a reduced multilinear zerocheck
 /// prover for the remaining rounds.
 #[derive(Debug, Getters)]
-pub struct UnivariateZerocheck<
+pub struct ZerocheckProverImpl<
 	'a,
 	FDomain,
 	FBase,
@@ -93,7 +94,6 @@ pub struct UnivariateZerocheck<
 	Composition,
 	M,
 	DomainFactory,
-	SwitchoverFn,
 	Backend,
 > where
 	FDomain: Field,
@@ -107,38 +107,14 @@ pub struct UnivariateZerocheck<
 	compositions: Vec<(String, CompositionBase, Composition)>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	domain_factory: DomainFactory,
-	switchover_fn: SwitchoverFn,
 	backend: &'a Backend,
 	univariate_evals_output: Option<ZerocheckUnivariateEvalsOutput<P::Scalar, P, Backend>>,
 	_p_base_marker: PhantomData<FBase>,
 	_fdomain_marker: PhantomData<FDomain>,
 }
 
-impl<
-		'a,
-		F,
-		FDomain,
-		FBase,
-		P,
-		CompositionBase,
-		Composition,
-		M,
-		DomainFactory,
-		SwitchoverFn,
-		Backend,
-	>
-	UnivariateZerocheck<
-		'a,
-		FDomain,
-		FBase,
-		P,
-		CompositionBase,
-		Composition,
-		M,
-		DomainFactory,
-		SwitchoverFn,
-		Backend,
-	>
+impl<'a, F, FDomain, FBase, P, CompositionBase, Composition, M, DomainFactory, Backend>
+	ZerocheckProverImpl<'a, FDomain, FBase, P, CompositionBase, Composition, M, DomainFactory, Backend>
 where
 	F: TowerField,
 	FDomain: Field,
@@ -151,7 +127,6 @@ where
 	Composition: CompositionPoly<P> + 'a,
 	M: MultilinearPoly<P> + Send + Sync + 'a,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	SwitchoverFn: Fn(usize) -> usize,
 	Backend: ComputationBackend,
 {
 	pub fn new(
@@ -159,7 +134,6 @@ where
 		zero_claims: impl IntoIterator<Item = (String, CompositionBase, Composition)>,
 		zerocheck_challenges: &[F],
 		domain_factory: DomainFactory,
-		switchover_fn: SwitchoverFn,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let n_vars = equal_n_vars_check(&multilinears)?;
@@ -193,73 +167,17 @@ where
 			compositions,
 			zerocheck_challenges,
 			domain_factory,
-			switchover_fn,
 			backend,
 			univariate_evals_output: None,
 			_p_base_marker: PhantomData,
 			_fdomain_marker: PhantomData,
 		})
 	}
-
-	#[instrument(skip_all, level = "debug")]
-	#[allow(clippy::type_complexity)]
-	pub fn into_regular_zerocheck(self) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error> {
-		if self.univariate_evals_output.is_some() {
-			bail!(Error::ExpectedFold);
-		}
-
-		#[cfg(feature = "debug_validate_sumcheck")]
-		{
-			let compositions = self
-				.compositions
-				.iter()
-				.map(|(name, _, a)| (name.clone(), a))
-				.collect::<Vec<_>>();
-			validate_witness(&self.multilinears, &compositions)?;
-		}
-
-		let composite_claims = self
-			.compositions
-			.into_iter()
-			.map(|(_, _, composition)| CompositeSumClaim {
-				composition,
-				sum: F::ZERO,
-			})
-			.collect::<Vec<_>>();
-
-		let first_round_eval_1s = composite_claims.iter().map(|_| F::ZERO).collect::<Vec<_>>();
-
-		let prover = EqIndSumcheckProverBuilder::with_switchover(
-			self.multilinears,
-			self.switchover_fn,
-			self.backend,
-		)?
-		.with_first_round_eval_1s(&first_round_eval_1s)
-		.build(
-			EvaluationOrder::LowToHigh,
-			&self.zerocheck_challenges,
-			composite_claims,
-			self.domain_factory,
-		)?;
-
-		Ok(Box::new(prover) as Box<dyn SumcheckProver<F> + 'a>)
-	}
 }
 
-impl<
-		'a,
-		F,
-		FDomain,
-		FBase,
-		P,
-		CompositionBase,
-		Composition,
-		M,
-		InterpolationDomainFactory,
-		SwitchoverFn,
-		Backend,
-	> UnivariateZerocheckProver<'a, F>
-	for UnivariateZerocheck<
+impl<'a, F, FDomain, FBase, P, CompositionBase, Composition, M, DomainFactory, Backend>
+	ZerocheckProver<'a, F>
+	for ZerocheckProverImpl<
 		'a,
 		FDomain,
 		FBase,
@@ -267,8 +185,7 @@ impl<
 		CompositionBase,
 		Composition,
 		M,
-		InterpolationDomainFactory,
-		SwitchoverFn,
+		DomainFactory,
 		Backend,
 	>
 where
@@ -282,8 +199,7 @@ where
 	CompositionBase: CompositionPoly<PackedSubfield<P, FBase>> + 'static,
 	Composition: CompositionPoly<P> + 'static,
 	M: MultilinearPoly<P> + Send + Sync + 'a,
-	InterpolationDomainFactory: EvaluationDomainFactory<FDomain>,
-	SwitchoverFn: Fn(usize) -> usize,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
 {
 	fn n_vars(&self) -> usize {
@@ -304,7 +220,7 @@ where
 		skip_rounds: usize,
 		max_domain_size: usize,
 		batch_coeff: F,
-	) -> Result<LagrangeRoundEvals<F>, Error> {
+	) -> Result<ZerocheckRoundEvals<F>, Error> {
 		if self.univariate_evals_output.is_some() {
 			bail!(Error::ExpectedFold);
 		}
@@ -333,15 +249,9 @@ where
 			.round_evals
 			.iter()
 			.zip(powers(batch_coeff))
-			.map(|(evals, scalar)| {
-				let round_evals = LagrangeRoundEvals {
-					zeros_prefix_len,
-					evals: evals.clone(),
-				};
-				round_evals * scalar
-			})
+			.map(|(evals, scalar)| ZerocheckRoundEvals { evals } * scalar)
 			.try_fold(
-				LagrangeRoundEvals::zeros(max_domain_size),
+				ZerocheckRoundEvals::zeros(max_domain_size),
 				|mut accum, evals| -> Result<_, Error> {
 					accum.add_assign_lagrange(&evals)?;
 					Ok(accum)
@@ -391,10 +301,6 @@ where
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
-		// REVIEW: we currently partially evaluate all multilinears on skip_rounds sized prefix;
-		//         a more correct approach is to allow the follow up EqIndSumcheckProver to take
-		//         a multilinear query consisting of Lagrange polynomial evaluations and pass
-		//         the multilinears with switchover_round > skip_rounds as transparents.
 		let partial_low_multilinears = self
 			.multilinears
 			.into_par_iter()
@@ -411,6 +317,8 @@ where
 
 		// The remaining non-univariate zerocheck rounds are an instance of EqIndSumcheck,
 		// due to the number of zerocheck challenges being equal to the number of remaining rounds.
+		// Note: while univariate round happens over lowest `skip_rounds` variables, the reduced
+		// EqIndSumcheck is high-to-low.
 		let regular_prover = EqIndSumcheckProverBuilder::without_switchover(
 			self.n_vars - skip_rounds,
 			partial_low_multilinears,
@@ -418,7 +326,7 @@ where
 		)
 		.with_eq_ind_partial_evals(partial_eq_ind_evals)
 		.build(
-			EvaluationOrder::LowToHigh,
+			EvaluationOrder::HighToLow,
 			&self.zerocheck_challenges,
 			composite_claims,
 			self.domain_factory,

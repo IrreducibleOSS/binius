@@ -10,6 +10,7 @@ use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{BinarySubspace, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
+use itertools::izip;
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
@@ -19,47 +20,32 @@ use crate::{
 	},
 };
 
-/// A univariate polynomial in Lagrange basis.
+/// Zerocheck round polynomial in Lagrange basis
 ///
-/// The coefficient at position `i` in the `lagrange_coeffs` corresponds to evaluation
-/// at `i+zeros_prefix_len`-th field element of some agreed upon domain. Coefficients
-/// at positions `0..zeros_prefix_len` are zero. Addition of Lagrange basis representations
-/// only makes sense for the polynomials in the same domain.
+/// Has `(composition_max_degree - 1) * 2^skip_rounds` length, where first `2^skip_rounds`
+/// evaluations are assumed to be zero. Addition of Lagrange basis representations only
+/// makes sense for the polynomials in the same domain.
 #[derive(Clone, Debug)]
-pub struct LagrangeRoundEvals<F: Field> {
-	pub zeros_prefix_len: usize,
+pub struct ZerocheckRoundEvals<F: Field> {
 	pub evals: Vec<F>,
 }
 
-impl<F: Field> LagrangeRoundEvals<F> {
+impl<F: Field> ZerocheckRoundEvals<F> {
 	/// A Lagrange representation of a zero polynomial, on a given domain.
-	pub const fn zeros(zeros_prefix_len: usize) -> Self {
+	pub const fn zerosl(len: usize) -> Self {
 		Self {
-			zeros_prefix_len,
-			evals: Vec::new(),
+			evals: vec![F::ZERO; len],
 		}
 	}
 
 	/// An assigning addition of two polynomials in Lagrange basis. May fail,
 	/// thus it's not simply an `AddAssign` overload due to signature mismatch.
 	pub fn add_assign_lagrange(&mut self, rhs: &Self) -> Result<(), Error> {
-		let lhs_len = self.zeros_prefix_len + self.evals.len();
-		let rhs_len = rhs.zeros_prefix_len + rhs.evals.len();
-
-		if lhs_len != rhs_len {
+		if self.evals.len() != rhs.evals.len() {
 			bail!(Error::LagrangeRoundEvalsSizeMismatch);
 		}
 
-		let start_idx = if rhs.zeros_prefix_len < self.zeros_prefix_len {
-			self.evals
-				.splice(0..0, repeat_n(F::ZERO, self.zeros_prefix_len - rhs.zeros_prefix_len));
-			self.zeros_prefix_len = rhs.zeros_prefix_len;
-			0
-		} else {
-			rhs.zeros_prefix_len - self.zeros_prefix_len
-		};
-
-		for (lhs, rhs) in self.evals[start_idx..].iter_mut().zip(&rhs.evals) {
+		for (lhs, rhs) in izip!(&mut self.evals, &rhs.evals) {
 			*lhs += rhs;
 		}
 
@@ -67,7 +53,7 @@ impl<F: Field> LagrangeRoundEvals<F> {
 	}
 }
 
-impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
+impl<F: Field> Mul<F> for ZerocheckRoundEvals<F> {
 	type Output = Self;
 
 	fn mul(mut self, rhs: F) -> Self::Output {
@@ -76,7 +62,7 @@ impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
 	}
 }
 
-impl<F: Field> MulAssign<F> for LagrangeRoundEvals<F> {
+impl<F: Field> MulAssign<F> for ZerocheckRoundEvals<F> {
 	fn mul_assign(&mut self, rhs: F) {
 		for eval in &mut self.evals {
 			*eval *= rhs;

@@ -332,7 +332,6 @@ where
 	let switchover_fn = standard_switchover_heuristic(-2);
 
 	let mut univariate_provers = Vec::new();
-	let mut tail_regular_zerocheck_provers = Vec::new();
 	let mut univariatized_multilinears = Vec::new();
 
 	for constraint_set in table_constraints {
@@ -360,13 +359,12 @@ where
 				constraints,
 				multilinears,
 				domain_factory: domain_factory.clone(),
-				switchover_fn,
 				zerocheck_challenges: &zerocheck_challenges[skip_challenges..],
 				backend,
 				_fdomain_marker: PhantomData,
 			};
 
-		let either_prover = match base_tower_level {
+		let univariate_prover = match base_tower_level {
 			0..=3 => constructor.create::<Tower::B8>(univariate_decider)?,
 			4 => constructor.create::<Tower::B16>(univariate_decider)?,
 			5 => constructor.create::<Tower::B32>(univariate_decider)?,
@@ -375,21 +373,11 @@ where
 			_ => unreachable!(),
 		};
 
-		match either_prover {
-			Either::Left(univariate_prover) => univariate_provers.push(univariate_prover),
-			Either::Right(zerocheck_prover) => {
-				tail_regular_zerocheck_provers.push(zerocheck_prover)
-			}
-		}
+		univariate_provers.push(univariate_prover);
 	}
 
-	let univariate_cnt = univariate_provers.len();
-
-	let univariate_output = sumcheck::prove::batch_prove_zerocheck_univariate_round(
-		univariate_provers,
-		skip_rounds,
-		&mut transcript,
-	)?;
+	let zerocheck_output =
+		sumcheck::prove::batch_prove_zerocheck(univariate_provers, skip_rounds, &mut transcript)?;
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
