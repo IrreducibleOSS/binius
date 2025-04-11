@@ -119,8 +119,7 @@ impl<Challenger_: Default + Challenger> Default for ProverTranscript<Challenger_
 
 impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	pub fn finalize(self) -> Vec<u8> {
-		let res = self.combined.buffer.to_vec();
-		res
+		self.combined.buffer.to_vec()
 	}
 
 	/// Sets the debug flag.
