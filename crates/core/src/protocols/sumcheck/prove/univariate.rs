@@ -372,6 +372,8 @@ where
 		.precompute_twiddles();
 
 	// Smaller subcubes are batched together to reduce interpolation/evaluation overhead.
+	// REVIEW: make this a heuristic dependent on base field size and/or number of multilinears
+	//         to guarantee L1 cache (or accelerator scratchpad) non-eviction.
 	const MAX_SUBCUBE_VARS: usize = 12;
 	let log_batch = MAX_SUBCUBE_VARS.min(n_vars).saturating_sub(skip_rounds);
 
@@ -423,7 +425,6 @@ where
 					extrapolated_evals,
 					composition_evals,
 					packed_round_evals,
-					..
 				} = &mut par_fold_states;
 
 				// Interpolate multilinear evals for each multilinear
@@ -480,8 +481,17 @@ where
 						packed_round_evals.chunks_exact_mut(p_coset_round_evals_len,),
 						composition_evals.chunks_exact(pbase_coset_composition_evals_len)
 					) {
-						// Inner product is with the high `n_vars - skip_rounds`` projection
-						// of the zerocheck equality indicator (one factor per skipped subcube).
+						// At this point, the composition evals are laid out as a 3D array,
+						// with dimensions being (ordered by increasing stride):
+						//  1) 2^skip_rounds           - a low indexed subcube being "skipped"
+						//  2) 2^log_batch             - batch of adjacent subcubes
+						//  3) composition_degree - 1  - cosets of the subcube evaluation domain
+						// NB: each complete span of dim 1 gets multiplied by a constant from
+						// the equality indicator expansion, and dims 1+2 are padded up to the
+						// nearest packed field due to ntt_extrapolate implementation details
+						// (not performing sub-packed-field NTTs). This helper method handles
+						// multiplication of each dim 1 + 2 submatrix by the corresponding
+						// equality indicator subslice.
 						spread_product::<_, FBase>(
 							packed_round_evals_coset,
 							composition_evals_coset,
@@ -579,8 +589,6 @@ fn spread_product<P, FBase>(
 
 	if log_n >= P::LOG_WIDTH {
 		// Use spread multiplication on fast path.
-		accum.fill(P::zero());
-
 		let mask = (1 << log_embedding_degree) - 1;
 		for batch_idx in 0..1 << log_batch {
 			let mult = get_packed_slice(large, subcube_index << log_batch | batch_idx);
