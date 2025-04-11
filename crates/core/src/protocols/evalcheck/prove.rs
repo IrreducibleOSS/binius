@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{PackedFieldIndexable, TowerField};
+use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
@@ -37,7 +37,7 @@ use crate::{
 #[derive(Getters, MutGetters)]
 pub struct EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -62,7 +62,7 @@ where
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {

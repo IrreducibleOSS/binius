@@ -11,9 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
@@ -78,7 +76,7 @@ pub fn process_shifted_sumcheck<F, P>(
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	process_projected_bivariate_witness(
