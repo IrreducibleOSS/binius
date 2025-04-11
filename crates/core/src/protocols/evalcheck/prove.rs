@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::collections::HashSet;
+
 use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
@@ -131,8 +133,13 @@ where
 		self.claim_to_index.clear();
 
 		for claim in &evalcheck_claims {
-			self.claims_without_evals_dedup
-				.insert(claim.id, claim.eval_point.clone(), ());
+			if self
+				.new_evals_memoization
+				.get(claim.id, &claim.eval_point)
+				.is_some()
+			{
+				continue;
+			}
 
 			self.new_evals_memoization
 				.insert(claim.id, claim.eval_point.clone(), claim.eval);
@@ -148,21 +155,18 @@ where
 					.for_each(|claim| self.collect_subclaims_for_precompute(claim));
 			}
 
-			let mut deduplicated_claims_without_evals = Vec::new();
+			let mut deduplicated_claims_without_evals = HashSet::new();
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
 				if self
-					.claims_without_evals_dedup
+					.new_evals_memoization
 					.get(poly.id(), &eval_point)
 					.is_some()
 				{
 					continue;
 				}
 
-				self.claims_without_evals_dedup
-					.insert(poly.id(), eval_point.clone(), ());
-
-				deduplicated_claims_without_evals.push((poly, eval_point.clone()))
+				deduplicated_claims_without_evals.insert((poly.id(), eval_point.clone()));
 			}
 
 			let deduplicated_eval_points = deduplicated_claims_without_evals
@@ -176,9 +180,9 @@ where
 			// Make new evaluation claims in parallel.
 			let subclaims = deduplicated_claims_without_evals
 				.into_par_iter()
-				.map(|(poly, eval_point)| {
+				.map(|(id, eval_point)| {
 					Self::make_new_eval_claim(
-						poly.id(),
+						id,
 						eval_point,
 						self.witness_index,
 						&self.memoized_data,
