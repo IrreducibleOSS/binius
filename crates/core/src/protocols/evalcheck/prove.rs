@@ -56,9 +56,10 @@ where
 	pub memoized_data: MemoizedData<'b, P, Backend>,
 	backend: &'a Backend,
 
+	claim_to_index: EvalPointOracleIdMap<usize, F>,
 	visited_claims: EvalPointOracleIdMap<(), F>,
 	new_evals_memoization: EvalPointOracleIdMap<F, F>,
-	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
+	round_claim_index: usize,
 	advices: Vec<EvalcheckProofAdvice>,
 }
 
@@ -88,9 +89,10 @@ where
 			memoized_data: MemoizedData::new(),
 			backend,
 
+			claim_to_index: EvalPointOracleIdMap::new(),
 			visited_claims: EvalPointOracleIdMap::new(),
 			new_evals_memoization: EvalPointOracleIdMap::new(),
-			round_claims: Vec::new(),
+			round_claim_index: 0,
 			advices: Vec::new(),
 		}
 	}
@@ -124,8 +126,9 @@ where
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	) -> Result<(Vec<Option<EvalcheckProof<F>>>, Vec<EvalcheckProofAdvice>), Error> {
-		self.round_claims.clear();
+		self.round_claim_index = 0;
 		self.visited_claims.clear();
+		self.claim_to_index.clear();
 
 		for claim in &evalcheck_claims {
 			self.claims_without_evals_dedup
@@ -352,20 +355,20 @@ where
 			eval,
 		} = evalcheck_claim.clone();
 
-		let claim_id = self
-			.round_claims
-			.iter()
-			.position(|claim| *claim == evalcheck_claim);
+		let claim_id = self.claim_to_index.get(id, &eval_point);
 
 		if let Some(claim_id) = claim_id {
 			self.advices
-				.push(EvalcheckProofAdvice::DuplicateClaim(claim_id));
+				.push(EvalcheckProofAdvice::DuplicateClaim(*claim_id));
 			return Ok(None);
 		}
 
 		self.advices.push(EvalcheckProofAdvice::HandleClaim);
 
-		self.round_claims.push(evalcheck_claim.clone());
+		self.claim_to_index
+			.insert(id, eval_point.clone(), self.round_claim_index);
+
+		self.round_claim_index += 1;
 
 		let multilinear = self.oracles.oracle(id);
 		let proof = match multilinear.variant {
