@@ -4,10 +4,18 @@ extern crate proc_macro;
 mod arith_circuit_poly;
 mod arith_expr;
 mod composition_poly;
+mod deserialize_bytes;
 
+use deserialize_bytes::apply_container_attributes;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
+use syn::{
+	parse::{Parse, Parser},
+	parse_macro_input, parse_quote,
+	punctuated::Punctuated,
+	spanned::Spanned,
+	Data, DeriveInput, Fields, Ident, ItemImpl, Meta,
+};
 
 use crate::{
 	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
@@ -197,7 +205,11 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			.bounds
 			.push(parse_quote!(binius_utils::DeserializeBytes))
 	});
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+	let (impl_generics, ty_generics, where_clause) =
+		match apply_container_attributes(&input.attrs, &generics) {
+			Ok(x) => x,
+			Err(e) => return Err(e.into_compile_error()),
+		};
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
@@ -265,6 +277,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			}
 		}
 	};
+
 	quote! {
 		impl #impl_generics binius_utils::DeserializeBytes for #name #ty_generics #where_clause {
 			fn deserialize(mut read_buf: impl binius_utils::bytes::Buf, mode: binius_utils::SerializationMode) -> Result<Self, binius_utils::SerializationError>
