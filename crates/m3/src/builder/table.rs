@@ -5,7 +5,7 @@ use std::sync::Arc;
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
-	tower::TowerFamily,
+	tower::{PackedTowerConverter, PackedTowerFamily, TowerFamily},
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
@@ -326,21 +326,20 @@ pub struct Table<F: TowerField = B128> {
 }
 
 impl<F: TowerField> Table<F> {
-	pub fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+	pub fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
 		&self,
-	) -> Table<TargetTower::B128>
+		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
+	) -> Table<<TargetPackedTower::Tower as TowerFamily>::B128>
 	where
-		TargetTower::B1: From<SourceTower::B1>,
-		TargetTower::B8: From<SourceTower::B8>,
-		TargetTower::B16: From<SourceTower::B16>,
-		TargetTower::B32: From<SourceTower::B32>,
-		TargetTower::B64: From<SourceTower::B64>,
-		TargetTower::B128: From<SourceTower::B128>,
+		SourcePackedTower: PackedTowerFamily,
+		SourcePackedTower::Tower: TowerFamily<B128 = F>,
+		TargetPackedTower: PackedTowerFamily,
+		<TargetPackedTower::Tower as TowerFamily>::B128: From<F>,
 	{
 		let columns = self
 			.columns
 			.iter()
-			.map(|col| col.convert_to_tower::<SourceTower, TargetTower>())
+			.map(|col| col.convert_to_tower::<SourcePackedTower, TargetPackedTower>(converter))
 			.collect();
 		let partitions = self
 			.partitions

@@ -12,7 +12,7 @@ use binius_core::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		ProjectionVariant,
 	},
-	tower::TowerFamily,
+	tower::{PackedTowerConverter, PackedTowerFamily, TowerFamily},
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
@@ -150,22 +150,19 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	pub fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+	pub fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
 		&self,
-	) -> ConstraintSystem<TargetTower::B128>
+		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
+	) -> ConstraintSystem<<TargetPackedTower::Tower as TowerFamily>::B128>
 	where
-		TargetTower::B1: From<SourceTower::B1>,
-		TargetTower::B8: From<SourceTower::B8>,
-		TargetTower::B16: From<SourceTower::B16>,
-		TargetTower::B32: From<SourceTower::B32>,
-		TargetTower::B64: From<SourceTower::B64>,
-		TargetTower::B128: From<SourceTower::B128>,
+		SourcePackedTower: PackedTowerFamily<Tower: TowerFamily<B128 = F>>,
+		TargetPackedTower: PackedTowerFamily<Tower: TowerFamily<B128: From<F>>>,
 	{
 		let channels = self.channels.clone();
 		let tables = self
 			.tables
 			.iter()
-			.map(|table| table.convert_to_tower::<SourceTower, TargetTower>())
+			.map(|table| table.convert_to_tower::<SourcePackedTower, TargetPackedTower>(converter))
 			.collect::<Vec<_>>();
 
 		ConstraintSystem { tables, channels }

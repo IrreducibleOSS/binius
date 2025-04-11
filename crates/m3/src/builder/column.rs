@@ -3,12 +3,12 @@
 use std::{any::Any, fmt::Debug, marker::PhantomData, sync::Arc};
 
 use binius_core::{
-	oracle::ShiftVariant, polynomial::MultivariatePoly, tower::TowerFamily,
+	oracle::ShiftVariant,
+	polynomial::MultivariatePoly,
+	tower::{PackedTowerConverter, PackedTowerFamily, TowerFamily},
 	transparent::MultilinearExtensionTransparent,
 };
-use binius_field::{
-	arch::ArchOptimal, packed::pack_slice, ExtensionField, RepackedExtension, TowerField,
-};
+use binius_field::{packed::pack_slice, ExtensionField, PackedExtension, TowerField};
 use binius_math::ArithExpr;
 
 use super::{table::TableId, types::B128};
@@ -98,25 +98,23 @@ pub struct ColumnInfo<F: TowerField = B128> {
 }
 
 impl<F: TowerField> ColumnInfo<F> {
-	pub(super) fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+	pub(super) fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
 		&self,
-	) -> ColumnInfo<TargetTower::B128>
+		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
+	) -> ColumnInfo<<TargetPackedTower::Tower as TowerFamily>::B128>
 	where
-		TargetTower::B1: From<SourceTower::B1>,
-		TargetTower::B8: From<SourceTower::B8>,
-		TargetTower::B16: From<SourceTower::B16>,
-		TargetTower::B32: From<SourceTower::B32>,
-		TargetTower::B64: From<SourceTower::B64>,
-		TargetTower::B128: From<SourceTower::B128>,
+		SourcePackedTower: PackedTowerFamily,
+		SourcePackedTower::Tower: TowerFamily<B128 = F>,
+		TargetPackedTower: PackedTowerFamily,
+		<TargetPackedTower::Tower as TowerFamily>::B128: From<F>,
 	{
 		ColumnInfo {
 			id: self.id.clone(),
-			col: self.col.convert_to_tower::<SourceTower, TargetTower>(),
+			col: self
+				.col
+				.convert_to_tower::<SourcePackedTower, TargetPackedTower>(converter),
 			name: self.name.clone(),
-			shape: ColumnShape {
-				tower_height: TargetTower::B128::TOWER_LEVEL,
-				log_values_per_row: self.shape.log_values_per_row,
-			},
+			shape: self.shape,
 			is_nonzero: self.is_nonzero,
 		}
 	}
@@ -180,16 +178,15 @@ pub enum ColumnDef<F: TowerField = B128> {
 }
 
 impl<F: TowerField> ColumnDef<F> {
-	pub(super) fn convert_to_tower<SourceTower: TowerFamily<B128 = F>, TargetTower: TowerFamily>(
+	pub(super) fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
 		&self,
-	) -> ColumnDef<TargetTower::B128>
+		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
+	) -> ColumnDef<<TargetPackedTower::Tower as TowerFamily>::B128>
 	where
-		TargetTower::B1: From<SourceTower::B1>,
-		TargetTower::B8: From<SourceTower::B8>,
-		TargetTower::B16: From<SourceTower::B16>,
-		TargetTower::B32: From<SourceTower::B32>,
-		TargetTower::B64: From<SourceTower::B64>,
-		TargetTower::B128: From<SourceTower::B128>,
+		SourcePackedTower: PackedTowerFamily,
+		SourcePackedTower::Tower: TowerFamily<B128 = F>,
+		TargetPackedTower: PackedTowerFamily,
+		<TargetPackedTower::Tower as TowerFamily>::B128: From<F>,
 	{
 		match self {
 			&Self::Committed { tower_level } => ColumnDef::Committed { tower_level },
@@ -216,33 +213,45 @@ impl<F: TowerField> ColumnDef<F> {
 			&Self::Packed { col, log_degree } => ColumnDef::Packed { col, log_degree },
 			Self::Computed { cols, expr } => ColumnDef::Computed {
 				cols: cols.clone(),
-				expr: expr.convert_field::<TargetTower::B128>(),
+				expr: expr.convert_field::<<TargetPackedTower::Tower as TowerFamily>::B128>(),
 			},
 			Self::Constant { data, .. } => {
-				let (data, poly) = if let Some(data) = data.downcast_ref::<Vec<SourceTower::B1>>() {
-					convert_column_constant::<SourceTower::B1, TargetTower::B1, TargetTower::B128>(
-						&data,
-					)
-				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B8>>() {
-					convert_column_constant::<SourceTower::B8, TargetTower::B8, TargetTower::B128>(
-						&data,
-					)
-				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B16>>() {
-					convert_column_constant::<SourceTower::B16, TargetTower::B16, TargetTower::B128>(
-						&data,
-					)
-				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B32>>() {
-					convert_column_constant::<SourceTower::B32, TargetTower::B32, TargetTower::B128>(
-						&data,
-					)
-				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B64>>() {
-					convert_column_constant::<SourceTower::B64, TargetTower::B64, TargetTower::B128>(
-						&data,
-					)
-				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B128>>() {
-					convert_column_constant::<SourceTower::B128, TargetTower::B128, TargetTower::B128>(
-						&data,
-					)
+				let (data, poly) = if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B1>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b1(x)
+					})
+				} else if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B8>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b8(x)
+					})
+				} else if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B16>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b16(x)
+					})
+				} else if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B32>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b32(x)
+					})
+				} else if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B64>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b64(x)
+					})
+				} else if let Some(data) =
+					data.downcast_ref::<Vec<<SourcePackedTower::Tower as TowerFamily>::B128>>()
+				{
+					convert_column_constant::<_, _, TargetPackedTower::PackedB128>(&data, |x| {
+						converter.convert_b128(x)
+					})
 				} else {
 					panic!("constant column must be a vector of tower field elements");
 				};
@@ -253,25 +262,21 @@ impl<F: TowerField> ColumnDef<F> {
 	}
 }
 
-fn convert_column_constant<F: TowerField, TargetField: TowerField, TowerFieldExt: TowerField>(
+fn convert_column_constant<F, TargetField, PackedTowerFieldExt>(
 	source: &[F],
-) -> (Box<dyn Any + Send + Sync>, Arc<dyn MultivariatePoly<TowerFieldExt>>)
+	convert_fn: impl Fn(&F) -> TargetField,
+) -> (Box<dyn Any + Send + Sync>, Arc<dyn MultivariatePoly<PackedTowerFieldExt::Scalar>>)
 where
-	TargetField: From<F> + ArchOptimal,
-	TowerFieldExt: ArchOptimal<
-		OptimalThroughputPacked: RepackedExtension<TargetField::OptimalThroughputPacked>,
-	>,
+	F: TowerField,
+	TargetField: TowerField,
+	PackedTowerFieldExt: PackedExtension<TargetField, Scalar: TowerField>,
 {
-	let data = source
-		.iter()
-		.copied()
-		.map(TargetField::from)
-		.collect::<Vec<_>>();
+	let data = source.iter().map(convert_fn).collect::<Vec<_>>();
 
 	let packed_data = pack_slice(&data);
 	let mle = MultilinearExtensionTransparent::<
-		<TargetField as ArchOptimal>::OptimalThroughputPacked,
-		<TowerFieldExt as ArchOptimal>::OptimalThroughputPacked,
+		PackedTowerFieldExt::PackedSubfield,
+		PackedTowerFieldExt,
 		_,
 	>::from_values_and_mu(packed_data, source.len())
 	.unwrap();
