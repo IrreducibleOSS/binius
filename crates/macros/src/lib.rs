@@ -9,13 +9,7 @@ mod deserialize_bytes;
 use deserialize_bytes::{get_generics, GenericsSplit};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{
-	parse::{Parse, Parser},
-	parse_macro_input, parse_quote,
-	punctuated::Punctuated,
-	spanned::Spanned,
-	Data, DeriveInput, Fields, Ident, ItemImpl, Meta,
-};
+use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
 
 use crate::{
 	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
@@ -211,7 +205,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 		where_clause,
 	} = match get_generics(&input.attrs, &generics) {
 		Ok(x) => x,
-		Err(e) => return e.into_compile_error(),
+		Err(e) => return e.into_compile_error().into(),
 	};
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
