@@ -134,6 +134,9 @@ where
 		for claim in &evalcheck_claims {
 			self.claims_without_evals_dedup
 				.insert(claim.id, claim.eval_point.clone(), ());
+
+			self.new_evals_memoization
+				.insert(claim.id, claim.eval_point.clone(), claim.eval);
 		}
 
 		// Step 1: Collect proofs
@@ -151,6 +154,14 @@ where
 			let mut deduplicated_claims_without_evals = Vec::new();
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
+				if self
+					.claims_without_evals_dedup
+					.get(poly.id(), &eval_point)
+					.is_some()
+				{
+					continue;
+				}
+
 				self.claims_without_evals_dedup
 					.insert(poly.id(), eval_point.clone(), ());
 
@@ -164,6 +175,11 @@ where
 
 			self.memoized_data
 				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
+
+			println!(
+				"deduplicated_claims_without_evals: {}",
+				deduplicated_claims_without_evals.len()
+			);
 
 			// Make new evaluation claims in parallel.
 			let subclaims = deduplicated_claims_without_evals
