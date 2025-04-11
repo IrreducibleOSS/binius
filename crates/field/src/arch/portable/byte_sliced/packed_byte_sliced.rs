@@ -12,6 +12,7 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	arch::byte_sliced::underlier::ByteSlicedUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	binary_field::BinaryField,
 	linear_transformation::{
@@ -318,7 +319,7 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
-		byte_sliced_common!($name, $packed_storage, $scalar_type);
+		byte_sliced_common!($name, $packed_storage, $scalar_type, $storage_tower_level);
 
 		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$scalar_tower_level as TowerLevel>::WIDTH}> {
 			fn transform(&self, data: &$name) -> $name {
@@ -408,7 +409,7 @@ macro_rules! impl_init_with_transpose {
 }
 
 macro_rules! byte_sliced_common {
-	($name:ident, $packed_storage:ty, $scalar_type:ty) => {
+	($name:ident, $packed_storage:ty, $scalar_type:ty, $storage_level:ty) => {
 		impl Add<$scalar_type> for $name {
 			type Output = Self;
 
@@ -511,58 +512,70 @@ macro_rules! byte_sliced_common {
 			}
 		}
 
-		impl PackedExtension<$scalar_type> for $name {
-			type PackedSubfield = Self;
+		unsafe impl WithUnderlier for $name {
+			type Underlier = ByteSlicedUnderlier<
+				<$packed_storage as WithUnderlier>::Underlier,
+				{ <$storage_level as TowerLevel>::WIDTH },
+			>;
 
 			#[inline(always)]
-			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
-				packed
+			fn to_underlier(self) -> Self::Underlier {
+				bytemuck::must_cast(self)
 			}
 
 			#[inline(always)]
-			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
-				packed
+			fn to_underlier_ref(&self) -> &Self::Underlier {
+				bytemuck::must_cast_ref(self)
 			}
 
 			#[inline(always)]
-			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
-				packed
+			fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
+				bytemuck::must_cast_mut(self)
 			}
 
 			#[inline(always)]
-			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
-				packed
+			fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
+				bytemuck::must_cast_slice(val)
 			}
 
 			#[inline(always)]
-			fn cast_base(self) -> Self::PackedSubfield {
-				self
+			fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
+				bytemuck::must_cast_slice_mut(val)
 			}
 
 			#[inline(always)]
-			fn cast_base_ref(&self) -> &Self::PackedSubfield {
-				self
+			fn from_underlier(val: Self::Underlier) -> Self {
+				bytemuck::must_cast(val)
 			}
 
 			#[inline(always)]
-			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
-				self
+			fn from_underlier_ref(val: &Self::Underlier) -> &Self {
+				bytemuck::must_cast_ref(val)
 			}
 
 			#[inline(always)]
-			fn cast_ext(base: Self::PackedSubfield) -> Self {
-				base
+			fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
+				bytemuck::must_cast_mut(val)
 			}
 
 			#[inline(always)]
-			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
-				base
+			fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
+				bytemuck::must_cast_slice(val)
 			}
 
 			#[inline(always)]
-			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
-				base
+			fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
+				bytemuck::must_cast_slice_mut(val)
 			}
+		}
+
+		impl PackScalar<$scalar_type>
+			for ByteSlicedUnderlier<
+				<$packed_storage as WithUnderlier>::Underlier,
+				{ <$storage_level as TowerLevel>::WIDTH },
+			>
+		{
+			type Packed = $name;
 		}
 	};
 }
@@ -813,7 +826,7 @@ macro_rules! define_byte_sliced_3d_1b {
 			}
 		}
 
-		byte_sliced_common!($name, $packed_storage, BinaryField1b);
+		byte_sliced_common!($name, $packed_storage, BinaryField1b, $storage_tower_level);
 
 		impl PackedTransformationFactory<$name> for $name {
 			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> =
@@ -1142,89 +1155,3 @@ define_byte_sliced_3d_1b!(ByteSliced8x512x1b, PackedBinaryField512x1b, TowerLeve
 define_byte_sliced_3d_1b!(ByteSliced4x512x1b, PackedBinaryField512x1b, TowerLevel4);
 define_byte_sliced_3d_1b!(ByteSliced2x512x1b, PackedBinaryField512x1b, TowerLevel2);
 define_byte_sliced_3d_1b!(ByteSliced1x512x1b, PackedBinaryField512x1b, TowerLevel1);
-
-macro_rules! impl_packed_extension{
-	($packed_ext:ty, $packed_base:ty,) => {
-		impl PackedExtension<<$packed_base as PackedField>::Scalar> for $packed_ext {
-			type PackedSubfield = $packed_base;
-
-			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
-				bytemuck::must_cast_slice(packed)
-			}
-
-			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
-				bytemuck::must_cast_slice_mut(packed)
-			}
-
-			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
-				bytemuck::must_cast_slice(packed)
-			}
-
-			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
-				bytemuck::must_cast_slice_mut(packed)
-			}
-
-			fn cast_base(self) -> Self::PackedSubfield {
-				bytemuck::must_cast(self)
-			}
-
-			fn cast_base_ref(&self) -> &Self::PackedSubfield {
-				bytemuck::must_cast_ref(self)
-			}
-
-			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
-				bytemuck::must_cast_mut(self)
-			}
-
-			fn cast_ext(base: Self::PackedSubfield) -> Self {
-				bytemuck::must_cast(base)
-			}
-
-			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
-				bytemuck::must_cast_ref(base)
-			}
-
-			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
-				bytemuck::must_cast_mut(base)
-			}
-		}
-	};
-	(@pairs $head:ty, $next:ty,) => {
-		impl_packed_extension!($head, $next,);
-	};
-	(@pairs $head:ty, $next:ty, $($tail:ty,)*) => {
-		impl_packed_extension!($head, $next,);
-		impl_packed_extension!(@pairs $head, $($tail,)*);
-	};
-	($head:ty, $next:ty, $($tail:ty,)*) => {
-		impl_packed_extension!(@pairs $head, $next, $($tail,)*);
-		impl_packed_extension!($next, $($tail,)*);
-	};
-}
-
-impl_packed_extension!(
-	ByteSlicedAES16x128b,
-	ByteSlicedAES2x16x64b,
-	ByteSlicedAES4x16x32b,
-	ByteSlicedAES8x16x16b,
-	ByteSlicedAES16x16x8b,
-	ByteSliced16x128x1b,
-);
-
-impl_packed_extension!(
-	ByteSlicedAES32x128b,
-	ByteSlicedAES2x32x64b,
-	ByteSlicedAES4x32x32b,
-	ByteSlicedAES8x32x16b,
-	ByteSlicedAES16x32x8b,
-	ByteSliced16x256x1b,
-);
-
-impl_packed_extension!(
-	ByteSlicedAES64x128b,
-	ByteSlicedAES2x64x64b,
-	ByteSlicedAES4x64x32b,
-	ByteSlicedAES8x64x16b,
-	ByteSlicedAES16x64x8b,
-	ByteSliced16x512x1b,
-);

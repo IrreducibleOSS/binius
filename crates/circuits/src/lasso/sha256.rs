@@ -3,10 +3,9 @@
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::PackedType, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField4b,
-	PackedFieldIndexable, TowerField,
+	as_packed_field::PackedType, packed::packed_from_fn_with_offset, BinaryField16b, BinaryField1b,
+	BinaryField32b, BinaryField4b, PackedField, TowerField,
 };
-use itertools::izip;
 
 use super::{lasso::lasso, u32add::SeveralU32add};
 use crate::{
@@ -42,18 +41,18 @@ impl SeveralBitwise {
 		if let Some(witness) = builder.witness() {
 			let mut lookup_t_witness = witness.new_column::<B16>(lookup_t);
 
-			let lookup_t_scalars =
-				PackedType::<U, B16>::unpack_scalars_mut(lookup_t_witness.packed());
+			let lookup_t = lookup_t_witness.packed();
+			for (i, lookup_t) in lookup_t.iter_mut().enumerate() {
+				*lookup_t = packed_from_fn_with_offset(i, |i| {
+					let x = ((i >> 8) & 15) as u16;
+					let y = ((i >> 4) & 15) as u16;
+					let z = (i & 15) as u16;
 
-			for (i, lookup_t) in lookup_t_scalars.iter_mut().enumerate() {
-				let x = ((i >> 8) & 15) as u16;
-				let y = ((i >> 4) & 15) as u16;
-				let z = (i & 15) as u16;
+					let res = f(x as u32, y as u32, z as u32);
 
-				let res = f(x as u32, y as u32, z as u32);
-
-				let lookup_index = (((x << 4) | y) << 4) | z;
-				*lookup_t = B16::new((lookup_index << 4) | res as u16);
+					let lookup_index = (((x << 4) | y) << 4) | z;
+					B16::new((lookup_index << 4) | res as u16)
+				});
 			}
 		}
 		Ok(Self {
@@ -96,7 +95,7 @@ impl SeveralBitwise {
 
 		if let Some(witness) = builder.witness() {
 			let mut lookup_u_witness = witness.new_column::<B16>(lookup_u);
-			let lookup_u_u16 = PackedType::<U, B16>::unpack_scalars_mut(lookup_u_witness.packed());
+			let lookup_u_u16 = lookup_u_witness.packed();
 
 			let mut u_to_t_mapping_witness = Vec::with_capacity(1 << (log_size - B4::TOWER_LEVEL));
 
@@ -104,25 +103,43 @@ impl SeveralBitwise {
 			let res_u32 = res_witness.as_mut_slice::<u32>();
 
 			let xin_u32 = witness.get::<B1>(xin)?.as_slice::<u32>();
-
 			let yin_u32 = witness.get::<B1>(yin)?.as_slice::<u32>();
-
 			let zin_u32 = witness.get::<B1>(zin)?.as_slice::<u32>();
 
-			for (res, x, y, z, lookup_u) in
-				izip!(res_u32.iter_mut(), xin_u32, yin_u32, zin_u32, lookup_u_u16.chunks_mut(8))
-			{
-				*res = (self.f)(*x, *y, *z);
+			// The following code works only if packed width is at least 8.
+			// Which should be true in real life cases, becasue we don't use
+			// packed types with less than 128 bits size.
+			if PackedType::<U, B16>::LOG_WIDTH < 3 {
+				return Err(anyhow::anyhow!(
+					"PackedType::<U, B16>::LOG_WIDTH < 3, this is not supported"
+				));
+			}
 
-				for (i, lookup) in lookup_u.iter_mut().enumerate().take(8) {
-					let x = ((*x >> (4 * i)) & 15) as u16;
-					let y = ((*y >> (4 * i)) & 15) as u16;
-					let z = ((*z >> (4 * i)) & 15) as u16;
-					let res = ((*res >> (4 * i)) & 15) as u16;
-					let lookup_index = (((x << 4) | y) << 4) | z;
-					*lookup = B16::new((lookup_index << 4) | res);
-					u_to_t_mapping_witness.push(lookup_index as usize)
-				}
+			for (i, lookup_u) in lookup_u_u16.iter_mut().enumerate() {
+				let offset = i << (PackedType::<U, B16>::LOG_WIDTH - 3);
+				let scalars = (0..(PackedType::<U, B16>::WIDTH / 8)).flat_map(|j| {
+					let index = offset + j;
+					let x = xin_u32[index];
+					let y = yin_u32[index];
+					let z = zin_u32[index];
+					let res = (self.f)(x, y, z);
+					res_u32[index] = res;
+
+					let scalars = std::array::from_fn::<_, 8, _>(|k| {
+						let x = ((x >> (4 * k)) & 15) as u16;
+						let y = ((y >> (4 * k)) & 15) as u16;
+						let z = ((z >> (4 * k)) & 15) as u16;
+						let res = ((res >> (4 * k)) & 15) as u16;
+						let lookup_index = (((x << 4) | y) << 4) | z;
+
+						u_to_t_mapping_witness.push(lookup_index as usize);
+
+						B16::new((lookup_index << 4) | res)
+					});
+
+					scalars.into_iter()
+				});
+				*lookup_u = PackedType::<U, B16>::from_scalars(scalars);
 			}
 
 			std::mem::drop(res_witness);
