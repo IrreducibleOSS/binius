@@ -314,18 +314,20 @@ where
 			&eq_ind_partial_evals,
 		)?;
 
-		let prover = EqIndSumcheckProverBuilder::new(&first_prover.backend)
-			.with_first_round_eval_1s(&first_round_eval_1s)
-			.with_eq_ind_partial_evals(eq_ind_partial_evals)
-			.build(
-				evaluation_order,
-				multilinears,
-				eq_ind_challenges,
-				composite_claims,
-				evaluation_domain_factory,
-				// We use GPA protocol only for big fields, which is why switchover is trivial
-				immediate_switchover_heuristic,
-			)?;
+		// REVIEW: GPA is only ever used for big fields, we can avoid the switchover
+		let prover = EqIndSumcheckProverBuilder::with_switchover(
+			multilinears,
+			immediate_switchover_heuristic,
+			&first_prover.backend,
+		)?
+		.with_first_round_eval_1s(&first_round_eval_1s)
+		.with_eq_ind_partial_evals(eq_ind_partial_evals)
+		.build(
+			evaluation_order,
+			eq_ind_challenges,
+			composite_claims,
+			evaluation_domain_factory,
+		)?;
 
 		Ok(prover)
 	}
