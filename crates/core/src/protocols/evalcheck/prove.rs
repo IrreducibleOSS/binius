@@ -129,6 +129,7 @@ where
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
 		self.claim_to_index.clear();
+		self.new_evals_memoization.clear();
 
 		for claim in &evalcheck_claims {
 			if self

@@ -242,7 +242,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 							if self.round_claims[*index].id != sub_oracle_id
 								|| self.round_claims[*index].eval_point != eval_point
 							{
-								panic!("137");
+								return Err(VerificationError::DuplicateClaimMismatch.into());
 							}
 
 							evals.push(self.round_claims[*index].eval);
