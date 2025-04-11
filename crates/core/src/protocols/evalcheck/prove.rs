@@ -51,7 +51,6 @@ where
 
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
-	claims_without_evals_dedup: EvalPointOracleIdMap<(), F>,
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
@@ -86,7 +85,6 @@ where
 			new_sumchecks_constraints: Vec::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
-			claims_without_evals_dedup: EvalPointOracleIdMap::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
@@ -127,7 +125,7 @@ where
 	pub fn prove(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	) -> Result<(Vec<Option<EvalcheckProof<F>>>, Vec<EvalcheckProofAdvice>), Error> {
+	) -> Result<ProofsWithAdvices<F>, Error> {
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
 		self.claim_to_index.clear();
@@ -249,7 +247,10 @@ where
 			self.witness_index,
 		);
 
-		proofs.map(|proofs| (proofs, std::mem::take(&mut self.advices)))
+		proofs.map(|proofs| ProofsWithAdvices {
+			proofs,
+			advices: std::mem::take(&mut self.advices),
+		})
 	}
 
 	#[instrument(
@@ -453,16 +454,16 @@ where
 							let eval = *self
 								.new_evals_memoization
 								.get(suboracle_id, &eval_point)
-								.unwrap();
+								.expect("precomputed above");
 
 							let subclaim = EvalcheckMultilinearClaim {
 								id: suboracle_id,
 								eval_point: eval_point.clone(),
 								eval,
 							};
-							(eval, self.prove_multilinear(subclaim).unwrap())
+							self.prove_multilinear(subclaim).map(|proof| (eval, proof))
 						})
-						.collect::<Vec<_>>(),
+						.collect::<Result<Vec<_>, Error>>()?,
 				};
 
 				Some(EvalcheckProof::LinearCombination { subproofs })
@@ -475,7 +476,7 @@ where
 				let eval = *self
 					.new_evals_memoization
 					.get(id, inner_eval_point)
-					.unwrap();
+					.expect("precomputed above");
 
 				let subclaim = EvalcheckMultilinearClaim {
 					id,
@@ -586,4 +587,9 @@ where
 			eval,
 		})
 	}
+}
+
+pub struct ProofsWithAdvices<F: Field> {
+	pub proofs: Vec<Option<EvalcheckProof<F>>>,
+	pub advices: Vec<EvalcheckProofAdvice>,
 }

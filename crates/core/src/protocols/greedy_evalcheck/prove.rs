@@ -14,7 +14,7 @@ use crate::{
 	protocols::evalcheck::{
 		serialize_advice, serialize_evalcheck_proof,
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
-		EvalcheckMultilinearClaim, EvalcheckProver,
+		EvalcheckMultilinearClaim, EvalcheckProver, ProofsWithAdvices,
 	},
 	transcript::{write_u64, ProverTranscript},
 	witness::MultilinearExtensionIndex,
@@ -51,7 +51,10 @@ where
 	let claims: Vec<_> = claims.into_iter().collect();
 
 	// Prove the initial evalcheck claims
-	let (evalcheck_proofs, advices) = evalcheck_prover.prove(claims)?;
+	let ProofsWithAdvices {
+		proofs: evalcheck_proofs,
+		advices,
+	} = evalcheck_prover.prove(claims)?;
 	write_u64(&mut transcript.decommitment(), evalcheck_proofs.len() as u64);
 	write_u64(&mut transcript.decommitment(), advices.len() as u64);
 	let mut writer = transcript.message();
@@ -79,7 +82,10 @@ where
 				backend,
 			)?;
 
-		let (new_evalcheck_proofs, new_advices) = evalcheck_prover.prove(new_evalcheck_claims)?;
+		let ProofsWithAdvices {
+			proofs: new_evalcheck_proofs,
+			advices: new_advices,
+		} = evalcheck_prover.prove(new_evalcheck_claims)?;
 
 		write_u64(&mut transcript.decommitment(), new_evalcheck_proofs.len() as u64);
 		write_u64(&mut transcript.decommitment(), new_advices.len() as u64);

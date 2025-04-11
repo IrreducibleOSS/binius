@@ -107,13 +107,16 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				proof
 			}
 			(super::EvalcheckProofAdvice::DuplicateClaim(claim_id), _) => {
-				if self.round_claims[claim_id] == evalcheck_claim {
-					return Ok(());
+				if let Some(expected_claim) = self.round_claims.get(claim_id) {
+					if *expected_claim == evalcheck_claim {
+						return Ok(());
+					}
+					return Err(VerificationError::DuplicateClaimMismatch.into());
 				}
-				panic!("137")
+				return Err(VerificationError::OutOfAdvices.into());
 			}
 			_ => {
-				unreachable!()
+				return Err(VerificationError::OutOfAdvices.into());
 			}
 		};
 

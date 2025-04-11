@@ -1,6 +1,7 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use std::{
+	hash::Hash,
 	ops::{Deref, Range},
 	slice,
 	sync::Arc,
@@ -15,7 +16,7 @@ use crate::{
 	transcript::{TranscriptReader, TranscriptWriter},
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
 	pub id: OracleId,
@@ -308,7 +309,7 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 	}
 }
 
-#[derive(Debug, Clone, Hash, Eq)]
+#[derive(Debug, Clone, Eq)]
 pub struct EvalPoint<F: Field> {
 	data: Arc<[F]>,
 	range: Range<usize>,
@@ -317,6 +318,12 @@ pub struct EvalPoint<F: Field> {
 impl<F: Field> PartialEq for EvalPoint<F> {
 	fn eq(&self, other: &Self) -> bool {
 		self.data[self.range.clone()] == other.data[other.range.clone()]
+	}
+}
+
+impl<F: Field> Hash for EvalPoint<F> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.data[self.range.clone()].hash(state)
 	}
 }
 

@@ -19,6 +19,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
+use tracing::instrument;
 
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPointOracleIdMap};
 use crate::{
@@ -445,6 +446,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			})
 	}
 
+	#[instrument(skip_all, name = "memoize_query_par", level = "debug")]
 	pub fn memoize_query_par(
 		&mut self,
 		eval_points: &[&[P::Scalar]],
