@@ -1,10 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter;
-
 use binius_field::{Field, TowerField};
 use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
+use itertools::izip;
 use tracing::instrument;
 
 use crate::{
@@ -93,40 +92,12 @@ impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Pro
 ///
 /// The sumcheck protocol over can be batched over multiple instances by taking random linear
 /// combinations over the claimed sums and polynomials. See
-/// [`crate::protocols::sumcheck::batch_verify`] for more details.
+/// [`crate::protocols::sumcheck::batch_verify_sumcheck`] for more details.
 ///
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
-/// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
+/// provided to [`crate::protocols::sumcheck::batch_verify_sumcheck`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove<F, Prover, Challenger_>(
-	provers: Vec<Prover>,
-	transcript: &mut ProverTranscript<Challenger_>,
-) -> Result<BatchSumcheckOutput<F>, Error>
-where
-	F: TowerField,
-	Prover: SumcheckProver<F>,
-	Challenger_: Challenger,
-{
-	let start = BatchProveStart {
-		batch_coeffs: Vec::new(),
-		reduction_provers: Vec::<Prover>::new(),
-	};
-
-	batch_prove_with_start(start, provers, transcript)
-}
-
-/// A struct describing the starting state of batched sumcheck prove invocation.
-#[derive(Debug)]
-pub struct BatchProveStart<F: Field, Prover> {
-	/// Batching coefficients for the already batched provers.
-	pub batch_coeffs: Vec<F>,
-	/// Reduced provers which can complete sumchecks from an intermediate state.
-	pub reduction_provers: Vec<Prover>,
-}
-
-/// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
-pub fn batch_prove_with_start<F, Prover, Challenger_>(
-	start: BatchProveStart<F, Prover>,
 	mut provers: Vec<Prover>,
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
@@ -135,13 +106,6 @@ where
 	Prover: SumcheckProver<F>,
 	Challenger_: Challenger,
 {
-	let BatchProveStart {
-		mut batch_coeffs,
-		reduction_provers,
-	} = start;
-
-	provers.splice(0..0, reduction_provers);
-
 	let Some(first_prover) = provers.first() else {
 		return Ok(BatchSumcheckOutput {
 			challenges: Vec::new(),
@@ -158,13 +122,9 @@ where
 		bail!(Error::InconsistentEvaluationOrder);
 	}
 
-	// Check that the provers are in descending order by n_vars
+	// Check that the provers are in non-ascending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
-	}
-
-	if batch_coeffs.len() > provers.len() {
-		bail!(Error::TooManyPrebatchedCoeffs);
 	}
 
 	let n_rounds = provers
@@ -173,41 +133,29 @@ where
 		.max()
 		.unwrap_or(0);
 
-	// active_index is an index into the provers slice.
-	let mut active_index = batch_coeffs.len();
+	let mut batch_coeffs = Vec::with_capacity(provers.len());
 	let mut challenges = Vec::with_capacity(n_rounds);
 	for round_no in 0..n_rounds {
 		let n_vars = n_rounds - round_no;
 
 		// Activate new provers
-		while let Some(prover) = provers.get(active_index) {
+		while let Some(prover) = provers.get(batch_coeffs.len()) {
 			if prover.n_vars() != n_vars {
 				break;
 			}
 
-			let next_batch_coeff: F = transcript.sample();
+			let next_batch_coeff = transcript.sample();
 			batch_coeffs.push(next_batch_coeff);
-			active_index += 1;
 		}
 
-		let calculate_coeffs_span = tracing::debug_span!(
-			"[task] (Zerocheck) Calculate Coeffs",
-			phase = "zerocheck",
-			perfetto_category = "task.main"
-		)
-		.entered();
 		// Process the active provers
 		let mut round_coeffs = RoundCoeffs::default();
-		for (&batch_coeff, prover) in
-			iter::zip(batch_coeffs.iter(), provers[..active_index].iter_mut())
-		{
+		for (&batch_coeff, prover) in izip!(&batch_coeffs, &mut provers) {
 			let prover_coeffs = prover.execute(batch_coeff)?;
 			round_coeffs += &(prover_coeffs * batch_coeff);
 		}
 
 		let round_proof = round_coeffs.truncate();
-		drop(calculate_coeffs_span);
-
 		transcript
 			.message()
 			.write_scalar_slice(round_proof.coeffs());
@@ -215,24 +163,15 @@ where
 		let challenge = transcript.sample();
 		challenges.push(challenge);
 
-		let fold_span = tracing::debug_span!(
-			"[task] Fold",
-			phase = "zerocheck",
-			perfetto_category = "task.main"
-		)
-		.entered();
-		for prover in &mut provers[..active_index] {
+		for prover in &mut provers[..batch_coeffs.len()] {
 			prover.fold(challenge)?;
 		}
-		drop(fold_span);
 	}
 
 	// sample next_batch_coeffs for 0-variate (ie. constant) provers to match with verify
-	while let Some(prover) = provers.get(active_index) {
+	for prover in &provers[batch_coeffs.len()..] {
 		debug_assert_eq!(prover.n_vars(), 0);
-
 		let _next_batch_coeff: F = transcript.sample();
-		active_index += 1;
 	}
 
 	let multilinear_evals = provers

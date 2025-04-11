@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp::Reverse, env, marker::PhantomData, slice::from_mut};
+use std::{env, marker::PhantomData, slice::from_mut};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -18,7 +18,6 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
-use either::Either;
 use itertools::{chain, izip};
 use tracing::instrument;
 
@@ -49,10 +48,8 @@ use crate::{
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
-			prove::{
-				eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, UnivariateZerocheckProver,
-			},
-			standard_switchover_heuristic, zerocheck,
+			prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, ZerocheckProver},
+			standard_switchover_heuristic,
 		},
 	},
 	ring_switch,
@@ -117,8 +114,8 @@ where
 	// adds the committed witnesses for exponentiation results to the witness index.
 	let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
 
-	// Stable sort constraint sets in descending order by number of variables.
-	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	// Commit polynomials
 	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
@@ -138,15 +135,11 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let commit_span =
-		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
-			.entered();
 	let CommitOutput {
 		commitment,
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
-	drop(commit_span);
 
 	// Observe polynomial commitment
 	let mut writer = transcript.message();
@@ -318,13 +311,6 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_span = tracing::info_span!(
-		"[phase] Zerocheck",
-		phase = "zerocheck",
-		perfetto_category = "phase.main"
-	)
-	.entered();
-
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
 		.iter()
 		.cloned()
@@ -333,23 +319,15 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
-
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
-	let switchover_fn = standard_switchover_heuristic(-2);
-
-	let mut univariate_provers = Vec::new();
-	let mut tail_regular_zerocheck_provers = Vec::new();
-	let mut univariatized_multilinears = Vec::new();
+	let mut zerocheck_provers = Vec::with_capacity(table_constraints.len());
 
 	for constraint_set in table_constraints {
-		let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
-		let univariate_decider = |n_vars| n_vars > max_n_vars - skip_rounds;
-
+		let n_vars = constraint_set.n_vars;
 		let (constraints, multilinears) =
 			sumcheck::prove::split_constraint_set(constraint_set, &witness)?;
 
@@ -364,144 +342,42 @@ where
 		.max()
 		.unwrap_or(0);
 
-		univariatized_multilinears.push(multilinears.clone());
+		// Per prover zerocheck challenges are justified on the high indexed variables
+		let zerocheck_challenges = &zerocheck_challenges[max_n_vars - n_vars.max(skip_rounds)..];
+		let domain_factory = domain_factory.clone();
 
 		let constructor =
-			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _, _> {
+			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _> {
 				constraints,
 				multilinears,
-				domain_factory: domain_factory.clone(),
-				switchover_fn,
-				zerocheck_challenges: &zerocheck_challenges[skip_challenges..],
+				zerocheck_challenges,
+				domain_factory,
 				backend,
 				_fdomain_marker: PhantomData,
 			};
 
-		let either_prover = match base_tower_level {
-			0..=3 => constructor.create::<Tower::B8>(univariate_decider)?,
-			4 => constructor.create::<Tower::B16>(univariate_decider)?,
-			5 => constructor.create::<Tower::B32>(univariate_decider)?,
-			6 => constructor.create::<Tower::B64>(univariate_decider)?,
-			7 => constructor.create::<Tower::B128>(univariate_decider)?,
+		let zerocheck_prover = match base_tower_level {
+			0..=3 => constructor.create::<Tower::B8>()?,
+			4 => constructor.create::<Tower::B16>()?,
+			5 => constructor.create::<Tower::B32>()?,
+			6 => constructor.create::<Tower::B64>()?,
+			7 => constructor.create::<Tower::B128>()?,
 			_ => unreachable!(),
 		};
 
-		match either_prover {
-			Either::Left(univariate_prover) => univariate_provers.push(univariate_prover),
-			Either::Right(zerocheck_prover) => {
-				tail_regular_zerocheck_provers.push(zerocheck_prover)
-			}
-		}
+		zerocheck_provers.push(zerocheck_prover);
 	}
 
-	let univariate_cnt = univariate_provers.len();
+	let zerocheck_output = sumcheck::prove::batch_prove_zerocheck::<
+		FExt<Tower>,
+		FDomain<Tower>,
+		PackedType<U, FExt<Tower>>,
+		_,
+		_,
+	>(zerocheck_provers, skip_rounds, &mut transcript)?;
 
-	let univariate_output = sumcheck::prove::batch_prove_zerocheck_univariate_round(
-		univariate_provers,
-		skip_rounds,
-		&mut transcript,
-	)?;
-
-	let univariate_challenge = univariate_output.univariate_challenge;
-
-	let zerocheck_mle_check_span = tracing::debug_span!(
-		"[step] MLE-check",
-		phase = "zerocheck",
-		perfetto_category = "phase.sub"
-	)
-	.entered();
-	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
-		univariate_output.batch_prove_start,
-		tail_regular_zerocheck_provers,
-		&mut transcript,
-	)?;
-
-	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
-		&eq_ind_sumcheck_claims,
-		&zerocheck_challenges,
-		sumcheck_output,
-	)?;
-	drop(zerocheck_mle_check_span);
-
-	let zerocheck_univariatized_evaluation_span = tracing::debug_span!(
-		"[step] Univariatized Evaluation",
-		phase = "zerocheck",
-		perfetto_category = "phase.sub"
-	)
-	.entered();
-
-	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
-	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
-
-	for (univariatized_multilinear_evals, multilinears) in
-		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
-	{
-		let claim_n_vars = multilinears
-			.first()
-			.map_or(0, |multilinear| multilinear.n_vars());
-
-		let skip_challenges = (max_n_vars - claim_n_vars).saturating_sub(skip_rounds);
-		let challenges = &zerocheck_output.challenges[skip_challenges..];
-
-		let zerocheck_mle_fold_high_span = tracing::debug_span!(
-			"[task] (Zerocheck) MLE Fold High",
-			phase = "zerocheck",
-			perfetto_category = "task.main"
-		)
-		.entered();
-		let reduced_multilinears =
-			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
-		drop(zerocheck_mle_fold_high_span);
-
-		let claim_skip_rounds = claim_n_vars - challenges.len();
-		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
-			claim_skip_rounds,
-			univariatized_multilinear_evals,
-		)?;
-
-		let reduction_prover =
-			sumcheck::prove::univariatizing_reduction_prover::<_, FDomain<Tower>, _, _>(
-				reduced_multilinears,
-				univariatized_multilinear_evals,
-				univariate_challenge,
-				backend,
-			)?;
-
-		reduction_claims.push(reduction_claim);
-		reduction_provers.push(reduction_prover);
-	}
-
-	let zerocheck_regular_sumcheck_small_span = tracing::debug_span!(
-		"[task] (Zerocheck) Regular Sumcheck (Small)",
-		phase = "zerocheck",
-		perfetto_category = "task.main"
-	)
-	.entered();
-	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
-	drop(zerocheck_regular_sumcheck_small_span);
-
-	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
-		&reduction_claims,
-		univariate_challenge,
-		&zerocheck_output.challenges,
-		univariatizing_output,
-	)?;
-	drop(zerocheck_univariatized_evaluation_span);
-
-	drop(zerocheck_span);
-
-	let evalcheck_span = tracing::info_span!(
-		"[phase] Evalcheck",
-		phase = "evalcheck",
-		perfetto_category = "phase.main"
-	)
-	.entered();
-
-	let zerocheck_eval_claims = sumcheck::make_eval_claims(
-		EvaluationOrder::LowToHigh,
-		zerocheck_oracle_metas,
-		multilinear_zerocheck_output,
-	)?;
+	let zerocheck_eval_claims =
+		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -517,7 +393,7 @@ where
 			zerocheck_eval_claims,
 			exp_eval_claims,
 		),
-		switchover_fn,
+		standard_switchover_heuristic(-2),
 		&mut transcript,
 		&domain_factory,
 		backend,
@@ -531,14 +407,6 @@ where
 		&eval_claims,
 	)?;
 
-	drop(evalcheck_span);
-
-	let ring_switch_span = tracing::info_span!(
-		"[phase] Ring Switch",
-		phase = "ring_switch",
-		perfetto_category = "phase.main"
-	)
-	.entered();
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
@@ -549,15 +417,8 @@ where
 		memoized_data,
 		backend,
 	)?;
-	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
-	let piop_compiler_span = tracing::info_span!(
-		"[phase] PIOP Compiler",
-		phase = "piop_compiler",
-		perfetto_category = "phase.main"
-	)
-	.entered();
 	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
@@ -571,55 +432,36 @@ where
 		&mut transcript,
 		&backend,
 	)?;
-	drop(piop_compiler_span);
 
-	let proof = Proof {
+	Ok(Proof {
 		transcript: transcript.finalize(),
-	};
-
-	tracing::event!(
-		name: "proof_size",
-		tracing::Level::INFO,
-		counter = true,
-		value = proof.get_proof_size() as u64,
-		unit = "bytes",
-	);
-
-	Ok(proof)
+	})
 }
 
-type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;
-type TypeErasedSumcheck<'a, F> = Box<dyn SumcheckProver<F> + 'a>;
-type TypeErasedProver<'a, F> =
-	Either<TypeErasedUnivariateZerocheck<'a, F>, TypeErasedSumcheck<'a, F>>;
+type TypeErasedZerocheck<'a, P> = Box<dyn ZerocheckProver<'a, P> + 'a>;
 
-struct ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+struct ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, Backend>
 where
 	P: PackedField,
 {
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 	domain_factory: DomainFactory,
-	switchover_fn: SwitchoverFn,
 	zerocheck_challenges: &'a [P::Scalar],
 	backend: &'a Backend,
 	_fdomain_marker: PhantomData<FDomain>,
 }
 
-impl<'a, P, F, FDomain, DomainFactory, SwitchoverFn, Backend>
-	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+impl<'a, P, F, FDomain, DomainFactory, Backend>
+	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, Backend>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	FDomain: TowerField,
 	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
-	SwitchoverFn: Fn(usize) -> usize + Clone + 'a,
 	Backend: ComputationBackend,
 {
-	fn create<FBase>(
-		self,
-		is_univariate: impl FnOnce(usize) -> bool,
-	) -> Result<TypeErasedProver<'a, F>, Error>
+	fn create<FBase>(self) -> Result<TypeErasedZerocheck<'a, P>, Error>
 	where
 		FBase: TowerField + ExtensionField<FDomain> + TryFrom<F>,
 		P: PackedExtension<F, PackedSubfield = P>
@@ -627,30 +469,18 @@ where
 			+ PackedExtension<FBase>,
 		F: TowerField,
 	{
-		let univariate_prover =
-			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _, _, _>(
+		let zerocheck_prover =
+			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _, _>(
 				self.constraints,
 				self.multilinears,
 				self.domain_factory,
-				self.switchover_fn,
 				self.zerocheck_challenges,
 				self.backend,
 			)?;
 
-		let type_erased_prover = if is_univariate(univariate_prover.n_vars()) {
-			let type_erased_univariate_prover =
-				Box::new(univariate_prover) as TypeErasedUnivariateZerocheck<'a, P::Scalar>;
+		let type_erased_zerocheck_prover = Box::new(zerocheck_prover) as TypeErasedZerocheck<'a, P>;
 
-			Either::Left(type_erased_univariate_prover)
-		} else {
-			let zerocheck_prover = univariate_prover.into_regular_zerocheck()?;
-			let type_erased_zerocheck_prover =
-				Box::new(zerocheck_prover) as TypeErasedSumcheck<'a, P::Scalar>;
-
-			Either::Right(type_erased_zerocheck_prover)
-		};
-
-		Ok(type_erased_prover)
+		Ok(type_erased_zerocheck_prover)
 	}
 }
 

@@ -6,7 +6,7 @@ use binius_core::{
 	composition::BivariateProduct,
 	fiat_shamir::HasherChallenger,
 	polynomial::MultilinearComposite,
-	protocols::sumcheck::{batch_prove, prove::RegularSumcheckProver, CompositeSumClaim},
+	protocols::sumcheck::{self, prove::RegularSumcheckProver, CompositeSumClaim},
 	transcript::ProverTranscript,
 };
 use binius_field::{
@@ -77,7 +77,10 @@ fn bench_bivariate_with_evaluation_order<
 
 				vec![prover]
 			},
-			|prover| batch_prove(prover, &mut prover_transcript).expect("failed to prove sumcheck"),
+			|prover| {
+				sumcheck::prove::batch_prove(prover, &mut prover_transcript)
+					.expect("failed to prove sumcheck")
+			},
 			BatchSize::SmallInput,
 		);
 	});
