@@ -98,24 +98,11 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		filler: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		let table_id = filler.id();
-		match self.tables.get_mut(table_id) {
-			Some(entry) => match entry {
-				Either::Right(witness) => witness.fill_sequential(filler, rows),
-				Either::Left(table) => {
-					if rows.is_empty() {
-						Ok(())
-					} else {
-						let mut table_witness =
-							TableWitnessIndex::new(self.allocator, table, rows.len())?;
-						table_witness.fill_sequential(filler, rows)?;
-						*entry = Either::Right(table_witness);
-						Ok(())
-					}
-				}
-			},
-			None => Err(Error::MissingTable { table_id }),
-		}
+		self.init_and_fill_table(
+			filler.id(),
+			|table_witness, rows| table_witness.fill_sequential(filler, rows),
+			rows,
+		)
 	}
 
 	pub fn fill_table_parallel<T>(&mut self, filler: &T, rows: &[T::Event]) -> Result<(), Error>
@@ -123,19 +110,34 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		T: TableFiller<P> + Sync,
 		T::Event: Sync,
 	{
-		let table_id = filler.id();
+		self.init_and_fill_table(
+			filler.id(),
+			|table_witness, rows| table_witness.fill_parallel(filler, rows),
+			rows,
+		)
+	}
+
+	fn init_and_fill_table<Event>(
+		&mut self,
+		table_id: TableId,
+		fill: impl FnOnce(&mut TableWitnessIndex<'cs, 'alloc, P>, &[Event]) -> Result<(), Error>,
+		rows: &[Event],
+	) -> Result<(), Error> {
 		match self.tables.get_mut(table_id) {
-			Some(Either::Right(witness)) => witness.fill_parallel(filler, rows),
-			Some(Either::Left(table)) => {
-				if rows.is_empty() {
-					Ok(())
-				} else {
-					let mut table_witness =
-						TableWitnessIndex::new(self.allocator, table, rows.len())?;
-					table_witness.fill_parallel(filler, rows)?;
-					Ok(())
+			Some(entry) => match entry {
+				Either::Right(witness) => fill(witness, rows),
+				Either::Left(table) => {
+					if rows.is_empty() {
+						Ok(())
+					} else {
+						let mut table_witness =
+							TableWitnessIndex::new(self.allocator, table, rows.len())?;
+						fill(&mut table_witness, rows)?;
+						*entry = Either::Right(table_witness);
+						Ok(())
+					}
 				}
-			}
+			},
 			None => Err(Error::MissingTable { table_id }),
 		}
 	}
