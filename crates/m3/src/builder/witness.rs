@@ -17,7 +17,9 @@ use binius_field::{
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
+use bumpalo::Bump;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
+use either::Either;
 use getset::CopyGetters;
 use itertools::Itertools;
 
@@ -37,49 +39,111 @@ use crate::builder::multi_iter::MultiIterator;
 /// gets converted into a multilinear extension index, which maintains references to the data
 /// allocated by the allocator, but does not need to maintain a reference to the constraint system,
 /// which can then be dropped.
-#[derive(Debug, Default, CopyGetters)]
+#[derive(Debug)]
 pub struct WitnessIndex<'cs, 'alloc, P = PackedType<OptimalUnderlier, B128>>
 where
 	P: PackedField,
 	P::Scalar: TowerField,
 {
-	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, P>>>,
+	allocator: &'alloc Bump,
+	/// Each entry is Left if the index hasn't been initialized & filled, and Right if it has.
+	tables: Vec<Either<&'cs Table<P::Scalar>, TableWitnessIndex<'cs, 'alloc, P>>>,
 }
 
 impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, 'alloc, P> {
+	pub fn new(allocator: &'alloc Bump, tables: &'cs [Table<F>]) -> Self {
+		Self {
+			allocator,
+			tables: tables.iter().map(Either::Left).collect(),
+		}
+	}
+
+	pub fn init_table(
+		&mut self,
+		table_id: TableId,
+		size: usize,
+	) -> Result<&mut TableWitnessIndex<'cs, 'alloc, P>, Error> {
+		match self.tables.get_mut(table_id) {
+			Some(entry) => match entry {
+				Either::Left(table) => {
+					if size == 0 {
+						Err(Error::EmptyTable { table_id })
+					} else {
+						let table_witness = TableWitnessIndex::new(self.allocator, table, size)?;
+						*entry = Either::Right(table_witness);
+						let Either::Right(table_witness) = entry else {
+							unreachable!("entry is assigned to this pattern on the previous line")
+						};
+						Ok(table_witness)
+					}
+				}
+				Either::Right(_) => Err(Error::TableIndexAlreadyInitialized { table_id }),
+			},
+			None => Err(Error::MissingTable { table_id }),
+		}
+	}
+
 	pub fn get_table(
 		&mut self,
 		table_id: TableId,
 	) -> Option<&mut TableWitnessIndex<'cs, 'alloc, P>> {
-		self.tables
-			.get_mut(table_id)
-			.and_then(|inner| inner.as_mut())
+		self.tables.get_mut(table_id).and_then(|table| match table {
+			Either::Left(_) => None,
+			Either::Right(index) => Some(index),
+		})
 	}
 
 	pub fn fill_table_sequential<T: TableFiller<P>>(
 		&mut self,
-		table: &T,
+		filler: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		let table_id = table.id();
-		match self.get_table(table_id) {
-			Some(witness) => witness.fill_sequential(table, rows),
-			None if rows.is_empty() => Ok(()),
+		let table_id = filler.id();
+		match self.tables.get_mut(table_id) {
+			Some(entry) => match entry {
+				Either::Right(witness) => witness.fill_sequential(filler, rows),
+				Either::Left(table) => {
+					if rows.is_empty() {
+						Ok(())
+					} else {
+						let mut table_witness =
+							TableWitnessIndex::new(self.allocator, table, rows.len())?;
+						table_witness.fill_sequential(filler, rows)?;
+						*entry = Either::Right(table_witness);
+						Ok(())
+					}
+				}
+			},
 			None => Err(Error::MissingTable { table_id }),
 		}
 	}
 
-	pub fn fill_table_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
+	pub fn fill_table_parallel<T>(&mut self, filler: &T, rows: &[T::Event]) -> Result<(), Error>
 	where
 		T: TableFiller<P> + Sync,
 		T::Event: Sync,
 	{
-		let table_id = table.id();
-		match self.get_table(table_id) {
-			Some(witness) => witness.fill_parallel(table, rows),
-			None if rows.is_empty() => Ok(()),
+		let table_id = filler.id();
+		match self.tables.get_mut(table_id) {
+			Some(Either::Right(witness)) => witness.fill_parallel(filler, rows),
+			Some(Either::Left(table)) => {
+				if rows.is_empty() {
+					Ok(())
+				} else {
+					let mut table_witness =
+						TableWitnessIndex::new(self.allocator, table, rows.len())?;
+					table_witness.fill_parallel(filler, rows)?;
+					Ok(())
+				}
+			}
 			None => Err(Error::MissingTable { table_id }),
 		}
+		// let table_id = table.id();
+		// match self.get_table(table_id) {
+		// 	Some(witness) => witness.fill_parallel(table, rows),
+		// 	None if rows.is_empty() => Ok(()),
+		// 	None => Err(Error::MissingTable { table_id }),
+		// }
 	}
 
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
@@ -94,7 +158,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table_witness in self.tables {
-			let Some(table_witness) = table_witness else {
+			let Either::Right(table_witness) = table_witness else {
 				continue;
 			};
 			let table = table_witness.table();
@@ -1247,7 +1311,7 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 
 		let table_size = 11;
 		let statement = Statement {
@@ -1255,7 +1319,7 @@ mod tests {
 			table_sizes: vec![table_size],
 		};
 		let mut index = cs.build_witness(&allocator, &statement).unwrap();
-		let table_index = index.get_table(test_table.id()).unwrap();
+		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let rows = repeat_with(|| rng.gen())
@@ -1303,7 +1367,7 @@ mod tests {
 			table_sizes: vec![table_size],
 		};
 		let mut index = cs.build_witness(&allocator, &statement).unwrap();
-		let table_index = index.get_table(test_table.id()).unwrap();
+		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let rows = repeat_with(|| rng.gen())
@@ -1351,6 +1415,8 @@ mod tests {
 			table_sizes: vec![table_size],
 		};
 		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+
+		index.init_table(test_table.id(), table_size).unwrap();
 
 		assert_matches!(
 			index.fill_table_sequential(&test_table, &[]),

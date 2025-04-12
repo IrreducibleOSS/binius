@@ -430,7 +430,7 @@ mod tests {
 			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let mut segment = table_witness.full_segment();
@@ -466,7 +466,7 @@ mod tests {
 			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
@@ -520,7 +520,7 @@ mod tests {
 			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
 			.unwrap();
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
