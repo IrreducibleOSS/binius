@@ -199,15 +199,15 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			.bounds
 			.push(parse_quote!(binius_utils::DeserializeBytes))
 	});
-	// let GenericsSplit {
-	// 	impl_generics,
-	// 	type_generics: ty_generics,
-	// 	where_clause,
-	// } = match get_generics(&input.attrs, &generics) {
-	// 	Ok(x) => x,
-	// 	Err(e) => return e.into_compile_error().into(),
-	// };
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+	let GenericsSplit {
+		impl_generics,
+		type_generics: ty_generics,
+		where_clause,
+	} = match get_generics(&input.attrs, &generics) {
+		Ok(x) => x,
+		Err(e) => return e.into_compile_error().into(),
+	};
+	// let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
