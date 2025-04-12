@@ -295,6 +295,16 @@ mod arithmetization {
 		let fibonacci_table =
 			FibonacciTable::with_table_builder(&mut fib_table_builder, fibonacci_pairs);
 		let trace = FibonacciTrace::generate((0, 1), 31);
+
+		let allocator = Bump::new();
+		let mut witness = cs
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
+			.unwrap();
+
+		witness
+			.fill_table_sequential(&fibonacci_table, &trace.rows)
+			.unwrap();
+
 		let statement = Statement {
 			boundaries: vec![
 				Boundary {
@@ -310,17 +320,8 @@ mod arithmetization {
 					multiplicity: 1,
 				},
 			],
-			table_sizes: vec![trace.rows.len()],
+			table_sizes: witness.table_sizes(),
 		};
-		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
-
-		witness
-			.fill_table_sequential(&fibonacci_table, &trace.rows)
-			.unwrap();
-
 		compile_validate_prove_verify(&cs, &statement, witness);
 	}
 }

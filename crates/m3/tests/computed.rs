@@ -80,10 +80,7 @@ fn test_m3_computed_col() {
 	let allocator = Bump::new();
 	let mut cs = ConstraintSystem::<B128>::new();
 	let table = MyTable::new(&mut cs);
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![N_ROWS],
-	};
+
 	let mut witness = cs
 		.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 		.unwrap();
@@ -96,6 +93,10 @@ fn test_m3_computed_col() {
 		)
 		.unwrap();
 
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: witness.table_sizes(),
+	};
 	let constraint_system = cs.compile(&statement).unwrap();
 	let witness = witness.into_multilinear_extension_index();
 

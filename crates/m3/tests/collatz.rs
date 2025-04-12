@@ -303,6 +303,17 @@ mod arithmetization {
 		let odds_table = OddsTable::new(&mut cs, collatz_orbit);
 
 		let trace = CollatzTrace::generate(3999);
+
+		let mut witness = cs
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator)
+			.unwrap();
+		witness
+			.fill_table_sequential(&evens_table, &trace.evens)
+			.unwrap();
+		witness
+			.fill_table_sequential(&odds_table, &trace.odds)
+			.unwrap();
+
 		// TODO: Refactor boundary creation
 		let statement = Statement {
 			boundaries: vec![
@@ -319,18 +330,8 @@ mod arithmetization {
 					multiplicity: 1,
 				},
 			],
-			table_sizes: vec![trace.evens.len(), trace.odds.len()],
+			table_sizes: witness.table_sizes(),
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator)
-			.unwrap();
-		witness
-			.fill_table_sequential(&evens_table, &trace.evens)
-			.unwrap();
-		witness
-			.fill_table_sequential(&odds_table, &trace.odds)
-			.unwrap();
-
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
 			witness: witness.into_multilinear_extension_index(),

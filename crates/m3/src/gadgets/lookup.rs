@@ -138,10 +138,6 @@ mod tests {
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
 			.collect::<Vec<_>>();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![lookup_table_size, looker_1_size, looker_2_size],
-		};
 		let allocator = Bump::new();
 		let mut witness = cs
 			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
@@ -192,6 +188,10 @@ mod tests {
 			)
 			.unwrap();
 
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: witness.table_sizes(),
+		};
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 

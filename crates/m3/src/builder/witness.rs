@@ -138,12 +138,17 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			}
 			None => Err(Error::MissingTable { table_id }),
 		}
-		// let table_id = table.id();
-		// match self.get_table(table_id) {
-		// 	Some(witness) => witness.fill_parallel(table, rows),
-		// 	None if rows.is_empty() => Ok(()),
-		// 	None => Err(Error::MissingTable { table_id }),
-		// }
+	}
+
+	/// Returns the sizes of all tables in the witness, indexed by table ID.
+	pub fn table_sizes(&self) -> Vec<usize> {
+		self.tables
+			.iter()
+			.map(|entry| match entry {
+				Either::Left(_) => 0,
+				Either::Right(index) => index.size(),
+			})
+			.collect()
 	}
 
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
