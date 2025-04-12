@@ -37,6 +37,7 @@ pub fn get_generics<'attr, 'gen>(
 mod tests {
 	use ::quote::quote;
 	use proc_macro2::TokenStream;
+	use syn::DeriveInput;
 
 	use super::*;
 

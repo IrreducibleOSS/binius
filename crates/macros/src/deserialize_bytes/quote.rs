@@ -160,7 +160,7 @@ mod tests {
 	use proc_macro2::TokenStream;
 	use syn::ItemStruct;
 
-	use crate::deserialize_bytes::parse::ContainerAttributes;
+	use crate::deserialize_bytes::{parse::ContainerAttributes, GenericsSplit};
 
 	#[test]
 	fn test_generics() {
