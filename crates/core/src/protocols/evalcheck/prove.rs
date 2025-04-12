@@ -59,7 +59,7 @@ where
 
 	claim_to_index: EvalPointOracleIdMap<usize, F>,
 	visited_claims: EvalPointOracleIdMap<(), F>,
-	new_evals_memoization: EvalPointOracleIdMap<F, F>,
+	evals_memoization: EvalPointOracleIdMap<F, F>,
 	round_claim_index: usize,
 	advices: Vec<EvalcheckProofAdvice>,
 }
@@ -91,7 +91,7 @@ where
 
 			claim_to_index: EvalPointOracleIdMap::new(),
 			visited_claims: EvalPointOracleIdMap::new(),
-			new_evals_memoization: EvalPointOracleIdMap::new(),
+			evals_memoization: EvalPointOracleIdMap::new(),
 			round_claim_index: 0,
 			advices: Vec::new(),
 		}
@@ -129,39 +129,35 @@ where
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
 		self.claim_to_index.clear();
-		self.new_evals_memoization.clear();
+		self.evals_memoization.clear();
 
 		for claim in &evalcheck_claims {
 			if self
-				.new_evals_memoization
+				.evals_memoization
 				.get(claim.id, &claim.eval_point)
 				.is_some()
 			{
 				continue;
 			}
 
-			self.new_evals_memoization
+			self.evals_memoization
 				.insert(claim.id, claim.eval_point.clone(), claim.eval);
 		}
 
 		self.claims_queue.extend(evalcheck_claims.clone());
 
-		// Step 1: Use modified BFS to memoize new evaluation claims.
+		// Step 1: Use modified BFS to memoize evaluations.
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
 					.into_iter()
-					.for_each(|claim| self.collect_subclaims_for_precompute(claim));
+					.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 			}
 
 			let mut deduplicated_claims_without_evals = HashSet::new();
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
-				if self
-					.new_evals_memoization
-					.get(poly.id(), &eval_point)
-					.is_some()
-				{
+				if self.evals_memoization.get(poly.id(), &eval_point).is_some() {
 					continue;
 				}
 
@@ -190,7 +186,7 @@ where
 				.collect::<Result<Vec<_>, Error>>()?;
 
 			for subclaim in &subclaims {
-				self.new_evals_memoization.insert(
+				self.evals_memoization.insert(
 					subclaim.id,
 					subclaim.eval_point.clone(),
 					subclaim.eval,
@@ -199,11 +195,10 @@ where
 
 			subclaims
 				.into_iter()
-				.for_each(|claim| self.collect_subclaims_for_precompute(claim));
+				.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 		}
 
 		// Step 2: Prove multilinears
-
 		let proofs = evalcheck_claims
 			.iter()
 			.cloned()
@@ -259,7 +254,7 @@ where
 		name = "EvalcheckProverState::collect_subclaims_for_precompute",
 		level = "debug"
 	)]
-	fn collect_subclaims_for_precompute(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
+	fn collect_subclaims_for_memoization(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
 		let multilinear_id = evalcheck_claim.id;
 
 		let eval_point = evalcheck_claim.eval_point;
@@ -464,7 +459,7 @@ where
 						.polys()
 						.map(|suboracle_id| {
 							let eval = *self
-								.new_evals_memoization
+								.evals_memoization
 								.get(suboracle_id, &eval_point)
 								.expect("precomputed above");
 
@@ -496,7 +491,7 @@ where
 				let inner_eval_point = &eval_point[..inner_n_vars];
 
 				let eval = *self
-					.new_evals_memoization
+					.evals_memoization
 					.get(id, inner_eval_point)
 					.expect("precomputed above");
 
