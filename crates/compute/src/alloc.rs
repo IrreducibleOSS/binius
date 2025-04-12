@@ -60,14 +60,14 @@ mod tests {
 	use assert_matches::assert_matches;
 
 	use super::*;
-	use crate::cpu::memory::CpuMemory;
+	use crate::cpu::CpuLayer;
 
 	#[test]
 	fn test_alloc() {
 		let mut data = (0..256u128).collect::<Vec<_>>();
 
 		{
-			let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
+			let bump = BumpAllocator::<u128, CpuLayer>::new(&mut data);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_matches!(bump.alloc(100), Err(Error::OutOfMemory));
@@ -75,7 +75,7 @@ mod tests {
 		}
 
 		// Reuse memory
-		let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
+		let bump = BumpAllocator::<u128, CpuLayer>::new(&mut data);
 		let data = bump.alloc(100).unwrap();
 		assert_eq!(data.len(), 100);
 	}
