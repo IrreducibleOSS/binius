@@ -149,6 +149,10 @@ impl EvalcheckProofAdviceNumerics {
 	}
 }
 
+/// Additional information provided by the prover to the verifier.
+/// If the claim has already been proven/verified, the prover provides the position in the
+/// `round_claims` list. This allows the verifier to confirm the validity of a duplicate claim
+/// without performing an additional search through the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalcheckProofAdvice {
 	HandleClaim,
