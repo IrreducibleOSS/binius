@@ -90,7 +90,7 @@ mod tests {
 				impl_generics,
 				type_generics,
 				where_clause,
-			} = split_for_impl(&container_attributes, &input.generics);
+			} = split_for_impl(&input.generics, &container_attributes);
 			let name = input.ident;
 			let impl_def = quote! {
 				impl #impl_generics #name #type_generics #where_clause
