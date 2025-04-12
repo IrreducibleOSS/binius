@@ -27,7 +27,10 @@ use crate::{
 		common::{
 			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
 		},
-		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
+		prove::{
+			common::fold_partial_eq_ind, zerocheck::high_pad_small_multilinear,
+			RegularSumcheckProver,
+		},
 		univariate::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
 		},

@@ -3,18 +3,20 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::copy_packed_from_scalars_slice, util::powers, ExtensionField, Field, PackedExtension,
-	PackedField, PackedSubfield, TowerField,
+	packed::{copy_packed_from_scalars_slice, get_packed_slice, set_packed_slice},
+	util::powers,
+	ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
+	MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
-use itertools::izip;
+use itertools::{izip, Either};
 use tracing::instrument;
 
 use crate::{
@@ -70,6 +72,38 @@ where
 		})?;
 	}
 	Ok(())
+}
+
+// TODO: comment on small size
+pub fn high_pad_small_multilinear<P, M>(
+	min_n_vars: usize,
+	multilinear: M,
+) -> Either<M, MLEDirectAdapter<P>>
+where
+	P: PackedField,
+	M: MultilinearPoly<P>,
+{
+	let n_vars = multilinear.n_vars();
+	if n_vars >= min_n_vars {
+		return Either::Left(multilinear);
+	}
+
+	let mut padded_evals = zeroed_vec(1 << min_n_vars.saturating_sub(P::LOG_WIDTH));
+
+	multilinear
+		.subcube_evals(n_vars, 0, 0, &mut padded_evals)
+		.expect("copy evals verbatim into correctly sized array");
+
+	let idx_mask = (1 << n_vars) - 1;
+	for scalar_idx in 1 << n_vars..1 << min_n_vars {
+		let eval = get_packed_slice(&padded_evals, scalar_idx & idx_mask);
+		set_packed_slice(&mut padded_evals, scalar_idx, eval);
+	}
+
+	let padded_multilinear = MultilinearExtension::new(min_n_vars, padded_evals)
+		.expect("padded evals have correct size");
+
+	Either::Right(padded_multilinear.into())
 }
 
 /// TODO: this comment can be so much more
@@ -232,10 +266,16 @@ where
 			.map(|(_, composition_base, _)| composition_base)
 			.collect::<Vec<_>>();
 
+		let padded_multilinears = self
+			.multilinears
+			.iter()
+			.map(|multilinear| high_pad_small_multilinear(skip_rounds, multilinear))
+			.collect::<Vec<_>>();
+
 		// Output contains values that are needed for computations that happen after
 		// the round challenge has been sampled
 		let univariate_evals_output = zerocheck_univariate_evals::<_, _, FBase, _, _, _, _>(
-			&self.multilinears,
+			&padded_multilinears,
 			&compositions_base,
 			&self.zerocheck_challenges,
 			skip_rounds,
@@ -304,13 +344,19 @@ where
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
-		let partial_low_multilinears = self
+		let folded_multilinears = self
 			.multilinears
 			.into_par_iter()
 			.map(|multilinear| -> Result<_, Error> {
-				Ok(multilinear
-					.evaluate_partial_low(lagrange_coeffs_query.to_ref())?
-					.into_evals())
+				let folded_multilinear = if multilinear.n_vars() <= skip_rounds {
+					Vec::new()
+				} else {
+					multilinear
+						.evaluate_partial_low(lagrange_coeffs_query.to_ref())?
+						.into_evals()
+				};
+
+				Ok(folded_multilinear)
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -324,7 +370,7 @@ where
 		// EqIndSumcheck is high-to-low.
 		let regular_prover = EqIndSumcheckProverBuilder::without_switchover(
 			self.n_vars - skip_rounds,
-			partial_low_multilinears,
+			folded_multilinears,
 			self.backend,
 		)
 		.with_eq_ind_partial_evals(partial_eq_ind_evals)
