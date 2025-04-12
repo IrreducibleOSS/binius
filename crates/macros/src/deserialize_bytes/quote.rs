@@ -1,11 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use quote::{quote, ToTokens};
-use syn::{
-	punctuated::Punctuated,
-	token::{Comma, Gt, Lt},
-	GenericParam, Generics, Type, TypeParam, WherePredicate,
-};
+use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, WherePredicate};
 
 use super::parse::GenericBinding;
 
@@ -160,10 +156,10 @@ impl<'gen> ToTokens for WhereClause<'gen> {
 
 #[cfg(test)]
 mod tests {
+	use ::quote::quote;
 	use proc_macro2::TokenStream;
-	use syn::{parse_macro_input, DeriveInput, ItemStruct};
+	use syn::ItemStruct;
 
-	use super::*;
 	use crate::deserialize_bytes::parse::ContainerAttributes;
 
 	#[test]

@@ -2,7 +2,7 @@ use syn::{
 	parse::Parse,
 	punctuated::Punctuated,
 	token::{Comma, Eq},
-	Ident, Type, TypePath,
+	Ident, TypePath,
 };
 
 #[derive(Debug, Clone, Default)]
