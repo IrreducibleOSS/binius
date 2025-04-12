@@ -48,7 +48,7 @@ use crate::{
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
+			self, constraint_set_zerocheck_claim,
 			prove::{
 				eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, UnivariateZerocheckProver,
 			},
@@ -196,7 +196,7 @@ where
 	)?;
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
-		.map(GrandProductWitness::new)
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let non_zero_products =
@@ -242,7 +242,7 @@ where
 	// This is important to do in parallel.
 	let flush_prodcheck_witnesses = flush_witnesses
 		.into_par_iter()
-		.map(GrandProductWitness::new)
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
 
@@ -645,7 +645,7 @@ fn make_fast_masked_flush_witnesses<'a, U, Tower>(
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracles: &[OracleId],
 	flush_selectors: &[Option<OracleId>],
-) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
+) -> Result<Vec<(usize, Vec<PackedType<U, FFastExt<Tower>>>)>, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
@@ -654,29 +654,34 @@ where
 	let to_fast = Tower::packed_transformation_to_fast();
 
 	// The function is on the critical path, parallelize.
-	flush_oracles
-		.par_iter()
-		.zip(flush_selectors)
+	(flush_oracles, flush_selectors)
+		.into_par_iter()
 		.map(|(&flush_oracle_id, &flush_selector)| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
 			let width = 1 << log_width;
 
-			let packed_len = 1 << n_vars.saturating_sub(log_width);
-			let mut fast_ext_result = vec![PackedType::<U, FFastExt<Tower>>::one(); packed_len];
-
 			let poly = witness.get_multilin_poly(flush_oracle_id)?;
-			let selector = flush_selector
-				.map(|flush_selector| witness.get_multilin_poly(flush_selector))
+			let selector_index_entry = flush_selector
+				.map(|flush_selector| witness.get_index_entry(flush_selector))
 				.transpose()?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
 			let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
 			let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
+			let non_const_scalars = selector_index_entry
+				.as_ref()
+				.map_or(1 << n_vars, |entry| entry.nonzero_scalars_prefix);
+			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
+
+			let mut fast_ext_result = vec![
+				PackedType::<U, FFastExt<Tower>>::one();
+				non_const_subcubes * subcube_packed_size
+			];
 
 			fast_ext_result
-				.par_chunks_mut(subcube_packed_size)
+				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
 				.for_each(|(subcube_index, fast_subcube)| {
 					let underliers =
@@ -693,13 +698,14 @@ where
 						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
 					}
 
-					if let Some(ref selector) = selector {
+					if let Some(selector_index_entry) = selector_index_entry.as_ref() {
 						let fast_subcube =
 							PackedType::<U, FFastExt<Tower>>::from_underliers_ref_mut(underliers);
 
 						let mut ones_mask = PackedType::<U, FExt<Tower>>::default();
 						for (i, packed) in fast_subcube.iter_mut().enumerate() {
-							selector
+							selector_index_entry
+								.multilin_poly
 								.subcube_evals(
 									log_width,
 									(subcube_index << subcube_vars.saturating_sub(log_width)) | i,
@@ -721,9 +727,8 @@ where
 					}
 				});
 
-			let masked_poly = MultilinearExtension::new(n_vars, fast_ext_result)
-				.expect("data is constructed with the correct length with respect to n_vars");
-			Ok(MLEDirectAdapter::from(masked_poly).upcast_arc_dyn())
+			fast_ext_result.truncate(non_const_scalars);
+			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
 }
@@ -786,7 +791,7 @@ where
 		//         directly into this sumcheck, as those are not shared
 		let prover = EqIndSumcheckProverBuilder::with_switchover(
 			multilinears,
-			immediate_switchover_heuristic,
+			standard_switchover_heuristic(-2),
 			backend,
 		)?
 		.with_const_suffixes(&const_suffixes)?

@@ -293,7 +293,7 @@ where
 
 			eq_ind_partial_evals
 		} else {
-			eq_ind_expand(evaluation_order, n_vars, eq_ind_challenges, backend)?
+			eq_ind_expand(evaluation_order, eq_ind_challenges, backend)?
 		};
 
 		if let Some(ref first_round_eval_1s) = self.first_round_eval_1s {
@@ -427,7 +427,6 @@ where
 
 pub fn eq_ind_expand<P, Backend>(
 	evaluation_order: EvaluationOrder,
-	n_vars: usize,
 	eq_ind_challenges: &[P::Scalar],
 	backend: &Backend,
 ) -> Result<Backend::Vec<P>, HalError>
@@ -435,10 +434,7 @@ where
 	P: PackedField,
 	Backend: ComputationBackend,
 {
-	if n_vars != eq_ind_challenges.len() {
-		bail!(HalError::IncorrectQuerySize { expected: n_vars });
-	}
-
+	let n_vars = eq_ind_challenges.len();
 	backend.tensor_product_full_query(match evaluation_order {
 		EvaluationOrder::LowToHigh => &eq_ind_challenges[n_vars.min(1)..],
 		EvaluationOrder::HighToLow => &eq_ind_challenges[..n_vars.saturating_sub(1)],
