@@ -322,7 +322,7 @@ mod arithmetization {
 			table_sizes: vec![trace.evens.len(), trace.odds.len()],
 		};
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator)
 			.unwrap();
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)

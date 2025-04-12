@@ -188,7 +188,7 @@ mod arithmetization {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		witness
@@ -276,7 +276,7 @@ mod arithmetization {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		witness
@@ -314,7 +314,7 @@ mod arithmetization {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		witness

@@ -85,7 +85,7 @@ fn test_m3_computed_col() {
 		table_sizes: vec![N_ROWS],
 	};
 	let mut witness = cs
-		.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+		.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 		.unwrap();
 	witness
 		.fill_table_sequential(

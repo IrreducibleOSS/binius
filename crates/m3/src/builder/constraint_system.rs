@@ -155,24 +155,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
-		_statement: &Statement,
 	) -> Result<WitnessIndex<'cs, 'alloc, P>, Error> {
 		Ok(WitnessIndex::new(allocator, &self.tables))
-		// Ok(WitnessIndex {
-		// 	tables: self
-		// 		.tables
-		// 		.iter()
-		// 		.zip(&statement.table_sizes)
-		// 		.map(|(table, &table_size)| {
-		// 			let witness = if table_size > 0 {
-		// 				Some(TableWitnessIndex::new(allocator, table, table_size))
-		// 			} else {
-		// 				None
-		// 			};
-		// 			witness.transpose()
-		// 		})
-		// 		.collect::<Result<_, _>>()?,
-		// })
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.

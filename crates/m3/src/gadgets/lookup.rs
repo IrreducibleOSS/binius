@@ -144,7 +144,7 @@ mod tests {
 		};
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		// Fill the lookup table

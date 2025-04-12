@@ -427,7 +427,7 @@ mod tests {
 			table_sizes: vec![1 << 8],
 		};
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
@@ -463,7 +463,7 @@ mod tests {
 			table_sizes: vec![1 << 8],
 		};
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
@@ -517,7 +517,7 @@ mod tests {
 			table_sizes: vec![1 << 8],
 		};
 		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
+			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
 			.unwrap();
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();

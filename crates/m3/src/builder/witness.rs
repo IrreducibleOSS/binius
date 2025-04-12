@@ -1099,7 +1099,7 @@ mod tests {
 	use super::*;
 	use crate::builder::{
 		types::{B1, B32, B8},
-		ConstraintSystem, Statement, TableBuilder,
+		ConstraintSystem, TableBuilder,
 	};
 
 	#[test]
@@ -1314,11 +1314,7 @@ mod tests {
 		let allocator = Bump::new();
 
 		let table_size = 11;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+		let mut index = cs.build_witness(&allocator).unwrap();
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -1359,14 +1355,10 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 
 		let table_size = 11;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+		let mut index = cs.build_witness(&allocator).unwrap();
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -1407,14 +1399,10 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 
 		let table_size = 11;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let mut index = cs.build_witness(&allocator, &statement).unwrap();
+		let mut index = cs.build_witness(&allocator).unwrap();
 
 		index.init_table(test_table.id(), table_size).unwrap();
 
