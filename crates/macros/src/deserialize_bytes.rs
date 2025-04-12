@@ -5,7 +5,8 @@ use parse::ContainerAttributes;
 pub use quote::GenericsSplit;
 use syn::{DeriveInput, Generics, Meta, MetaList};
 
-pub fn get_container_attributes(input: &DeriveInput) -> syn::Result<ContainerAttributes> {
+/// Parse the container attributes for DeserializeBytes.
+pub fn parse_container_attributes(input: &DeriveInput) -> syn::Result<ContainerAttributes> {
 	let maybe_deserialize_bytes_attr = input
 		.attrs
 		.iter()
@@ -27,6 +28,10 @@ pub fn get_container_attributes(input: &DeriveInput) -> syn::Result<ContainerAtt
 	Ok(container_attributes)
 }
 
+/// Splits the generics into impl generics, type generics and where clauses
+/// taking into account container attributes like `eval_generics(X = Y, ...)`.
+///
+/// This is similar to [`syn::Generics::split_for_impl`].
 pub fn split_for_impl<'attr, 'gen>(
 	container_attributes: &'attr ContainerAttributes,
 	generics: &'gen Generics,
@@ -80,7 +85,7 @@ mod tests {
 		];
 		for case in cases {
 			let input = syn::parse2::<DeriveInput>(case.struct_def).unwrap();
-			let container_attributes = get_container_attributes(&input).unwrap();
+			let container_attributes = parse_container_attributes(&input).unwrap();
 			let GenericsSplit {
 				impl_generics,
 				type_generics,

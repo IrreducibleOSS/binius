@@ -6,7 +6,7 @@ mod arith_expr;
 mod composition_poly;
 mod deserialize_bytes;
 
-use deserialize_bytes::{get_container_attributes, split_for_impl, GenericsSplit};
+use deserialize_bytes::{parse_container_attributes, split_for_impl, GenericsSplit};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
@@ -230,7 +230,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
-	let container_attributes = match get_container_attributes(&input) {
+	let container_attributes = match parse_container_attributes(&input) {
 		Ok(x) => x,
 		Err(e) => return e.into_compile_error().into(),
 	};
