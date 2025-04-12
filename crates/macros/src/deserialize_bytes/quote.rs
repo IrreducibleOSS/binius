@@ -12,18 +12,12 @@ pub struct GenericsSplit<'gen> {
 	pub where_clause: WhereClause<'gen>,
 }
 
-impl GenericsSplit<'_> {
-	pub fn new<'gen>(
-		generics: &'gen Generics,
-		eval_generics: Vec<GenericBinding>,
-	) -> GenericsSplit<'gen> {
-		let impl_generics = ImplGenerics::new(generics, eval_generics.clone());
-		let type_generics = TypeGenerics::new(generics, eval_generics.clone());
-		let where_clause = WhereClause::new(generics, eval_generics);
-		GenericsSplit {
-			impl_generics,
-			type_generics,
-			where_clause,
+impl<'gen> GenericsSplit<'gen> {
+	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+		Self {
+			impl_generics: ImplGenerics::new(generics, eval_generics.clone()),
+			type_generics: TypeGenerics::new(generics, eval_generics.clone()),
+			where_clause: WhereClause::new(generics, eval_generics),
 		}
 	}
 }
@@ -34,9 +28,9 @@ pub struct ImplGenerics<'gen> {
 	eval_generics: Vec<GenericBinding>,
 }
 
-impl ImplGenerics<'_> {
-	pub fn new(generics: &Generics, eval_generics: Vec<GenericBinding>) -> ImplGenerics {
-		ImplGenerics {
+impl<'gen> ImplGenerics<'gen> {
+	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+		Self {
 			generics,
 			eval_generics,
 		}
@@ -74,9 +68,9 @@ pub struct TypeGenerics<'gen> {
 	eval_generics: Vec<GenericBinding>,
 }
 
-impl TypeGenerics<'_> {
-	pub fn new(generics: &Generics, eval_generics: Vec<GenericBinding>) -> TypeGenerics {
-		TypeGenerics {
+impl<'gen> TypeGenerics<'gen> {
+	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+		Self {
 			generics,
 			eval_generics,
 		}
@@ -91,10 +85,10 @@ impl<'gen> ToTokens for TypeGenerics<'gen> {
 			eval_params.entry(key).or_insert(&binding.to_generic);
 		}
 
-		quote! {<}.to_tokens(tokens);
+		tokens.extend(quote! {<});
 		for (index, param) in self.generics.params.iter().enumerate() {
 			if index != 0 {
-				quote! {,}.to_tokens(tokens);
+				tokens.extend(quote! {,});
 			}
 			if let GenericParam::Type(type_param) = param {
 				match eval_params.get(&type_param.ident.to_string()) {
@@ -107,7 +101,7 @@ impl<'gen> ToTokens for TypeGenerics<'gen> {
 			}
 			param.to_tokens(tokens);
 		}
-		quote! {>}.to_tokens(tokens);
+		tokens.extend(quote! {>});
 	}
 }
 
@@ -117,9 +111,9 @@ pub struct WhereClause<'gen> {
 	eval_generics: Vec<GenericBinding>,
 }
 
-impl WhereClause<'_> {
-	pub fn new(generics: &Generics, eval_generics: Vec<GenericBinding>) -> WhereClause {
-		WhereClause {
+impl<'gen> WhereClause<'gen> {
+	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+		Self {
 			generics,
 			eval_generics,
 		}
