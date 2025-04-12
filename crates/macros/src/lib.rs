@@ -6,7 +6,7 @@ mod arith_expr;
 mod composition_poly;
 mod deserialize_bytes;
 
-use deserialize_bytes::{get_generics, GenericsSplit};
+use deserialize_bytes::{get_container_attributes, split_for_impl, GenericsSplit};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
@@ -192,6 +192,10 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
+	let container_attributes = match get_container_attributes(&input) {
+		Ok(x) => x,
+		Err(e) => return e.into_compile_error().into(),
+	};
 	let name = input.ident;
 	let mut generics = input.generics.clone();
 	generics.type_params_mut().for_each(|type_param| {
@@ -203,10 +207,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 		impl_generics,
 		type_generics: ty_generics,
 		where_clause,
-	} = match get_generics(&input.attrs, &generics) {
-		Ok(x) => x,
-		Err(e) => return e.into_compile_error().into(),
-	};
+	} = split_for_impl(&container_attributes, &generics);
 	// let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?

@@ -3,21 +3,16 @@ mod quote;
 
 use parse::ContainerAttributes;
 pub use quote::GenericsSplit;
-use syn::{Attribute, Generics, Meta, MetaList};
+use syn::{DeriveInput, Generics, Meta, MetaList};
 
-pub fn get_generics<'attr, 'gen>(
-	attrs: &'attr [Attribute],
-	generics: &'gen Generics,
-) -> syn::Result<GenericsSplit<'gen>> {
-	let maybe_deserialize_bytes_attr = attrs
+pub fn get_container_attributes(input: &DeriveInput) -> syn::Result<ContainerAttributes> {
+	let maybe_deserialize_bytes_attr = input
+		.attrs
 		.iter()
 		.find(|attr| attr.path().is_ident("deserialize_bytes"));
 	let deserialize_bytes_attr = match maybe_deserialize_bytes_attr {
 		Some(attr) => attr,
-		None => {
-			let generics_split = GenericsSplit::new(generics, Default::default());
-			return Ok(generics_split);
-		}
+		None => return Ok(ContainerAttributes::default()),
 	};
 	let container_attributes_tokens = match &deserialize_bytes_attr.meta {
 		Meta::List(MetaList { tokens, .. }) => tokens.clone(),
@@ -29,8 +24,14 @@ pub fn get_generics<'attr, 'gen>(
 		}
 	};
 	let container_attributes: ContainerAttributes = syn::parse2(container_attributes_tokens)?;
-	let generics_split = GenericsSplit::new(generics, container_attributes.eval_generics);
-	Ok(generics_split)
+	Ok(container_attributes)
+}
+
+pub fn split_for_impl<'attr, 'gen>(
+	container_attributes: &'attr ContainerAttributes,
+	generics: &'gen Generics,
+) -> GenericsSplit<'gen, 'attr> {
+	GenericsSplit::new(generics, &container_attributes.eval_generics)
 }
 
 #[cfg(test)]
@@ -42,7 +43,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_get_generics() {
+	fn test_split_for_impl() {
 		struct Case {
 			struct_def: TokenStream,
 			expected_impl_def: TokenStream,
@@ -79,11 +80,12 @@ mod tests {
 		];
 		for case in cases {
 			let input = syn::parse2::<DeriveInput>(case.struct_def).unwrap();
+			let container_attributes = get_container_attributes(&input).unwrap();
 			let GenericsSplit {
 				impl_generics,
 				type_generics,
 				where_clause,
-			} = get_generics(&input.attrs, &input.generics).unwrap();
+			} = split_for_impl(&container_attributes, &input.generics);
 			let name = input.ident;
 			let impl_def = quote! {
 				impl #impl_generics #name #type_generics #where_clause

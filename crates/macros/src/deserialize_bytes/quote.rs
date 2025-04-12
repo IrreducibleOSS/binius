@@ -6,30 +6,30 @@ use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, Wh
 use super::parse::GenericBinding;
 
 #[derive(Debug, Clone)]
-pub struct GenericsSplit<'gen> {
-	pub impl_generics: ImplGenerics<'gen>,
-	pub type_generics: TypeGenerics<'gen>,
-	pub where_clause: WhereClause<'gen>,
+pub struct GenericsSplit<'gen, 'attr> {
+	pub impl_generics: ImplGenerics<'gen, 'attr>,
+	pub type_generics: TypeGenerics<'gen, 'attr>,
+	pub where_clause: WhereClause<'gen, 'attr>,
 }
 
-impl<'gen> GenericsSplit<'gen> {
-	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+impl<'gen, 'attr> GenericsSplit<'gen, 'attr> {
+	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
-			impl_generics: ImplGenerics::new(generics, eval_generics.clone()),
-			type_generics: TypeGenerics::new(generics, eval_generics.clone()),
+			impl_generics: ImplGenerics::new(generics, eval_generics),
+			type_generics: TypeGenerics::new(generics, eval_generics),
 			where_clause: WhereClause::new(generics, eval_generics),
 		}
 	}
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplGenerics<'gen> {
+pub struct ImplGenerics<'gen, 'attr> {
 	generics: &'gen Generics,
-	eval_generics: Vec<GenericBinding>,
+	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen> ImplGenerics<'gen> {
-	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+impl<'gen, 'attr> ImplGenerics<'gen, 'attr> {
+	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -37,7 +37,7 @@ impl<'gen> ImplGenerics<'gen> {
 	}
 }
 
-impl<'gen> ToTokens for ImplGenerics<'gen> {
+impl<'gen, 'attr> ToTokens for ImplGenerics<'gen, 'attr> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let from_param_names = self
 			.eval_generics
@@ -63,13 +63,13 @@ impl<'gen> ToTokens for ImplGenerics<'gen> {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeGenerics<'gen> {
+pub struct TypeGenerics<'gen, 'attr> {
 	generics: &'gen Generics,
-	eval_generics: Vec<GenericBinding>,
+	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen> TypeGenerics<'gen> {
-	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+impl<'gen, 'attr> TypeGenerics<'gen, 'attr> {
+	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -77,7 +77,7 @@ impl<'gen> TypeGenerics<'gen> {
 	}
 }
 
-impl<'gen> ToTokens for TypeGenerics<'gen> {
+impl<'gen, 'attr> ToTokens for TypeGenerics<'gen, 'attr> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let mut eval_params = HashMap::new();
 		for binding in self.eval_generics.iter() {
@@ -106,13 +106,13 @@ impl<'gen> ToTokens for TypeGenerics<'gen> {
 }
 
 #[derive(Debug, Clone)]
-pub struct WhereClause<'gen> {
+pub struct WhereClause<'gen, 'attr> {
 	generics: &'gen Generics,
-	eval_generics: Vec<GenericBinding>,
+	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen> WhereClause<'gen> {
-	pub fn new(generics: &'gen Generics, eval_generics: Vec<GenericBinding>) -> Self {
+impl<'gen, 'attr> WhereClause<'gen, 'attr> {
+	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -120,7 +120,7 @@ impl<'gen> WhereClause<'gen> {
 	}
 }
 
-impl<'gen> ToTokens for WhereClause<'gen> {
+impl<'gen, 'attr> ToTokens for WhereClause<'gen, 'attr> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let where_clause = match self.generics.where_clause {
 			Some(ref where_clause) => where_clause.clone(),
@@ -236,7 +236,7 @@ mod tests {
 				impl_generics,
 				type_generics,
 				where_clause,
-			} = GenericsSplit::new(&struct_def.generics, container_attributes.eval_generics);
+			} = GenericsSplit::new(&struct_def.generics, &container_attributes.eval_generics);
 			let impl_def = quote! {
 				impl #impl_generics #struct_name #type_generics
 					#where_clause
