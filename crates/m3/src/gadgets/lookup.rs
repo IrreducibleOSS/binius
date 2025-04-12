@@ -1,7 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_core::constraint_system::channel::ChannelId;
+use binius_core::{
+	constraint_system::channel::ChannelId, tower::CanonicalOptimalPackedTowerFamily,
+};
 use binius_field::{ExtensionField, PackedExtension, PackedField, PackedSubfield, TowerField};
 use itertools::Itertools;
 
@@ -191,7 +193,9 @@ mod tests {
 			)
 			.unwrap();
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();

@@ -64,8 +64,9 @@ mod model {
 
 mod arithmetization {
 	use binius_core::{
-		constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger,
-		tower::CanonicalTowerFamily,
+		constraint_system::channel::ChannelId,
+		fiat_shamir::HasherChallenger,
+		tower::{CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily},
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, PackedExtension,
@@ -191,7 +192,9 @@ mod arithmetization {
 			.fill_table_sequential(&fibonacci_table, &trace.rows)
 			.unwrap();
 
-		let compiled_cs = cs.compile(&statement).unwrap();
+		let compiled_cs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
@@ -234,7 +237,9 @@ mod arithmetization {
 			.fill_table_sequential(&fibonacci_table, &trace.rows)
 			.unwrap();
 
-		let compiled_cs = cs.compile(&statement).unwrap();
+		let compiled_cs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(

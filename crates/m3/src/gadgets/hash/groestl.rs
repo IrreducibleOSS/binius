@@ -8,7 +8,7 @@ use std::{array, iter};
 
 use anyhow::Result;
 use array_util::ArrayExt;
-use binius_core::oracle::ShiftVariant;
+use binius_core::{oracle::ShiftVariant, tower::CanonicalOptimalPackedTowerFamily};
 use binius_field::{
 	ext_basis,
 	linear_transformation::{
@@ -440,7 +440,9 @@ mod tests {
 
 		sbox.populate(&mut segment).unwrap();
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
@@ -494,7 +496,9 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
@@ -548,7 +552,9 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();

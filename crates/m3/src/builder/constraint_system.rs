@@ -12,7 +12,7 @@ use binius_core::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		ProjectionVariant,
 	},
-	tower::{PackedTowerConverter, PackedTowerFamily, TowerFamily},
+	tower::{PackedTowerFamily, TowerFamily},
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
@@ -150,19 +150,23 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	pub fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
-		&self,
-		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
-	) -> ConstraintSystem<<TargetPackedTower::Tower as TowerFamily>::B128>
+	pub fn convert_to_tower<SourceTower, TargetTower>(&self) -> ConstraintSystem<TargetTower::B128>
 	where
-		SourcePackedTower: PackedTowerFamily<Tower: TowerFamily<B128 = F>>,
-		TargetPackedTower: PackedTowerFamily<Tower: TowerFamily<B128: From<F>>>,
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
 	{
 		let channels = self.channels.clone();
 		let tables = self
 			.tables
 			.iter()
-			.map(|table| table.convert_to_tower::<SourcePackedTower, TargetPackedTower>(converter))
+			.map(|table| table.convert_to_tower::<SourceTower, TargetTower>())
 			.collect::<Vec<_>>();
 
 		ConstraintSystem { tables, channels }
@@ -201,7 +205,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// oracles for all columns. The main difference between column definitions and oracle
 	/// definitions is that multilinear oracle definitions have a number of variables, whereas the
 	/// column definitions contained in a [`ConstraintSystem`] do not have size information.
-	pub fn compile(&self, statement: &Statement<F>) -> Result<CompiledConstraintSystem<F>, Error> {
+	pub fn compile<PackedTower>(
+		&self,
+		statement: &Statement<F>,
+	) -> Result<CompiledConstraintSystem<F>, Error>
+	where
+		PackedTower: PackedTowerFamily<Tower: TowerFamily<B128 = F>>,
+	{
 		if statement.table_sizes.len() != self.tables.len() {
 			return Err(Error::StatementMissingTableSize {
 				expected: self.tables.len(),
@@ -223,10 +233,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Constant { poly, .. } = &info.col {
+				if let ColumnDef::Constant(constant_column) = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
-						.transparent(poly.clone())?;
+						.transparent(constant_column.get_or_init_poly::<PackedTower>())?;
 					transparent_single[table_index] = Some(oracle_id);
 				}
 			}

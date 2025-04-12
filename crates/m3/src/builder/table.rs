@@ -1,18 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::sync::Arc;
-
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
-	tower::{PackedTowerConverter, PackedTowerFamily, TowerFamily},
-	transparent::MultilinearExtensionTransparent,
+	tower::TowerFamily,
 };
 use binius_field::{
-	arch::OptimalUnderlier,
-	as_packed_field::{PackScalar, PackedType},
-	packed::pack_slice,
-	ExtensionField, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackScalar, ExtensionField, TowerField,
 };
 use binius_utils::{
 	checked_arithmetics::{checked_log_2, log2_ceil_usize},
@@ -24,7 +18,7 @@ use super::{
 	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts,
+	upcast_col, ColumnIndex, ConstantColumn, FlushOpts,
 };
 use crate::builder::column::ColumnId;
 
@@ -208,21 +202,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
 	{
 		let namespaced_name = self.namespaced_name(name);
-		let n_vars = checked_log_2(VALUES_PER_ROW);
-		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
-		let mle = MultilinearExtensionTransparent::<
-			PackedType<OptimalUnderlier, FSub>,
-			PackedType<OptimalUnderlier, F>,
-			_,
-		>::from_values_and_mu(packed_values, n_vars)
-		.unwrap();
-		self.table.new_column(
-			namespaced_name,
-			ColumnDef::Constant {
-				data: Box::new(constants.to_vec()),
-				poly: Arc::new(mle),
-			},
-		)
+		let _n_vars = checked_log_2(VALUES_PER_ROW);
+		let constant_column = ConstantColumn::new_subfield(&constants);
+		self.table
+			.new_column(namespaced_name, ColumnDef::Constant(constant_column))
 	}
 
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
@@ -326,20 +309,22 @@ pub struct Table<F: TowerField = B128> {
 }
 
 impl<F: TowerField> Table<F> {
-	pub fn convert_to_tower<SourcePackedTower, TargetPackedTower>(
-		&self,
-		converter: &impl PackedTowerConverter<SourcePackedTower, TargetPackedTower>,
-	) -> Table<<TargetPackedTower::Tower as TowerFamily>::B128>
+	pub fn convert_to_tower<SourceTower, TargetTower>(&self) -> Table<TargetTower::B128>
 	where
-		SourcePackedTower: PackedTowerFamily,
-		SourcePackedTower::Tower: TowerFamily<B128 = F>,
-		TargetPackedTower: PackedTowerFamily,
-		<TargetPackedTower::Tower as TowerFamily>::B128: From<F>,
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
 	{
 		let columns = self
 			.columns
 			.iter()
-			.map(|col| col.convert_to_tower::<SourcePackedTower, TargetPackedTower>(converter))
+			.map(|col| col.convert_to_tower::<SourceTower, TargetTower>())
 			.collect();
 		let partitions = self
 			.partitions

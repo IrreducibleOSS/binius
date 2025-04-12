@@ -4,7 +4,10 @@ use std::{array, iter::repeat_with};
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
-use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{
+	fiat_shamir::HasherChallenger,
+	tower::{CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily},
+};
 use binius_field::{
 	arch::{OptimalUnderlier, OptimalUnderlier128b},
 	as_packed_field::PackedType,
@@ -111,7 +114,9 @@ fn main() -> Result<()> {
 	witness.fill_table_sequential(&table, &events)?;
 	drop(trace_gen_scope);
 
-	let ccs = cs.compile(&statement).unwrap();
+	let ccs = cs
+		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+		.unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<

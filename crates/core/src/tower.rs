@@ -2,8 +2,11 @@
 
 //! Traits for working with field towers.
 
+use std::marker::PhantomData;
+
 use binius_field::{
-	as_packed_field::PackScalar,
+	arch::OptimalUnderlier,
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	make_binary_to_aes_packed_transformer,
 	polyval::{
@@ -87,59 +90,6 @@ pub trait PackedTowerFamily {
 		+ RepackedExtension<Self::PackedB8>
 		+ RepackedExtension<Self::PackedB1>;
 }
-
-pub trait PackedTowerConverter<SourceTower: PackedTowerFamily, TargetTower: PackedTowerFamily> {
-	fn convert_b1(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B1,
-	) -> <TargetTower::Tower as TowerFamily>::B1;
-	fn convert_b8(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B8,
-	) -> <TargetTower::Tower as TowerFamily>::B8;
-	fn convert_b16(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B16,
-	) -> <TargetTower::Tower as TowerFamily>::B16;
-	fn convert_b32(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B32,
-	) -> <TargetTower::Tower as TowerFamily>::B32;
-	fn convert_b64(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B64,
-	) -> <TargetTower::Tower as TowerFamily>::B64;
-	fn convert_b128(
-		&self,
-		source: &<SourceTower::Tower as TowerFamily>::B128,
-	) -> <TargetTower::Tower as TowerFamily>::B128;
-
-	fn convert_packed_b1(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB1,
-	) -> TargetTower::PackedB1;
-	fn convert_packed_b8(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB8,
-	) -> TargetTower::PackedB8;
-	fn convert_packed_b16(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB16,
-	) -> TargetTower::PackedB16;
-	fn convert_packed_b32(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB32,
-	) -> TargetTower::PackedB32;
-	fn convert_packed_b64(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB64,
-	) -> TargetTower::PackedB64;
-	fn convert_packed_b128(
-		&self,
-		source: &<SourceTower as PackedTowerFamily>::PackedB128,
-	) -> TargetTower::PackedB128;
-}
-
 /// The canonical Fan-Paar tower family.
 #[derive(Debug)]
 pub struct CanonicalTowerFamily;
@@ -186,135 +136,6 @@ impl TowerFamily for AESTowerFamily {
 	type B128 = AESTowerField128b;
 }
 
-pub struct CanonicalToAesTowerConverter<IPackedTower, OPackedTower>
-where
-	IPackedTower: PackedTowerFamily<Tower = CanonicalTowerFamily>,
-	OPackedTower: PackedTowerFamily<Tower = AESTowerFamily, PackedB1 = IPackedTower::PackedB1>,
-	IPackedTower::PackedB8: PackedTransformationFactory<OPackedTower::PackedB8>,
-{
-	b8_converter: BinaryToAesTransformation<IPackedTower::PackedB8, OPackedTower::PackedB8>,
-	_phantom: std::marker::PhantomData<(IPackedTower, OPackedTower)>,
-}
-
-impl<IPackedTower, OPackedTower> CanonicalToAesTowerConverter<IPackedTower, OPackedTower>
-where
-	IPackedTower: PackedTowerFamily<Tower = CanonicalTowerFamily>,
-	OPackedTower: PackedTowerFamily<Tower = AESTowerFamily, PackedB1 = IPackedTower::PackedB1>,
-	IPackedTower::PackedB8: PackedTransformationFactory<OPackedTower::PackedB8>,
-{
-	pub fn new() -> Self {
-		Self {
-			b8_converter: make_binary_to_aes_packed_transformer::<
-				IPackedTower::PackedB8,
-				OPackedTower::PackedB8,
-			>(),
-			_phantom: std::marker::PhantomData,
-		}
-	}
-}
-
-impl<IPackedTower, OPackedTower> PackedTowerConverter<IPackedTower, OPackedTower>
-	for CanonicalToAesTowerConverter<IPackedTower, OPackedTower>
-where
-	IPackedTower: PackedTowerFamily<Tower = CanonicalTowerFamily>,
-	OPackedTower: PackedTowerFamily<Tower = AESTowerFamily, PackedB1 = IPackedTower::PackedB1>,
-	IPackedTower::PackedB8: PackedTransformationFactory<OPackedTower::PackedB8>,
-{
-	fn convert_b1(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B1,
-	) -> <OPackedTower::Tower as TowerFamily>::B1 {
-		*source
-	}
-
-	fn convert_b8(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B8,
-	) -> <OPackedTower::Tower as TowerFamily>::B8 {
-		(*source).into()
-	}
-
-	fn convert_b16(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B16,
-	) -> <OPackedTower::Tower as TowerFamily>::B16 {
-		(*source).into()
-	}
-
-	fn convert_b32(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B32,
-	) -> <OPackedTower::Tower as TowerFamily>::B32 {
-		(*source).into()
-	}
-
-	fn convert_b64(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B64,
-	) -> <OPackedTower::Tower as TowerFamily>::B64 {
-		(*source).into()
-	}
-
-	fn convert_b128(
-		&self,
-		source: &<IPackedTower::Tower as TowerFamily>::B128,
-	) -> <OPackedTower::Tower as TowerFamily>::B128 {
-		(*source).into()
-	}
-
-	fn convert_packed_b1(&self, source: &IPackedTower::PackedB1) -> OPackedTower::PackedB1 {
-		*source
-	}
-
-	fn convert_packed_b8(&self, source: &IPackedTower::PackedB8) -> OPackedTower::PackedB8 {
-		self.b8_converter.transform(source)
-	}
-
-	fn convert_packed_b16(&self, source: &IPackedTower::PackedB16) -> OPackedTower::PackedB16 {
-		<OPackedTower::PackedB16 as PackedExtension<AESTowerField8b>>::cast_ext(
-			self.b8_converter
-				.transform(
-					<IPackedTower::PackedB16 as PackedExtension<BinaryField8b>>::cast_base_ref(
-						&source,
-					),
-				),
-		)
-	}
-
-	fn convert_packed_b32(&self, source: &IPackedTower::PackedB32) -> OPackedTower::PackedB32 {
-		<OPackedTower::PackedB32 as PackedExtension<AESTowerField8b>>::cast_ext(
-			self.b8_converter
-				.transform(
-					<IPackedTower::PackedB32 as PackedExtension<BinaryField8b>>::cast_base_ref(
-						&source,
-					),
-				),
-		)
-	}
-
-	fn convert_packed_b64(&self, source: &IPackedTower::PackedB64) -> OPackedTower::PackedB64 {
-		<OPackedTower::PackedB64 as PackedExtension<AESTowerField8b>>::cast_ext(
-			self.b8_converter
-				.transform(
-					<IPackedTower::PackedB64 as PackedExtension<BinaryField8b>>::cast_base_ref(
-						&source,
-					),
-				),
-		)
-	}
-
-	fn convert_packed_b128(&self, source: &IPackedTower::PackedB128) -> OPackedTower::PackedB128 {
-		<OPackedTower::PackedB128 as PackedExtension<AESTowerField8b>>::cast_ext(
-			self.b8_converter
-				.transform(
-					<IPackedTower::PackedB128 as PackedExtension<BinaryField8b>>::cast_base_ref(
-						&source,
-					),
-				),
-		)
-	}
-}
-
 impl ProverTowerFamily for AESTowerFamily {
 	type FastB128 = BinaryField128bPolyval;
 
@@ -359,3 +180,24 @@ trait_set! {
 		+ PackedExtension<Tower::B64>
 		+ PackedExtension<Tower::B128>;
 }
+
+pub struct PackUnderlierFamily<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> {
+	_pd: PhantomData<(Tower, Underlier)>,
+}
+
+impl<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> PackedTowerFamily
+	for PackUnderlierFamily<Tower, Underlier>
+{
+	type Tower = Tower;
+
+	type PackedB1 = PackedType<Underlier, Tower::B1>;
+	type PackedB8 = PackedType<Underlier, Tower::B8>;
+	type PackedB16 = PackedType<Underlier, Tower::B16>;
+	type PackedB32 = PackedType<Underlier, Tower::B32>;
+	type PackedB64 = PackedType<Underlier, Tower::B64>;
+	type PackedB128 = PackedType<Underlier, Tower::B128>;
+}
+
+pub type CanonicalOptimalPackedTowerFamily =
+	PackUnderlierFamily<CanonicalTowerFamily, OptimalUnderlier>;
+pub type AESOptimalPackedTowerFamily = PackUnderlierFamily<AESTowerFamily, OptimalUnderlier>;

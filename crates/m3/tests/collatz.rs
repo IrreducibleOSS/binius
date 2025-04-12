@@ -102,7 +102,7 @@ mod arithmetization {
 		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
 		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
-		tower::CanonicalTowerFamily,
+		tower::{CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily},
 		witness::MultilinearExtensionIndex,
 	};
 	use binius_field::{
@@ -332,7 +332,9 @@ mod arithmetization {
 			.unwrap();
 
 		Instance {
-			constraint_system: cs.compile(&statement).unwrap(),
+			constraint_system: cs
+				.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+				.unwrap(),
 			witness: witness.into_multilinear_extension_index(),
 			statement,
 		}
