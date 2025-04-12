@@ -5,6 +5,18 @@ use syn::{
 	Ident, TypePath,
 };
 
+/// Container attributes for the `deserialize_bytes` derive macro.
+///
+/// ## Example
+/// ```
+/// use binius_macros::DeserializeBytes;
+///
+/// #[derive(DeserializeBytes)]
+/// #[deserialize_bytes(eval_generics(X = binius_field::BinaryField128b))]
+/// struct MyStruct<X>(X);
+/// ```
+///
+/// Will have a list of eval_generics (from_generic = X, to_generic = BinaryField128)
 #[derive(Debug, Clone, Default)]
 pub struct ContainerAttributes {
 	pub eval_generics: Vec<GenericBinding>,
@@ -14,7 +26,7 @@ impl Parse for ContainerAttributes {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
 		let attr_name: Ident = input.parse()?;
 		if attr_name.to_string() != "eval_generics" {
-			return Err(syn::Error::new(attr_name.span(), "expected `eval_generics = \"...\"`"));
+			return Err(syn::Error::new(attr_name.span(), "expected `eval_generics(X = Y, ...)`"));
 		}
 		let parens_content;
 		syn::parenthesized!(parens_content in input);

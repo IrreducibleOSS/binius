@@ -5,6 +5,8 @@ use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, Wh
 
 use super::parse::GenericBinding;
 
+/// Contains information about the generics used in the implementation.
+/// It is geneally used in the following way: quote! {impl #impl_generics MyStruct #type_generics #where_clause}
 #[derive(Debug, Clone)]
 pub struct GenericsSplit<'gen, 'attr> {
 	pub impl_generics: ImplGenerics<'gen, 'attr>,
@@ -13,6 +15,11 @@ pub struct GenericsSplit<'gen, 'attr> {
 }
 
 impl<'gen, 'attr> GenericsSplit<'gen, 'attr> {
+	/// Creates a new instance of [`GenericsSplit`].
+	///
+	/// ## Arguments
+	/// * `generics`: The generics from DeriveInput.
+	/// * `eval_generics`: The generics bindings coming from the `eval_generics` attribute.
 	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			impl_generics: ImplGenerics::new(generics, eval_generics),

@@ -188,7 +188,45 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 ///     value
 /// );
 /// ```
-#[proc_macro_derive(DeserializeBytes)]
+///
+/// ## Eval generics
+///
+/// Sometimes it is convenient to limit the implementation of `DeserializeBytes` only to
+/// specific types. For example:
+///
+/// ```ignore
+/// impl DeserializeBytes for MultilinearOracleSet<BinaryField128b> {...}
+/// ```
+///
+/// To do that use `eval_generics` attribute:
+///
+/// ```
+/// use binius_field::BinaryField128b;
+/// use binius_utils::{SerializeBytes, DeserializeBytes, SerializationMode};
+/// use binius_macros::{SerializeBytes, DeserializeBytes};
+///
+///
+/// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
+/// #[deserialize_bytes(eval_generics(F = BinaryField128b))]
+/// struct MyStruct<F> {
+///     data: Vec<F>
+/// }
+///
+/// let mut buf = vec![];
+/// let value = MyStruct {
+///    data: vec![BinaryField128b::new(1234), BinaryField128b::new(5678)]
+/// };
+/// MyStruct::serialize(&value, &mut buf, SerializationMode::CanonicalTower).unwrap();
+/// assert_eq!(
+///     MyStruct::<BinaryField128b>::deserialize(buf.as_slice(), SerializationMode::CanonicalTower).unwrap(),
+///     value
+/// );
+/// ```
+///
+/// Additionally, `eval_generics` can be used to fix multiple params:
+/// `eval_generics(F = BinaryField128b, G = binius_field::BinaryField64b)`
+///
+#[proc_macro_derive(DeserializeBytes, attributes(deserialize_bytes))]
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
@@ -208,7 +246,6 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 		type_generics: ty_generics,
 		where_clause,
 	} = split_for_impl(&container_attributes, &generics);
-	// let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
