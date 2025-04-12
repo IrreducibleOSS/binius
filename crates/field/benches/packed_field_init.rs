@@ -80,6 +80,7 @@ fn byte_sliced_128(c: &mut Criterion) {
 	benchmark_from_fn!(ByteSlicedAES8x16x16b, group);
 	benchmark_from_fn!(ByteSlicedAES16x8b, group);
 	benchmark_from_fn!(ByteSlicedAES16x16x8b, group);
+	benchmark_from_fn!(ByteSliced16x128x1b, group);
 }
 
 fn byte_sliced_256(c: &mut Criterion) {
@@ -94,6 +95,7 @@ fn byte_sliced_256(c: &mut Criterion) {
 	benchmark_from_fn!(ByteSlicedAES8x32x16b, group);
 	benchmark_from_fn!(ByteSlicedAES32x8b, group);
 	benchmark_from_fn!(ByteSlicedAES16x32x8b, group);
+	benchmark_from_fn!(ByteSliced16x256x1b, group);
 }
 
 fn byte_sliced_512(c: &mut Criterion) {
@@ -108,6 +110,7 @@ fn byte_sliced_512(c: &mut Criterion) {
 	benchmark_from_fn!(ByteSlicedAES8x64x16b, group);
 	benchmark_from_fn!(ByteSlicedAES64x8b, group);
 	benchmark_from_fn!(ByteSlicedAES16x64x8b, group);
+	benchmark_from_fn!(ByteSliced16x512x1b, group);
 }
 
 criterion_group!(
