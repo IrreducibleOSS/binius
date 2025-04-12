@@ -10,26 +10,7 @@ use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::evalcheck::EvalcheckMultilinearClaim,
-	witness::MultilinearExtensionIndex,
 };
-
-#[instrument(skip_all, level = "debug")]
-pub fn construct_grand_product_witnesses<P>(
-	ids: &[OracleId],
-	witness_index: &MultilinearExtensionIndex<P>,
-) -> Result<Vec<GrandProductWitness<P>>, Error>
-where
-	P: PackedField,
-{
-	ids.iter()
-		.map(|id| {
-			witness_index
-				.get_multilin_poly(*id)
-				.map_err(|e| e.into())
-				.and_then(GrandProductWitness::new)
-		})
-		.collect::<Result<Vec<_>, _>>()
-}
 
 pub fn get_grand_products_from_witnesses<PW, F>(witnesses: &[GrandProductWitness<PW>]) -> Vec<F>
 where

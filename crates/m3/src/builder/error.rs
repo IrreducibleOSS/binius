@@ -27,6 +27,8 @@ pub enum Error {
 		column_table_id: TableId,
 		witness_table_id: TableId,
 	},
+	#[error("table {table_id} is required to have a power-of-two size, instead got {size}")]
+	TableSizePowerOfTwoRequired { table_id: TableId, size: usize },
 	// TODO: These should have column IDs
 	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrow(#[source] BorrowError),
