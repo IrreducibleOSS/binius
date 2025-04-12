@@ -29,6 +29,6 @@ pub fn get_generics<'attr, 'gen>(
 		}
 	};
 	let container_attributes: ContainerAttributes = syn::parse2(container_attributes_tokens)?;
-	let generics_split = GenericsSplit::new(generics, container_attributes);
+	let generics_split = GenericsSplit::new(generics, container_attributes.eval_generics);
 	Ok(generics_split)
 }

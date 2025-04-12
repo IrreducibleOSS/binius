@@ -45,3 +45,27 @@ impl Parse for GenericBinding {
 		})
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_parse_container_attributes() {
+		let input = quote! {
+			#[eval_generics = "Vec<T>, Option<U>"]
+		};
+		let result = syn::parse2::<ContainerAttributes>(input).unwrap();
+		assert_eq!(result.eval_generics.len(), 2);
+	}
+
+	#[test]
+	fn test_parse_generic_binding() {
+		let input = quote! {
+			Vec<T>, Option<U>
+		};
+		let result = syn::parse2::<GenericBinding>(input).unwrap();
+		assert_eq!(result.from_generic.to_string(), "Vec");
+		assert_eq!(result.to_generic.to_string(), "Option");
+	}
+}
