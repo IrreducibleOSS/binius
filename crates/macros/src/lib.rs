@@ -245,7 +245,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 		impl_generics,
 		type_generics: ty_generics,
 		where_clause,
-	} = split_for_impl(&container_attributes, &generics);
+	} = split_for_impl(&generics, &container_attributes);
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
