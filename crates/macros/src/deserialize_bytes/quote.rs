@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use quote::{quote, ToTokens};
 use syn::{
-	punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, TypeParam, WherePredicate,
+	punctuated::Punctuated,
+	token::{Comma, Gt, Lt},
+	GenericParam, Generics, Type, TypeParam, WherePredicate,
 };
 
 use super::parse::GenericBinding;
@@ -87,25 +89,21 @@ impl<'gen> ToTokens for TypeGenerics<'gen> {
 			let key = binding.from_generic.to_string();
 			eval_params.entry(key).or_insert(&binding.to_generic);
 		}
-		let mut type_generics_params = Punctuated::<GenericParam, Comma>::new();
-		for param in self.generics.params.iter() {
+
+		quote! {<}.to_tokens(tokens);
+		for (index, param) in self.generics.params.iter().enumerate() {
+			if index != 0 {
+				quote! {,}.to_tokens(tokens);
+			}
 			if let GenericParam::Type(type_param) = param {
 				if let Some(&to_param) = eval_params.get(&type_param.ident.to_string()) {
-					let generic_param = GenericParam::Type(TypeParam {
-						ident: to_param.clone(),
-						attrs: Default::default(),
-						bounds: Default::default(),
-						colon_token: None,
-						default: None,
-						eq_token: None,
-					});
-					type_generics_params.push(generic_param);
+					to_param.to_tokens(tokens);
 					continue;
 				}
 			}
-			type_generics_params.push(param.clone());
+			param.to_tokens(tokens);
 		}
-		tokens.extend(quote! {<#type_generics_params>});
+		quote! {>}.to_tokens(tokens);
 	}
 }
 

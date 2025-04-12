@@ -2,7 +2,7 @@ use syn::{
 	parse::Parse,
 	punctuated::Punctuated,
 	token::{Comma, Eq},
-	Ident,
+	Ident, Type, TypePath,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -30,7 +30,7 @@ impl Parse for ContainerAttributes {
 pub struct GenericBinding {
 	pub from_generic: Ident,
 	pub _eq: Eq,
-	pub to_generic: Ident,
+	pub to_generic: TypePath,
 }
 
 impl Parse for GenericBinding {
@@ -48,24 +48,59 @@ impl Parse for GenericBinding {
 
 #[cfg(test)]
 mod tests {
+	use proc_macro2::TokenStream;
+	use quote::quote;
+
 	use super::*;
 
 	#[test]
 	fn test_parse_container_attributes() {
-		let input = quote! {
-			#[eval_generics = "Vec<T>, Option<U>"]
-		};
-		let result = syn::parse2::<ContainerAttributes>(input).unwrap();
-		assert_eq!(result.eval_generics.len(), 2);
+		struct Case {
+			input: TokenStream,
+			expected: Vec<(&'static str, &'static str)>,
+		}
+		let cases = vec![
+			Case {
+				input: quote! {
+					eval_generics(X = crate::module::T)
+				},
+				expected: vec![("X", "crate::module::T")],
+			},
+			Case {
+				input: quote! {
+					eval_generics(X = crate::module::T, Y = U)
+				},
+				expected: vec![("X", "crate::module::T"), ("Y", "U")],
+			},
+		];
+		for case in cases {
+			let input = case.input;
+			let result = syn::parse2::<ContainerAttributes>(input).unwrap();
+			assert_eq!(result.eval_generics.len(), case.expected.len());
+			for (i, binding) in result.eval_generics.iter().enumerate() {
+				assert_eq!(binding.from_generic.to_string(), case.expected[i].0);
+				assert_eq!(display_type_path(&binding.to_generic), case.expected[i].1);
+			}
+		}
 	}
 
 	#[test]
 	fn test_parse_generic_binding() {
 		let input = quote! {
-			Vec<T>, Option<U>
+			X = crate::module::T
 		};
 		let result = syn::parse2::<GenericBinding>(input).unwrap();
-		assert_eq!(result.from_generic.to_string(), "Vec");
-		assert_eq!(result.to_generic.to_string(), "Option");
+		assert_eq!(result.from_generic.to_string(), "X");
+		assert_eq!(display_type_path(&result.to_generic), "crate::module::T");
+	}
+
+	fn display_type_path(input: &TypePath) -> String {
+		input
+			.path
+			.segments
+			.iter()
+			.map(|segment| segment.ident.to_string())
+			.collect::<Vec<_>>()
+			.join("::")
 	}
 }
