@@ -25,7 +25,7 @@ pub struct ContainerAttributes {
 impl Parse for ContainerAttributes {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
 		let attr_name: Ident = input.parse()?;
-		if attr_name.to_string() != "eval_generics" {
+		if attr_name != "eval_generics" {
 			return Err(syn::Error::new(attr_name.span(), "expected `eval_generics(X = Y, ...)`"));
 		}
 		let parens_content;

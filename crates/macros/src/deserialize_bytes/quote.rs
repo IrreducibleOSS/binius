@@ -44,7 +44,7 @@ impl<'gen, 'attr> ImplGenerics<'gen, 'attr> {
 	}
 }
 
-impl<'gen, 'attr> ToTokens for ImplGenerics<'gen, 'attr> {
+impl ToTokens for ImplGenerics<'_, '_> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let from_param_names = self
 			.eval_generics
@@ -52,7 +52,7 @@ impl<'gen, 'attr> ToTokens for ImplGenerics<'gen, 'attr> {
 			.map(|binding| binding.from_generic.to_string())
 			.collect::<HashSet<_>>();
 		let mut impl_generics_params = Punctuated::<GenericParam, Comma>::new();
-		for param in self.generics.params.iter() {
+		for param in &self.generics.params {
 			if let GenericParam::Type(type_param) = param {
 				if from_param_names.contains(&type_param.ident.to_string()) {
 					continue;
@@ -84,10 +84,10 @@ impl<'gen, 'attr> TypeGenerics<'gen, 'attr> {
 	}
 }
 
-impl<'gen, 'attr> ToTokens for TypeGenerics<'gen, 'attr> {
+impl ToTokens for TypeGenerics<'_, '_> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let mut eval_params = HashMap::new();
-		for binding in self.eval_generics.iter() {
+		for binding in self.eval_generics {
 			let key = binding.from_generic.to_string();
 			eval_params.entry(key).or_insert(&binding.to_generic);
 		}
@@ -127,7 +127,7 @@ impl<'gen, 'attr> WhereClause<'gen, 'attr> {
 	}
 }
 
-impl<'gen, 'attr> ToTokens for WhereClause<'gen, 'attr> {
+impl ToTokens for WhereClause<'_, '_> {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let where_clause = match self.generics.where_clause {
 			Some(ref where_clause) => where_clause.clone(),
@@ -140,7 +140,7 @@ impl<'gen, 'attr> ToTokens for WhereClause<'gen, 'attr> {
 			.collect::<HashSet<_>>();
 
 		let mut where_clause_params = Punctuated::<WherePredicate, Comma>::new();
-		for predicate in where_clause.predicates.iter() {
+		for predicate in &where_clause.predicates {
 			if let WherePredicate::Type(where_type) = predicate {
 				if let Type::Path(ref bounded_ty) = where_type.bounded_ty {
 					let bounded_ty_name = bounded_ty.to_token_stream().to_string();
