@@ -63,6 +63,11 @@ impl<'gen> ToTokens for ImplGenerics<'gen> {
 			}
 			impl_generics_params.push(param.clone());
 		}
+
+		if impl_generics_params.is_empty() {
+			return;
+		}
+
 		tokens.extend(quote! {<#impl_generics_params>});
 	}
 }
@@ -96,10 +101,13 @@ impl<'gen> ToTokens for TypeGenerics<'gen> {
 				quote! {,}.to_tokens(tokens);
 			}
 			if let GenericParam::Type(type_param) = param {
-				if let Some(&to_param) = eval_params.get(&type_param.ident.to_string()) {
-					to_param.to_tokens(tokens);
-					continue;
+				match eval_params.get(&type_param.ident.to_string()) {
+					Some(to_param) => {
+						to_param.to_tokens(tokens);
+					}
+					None => type_param.ident.to_tokens(tokens),
 				}
+				continue;
 			}
 			param.to_tokens(tokens);
 		}
@@ -147,5 +155,103 @@ impl<'gen> ToTokens for WhereClause<'gen> {
 			where_clause_params.push(predicate.clone());
 		}
 		tokens.extend(quote! {where #where_clause_params});
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use proc_macro2::TokenStream;
+	use syn::{parse_macro_input, DeriveInput, ItemStruct};
+
+	use super::*;
+	use crate::deserialize_bytes::parse::ContainerAttributes;
+
+	#[test]
+	fn test_generics() {
+		struct Case {
+			struct_def: TokenStream,
+			attrubutes_def: TokenStream,
+			expected_impl_def: TokenStream,
+		}
+		let cases = vec![
+			Case {
+				struct_def: quote! {
+					pub struct MultilinearOracleSet<F: TowerField> {
+						oracles: Vec<MultilinearPolyOracle<F>>
+					}
+				},
+				attrubutes_def: quote! {
+					eval_generics(F = BinaryField128b)
+				},
+				expected_impl_def: quote! {
+					impl MultilinearOracleSet<BinaryField128b>
+				},
+			},
+			Case {
+				struct_def: quote! {
+					struct MyStruct<T: Field, U, V: Oracle>
+						where T: Debug, U: Clone
+						{
+							field: T,
+						}
+				},
+				attrubutes_def: quote! {
+					eval_generics(T = B128)
+				},
+				expected_impl_def: quote! {
+					impl<U, V: Oracle> MyStruct<B128, U, V>
+						where U: Clone
+				},
+			},
+			Case {
+				struct_def: quote! {
+					struct MyStruct<T: Field, U, V: Oracle>
+						where T: Debug, U: Clone
+						{
+							field: T,
+						}
+				},
+				attrubutes_def: quote! {
+					eval_generics(T = B128, V = B256)
+				},
+				expected_impl_def: quote! {
+					impl<U> MyStruct<B128, U, B256>
+					where U: Clone
+				},
+			},
+			Case {
+				struct_def: quote! {
+					struct MyStruct<T: Field, U, V: Oracle>
+						where T: Debug, U: Clone
+						{
+							field: T,
+						}
+				},
+				attrubutes_def: quote! {
+					eval_generics(U = B128)
+				},
+				expected_impl_def: quote! {
+					impl<T: Field, V: Oracle> MyStruct<T, B128, V>
+					where T: Debug
+				},
+			},
+		];
+		for case in cases {
+			let struct_def =
+				syn::parse2::<ItemStruct>(case.struct_def).expect("Failed to parse struct");
+			let struct_name = struct_def.ident;
+			let container_attributes =
+				syn::parse2::<ContainerAttributes>(case.attrubutes_def).unwrap();
+			let GenericsSplit {
+				impl_generics,
+				type_generics,
+				where_clause,
+			} = GenericsSplit::new(&struct_def.generics, container_attributes.eval_generics);
+			let impl_def = quote! {
+				impl #impl_generics #struct_name #type_generics
+					#where_clause
+			};
+			assert_eq!(impl_def.to_string(), case.expected_impl_def.to_string());
+		}
 	}
 }

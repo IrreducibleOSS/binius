@@ -29,18 +29,16 @@ impl Parse for ContainerAttributes {
 #[derive(Debug, Clone)]
 pub struct GenericBinding {
 	pub from_generic: Ident,
-	pub _eq: Eq,
 	pub to_generic: TypePath,
 }
 
 impl Parse for GenericBinding {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
 		let from_generic = input.parse()?;
-		let eq = input.parse()?;
+		let _eq: Eq = input.parse()?;
 		let to_generic = input.parse()?;
 		Ok(Self {
 			from_generic,
-			_eq: eq,
 			to_generic,
 		})
 	}
