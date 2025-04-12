@@ -6,7 +6,7 @@ use binius_field::{Field, TowerField};
 use binius_utils::sorting::is_sorted_ascending;
 use bytes::BufMut;
 
-use super::batch_prove::SumcheckProver;
+use super::batch_sumcheck::SumcheckProver;
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},

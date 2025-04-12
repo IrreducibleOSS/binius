@@ -538,7 +538,7 @@ where
 		backend,
 	)?;
 
-	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
+	let sumcheck_output = sumcheck::prove::batch_prove_sumcheck(provers, transcript)?;
 
 	let evalcheck_claims =
 		sumcheck::make_eval_claims(EvaluationOrder::HighToLow, metas, sumcheck_output)?;

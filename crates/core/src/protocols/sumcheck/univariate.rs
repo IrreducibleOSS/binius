@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{
-	iter::{self, repeat_n},
+	iter,
 	ops::{Mul, MulAssign},
 };
 
@@ -32,7 +32,7 @@ pub struct ZerocheckRoundEvals<F: Field> {
 
 impl<F: Field> ZerocheckRoundEvals<F> {
 	/// A Lagrange representation of a zero polynomial, on a given domain.
-	pub const fn zerosl(len: usize) -> Self {
+	pub fn zeros(len: usize) -> Self {
 		Self {
 			evals: vec![F::ZERO; len],
 		}

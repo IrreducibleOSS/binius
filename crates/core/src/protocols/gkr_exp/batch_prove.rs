@@ -91,7 +91,8 @@ where
 			backend,
 		)?;
 
-		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
+		let sumcheck_proof_output =
+			sumcheck::prove::batch_prove_sumcheck(gkr_sumcheck_provers, transcript)?;
 
 		let layer_exponent_claims = build_layer_exponent_bit_claims(
 			evaluation_order,

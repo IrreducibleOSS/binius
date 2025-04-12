@@ -52,7 +52,7 @@ where
 	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
-	InterpolationDomainFactory: EvaluationDomainFactory<FDomain>,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
 {
 	let mut zeros = Vec::with_capacity(constraints.len());
@@ -79,7 +79,7 @@ where
 		}
 	}
 
-	let prover = OracleZerocheckProver::<_, _, FDomain, _, _, _>::new(
+	let prover = OracleZerocheckProver::<_, _, FDomain, _, _>::new(
 		multilinears,
 		zeros,
 		zerocheck_challenges,

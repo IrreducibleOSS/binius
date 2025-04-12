@@ -336,9 +336,10 @@ where
 	let n_vars = equal_n_vars_check(multilinears)?;
 	let n_multilinears = multilinears.len();
 
-	if skip_rounds > n_vars {
-		bail!(Error::TooManySkippedRounds);
-	}
+	// TODO: reintroduce!!!!
+	// if skip_rounds > n_vars {
+	// 	bail!(Error::TooManySkippedRounds);
+	// }
 
 	let remaining_rounds = n_vars - skip_rounds;
 	if zerocheck_challenges.len() != remaining_rounds {

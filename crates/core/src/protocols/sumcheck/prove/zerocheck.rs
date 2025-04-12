@@ -244,12 +244,15 @@ where
 		)?;
 
 		// Batch together Lagrange round evals using powers of batch_coeff
-		let zeros_prefix_len = 1 << skip_rounds;
 		let batched_round_evals = univariate_evals_output
 			.round_evals
 			.iter()
 			.zip(powers(batch_coeff))
-			.map(|(evals, scalar)| ZerocheckRoundEvals { evals } * scalar)
+			.map(|(evals, scalar)| {
+				ZerocheckRoundEvals {
+					evals: evals.to_vec(),
+				} * scalar
+			})
 			.try_fold(
 				ZerocheckRoundEvals::zeros(max_domain_size),
 				|mut accum, evals| -> Result<_, Error> {

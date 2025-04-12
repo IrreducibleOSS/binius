@@ -81,8 +81,6 @@ pub enum Error {
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
 	IncorrectNumberOfChallenges,
-	#[error("cannot skip more rounds than the total number of variables")]
-	TooManySkippedRounds,
 	#[error("there are more prebatched coefficients than claims")]
 	TooManyPrebatchedCoeffs,
 	#[error(
@@ -91,8 +89,6 @@ pub enum Error {
 	LagrangeDomainTooSmall,
 	#[error("adding together Lagrange basis evaluations over domains of different sizes")]
 	LagrangeRoundEvalsSizeMismatch,
-	#[error("length of the zero prefix does not match the expected value")]
-	IncorrectZerosPrefixLen,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]

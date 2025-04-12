@@ -92,7 +92,7 @@ where
 				backend,
 			)?;
 
-			sumcheck::batch_prove(vec![eq_ind_sumcheck_prover], transcript)?
+			sumcheck::prove::batch_prove_sumcheck(vec![eq_ind_sumcheck_prover], transcript)?
 		};
 
 		// Step 3: Sample a challenge for the next layer
