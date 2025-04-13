@@ -31,11 +31,11 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 	/// ## Returns
 	///
 	/// Returns the inner product of `a_in` and `b_in`.
-	fn inner_product(
-		&self,
+	fn inner_product<'a>(
+		&'a self,
 		a_edeg: usize,
-		a_in: Self::FSlice<'_>,
-		b_in: Self::FSlice<'_>,
+		a_in: Self::FSlice<'a>,
+		b_in: Self::FSlice<'a>,
 	) -> impl Fn(&mut Self::Exec) -> Result<F, Error>;
 
 	/// Computes the iterative tensor product of the input with the given coordinates.

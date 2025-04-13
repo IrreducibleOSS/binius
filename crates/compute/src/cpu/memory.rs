@@ -2,10 +2,12 @@
 
 use std::{collections::Bound, ops::RangeBounds};
 
-use super::layer::CpuLayer;
-use crate::memory::ComputeMemory;
+use binius_field::TowerField;
 
-impl<F: 'static> ComputeMemory<F> for CpuLayer {
+use super::layer::CpuLayer;
+use crate::{memory::ComputeMemory, tower::TowerFamily};
+
+impl<F: TowerField, T: TowerFamily<B128 = F>> ComputeMemory<F> for CpuLayer<T> {
 	const MIN_SLICE_LEN: usize = 1;
 
 	type FSlice<'a> = &'a [F];
@@ -53,34 +55,43 @@ impl<F: 'static> ComputeMemory<F> for CpuLayer {
 
 #[cfg(test)]
 mod tests {
+	use binius_field::BinaryField128b;
+
 	use super::*;
+	use crate::tower::CanonicalTowerFamily;
 
 	#[test]
 	fn test_try_slice_on_mem_slice() {
-		let data = [4, 5, 6];
-		assert_eq!(CpuLayer::slice(&data, 0..2), &data[0..2]);
-		assert_eq!(CpuLayer::slice(&data, ..2), &data[..2]);
-		assert_eq!(CpuLayer::slice(&data, 1..), &data[1..]);
-		assert_eq!(CpuLayer::slice(&data, ..), &data[..]);
+		type CL = CpuLayer<CanonicalTowerFamily>;
+
+		let data = [4, 5, 6].map(BinaryField128b::new);
+		assert_eq!(CL::slice(&data, 0..2), &data[0..2]);
+		assert_eq!(CL::slice(&data, ..2), &data[..2]);
+		assert_eq!(CL::slice(&data, 1..), &data[1..]);
+		assert_eq!(CL::slice(&data, ..), &data[..]);
 	}
 
 	#[test]
 	fn test_convert_mut_mem_slice_to_const() {
-		let mut data = [4, 5, 6];
+		type CL = CpuLayer<CanonicalTowerFamily>;
+
+		let mut data = [4, 5, 6].map(BinaryField128b::new);
 		let data_clone = data;
 		let data = &mut data[..];
-		let data = CpuLayer::as_const(&data);
+		let data = CL::as_const(&data);
 		assert_eq!(data, &data_clone);
 	}
 
 	#[test]
 	fn test_try_slice_on_mut_mem_slice() {
-		let mut data = [4, 5, 6];
+		type CL = CpuLayer<CanonicalTowerFamily>;
+
+		let mut data = [4, 5, 6].map(BinaryField128b::new);
 		let mut data_clone = data;
 		let mut data = &mut data[..];
-		assert_eq!(CpuLayer::slice_mut(&mut data, 0..2), &mut data_clone[0..2]);
-		assert_eq!(CpuLayer::slice_mut(&mut data, ..2), &mut data_clone[..2]);
-		assert_eq!(CpuLayer::slice_mut(&mut data, 1..), &mut data_clone[1..]);
-		assert_eq!(CpuLayer::slice_mut(&mut data, ..), &mut data_clone[..]);
+		assert_eq!(CL::slice_mut(&mut data, 0..2), &mut data_clone[0..2]);
+		assert_eq!(CL::slice_mut(&mut data, ..2), &mut data_clone[..2]);
+		assert_eq!(CL::slice_mut(&mut data, 1..), &mut data_clone[1..]);
+		assert_eq!(CL::slice_mut(&mut data, ..), &mut data_clone[..]);
 	}
 }
