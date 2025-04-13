@@ -239,7 +239,7 @@ fn test_sumcheck_prove_verify_interaction_basic() {
 	}
 }
 
-/// For small numbers of variables, the [`test_prove_verify_interaction_basic'] test may have so
+/// For small numbers of variables, the [`test_prove_verify_interaction_basic`] test may have so
 /// few vertices to process that each vertex is processed on a separate thread. This ensures that
 /// each Rayon task processes more than one vertex and that accumulation is handled correctly in
 /// that case.

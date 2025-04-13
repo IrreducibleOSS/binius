@@ -98,7 +98,7 @@ impl TowerField for AESTowerField8b {
 	}
 }
 
-/// Returns true if `F`` is AES tower field.
+/// Returns true if `F` is AES tower field.
 #[inline(always)]
 pub fn is_aes_tower<F: TowerField>() -> bool {
 	TypeId::of::<F>() == TypeId::of::<F>()
