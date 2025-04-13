@@ -23,8 +23,8 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn inner_product<'a>(
 		&'a self,
 		a_edeg: usize,
-		a_in: &'a [T::B128], //Self::FSlice<'_>,
-		b_in: &'a [T::B128], //Self::FSlice<'_>,
+		a_in: &'a [T::B128],
+		b_in: &'a [T::B128],
 	) -> impl Fn(&mut Self::Exec) -> Result<T::B128, Error> {
 		move |_exec| {
 			// TODO: Check lengths
@@ -36,6 +36,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 					a_in.iter()
 						.flat_map(|ext| <T::B128 as ExtensionField<T::B16>>::iter_bases(ext)),
 				),
+				5 => inner_product_unchecked(
+					b_in.iter().cloned(),
+					a_in.iter()
+						.flat_map(|ext| <T::B128 as ExtensionField<T::B32>>::iter_bases(ext)),
+				),
 				7 => inner_product_unchecked::<T::B128, T::B128>(
 					a_in.iter().cloned(),
 					b_in.iter().cloned(),
@@ -43,13 +48,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				_ => todo!(),
 			};
 			Ok(result)
-			// let result = iter::zip(
-			// 	PackedField::iter_slice(<F as PackedExtension<BinaryField16b>>::cast_bases(a_in)),
-			// 	b_in,
-			// )
-			// .map(|(a_i, &b_i)| b_i * a_i)
-			// .sum();
-			// Ok(result)
 		}
 	}
 
@@ -87,19 +85,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		}
 	}
 
-	/// Creates an operation that depends on the sequential execution of two inner operations.
-	fn then<In1, Out1, In2, Out2>(
-		&self,
-		op1: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
-		op2: impl Fn(&mut Self::Exec, Out1, In2) -> Result<Out2, Error>,
-	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<Out2, Error> {
-		move |exec, in1, in2| {
-			let out1 = op1(exec, in1)?;
-			let out2 = op2(exec, out1, in2)?;
-			Ok(out2)
-		}
-	}
-
 	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
@@ -125,14 +110,15 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		BinaryField128b, BinaryField16b, ExtensionField, Field, PackedExtension, PackedField,
-		TowerField,
+		BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField, Field, PackedExtension,
+		PackedField, TowerField,
 	};
-	use binius_math::tensor_prod_eq_ind;
+	use binius_math::{tensor_prod_eq_ind, MultilinearExtension, MultilinearQuery};
+	use bytemuck::zeroed_vec;
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::tower::CanonicalTowerFamily;
+	use crate::{memory::ComputeMemory, tower::CanonicalTowerFamily};
 
 	#[test]
 	fn test_exec_single_tensor_expand() {
@@ -185,5 +171,70 @@ mod tests {
 		.sum::<BinaryField128b>();
 
 		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn test_exec_multiple_multilinear_evaluations() {
+		type CL = CpuLayer<CanonicalTowerFamily>;
+
+		let n_vars = 8;
+
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let mle1 = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
+			.take(1 << (n_vars - <BinaryField128b as ExtensionField<BinaryField16b>>::LOG_DEGREE))
+			.collect::<Vec<_>>();
+		let mle2 = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
+			.take(1 << (n_vars - <BinaryField128b as ExtensionField<BinaryField32b>>::LOG_DEGREE))
+			.collect::<Vec<_>>();
+		let coordinates = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
+			.take(n_vars)
+			.collect::<Vec<_>>();
+
+		let compute = CL::default();
+		let compute_ref = &compute;
+		let op = |exec: &mut CpuExecutor, mut eq_ind_buffer: &mut [BinaryField128b]| {
+			// TODO: This is not generic
+			eq_ind_buffer[0] = BinaryField128b::ONE;
+			let eq_ind_op = compute.tensor_expand(0, &coordinates);
+			eq_ind_op(&mut *exec, &mut eq_ind_buffer)?;
+			let eq_ind_buffer = CL::as_const(&mut eq_ind_buffer);
+			let join_op = compute_ref.join(
+				|exec, _| {
+					compute_ref.inner_product(BinaryField16b::TOWER_LEVEL, &mle1, eq_ind_buffer)(
+						exec,
+					)
+				},
+				|exec, _| {
+					compute_ref.inner_product(BinaryField32b::TOWER_LEVEL, &mle2, eq_ind_buffer)(
+						exec,
+					)
+				},
+			);
+			join_op(exec, (), ())
+		};
+
+		let mut eq_ind_buffer = zeroed_vec(1 << n_vars);
+		let (eval1, eval2) = compute.execute(op, &mut eq_ind_buffer).unwrap();
+
+		let query = MultilinearQuery::<BinaryField128b>::expand(&coordinates);
+		let expected_eval1 = MultilinearExtension::new(
+			n_vars,
+			<BinaryField128b as PackedExtension<BinaryField16b>>::cast_bases(&mle1),
+		)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
+		let expected_eval2 = MultilinearExtension::new(
+			n_vars,
+			<BinaryField128b as PackedExtension<BinaryField32b>>::cast_bases(&mle2),
+		)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
+
+		assert_eq!(eq_ind_buffer, query.into_expansion());
+		assert_eq!(eval1, expected_eval1);
+		assert_eq!(eval2, expected_eval2);
 	}
 }

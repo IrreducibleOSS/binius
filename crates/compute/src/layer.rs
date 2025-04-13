@@ -73,13 +73,6 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 		rhs: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
 	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<(Out1, Out2), Error>;
 
-	/// Combinator for an operation that depends on the sequential execution of two inner operations.
-	fn then<In1, Out1, In2, Out2>(
-		&self,
-		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
-		rhs: impl Fn(&mut Self::Exec, Out1, In2) -> Result<Out2, Error>,
-	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<Out2, Error>;
-
 	/// Combinator for an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
@@ -91,14 +84,15 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
 		reduce: impl Fn(&mut Self::Exec, Out, Out) -> Result<Out, Error>,
 	) -> impl Fn(&mut Self::Exec, I) -> Result<Option<Out>, Error> {
-		let op = self.then(self.map(map), move |exec, items, _| {
-			items
+		let map_op = self.map(map);
+		move |exec, inputs| {
+			let map_out = map_op(exec, inputs)?;
+			map_out
 				.into_iter()
 				.map(Ok)
 				.reduce(|a, b| reduce(exec, a?, b?))
 				.transpose()
-		});
-		move |exec, inputs| op(exec, inputs, ())
+		}
 	}
 
 	/// Executes an operation.
