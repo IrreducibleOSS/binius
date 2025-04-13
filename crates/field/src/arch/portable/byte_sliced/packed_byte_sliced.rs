@@ -18,7 +18,7 @@ use crate::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
 	make_binary_to_aes_packed_transformer,
-	packed::TryRepackSlice,
+	packed::TryRepackSliceInplace,
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
@@ -347,7 +347,7 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
-		impl TryRepackSlice<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
+		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
 			#[inline(always)]
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed],
@@ -384,7 +384,7 @@ macro_rules! define_byte_sliced_3d {
 
 macro_rules! byte_sliced_common {
 	($name:ident, $packed_storage:ty, $scalar_type:ty, $storage_tower_level:ty) => {
-		impl TryRepackSlice<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
+		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
 			#[inline(always)]
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed],
@@ -408,7 +408,7 @@ macro_rules! byte_sliced_common {
 			}
 		}
 
-		impl TryRepackSlice<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
+		impl TryRepackSliceInplace<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
 			#[inline(always)]
 			fn try_repack_slice(
 				slice: &mut [$name],

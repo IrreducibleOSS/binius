@@ -11,8 +11,8 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, packed::TryRepackSlice, ExtensionField,
-	PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackedType, packed::TryRepackSliceInplace,
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
@@ -84,7 +84,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		Ok(())
 	}
 
-	pub fn repack<'cs_2, P2: TryRepackSlice<P, Scalar: TowerField>>(
+	pub fn repack<'cs_2, P2: TryRepackSliceInplace<P, Scalar: TowerField>>(
 		self,
 		converted_cs: &'cs_2 mut ConstraintSystem<P2::Scalar>,
 	) -> Result<WitnessIndex<'cs_2, 'alloc, P2>, super::Error> {
@@ -262,7 +262,9 @@ impl<'a, P: PackedField> WitnessDataMut<'a, P> {
 		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
 	}
 
-	pub fn try_repack<P2: TryRepackSlice<P>>(self) -> Result<WitnessDataMut<'a, P2>, super::Error> {
+	pub fn try_repack<P2: TryRepackSliceInplace<P>>(
+		self,
+	) -> Result<WitnessDataMut<'a, P2>, super::Error> {
 		match self {
 			WitnessColumnInfo::Owned(data) => Ok(WitnessColumnInfo::Owned(
 				P2::try_repack_slice(data).map_err(super::Error::Repacking)?,

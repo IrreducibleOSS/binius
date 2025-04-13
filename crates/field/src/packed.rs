@@ -486,11 +486,12 @@ pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 
-pub trait TryRepackSlice<P: PackedField>: PackedField {
+/// A trait for a packed field that can be converted from a slice of another packed field type.
+pub trait TryRepackSliceInplace<P: PackedField>: PackedField {
 	fn try_repack_slice(slice: &mut [P]) -> Result<&mut [Self], Error>;
 }
 
-impl<P: PackedField> TryRepackSlice<P> for P {
+impl<P: PackedField> TryRepackSliceInplace<P> for P {
 	#[inline]
 	fn try_repack_slice(slice: &mut [P]) -> Result<&mut [Self], Error> {
 		Ok(slice)
