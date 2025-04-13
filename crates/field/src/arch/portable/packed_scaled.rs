@@ -6,7 +6,11 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	checked_arithmetics::checked_log_2,
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
 use subtle::ConstantTimeEq;
@@ -35,6 +39,44 @@ impl<PT, const N: usize> ScaledPackedField<PT, N> {
 	/// In general case PT != Self::Scalar, so this function has a different name from `PackedField::from_fn`
 	pub fn from_direct_packed_fn(f: impl FnMut(usize) -> PT) -> Self {
 		Self(std::array::from_fn(f))
+	}
+}
+
+impl<PT, const N: usize> SerializeBytes for ScaledPackedField<PT, N>
+where
+	PT: SerializeBytes,
+{
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		for elem in &self.0 {
+			elem.serialize(&mut write_buf, mode)?;
+		}
+		Ok(())
+	}
+}
+
+impl<PT, const N: usize> DeserializeBytes for ScaledPackedField<PT, N>
+where
+	PT: DeserializeBytes,
+{
+	fn deserialize(
+		mut read_buf: impl Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError> {
+		let mut result = Vec::with_capacity(N);
+		for _ in 0..N {
+			result.push(PT::deserialize(&mut read_buf, mode)?);
+		}
+
+		match result.try_into() {
+			Ok(arr) => Ok(Self(arr)),
+			Err(_) => Err(SerializationError::InvalidConstruction {
+				name: "ScaledPackedField",
+			}),
+		}
 	}
 }
 
