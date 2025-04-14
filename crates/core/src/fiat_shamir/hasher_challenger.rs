@@ -60,19 +60,6 @@ where
 	}
 }
 
-// impl<H> Default for HasherChallenger<H>
-// where
-// 	H: Digest + BlockSizeUser,
-// {
-// 	fn default() -> Self {
-// 		Self::Observer(HasherObserver {
-// 			hasher: H::new(),
-// 			index: 0,
-// 			buffer: Block::<H>::default(),
-// 		})
-// 	}
-// }
-
 impl<H: Digest + BlockSizeUser + FixedOutputReset + Default> Challenger for HasherChallenger<H> {
 	/// This returns the inner challenger which implements `[BufMut]`
 	fn observer(&mut self) -> &mut impl BufMut {
@@ -107,7 +94,9 @@ impl<H> HasherSampler<H>
 where
 	H: Digest + Default + BlockSizeUser,
 {
-	fn into_observer(self) -> HasherObserver<H> {
+	fn into_observer(mut self) -> HasherObserver<H> {
+		Digest::update(&mut self.hasher, self.index.to_le_bytes());
+
 		HasherObserver {
 			hasher: self.hasher,
 			index: 0,
@@ -244,6 +233,7 @@ mod tests {
 
 		// first observing
 		challenger.observer().put_slice(&[0x48, 0x55]);
+		hasher.update([32, 0, 0, 0, 0, 0, 0, 0]);
 		hasher.update([0x48, 0x55]);
 
 		// third sampling
@@ -274,6 +264,7 @@ mod tests {
 		challenger.observer().put_slice(&observable[39..300]);
 		challenger.observer().put_slice(&observable[300..987]);
 		challenger.observer().put_slice(&observable[987..]);
+		hasher.update([0, 0, 0, 0, 0, 0, 0, 0]);
 		hasher.update(observable);
 
 		// first sampling
@@ -288,6 +279,7 @@ mod tests {
 		// second observing
 		thread_rng().fill_bytes(&mut observable);
 		challenger.observer().put_slice(&observable[..128]);
+		hasher.update([7, 0, 0, 0, 0, 0, 0, 0]);
 
 		hasher.update(&observable[..128]);
 
@@ -302,6 +294,7 @@ mod tests {
 
 		// third observing
 		challenger.observer().put_slice(&observable[128..]);
+		hasher.update([32, 0, 0, 0, 0, 0, 0, 0]);
 		hasher.update(&observable[128..]);
 
 		// third sampling
