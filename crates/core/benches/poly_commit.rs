@@ -10,8 +10,9 @@ use binius_core::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField128b,
-	BinaryField32b, PackedField,
+	packed::set_packed_slice, AESTowerField128b, AESTowerField32b, BinaryField, BinaryField128b,
+	BinaryField32b, ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b,
+	ExtensionField, PackedBinaryField1x128b, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
@@ -19,9 +20,6 @@ use binius_ntt::{NTTOptions, ThreadingSettings};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itertools::Itertools;
 use rand::thread_rng;
-
-type U = OptimalUnderlier;
-type F = BinaryField128b;
 
 fn merge_multilins<P, M>(multilins: &[M], message_buffer: &mut [P])
 where
@@ -59,8 +57,14 @@ where
 
 const LOG_SIZE: usize = 20;
 
-fn bench_poly_commit(c: &mut Criterion) {
-	let (fri_params, merkle_prover, committed_multilins) = create_poly_commit(LOG_SIZE);
+fn bench_poly_commit<F, P, FEncode>(c: &mut Criterion, name: &str)
+where
+	F: TowerField + ExtensionField<FEncode>,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	FEncode: BinaryField,
+{
+	let (fri_params, merkle_prover, committed_multilins) =
+		create_poly_commit::<F, P, FEncode>(LOG_SIZE);
 	let rs_code = ReedSolomonCode::new(
 		fri_params.rs_code().log_dim(),
 		fri_params.rs_code().log_inv_rate(),
@@ -74,7 +78,7 @@ fn bench_poly_commit(c: &mut Criterion) {
 	group.throughput(Throughput::Bytes(
 		((1 << LOG_SIZE) * committed_multilins.len() * std::mem::size_of::<F>()) as u64,
 	));
-	group.bench_function(BenchmarkId::new("log_size", LOG_SIZE), |b| {
+	group.bench_function(BenchmarkId::new(format!("{}/log_size", name), LOG_SIZE), |b| {
 		b.iter(|| {
 			fri::commit_interleaved_with(&rs_code, &fri_params, &merkle_prover, |message_buffer| {
 				merge_multilins(&committed_multilins, message_buffer)
@@ -86,19 +90,24 @@ fn bench_poly_commit(c: &mut Criterion) {
 }
 
 #[allow(clippy::type_complexity)]
-fn create_poly_commit(
+fn create_poly_commit<F, P, FEncode>(
 	log_size: usize,
 ) -> (
-	FRIParams<F, BinaryField32b>,
+	FRIParams<F, FEncode>,
 	BinaryMerkleTreeProver<F, Groestl256, Groestl256ByteCompression>,
-	Vec<impl MultilinearPoly<PackedType<U, F>>>,
-) {
+	Vec<impl MultilinearPoly<P>>,
+)
+where
+	F: TowerField + ExtensionField<FEncode>,
+	P: PackedField<Scalar = F>,
+	FEncode: BinaryField,
+{
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;
 
 	let mut rng = thread_rng();
-	let poly_data = repeat_with(|| PackedType::<U, F>::random(&mut rng))
-		.take(1 << LOG_SIZE.saturating_sub(PackedType::<U, F>::LOG_WIDTH))
+	let poly_data = repeat_with(|| P::random(&mut rng))
+		.take(1 << LOG_SIZE.saturating_sub(P::LOG_WIDTH))
 		.collect::<Vec<_>>();
 
 	let committed_multilins = vec![MLEDirectAdapter::from(
@@ -121,5 +130,29 @@ fn create_poly_commit(
 	(fri_params, merkle_prover, committed_multilins)
 }
 
+fn bench_poly_commit_binary_field(c: &mut Criterion) {
+	bench_poly_commit::<BinaryField128b, PackedBinaryField1x128b, BinaryField32b>(
+		c,
+		"binary_field",
+	);
+}
+
+fn bench_poly_commit_byte_sliced(c: &mut Criterion) {
+	bench_poly_commit::<AESTowerField128b, ByteSlicedAES16x128b, AESTowerField32b>(
+		c,
+		"byte_sliced/ByteSlicedAES16x128b",
+	);
+
+	bench_poly_commit::<AESTowerField128b, ByteSlicedAES32x128b, AESTowerField32b>(
+		c,
+		"byte_sliced/ByteSlicedAES32x128b",
+	);
+
+	bench_poly_commit::<AESTowerField128b, ByteSlicedAES64x128b, AESTowerField32b>(
+		c,
+		"byte_sliced/ByteSlicedAES64x128b",
+	);
+}
+
 criterion_main!(poly_commit);
-criterion_group!(poly_commit, bench_poly_commit);
+criterion_group!(poly_commit, bench_poly_commit_binary_field, bench_poly_commit_byte_sliced);
