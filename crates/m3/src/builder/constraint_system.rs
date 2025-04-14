@@ -24,7 +24,7 @@ use super::{
 	statement::Statement,
 	table::TablePartition,
 	types::B128,
-	witness::{TableWitnessIndex, WitnessIndex},
+	witness::WitnessIndex,
 	Table, TableBuilder,
 };
 use crate::builder::expr::ArithExprNamedVars;
@@ -147,31 +147,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	/// Creates and allocates the witness index for a statement.
+	/// Creates and allocates the witness index.
 	///
-	/// The statement includes information about the tables sizes, which this requires in order to
-	/// allocate the column data correctly. The created witness index needs to be populated before
-	/// proving.
+	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
-		statement: &Statement,
-	) -> Result<WitnessIndex<'cs, 'alloc, P>, Error> {
-		Ok(WitnessIndex {
-			tables: self
-				.tables
-				.iter()
-				.zip(&statement.table_sizes)
-				.map(|(table, &table_size)| {
-					let witness = if table_size > 0 {
-						Some(TableWitnessIndex::new(allocator, table, table_size))
-					} else {
-						None
-					};
-					witness.transpose()
-				})
-				.collect::<Result<_, _>>()?,
-		})
+	) -> WitnessIndex<'cs, 'alloc, P> {
+		WitnessIndex::new(self, allocator)
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.

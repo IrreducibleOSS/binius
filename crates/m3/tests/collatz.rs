@@ -112,8 +112,8 @@ mod arithmetization {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128,
-			B32,
+			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+			WitnessIndex, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -303,6 +303,16 @@ mod arithmetization {
 		let odds_table = OddsTable::new(&mut cs, collatz_orbit);
 
 		let trace = CollatzTrace::generate(3999);
+
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, allocator);
+		witness
+			.fill_table_sequential(&evens_table, &trace.evens)
+			.unwrap();
+		witness
+			.fill_table_sequential(&odds_table, &trace.odds)
+			.unwrap();
+
 		// TODO: Refactor boundary creation
 		let statement = Statement {
 			boundaries: vec![
@@ -319,18 +329,8 @@ mod arithmetization {
 					multiplicity: 1,
 				},
 			],
-			table_sizes: vec![trace.evens.len(), trace.odds.len()],
+			table_sizes: witness.table_sizes(),
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator, &statement)
-			.unwrap();
-		witness
-			.fill_table_sequential(&evens_table, &trace.evens)
-			.unwrap();
-		witness
-			.fill_table_sequential(&odds_table, &trace.odds)
-			.unwrap();
-
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
 			witness: witness.into_multilinear_extension_index(),
