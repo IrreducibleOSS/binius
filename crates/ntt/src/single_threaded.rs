@@ -149,44 +149,50 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	// packed base field elements.
 	let cutoff = log_w.saturating_sub(log_x);
 
+	// i indexes the layer of the NTT network, also the binary subspace.
 	for i in (cutoff..log_y).rev() {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_y, coset as usize);
+		let s_evals_i = &s_evals[i];
+		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
-		let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
-		for j in 0..1 << (log_z + coset_twiddle.log_n()) {
-			let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
-			for k in 0..1 << (i + log_x - log_w) {
-				let idx0 = j << (i + log_x - log_w + 1) | k;
-				let idx1 = idx0 | 1 << (i + log_x - log_w);
-				data[idx0] += data[idx1] * twiddle;
-				data[idx1] += data[idx0];
+		// j indexes the outer Z tensor axis.
+		for j in 0..1 << log_z {
+			// k indexes the block within the layer. Each block performs butterfly operations with
+			// the same twiddle factor.
+			for k in 0..1 << (log_y - 1 - i) {
+				let twiddle = s_evals_i.get(coset_offset | k);
+				for l in 0..1 << (i + log_x - log_w) {
+					let idx0 = j << (log_x + log_y - log_w) | k << (log_x + i + 1 - log_w) | l;
+					let idx1 = idx0 | 1 << (log_x + i - log_w);
+					data[idx0] += data[idx1] * twiddle;
+					data[idx1] += data[idx0];
+				}
 			}
 		}
 	}
 
 	for i in (0..cmp::min(cutoff, log_y)).rev() {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_y, coset as usize);
+		let s_evals_i = &s_evals[i];
+		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
 		// A block is a block of butterfly units that all have the same twiddle factor. Since we
 		// are below the cutoff round, the block length is less than the packing width, and
 		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
-		let block_twiddle = calculate_packed_additive_twiddle::<P>(
-			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
-			shape,
-			i,
-		);
+		let block_twiddle = calculate_packed_additive_twiddle::<P>(s_evals_i, shape, i);
 
 		let log_block_len = i + log_x;
-		let twiddle_index_mask = (1 << (coset_twiddle.log_n() + i).saturating_sub(cutoff)) - 1;
-		for j in 0..data.len() / 2 {
-			let twiddle = P::broadcast(coset_twiddle.get((j & twiddle_index_mask) << (cutoff - i)))
-				+ block_twiddle;
-			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-			u += v * twiddle;
-			v += u;
-			(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
+		let log_packed_count = (log_y - 1).saturating_sub(cutoff);
+		for j in 0..1 << (log_x + log_y + log_z).saturating_sub(log_w + log_packed_count + 1) {
+			for k in 0..1 << log_packed_count {
+				let twiddle =
+					P::broadcast(s_evals_i.get(coset_offset | k << (cutoff - i))) + block_twiddle;
+				let index = k << 1 | j << (log_packed_count + 1);
+				let (mut u, mut v) = data[index].interleave(data[index | 1], log_block_len);
+				u += v * twiddle;
+				v += u;
+				(data[index], data[index | 1]) = u.interleave(v, log_block_len);
+			}
 		}
 	}
 
@@ -238,43 +244,49 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..cutoff.min(log_y) {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_y, coset as usize);
+		let s_evals_i = &s_evals[i];
+		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
 		// A block is a block of butterfly units that all have the same twiddle factor. Since we
 		// are below the cutoff round, the block length is less than the packing width, and
 		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
-		let block_twiddle = calculate_packed_additive_twiddle::<P>(
-			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
-			shape,
-			i,
-		);
+		let block_twiddle = calculate_packed_additive_twiddle::<P>(s_evals_i, shape, i);
 
 		let log_block_len = i + log_x;
-		let twiddle_index_mask = (1 << (coset_twiddle.log_n() + i).saturating_sub(cutoff)) - 1;
-		for j in 0..data.len() / 2 {
-			let twiddle = P::broadcast(coset_twiddle.get((j & twiddle_index_mask) << (cutoff - i)))
-				+ block_twiddle;
-			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-			v += u;
-			u += v * twiddle;
-			(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
+		let log_packed_count = (log_y - 1).saturating_sub(cutoff);
+		for j in 0..1 << (log_x + log_y + log_z).saturating_sub(log_w + log_packed_count + 1) {
+			for k in 0..1 << log_packed_count {
+				let twiddle =
+					P::broadcast(s_evals_i.get(coset_offset | k << (cutoff - i))) + block_twiddle;
+				let index = k << 1 | j << (log_packed_count + 1);
+				let (mut u, mut v) = data[index].interleave(data[index | 1], log_block_len);
+				v += u;
+				u += v * twiddle;
+				(data[index], data[index | 1]) = u.interleave(v, log_block_len);
+			}
 		}
 	}
 
+	// i indexes the layer of the NTT network, also the binary subspace.
 	#[allow(clippy::needless_range_loop)]
 	for i in cutoff..log_y {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_y, coset as usize);
+		let s_evals_i = &s_evals[i];
+		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
-		let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
-		for j in 0..1 << (log_z + coset_twiddle.log_n()) {
-			let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
-			for k in 0..1 << (i + log_x - log_w) {
-				let idx0 = j << (i + log_x - log_w + 1) | k;
-				let idx1 = idx0 | 1 << (i + log_x - log_w);
-				data[idx1] += data[idx0];
-				data[idx0] += data[idx1] * twiddle;
+		// j indexes the outer Z tensor axis.
+		for j in 0..1 << log_z {
+			// k indexes the block within the layer. Each block performs butterfly operations with
+			// the same twiddle factor.
+			for k in 0..1 << (log_y - 1 - i) {
+				let twiddle = s_evals_i.get(coset_offset | k);
+				for l in 0..1 << (i + log_x - log_w) {
+					let idx0 = j << (log_x + log_y - log_w) | k << (log_x + i + 1 - log_w) | l;
+					let idx1 = idx0 | 1 << (log_x + i - log_w);
+					data[idx1] += data[idx0];
+					data[idx0] += data[idx1] * twiddle;
+				}
 			}
 		}
 	}
@@ -348,23 +360,26 @@ where
 	let packed_log_z = packed_log_len.saturating_sub(log_x + log_y);
 	let packed_log_y = packed_log_len - packed_log_z - log_x;
 
-	let twiddle_stride = s_evals.log_n().min(log_blocks_count - packed_log_z);
-	let twiddle_index_mask = (1 << twiddle_stride) - 1;
+	let twiddle_stride = P::LOG_WIDTH
+		.saturating_sub(log_x)
+		.min(log_blocks_count - packed_log_z);
 
 	let mut twiddle = P::default();
-	for k in 0..1 << log_blocks_count {
-		let (subblock_twiddle_0, subblock_twiddle_1) = if packed_log_y == log_y {
-			let same_twiddle = s_evals.get(k & twiddle_index_mask);
-			(same_twiddle, same_twiddle)
-		} else {
-			s_evals.get_pair(twiddle_stride, k)
-		};
-		let idx0 = k << (log_block_len + 1);
-		let idx1 = idx0 | 1 << log_block_len;
+	for i in 0..1 << (log_blocks_count - twiddle_stride) {
+		for j in 0..1 << twiddle_stride {
+			let (subblock_twiddle_0, subblock_twiddle_1) = if packed_log_y == log_y {
+				let same_twiddle = s_evals.get(j);
+				(same_twiddle, same_twiddle)
+			} else {
+				s_evals.get_pair(twiddle_stride, j)
+			};
+			let idx0 = j << (log_block_len + 1) | i << (log_block_len + twiddle_stride + 1);
+			let idx1 = idx0 | 1 << log_block_len;
 
-		for l in 0..1 << log_block_len {
-			twiddle.set(idx0 | l, subblock_twiddle_0);
-			twiddle.set(idx1 | l, subblock_twiddle_1);
+			for k in 0..1 << log_block_len {
+				twiddle.set(idx0 | k, subblock_twiddle_0);
+				twiddle.set(idx1 | k, subblock_twiddle_1);
+			}
 		}
 	}
 	twiddle

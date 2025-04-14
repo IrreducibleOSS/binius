@@ -143,24 +143,30 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		matrix
 			.into_par_strides(1 << log_stride_len)
 			.for_each(|mut stride| {
+				// i indexes the layer of the NTT network, also the binary subspace.
 				for i in (0..par_rounds).rev() {
-					let coset_twiddle = s_evals[log_y - par_rounds + i]
-						.coset(log_domain_size - log_y, coset as usize);
+					let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+					let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
-					let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
-					for j in 0..1 << (log_z + coset_twiddle.log_n()) {
-						let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
-						for k in 0..1 << i {
-							for l in 0..1 << log_stride_len {
-								let idx0 = j << (i + 1) | k;
-								let idx1 = idx0 | 1 << i;
+					// j indexes the outer Z tensor axis.
+					for j in 0..1 << log_z {
+						// k indexes the block within the layer. Each block performs butterfly operations with
+						// the same twiddle factor.
+						for k in 0..1 << (par_rounds - 1 - i) {
+							let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
+							// l indexes parallel stride columns
+							for l in 0..1 << i {
+								for m in 0..1 << log_stride_len {
+									let idx0 = j << par_rounds | k << (i + 1) | l;
+									let idx1 = idx0 | 1 << i;
 
-								let mut u = stride[(idx0, l)];
-								let mut v = stride[(idx1, l)];
-								u += v * twiddle;
-								v += u;
-								stride[(idx0, l)] = u;
-								stride[(idx1, l)] = v;
+									let mut u = stride[(idx0, m)];
+									let mut v = stride[(idx1, m)];
+									u += v * twiddle;
+									v += u;
+									stride[(idx0, m)] = u;
+									stride[(idx1, m)] = v;
+								}
 							}
 						}
 					}
@@ -171,9 +177,8 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let log_row_z = log_z.saturating_sub(log_height);
 	let single_thread_log_y = log_width + log_w - log_x - log_row_z;
 
-	let inner_coset_mask = (1 << par_rounds) - 1;
-	data.par_chunks_mut(1 << log_width)
-		.enumerate()
+	data.par_chunks_mut(1 << (log_width + par_rounds))
+		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::forward_transform(
 				log_domain_size,
@@ -184,7 +189,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					log_y: single_thread_log_y,
 					log_z: log_row_z,
 				},
-				coset << par_rounds | (inner_coset as u32) & inner_coset_mask,
+				coset << par_rounds | inner_coset as u32,
 			)
 		})?;
 
@@ -235,9 +240,8 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	let single_thread_log_y = log_width + log_w - log_x - log_row_z;
 
-	let inner_coset_mask = (1 << par_rounds) - 1;
-	data.par_chunks_mut(1 << log_width)
-		.enumerate()
+	data.par_chunks_mut(1 << (log_width + par_rounds))
+		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::inverse_transform(
 				log_domain_size,
@@ -248,7 +252,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					log_y: single_thread_log_y,
 					log_z: log_row_z,
 				},
-				coset << par_rounds | (inner_coset as u32) & inner_coset_mask,
+				coset << par_rounds | inner_coset as u32,
 			)
 		})?;
 
@@ -262,24 +266,30 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	matrix
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
+			// i indexes the layer of the NTT network, also the binary subspace.
 			for i in 0..par_rounds {
-				let coset_twiddle =
-					s_evals[log_y - par_rounds + i].coset(log_domain_size - log_y, coset as usize);
+				let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+				let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
-				let twiddle_index_mask = (1 << coset_twiddle.log_n()) - 1;
-				for j in 0..1 << (log_z + coset_twiddle.log_n()) {
-					let twiddle = P::broadcast(coset_twiddle.get(j & twiddle_index_mask));
-					for k in 0..1 << i {
-						for l in 0..1 << log_stride_len {
-							let idx0 = j << (i + 1) | k;
-							let idx1 = idx0 | 1 << i;
+				// j indexes the outer Z tensor axis.
+				for j in 0..1 << log_z {
+					// k indexes the block within the layer. Each block performs butterfly operations with
+					// the same twiddle factor.
+					for k in 0..1 << (par_rounds - 1 - i) {
+						let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
+						// l indexes parallel stride columns
+						for l in 0..1 << i {
+							for m in 0..1 << log_stride_len {
+								let idx0 = j << par_rounds | k << (i + 1) | l;
+								let idx1 = idx0 | 1 << i;
 
-							let mut u = stride[(idx0, l)];
-							let mut v = stride[(idx1, l)];
-							v += u;
-							u += v * twiddle;
-							stride[(idx0, l)] = u;
-							stride[(idx1, l)] = v;
+								let mut u = stride[(idx0, m)];
+								let mut v = stride[(idx1, m)];
+								v += u;
+								u += v * twiddle;
+								stride[(idx0, m)] = u;
+								stride[(idx1, m)] = v;
+							}
 						}
 					}
 				}
