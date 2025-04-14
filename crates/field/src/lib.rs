@@ -33,6 +33,7 @@ pub mod packed_extension;
 pub mod packed_extension_ops;
 mod packed_polyval;
 pub mod polyval;
+pub mod scalars_collection;
 #[cfg(test)]
 mod tests;
 pub mod tower_levels;

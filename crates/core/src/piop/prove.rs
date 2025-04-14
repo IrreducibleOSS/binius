@@ -2,6 +2,7 @@
 
 use binius_field::{
 	packed::{get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked},
+	scalars_collection::{CollectionSubrangeMut, PackedSliceMut, ScalarsCollectionMut},
 	BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -43,22 +44,18 @@ use crate::{
 
 /// Reorders the scalars in a slice of packed field elements by reversing the bits of their indices.
 /// TODO: investigate if we can optimize this.
-fn reverse_slice_index_bits<P: PackedField>(slice: &mut [P]) {
-	let log_len = checked_log_2(slice.len()) + P::LOG_WIDTH;
-	for i in 0..slice.len() << P::LOG_WIDTH {
+fn reverse_index_bits<F>(collection: &mut impl ScalarsCollectionMut<F>) {
+	let log_len = checked_log_2(collection.len());
+	for i in 0..collection.len() {
 		let bit_reversed_index = i
 			.reverse_bits()
 			.wrapping_shr((usize::BITS as usize - log_len) as _);
 		if i < bit_reversed_index {
 			// Safety: `i` and `j` are guaranteed to be in bounds of the slice
 			unsafe {
-				let tmp = get_packed_slice_unchecked(slice, i);
-				set_packed_slice_unchecked(
-					slice,
-					i,
-					get_packed_slice_unchecked(slice, bit_reversed_index),
-				);
-				set_packed_slice_unchecked(slice, bit_reversed_index, tmp);
+				let tmp = collection.get_unchecked(i);
+				collection.set_unchecked(i, collection.get_unchecked(bit_reversed_index));
+				collection.set_unchecked(bit_reversed_index, tmp);
 			}
 		}
 	}
@@ -91,23 +88,31 @@ where
 		full_packed_mles.push((evals, chunk));
 		remaining_buffer = rest;
 	}
-	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
-		chunk.copy_from_slice(evals);
-		reverse_slice_index_bits(chunk);
-	});
+	full_packed_mles
+		.into_par_iter()
+		.for_each(|(evals, mut chunk)| {
+			chunk.copy_from_slice(evals);
+			reverse_index_bits(&mut chunk);
+		});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
 	// packed elements.
 	let mut scalar_offset = 0;
+	let mut remaining_buffer = PackedSliceMut::new(remaining_buffer);
 	for mle in mle_iter {
 		let evals = mle
 			.packed_evals()
 			.expect("guaranteed by function precondition");
 		let packed_eval = evals[0];
-		for i in 0..1 << mle.n_vars() {
-			set_packed_slice(remaining_buffer, scalar_offset, packed_eval.get(i));
-			scalar_offset += 1;
+		let len = 1 << get_n_packed_vars(mle);
+		let mut packed_chunk =
+			CollectionSubrangeMut::new(&mut remaining_buffer, scalar_offset, len);
+		for i in 0..len {
+			packed_chunk.set(i, packed_eval.get(i));
 		}
+		reverse_index_bits(&mut packed_chunk);
+
+		scalar_offset += len;
 	}
 }
 
