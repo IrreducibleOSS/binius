@@ -12,6 +12,7 @@ use crate::{
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
 	packed::get_packed_slice,
+	scalars_collection::ScalarsCollection,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
 	BinaryField8b, Field, PackedField,
@@ -374,53 +375,6 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 
 			_ => unreachable!("packed field doesn't support byte iteration"),
 		}
-	}
-}
-
-/// Scalars collection abstraction.
-/// This trait is used to abstract over different types of collections of field elements.
-pub trait ScalarsCollection<T> {
-	fn len(&self) -> usize;
-	fn get(&self, i: usize) -> T;
-	fn is_empty(&self) -> bool {
-		self.len() == 0
-	}
-}
-
-impl<F: Field> ScalarsCollection<F> for &[F] {
-	#[inline(always)]
-	fn len(&self) -> usize {
-		<[F]>::len(self)
-	}
-
-	#[inline(always)]
-	fn get(&self, i: usize) -> F {
-		self[i]
-	}
-}
-
-#[derive(Clone)]
-pub struct PackedSlice<'a, P: PackedField> {
-	slice: &'a [P],
-	len: usize,
-}
-
-impl<'a, P: PackedField> PackedSlice<'a, P> {
-	#[inline(always)]
-	pub const fn new(slice: &'a [P], len: usize) -> Self {
-		Self { slice, len }
-	}
-}
-
-impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'_, P> {
-	#[inline(always)]
-	fn len(&self) -> usize {
-		self.len
-	}
-
-	#[inline(always)]
-	fn get(&self, i: usize) -> P::Scalar {
-		get_packed_slice(self.slice, i)
 	}
 }
 

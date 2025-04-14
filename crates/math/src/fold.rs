@@ -7,11 +7,12 @@ use binius_field::{
 	arch::{ArchOptimal, OptimalUnderlier},
 	byte_iteration::{
 		can_iterate_bytes, create_partial_sums_lookup_tables, is_sequential_bytes, iterate_bytes,
-		ByteIteratorCallback, PackedSlice,
+		ByteIteratorCallback,
 	},
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
 	},
+	scalars_collection::PackedSlice,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
 	Field, PackedField,
@@ -383,7 +384,7 @@ where
 	}
 
 	let cached_tables =
-		create_partial_sums_lookup_tables(PackedSlice::new(query, 1 << LOG_QUERY_SIZE));
+		create_partial_sums_lookup_tables(PackedSlice::new_with_len(query, 1 << LOG_QUERY_SIZE));
 
 	struct Callback<'a, PE: PackedField, const LOG_QUERY_SIZE: usize> {
 		out: &'a mut [PE],

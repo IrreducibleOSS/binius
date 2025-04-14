@@ -10,12 +10,23 @@ use crate::{
 
 pub trait ScalarsCollection<F> {
 	fn len(&self) -> usize;
-	fn get(&self, index: usize) -> F;
+
+	#[inline(always)]
+	fn get(&self, index: usize) -> F {
+		assert!(index < self.len(), "Index out of bounds");
+		unsafe { self.get_unchecked(index) }
+	}
+
 	unsafe fn get_unchecked(&self, index: usize) -> F;
 }
 
 pub trait ScalarsCollectionMut<F>: ScalarsCollection<F> {
-	fn set(&mut self, index: usize, value: F);
+	#[inline(always)]
+	fn set(&mut self, index: usize, value: F) {
+		assert!(index < self.len(), "Index out of bounds");
+		unsafe { self.set_unchecked(index, value) }
+	}
+
 	unsafe fn set_unchecked(&mut self, index: usize, value: F);
 }
 
@@ -65,6 +76,7 @@ impl<F: Copy> ScalarsCollectionMut<F> for &mut [F] {
 	}
 }
 
+#[derive(Clone)]
 pub struct PackedSlice<'a, P: PackedField> {
 	slice: &'a [P],
 	len: usize,
@@ -91,16 +103,6 @@ impl<'a, P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'a, P> {
 	#[inline(always)]
 	fn len(&self) -> usize {
 		self.len
-	}
-
-	#[inline(always)]
-	fn get(&self, index: usize) -> P::Scalar {
-		assert!(index < self.len, "Index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.get_unchecked(index) }
 	}
 
 	#[inline(always)]
@@ -136,37 +138,18 @@ impl<'a, P: PackedField> ScalarsCollection<P::Scalar> for PackedSliceMut<'a, P> 
 	}
 
 	#[inline(always)]
-	fn get(&self, index: usize) -> P::Scalar {
-		assert!(index < self.len, "Index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.get_unchecked(index) }
-	}
-
-	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
 		get_packed_slice_unchecked(&self.slice, index)
 	}
 }
 impl<'a, P: PackedField> ScalarsCollectionMut<P::Scalar> for PackedSliceMut<'a, P> {
 	#[inline(always)]
-	fn set(&mut self, index: usize, value: P::Scalar) {
-		assert!(index < self.len, "index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.set_unchecked(index, value) }
-	}
-
-	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
 		set_packed_slice_unchecked(self.slice, index, value);
 	}
 }
 
+#[derive(Clone)]
 pub struct CollectionSubrange<'a, F, Inner: ScalarsCollection<F>> {
 	inner: &'a Inner,
 	offset: usize,
@@ -192,16 +175,6 @@ impl<'a, F, Inner: ScalarsCollection<F>> ScalarsCollection<F> for CollectionSubr
 	#[inline(always)]
 	fn len(&self) -> usize {
 		self.len
-	}
-
-	#[inline(always)]
-	fn get(&self, index: usize) -> F {
-		assert!(index + self.offset < self.len, "index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.get_unchecked(index) }
 	}
 
 	#[inline(always)]
@@ -239,16 +212,6 @@ impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollection<F>
 	}
 
 	#[inline(always)]
-	fn get(&self, index: usize) -> F {
-		assert!(index + self.offset < self.len, "index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.get_unchecked(index) }
-	}
-
-	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> F {
 		self.inner.get_unchecked(index + self.offset)
 	}
@@ -256,16 +219,6 @@ impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollection<F>
 impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollectionMut<F>
 	for CollectionSubrangeMut<'a, F, Inner>
 {
-	#[inline(always)]
-	fn set(&mut self, index: usize, value: F) {
-		assert!(index + self.offset < self.len, "index out of bounds");
-
-		// Safety:
-		//  - self.len <= len_packed_slice(self.slice), checked in `new_with_len`
-		//  - index < self.len, checked by the assert above
-		unsafe { self.set_unchecked(index, value) }
-	}
-
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: F) {
 		self.inner.set_unchecked(index + self.offset, value);
