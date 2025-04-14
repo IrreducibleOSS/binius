@@ -8,7 +8,11 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+binius_field = { path = "../field", default-features = false }
+bytemuck.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
+binius_math = { path = "../math", default-features = false }
+rand.workspace = true

@@ -58,16 +58,18 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
+	use binius_field::BinaryField128b;
 
 	use super::*;
-	use crate::cpu::memory::CpuMemory;
+	use crate::{cpu::CpuLayer, tower::CanonicalTowerFamily};
 
 	#[test]
 	fn test_alloc() {
-		let mut data = (0..256u128).collect::<Vec<_>>();
+		type CL = CpuLayer<CanonicalTowerFamily>;
+		let mut data = (0..256u128).map(BinaryField128b::new).collect::<Vec<_>>();
 
 		{
-			let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
+			let bump = BumpAllocator::<BinaryField128b, CL>::new(&mut data);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_matches!(bump.alloc(100), Err(Error::OutOfMemory));
@@ -75,7 +77,7 @@ mod tests {
 		}
 
 		// Reuse memory
-		let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
+		let bump = BumpAllocator::<BinaryField128b, CL>::new(&mut data);
 		let data = bump.alloc(100).unwrap();
 		assert_eq!(data.len(), 100);
 	}
