@@ -4,6 +4,8 @@ use crate::memory::ComputeMemory;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("input validation: {0}")]
+	InputValidation(String),
 	#[error("device error: {0}")]
 	DeviceError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -70,13 +72,11 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 	) -> Result<(), Error>;
 
 	/// Combinator for an operation that depends on the concurrent execution of two inner operations.
-	fn join<In1, Out1, In2, Out2>(
+	fn join<Out1, Out2>(
 		&self,
 		exec: &mut Self::Exec,
-		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
-		rhs: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
-		in1: In1,
-		in2: In2,
+		lhs: impl Fn(&mut Self::Exec) -> Result<Out1, Error>,
+		rhs: impl Fn(&mut Self::Exec) -> Result<Out2, Error>,
 	) -> Result<(Out1, Out2), Error>;
 
 	/// Combinator for an operation that depends on the concurrent execution of a sequence of operations.

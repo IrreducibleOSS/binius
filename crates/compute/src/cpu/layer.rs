@@ -2,7 +2,7 @@
 
 use std::{iter, marker::PhantomData};
 
-use binius_field::{util::inner_product_unchecked, ExtensionField};
+use binius_field::{util::inner_product_unchecked, ExtensionField, TowerField};
 
 use crate::{
 	layer::{ComputeLayer, Error, Executor},
@@ -27,10 +27,21 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		a_in: &'a [T::B128],
 		b_in: &'a [T::B128],
 	) -> Result<T::B128, Error> {
-		// TODO: Check lengths
+		// TODO: Assertions to input errors
+		assert!(a_edeg <= T::B128::TOWER_LEVEL);
+		assert_eq!(a_in.len() << (T::B128::TOWER_LEVEL - a_edeg), b_in.len());
+
 		let result = match a_edeg {
-			// 1 => inner_product_unchecked::<T::B64, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
-			// 2 => inner_product_unchecked::<T::B32, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
+			0 => inner_product_unchecked(
+				b_in.iter().cloned(),
+				a_in.iter()
+					.flat_map(|ext| <T::B128 as ExtensionField<T::B1>>::iter_bases(ext)),
+			),
+			3 => inner_product_unchecked(
+				b_in.iter().cloned(),
+				a_in.iter()
+					.flat_map(|ext| <T::B128 as ExtensionField<T::B8>>::iter_bases(ext)),
+			),
 			4 => inner_product_unchecked(
 				b_in.iter().cloned(),
 				a_in.iter()
@@ -41,11 +52,20 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				a_in.iter()
 					.flat_map(|ext| <T::B128 as ExtensionField<T::B32>>::iter_bases(ext)),
 			),
+			6 => inner_product_unchecked(
+				b_in.iter().cloned(),
+				a_in.iter()
+					.flat_map(|ext| <T::B128 as ExtensionField<T::B64>>::iter_bases(ext)),
+			),
 			7 => inner_product_unchecked::<T::B128, T::B128>(
 				a_in.iter().cloned(),
 				b_in.iter().cloned(),
 			),
-			_ => todo!(),
+			_ => {
+				return Err(Error::InputValidation(format!(
+					"unsupported value of a_edeg: {a_edeg}"
+				)))
+			}
 		};
 		Ok(result)
 	}
@@ -57,6 +77,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		coordinates: &[T::B128],
 		data: &mut &'a mut [T::B128],
 	) -> Result<(), Error> {
+		// TODO: Assertions to input errors
 		assert_eq!(data.len(), 1 << (log_n + coordinates.len()));
 		for (i, r_i) in coordinates.iter().enumerate() {
 			let (lhs, rest) = data.split_at_mut(1 << (log_n + i));
@@ -71,16 +92,14 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	/// Creates an operation that depends on the concurrent execution of two inner operations.
-	fn join<In1, Out1, In2, Out2>(
+	fn join<Out1, Out2>(
 		&self,
 		exec: &mut Self::Exec,
-		op1: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
-		op2: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
-		in1: In1,
-		in2: In2,
+		op1: impl Fn(&mut Self::Exec) -> Result<Out1, Error>,
+		op2: impl Fn(&mut Self::Exec) -> Result<Out2, Error>,
 	) -> Result<(Out1, Out2), Error> {
-		let out1 = op1(exec, in1)?;
-		let out2 = op2(exec, in2)?;
+		let out1 = op1(exec)?;
+		let out2 = op2(exec)?;
 		Ok((out1, out2))
 	}
 
@@ -203,21 +222,19 @@ mod tests {
 		let compute = CL::default();
 		//let compute_ref = &compute;
 		let op = |exec: &mut CpuExecutor, mut eq_ind_buffer: &mut [BinaryField128b]| {
-			// TODO: This is not generic
+			// TODO: This memory initialization is not generic
 			eq_ind_buffer[0] = BinaryField128b::ONE;
 			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_buffer)?;
-			//eq_ind_op(&mut *exec, &mut eq_ind_buffer)?;
+
 			let eq_ind_buffer = CL::as_const(&mut eq_ind_buffer);
 			compute.join(
 				exec,
-				|exec, _| {
+				|exec| {
 					compute.inner_product(exec, BinaryField16b::TOWER_LEVEL, &mle1, eq_ind_buffer)
 				},
-				|exec, _| {
+				|exec| {
 					compute.inner_product(exec, BinaryField32b::TOWER_LEVEL, &mle2, eq_ind_buffer)
 				},
-				(),
-				(),
 			)
 		};
 
