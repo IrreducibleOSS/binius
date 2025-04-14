@@ -22,75 +22,76 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 	fn inner_product<'a>(
 		&'a self,
+		_exec: &'a mut Self::Exec,
 		a_edeg: usize,
 		a_in: &'a [T::B128],
 		b_in: &'a [T::B128],
-	) -> impl Fn(&mut Self::Exec) -> Result<T::B128, Error> {
-		move |_exec| {
-			// TODO: Check lengths
-			let result = match a_edeg {
-				// 1 => inner_product_unchecked::<T::B64, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
-				// 2 => inner_product_unchecked::<T::B32, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
-				4 => inner_product_unchecked(
-					b_in.iter().cloned(),
-					a_in.iter()
-						.flat_map(|ext| <T::B128 as ExtensionField<T::B16>>::iter_bases(ext)),
-				),
-				5 => inner_product_unchecked(
-					b_in.iter().cloned(),
-					a_in.iter()
-						.flat_map(|ext| <T::B128 as ExtensionField<T::B32>>::iter_bases(ext)),
-				),
-				7 => inner_product_unchecked::<T::B128, T::B128>(
-					a_in.iter().cloned(),
-					b_in.iter().cloned(),
-				),
-				_ => todo!(),
-			};
-			Ok(result)
-		}
+	) -> Result<T::B128, Error> {
+		// TODO: Check lengths
+		let result = match a_edeg {
+			// 1 => inner_product_unchecked::<T::B64, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
+			// 2 => inner_product_unchecked::<T::B32, F>(a_in.iter().flat_map(|ext| ext.iter_bases()) )
+			4 => inner_product_unchecked(
+				b_in.iter().cloned(),
+				a_in.iter()
+					.flat_map(|ext| <T::B128 as ExtensionField<T::B16>>::iter_bases(ext)),
+			),
+			5 => inner_product_unchecked(
+				b_in.iter().cloned(),
+				a_in.iter()
+					.flat_map(|ext| <T::B128 as ExtensionField<T::B32>>::iter_bases(ext)),
+			),
+			7 => inner_product_unchecked::<T::B128, T::B128>(
+				a_in.iter().cloned(),
+				b_in.iter().cloned(),
+			),
+			_ => todo!(),
+		};
+		Ok(result)
 	}
 
-	fn tensor_expand(
+	fn tensor_expand<'a>(
 		&self,
+		_exec: &mut Self::Exec,
 		log_n: usize,
 		coordinates: &[T::B128],
-	) -> impl for<'a> Fn(&mut Self::Exec, &mut Self::FSliceMut<'a>) -> Result<(), Error> {
-		let coordinates = coordinates.to_vec();
-		move |_exec, data| {
-			assert_eq!(data.len(), 1 << (log_n + coordinates.len()));
-			for (i, r_i) in coordinates.iter().enumerate() {
-				let (lhs, rest) = data.split_at_mut(1 << (log_n + i));
-				let (rhs, _rest) = rest.split_at_mut(1 << (log_n + i));
-				for (x_i, y_i) in iter::zip(lhs, rhs) {
-					let prod = *x_i * r_i;
-					*x_i -= prod;
-					*y_i += prod;
-				}
+		data: &mut &'a mut [T::B128],
+	) -> Result<(), Error> {
+		assert_eq!(data.len(), 1 << (log_n + coordinates.len()));
+		for (i, r_i) in coordinates.iter().enumerate() {
+			let (lhs, rest) = data.split_at_mut(1 << (log_n + i));
+			let (rhs, _rest) = rest.split_at_mut(1 << (log_n + i));
+			for (x_i, y_i) in iter::zip(lhs, rhs) {
+				let prod = *x_i * r_i;
+				*x_i -= prod;
+				*y_i += prod;
 			}
-			Ok(())
 		}
+		Ok(())
 	}
 
 	/// Creates an operation that depends on the concurrent execution of two inner operations.
 	fn join<In1, Out1, In2, Out2>(
 		&self,
+		exec: &mut Self::Exec,
 		op1: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
 		op2: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
-	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<(Out1, Out2), Error> {
-		move |exec, in1, in2| {
-			let out1 = op1(exec, in1)?;
-			let out2 = op2(exec, in2)?;
-			Ok((out1, out2))
-		}
+		in1: In1,
+		in2: In2,
+	) -> Result<(Out1, Out2), Error> {
+		let out1 = op1(exec, in1)?;
+		let out2 = op2(exec, in2)?;
+		Ok((out1, out2))
 	}
 
 	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
+		exec: &mut Self::Exec,
 		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
-	) -> impl Fn(&mut Self::Exec, I) -> Result<Vec<Out>, Error> {
-		move |exec, iter| iter.map(|item| map(exec, item)).collect()
+		iter: I,
+	) -> Result<Vec<Out>, Error> {
+		iter.map(|item| map(exec, item)).collect()
 	}
 
 	/// Executes an operation.
@@ -129,15 +130,18 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		let op = compute.tensor_expand(2, &coordinates[2..]);
 		let mut buffer = vec![BinaryField128b::ZERO; 1 << n_vars];
 		for x_i in &mut buffer[..4] {
 			*x_i = <BinaryField128b as Field>::random(&mut rng);
 		}
 		let mut buffer_clone = buffer.clone();
 
+		//let op = compute.tensor_expand(2, &coordinates[2..]);
 		compute
-			.execute(|exec, buffer| op(exec, buffer), &mut buffer.as_mut())
+			.execute(
+				|exec, buffer| compute.tensor_expand(exec, 2, &coordinates[2..], buffer),
+				&mut buffer.as_mut(),
+			)
 			.unwrap();
 
 		tensor_prod_eq_ind(2, &mut buffer_clone, &coordinates[2..]).unwrap();
@@ -158,8 +162,13 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		let op = compute.inner_product(BinaryField16b::TOWER_LEVEL, &a, &b);
-		let actual = compute.execute(|exec, _in| op(exec), ()).unwrap();
+		//let op = compute.inner_product(BinaryField16b::TOWER_LEVEL, &a, &b);
+		let actual = compute
+			.execute(
+				|exec, _in| compute.inner_product(exec, BinaryField16b::TOWER_LEVEL, &a, &b),
+				(),
+			)
+			.unwrap();
 
 		let expected = iter::zip(
 			PackedField::iter_slice(
@@ -192,26 +201,24 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let compute = CL::default();
-		let compute_ref = &compute;
+		//let compute_ref = &compute;
 		let op = |exec: &mut CpuExecutor, mut eq_ind_buffer: &mut [BinaryField128b]| {
 			// TODO: This is not generic
 			eq_ind_buffer[0] = BinaryField128b::ONE;
-			let eq_ind_op = compute.tensor_expand(0, &coordinates);
-			eq_ind_op(&mut *exec, &mut eq_ind_buffer)?;
+			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_buffer)?;
+			//eq_ind_op(&mut *exec, &mut eq_ind_buffer)?;
 			let eq_ind_buffer = CL::as_const(&mut eq_ind_buffer);
-			let join_op = compute_ref.join(
+			compute.join(
+				exec,
 				|exec, _| {
-					compute_ref.inner_product(BinaryField16b::TOWER_LEVEL, &mle1, eq_ind_buffer)(
-						exec,
-					)
+					compute.inner_product(exec, BinaryField16b::TOWER_LEVEL, &mle1, eq_ind_buffer)
 				},
 				|exec, _| {
-					compute_ref.inner_product(BinaryField32b::TOWER_LEVEL, &mle2, eq_ind_buffer)(
-						exec,
-					)
+					compute.inner_product(exec, BinaryField32b::TOWER_LEVEL, &mle2, eq_ind_buffer)
 				},
-			);
-			join_op(exec, (), ())
+				(),
+				(),
+			)
 		};
 
 		let mut eq_ind_buffer = zeroed_vec(1 << n_vars);

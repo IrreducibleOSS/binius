@@ -33,10 +33,11 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 	/// Returns the inner product of `a_in` and `b_in`.
 	fn inner_product<'a>(
 		&'a self,
+		exec: &'a mut Self::Exec,
 		a_edeg: usize,
 		a_in: Self::FSlice<'a>,
 		b_in: Self::FSlice<'a>,
-	) -> impl Fn(&mut Self::Exec) -> Result<F, Error>;
+	) -> Result<F, Error>;
 
 	/// Computes the iterative tensor product of the input with the given coordinates.
 	///
@@ -60,39 +61,47 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 	/// ## Throws
 	///
 	/// * unless `2**(log_n + coordinates.len())` equals `data.len()`
-	fn tensor_expand(
+	fn tensor_expand<'a>(
 		&self,
+		exec: &mut Self::Exec,
 		log_n: usize,
 		coordinates: &[F],
-	) -> impl for<'a> Fn(&mut Self::Exec, &mut Self::FSliceMut<'a>) -> Result<(), Error>;
+		data: &mut Self::FSliceMut<'a>,
+	) -> Result<(), Error>;
 
 	/// Combinator for an operation that depends on the concurrent execution of two inner operations.
 	fn join<In1, Out1, In2, Out2>(
 		&self,
+		exec: &mut Self::Exec,
 		lhs: impl Fn(&mut Self::Exec, In1) -> Result<Out1, Error>,
 		rhs: impl Fn(&mut Self::Exec, In2) -> Result<Out2, Error>,
-	) -> impl Fn(&mut Self::Exec, In1, In2) -> Result<(Out1, Out2), Error>;
+		in1: In1,
+		in2: In2,
+	) -> Result<(Out1, Out2), Error>;
 
 	/// Combinator for an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
+		exec: &mut Self::Exec,
 		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
-	) -> impl Fn(&mut Self::Exec, I) -> Result<Vec<Out>, Error>;
+		iter: I,
+	) -> Result<Vec<Out>, Error>;
 
 	fn map_reduce<Out, I: ExactSizeIterator>(
 		&self,
+		exec: &mut Self::Exec,
 		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
 		reduce: impl Fn(&mut Self::Exec, Out, Out) -> Result<Out, Error>,
-	) -> impl Fn(&mut Self::Exec, I) -> Result<Option<Out>, Error> {
-		let map_op = self.map(map);
-		move |exec, inputs| {
-			let map_out = map_op(exec, inputs)?;
-			map_out
-				.into_iter()
-				.map(Ok)
-				.reduce(|a, b| reduce(exec, a?, b?))
-				.transpose()
-		}
+		iter: I,
+	) -> Result<Option<Out>, Error> {
+		let map_out = self.map(exec, map, iter)?;
+		// TODO: We could do this with more joins or even map operations if the reductions are
+		// expensive. This handles the case of cheap reduction operations well enough.
+		map_out
+			.into_iter()
+			.map(Ok)
+			.reduce(|a, b| reduce(exec, a?, b?))
+			.transpose()
 	}
 
 	/// Executes an operation.
