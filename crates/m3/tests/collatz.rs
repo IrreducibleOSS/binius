@@ -112,8 +112,8 @@ mod arithmetization {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128,
-			B32,
+			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+			WitnessIndex, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -304,9 +304,8 @@ mod arithmetization {
 
 		let trace = CollatzTrace::generate(3999);
 
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, allocator);
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)
 			.unwrap();

@@ -147,16 +147,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	/// Creates and allocates the witness index for a statement.
+	/// Creates and allocates the witness index.
 	///
-	/// The statement includes information about the tables sizes, which this requires in order to
-	/// allocate the column data correctly. The created witness index needs to be populated before
-	/// proving.
+	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
-	) -> Result<WitnessIndex<'cs, 'alloc, P>, Error> {
-		Ok(WitnessIndex::new(allocator, &self.tables))
+	) -> WitnessIndex<'cs, 'alloc, P> {
+		WitnessIndex::new(self, allocator)
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.

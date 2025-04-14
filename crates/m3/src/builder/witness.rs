@@ -28,7 +28,7 @@ use super::{
 	error::Error,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
-	ColumnDef, ColumnId, ColumnIndex, Expr,
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -51,10 +51,11 @@ where
 }
 
 impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, 'alloc, P> {
-	pub fn new(allocator: &'alloc Bump, tables: &'cs [Table<F>]) -> Self {
+	/// Creates and allocates the witness index for a constraint system.
+	pub fn new(cs: &'cs ConstraintSystem<F>, allocator: &'alloc Bump) -> Self {
 		Self {
 			allocator,
-			tables: tables.iter().map(Either::Left).collect(),
+			tables: cs.tables.iter().map(Either::Left).collect(),
 		}
 	}
 
@@ -1321,7 +1322,7 @@ mod tests {
 		let allocator = Bump::new();
 
 		let table_size = 11;
-		let mut index = cs.build_witness(&allocator).unwrap();
+		let mut index = WitnessIndex::new(&cs, &allocator);
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -1365,7 +1366,7 @@ mod tests {
 		let allocator = Bump::new();
 
 		let table_size = 11;
-		let mut index = cs.build_witness(&allocator).unwrap();
+		let mut index = WitnessIndex::new(&cs, &allocator);
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -1409,7 +1410,7 @@ mod tests {
 		let allocator = Bump::new();
 
 		let table_size = 11;
-		let mut index = cs.build_witness(&allocator).unwrap();
+		let mut index = WitnessIndex::new(&cs, &allocator);
 
 		index.init_table(test_table.id(), table_size).unwrap();
 

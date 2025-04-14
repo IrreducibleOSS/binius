@@ -85,7 +85,7 @@ mod tests {
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
-	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement};
+	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement, WitnessIndex};
 
 	#[test]
 	fn test_basic_lookup_producer() {
@@ -139,9 +139,8 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		// Fill the lookup table
 		witness

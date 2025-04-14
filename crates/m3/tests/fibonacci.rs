@@ -187,9 +187,8 @@ mod arithmetization {
 			table_sizes: vec![trace.rows.len()],
 		};
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&fibonacci_table, &trace.rows)
@@ -275,9 +274,8 @@ mod arithmetization {
 			table_sizes: vec![trace.rows.len()],
 		};
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&fibonacci_table, &trace.rows)
@@ -297,9 +295,8 @@ mod arithmetization {
 		let trace = FibonacciTrace::generate((0, 1), 31);
 
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&fibonacci_table, &trace.rows)

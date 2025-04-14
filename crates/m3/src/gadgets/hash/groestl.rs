@@ -408,7 +408,7 @@ mod tests {
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement};
+	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
 
 	#[test]
 	fn test_sbox() {
@@ -426,9 +426,8 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
@@ -462,9 +461,8 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
@@ -516,9 +514,8 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
