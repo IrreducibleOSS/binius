@@ -3,9 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{
-		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
-	},
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	scalars_collection::{ScalarsCollection, ScalarsCollectionMut},
 	BinaryField, ExtensionField, PackedField,
 };

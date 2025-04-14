@@ -1,7 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked},
 	scalars_collection::{CollectionSubrangeMut, PackedSliceMut, ScalarsCollectionMut},
 	BinaryField, Field, PackedExtension, PackedField, TowerField,
 };

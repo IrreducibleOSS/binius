@@ -12,11 +12,20 @@ pub trait ScalarsCollection<F> {
 	fn len(&self) -> usize;
 
 	#[inline(always)]
+	fn is_empty(&self) -> bool {
+		self.len() == 0
+	}
+
+	#[inline(always)]
 	fn get(&self, index: usize) -> F {
 		assert!(index < self.len(), "Index out of bounds");
 		unsafe { self.get_unchecked(index) }
 	}
 
+	/// Returns a copy of the element at the given index.
+	///
+	/// # Safety
+	/// The caller must ensure that the `index` < `self.len()`.
 	unsafe fn get_unchecked(&self, index: usize) -> F;
 }
 
@@ -28,6 +37,10 @@ pub trait ScalarsCollectionMut<F>: ScalarsCollection<F> {
 		unsafe { self.set_unchecked(index, value) }
 	}
 
+	/// Sets the element at the given index to the given value.
+	///
+	/// # Safety
+	/// The caller must ensure that the `index` < `self.len()`.
 	unsafe fn set_unchecked(&mut self, index: usize, value: F);
 }
 
@@ -101,7 +114,7 @@ impl<'a, P: PackedField> PackedSlice<'a, P> {
 	}
 }
 
-impl<'a, P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'a, P> {
+impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'_, P> {
 	#[inline(always)]
 	fn len(&self) -> usize {
 		self.len
@@ -134,7 +147,7 @@ impl<'a, P: PackedField> PackedSliceMut<'a, P> {
 	}
 }
 
-impl<'a, P: PackedField> ScalarsCollection<P::Scalar> for PackedSliceMut<'a, P> {
+impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSliceMut<'_, P> {
 	#[inline(always)]
 	fn len(&self) -> usize {
 		self.len
@@ -145,7 +158,7 @@ impl<'a, P: PackedField> ScalarsCollection<P::Scalar> for PackedSliceMut<'a, P> 
 		get_packed_slice_unchecked(self.slice, index)
 	}
 }
-impl<'a, P: PackedField> ScalarsCollectionMut<P::Scalar> for PackedSliceMut<'a, P> {
+impl<P: PackedField> ScalarsCollectionMut<P::Scalar> for PackedSliceMut<'_, P> {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
 		set_packed_slice_unchecked(self.slice, index, value);
@@ -175,7 +188,7 @@ impl<'a, F, Inner: ScalarsCollection<F>> CollectionSubrange<'a, F, Inner> {
 	}
 }
 
-impl<'a, F, Inner: ScalarsCollection<F>> ScalarsCollection<F> for CollectionSubrange<'a, F, Inner> {
+impl<F, Inner: ScalarsCollection<F>> ScalarsCollection<F> for CollectionSubrange<'_, F, Inner> {
 	#[inline(always)]
 	fn len(&self) -> usize {
 		self.len
@@ -208,8 +221,8 @@ impl<'a, F, Inner: ScalarsCollectionMut<F>> CollectionSubrangeMut<'a, F, Inner> 
 		}
 	}
 }
-impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollection<F>
-	for CollectionSubrangeMut<'a, F, Inner>
+impl<F, Inner: ScalarsCollectionMut<F>> ScalarsCollection<F>
+	for CollectionSubrangeMut<'_, F, Inner>
 {
 	#[inline(always)]
 	fn len(&self) -> usize {
@@ -221,8 +234,8 @@ impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollection<F>
 		self.inner.get_unchecked(index + self.offset)
 	}
 }
-impl<'a, F, Inner: ScalarsCollectionMut<F>> ScalarsCollectionMut<F>
-	for CollectionSubrangeMut<'a, F, Inner>
+impl<F, Inner: ScalarsCollectionMut<F>> ScalarsCollectionMut<F>
+	for CollectionSubrangeMut<'_, F, Inner>
 {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: F) {
@@ -240,10 +253,7 @@ mod tests {
 	use super::*;
 	use crate::{BinaryField8b, PackedBinaryField16x8b};
 
-	fn check_collection<F: Eq + Debug, C: ScalarsCollection<F>>(
-		collection: &impl ScalarsCollection<F>,
-		expected: &[F],
-	) {
+	fn check_collection<F: Eq + Debug>(collection: &impl ScalarsCollection<F>, expected: &[F]) {
 		assert_eq!(collection.len(), expected.len());
 
 		for (i, v) in expected.iter().enumerate() {
@@ -252,7 +262,7 @@ mod tests {
 		}
 	}
 
-	fn check_collection_get_set<F: Eq + Copy + Debug, C: ScalarsCollectionMut<F>>(
+	fn check_collection_get_set<F: Eq + Copy + Debug>(
 		collection: &mut impl ScalarsCollectionMut<F>,
 		gen: &mut impl FnMut() -> F,
 	) {
@@ -267,10 +277,10 @@ mod tests {
 	#[test]
 	fn check_slice() {
 		let slice: &[usize] = &[];
-		check_collection::<usize, &[usize]>(&slice, slice);
+		check_collection::<usize>(&slice, slice);
 
 		let slice: &[usize] = &[1usize, 2, 3];
-		check_collection::<usize, &[usize]>(&slice, slice);
+		check_collection(&slice, slice);
 	}
 
 	#[test]
@@ -280,21 +290,21 @@ mod tests {
 
 		let mut slice: &mut [usize] = &mut [];
 
-		check_collection::<usize, &mut [usize]>(&slice, &slice.to_vec());
-		check_collection_get_set::<usize, &mut [usize]>(&mut slice, &mut gen);
+		check_collection(&slice, slice);
+		check_collection_get_set(&mut slice, &mut gen);
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3];
-		check_collection::<usize, &mut [usize]>(&slice, &slice.to_vec());
-		check_collection_get_set::<usize, &mut [usize]>(&mut slice, &mut gen);
+		check_collection(&slice, slice);
+		check_collection_get_set(&mut slice, &mut gen);
 	}
 
 	#[test]
 	fn check_packed_slice() {
 		let slice: &[PackedBinaryField16x8b] = &[];
 		let packed_slice = PackedSlice::new(slice);
-		check_collection::<_, PackedSlice<PackedBinaryField16x8b>>(&packed_slice, &[]);
+		check_collection(&packed_slice, &[]);
 		let packed_slice = PackedSlice::new_with_len(slice, 0);
-		check_collection::<_, PackedSlice<PackedBinaryField16x8b>>(&packed_slice, &[]);
+		check_collection(&packed_slice, &[]);
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let slice: &[PackedBinaryField16x8b] = &[
@@ -302,16 +312,10 @@ mod tests {
 			PackedBinaryField16x8b::random(&mut rng),
 		];
 		let packed_slice = PackedSlice::new(slice);
-		check_collection::<_, PackedSlice<PackedBinaryField16x8b>>(
-			&packed_slice,
-			&PackedField::iter_slice(&slice).collect_vec(),
-		);
+		check_collection(&packed_slice, &PackedField::iter_slice(slice).collect_vec());
 
 		let packed_slice = PackedSlice::new_with_len(slice, 3);
-		check_collection::<_, PackedSlice<PackedBinaryField16x8b>>(
-			&packed_slice,
-			&PackedField::iter_slice(&slice).take(3).collect_vec(),
-		);
+		check_collection(&packed_slice, &PackedField::iter_slice(slice).take(3).collect_vec());
 	}
 
 	#[test]
@@ -321,37 +325,31 @@ mod tests {
 
 		let slice: &mut [PackedBinaryField16x8b] = &mut [];
 		let packed_slice = PackedSliceMut::new(slice);
-		check_collection::<_, PackedSliceMut<PackedBinaryField16x8b>>(&packed_slice, &[]);
+		check_collection(&packed_slice, &[]);
 		let packed_slice = PackedSliceMut::new_with_len(slice, 0);
-		check_collection::<_, PackedSliceMut<PackedBinaryField16x8b>>(&packed_slice, &[]);
+		check_collection(&packed_slice, &[]);
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let slice: &mut [PackedBinaryField16x8b] = &mut [
 			PackedBinaryField16x8b::random(&mut rng),
 			PackedBinaryField16x8b::random(&mut rng),
 		];
-		let values = PackedField::iter_slice(&slice).collect_vec();
+		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new(slice);
-		check_collection::<_, PackedSliceMut<PackedBinaryField16x8b>>(&packed_slice, &values);
-		check_collection_get_set::<_, PackedSliceMut<PackedBinaryField16x8b>>(
-			&mut packed_slice,
-			&mut gen,
-		);
+		check_collection(&packed_slice, &values);
+		check_collection_get_set(&mut packed_slice, &mut gen);
 
-		let values = PackedField::iter_slice(&slice).collect_vec();
+		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new_with_len(slice, 3);
-		check_collection::<_, PackedSliceMut<PackedBinaryField16x8b>>(&packed_slice, &values[..3]);
-		check_collection_get_set::<_, PackedSliceMut<PackedBinaryField16x8b>>(
-			&mut packed_slice,
-			&mut gen,
-		);
+		check_collection(&packed_slice, &values[..3]);
+		check_collection_get_set(&mut packed_slice, &mut gen);
 	}
 
 	#[test]
 	fn test_subrange() {
 		let slice: &[usize] = &[1, 2, 3, 4, 5];
 		let subrange = CollectionSubrange::new(&slice, 1, 3);
-		check_collection::<usize, CollectionSubrange<usize, &[usize]>>(&subrange, &[2, 3, 4]);
+		check_collection(&subrange, &[2, 3, 4]);
 	}
 
 	#[test]
@@ -360,15 +358,9 @@ mod tests {
 		let mut gen = || -> usize { rng.gen() };
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3, 4, 5];
-		let values = (&slice[1..4]).to_vec();
+		let values = slice[1..4].to_vec();
 		let mut subrange = CollectionSubrangeMut::new(&mut slice, 1, 3);
-		check_collection::<usize, CollectionSubrangeMut<usize, &mut [usize]>>(
-			&mut subrange,
-			&values,
-		);
-		check_collection_get_set::<usize, CollectionSubrangeMut<usize, &mut [usize]>>(
-			&mut subrange,
-			&mut gen,
-		);
+		check_collection(&subrange, &values);
+		check_collection_get_set(&mut subrange, &mut gen);
 	}
 }

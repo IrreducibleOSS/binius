@@ -11,11 +11,10 @@ use crate::{
 		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
-	packed::get_packed_slice,
 	scalars_collection::ScalarsCollection,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
-	BinaryField8b, Field, PackedField,
+	BinaryField8b, PackedField,
 };
 
 /// A marker trait that the slice of packed values can be iterated as a sequence of bytes.
