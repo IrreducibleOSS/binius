@@ -92,8 +92,9 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// the multilinear extension of Lagrange polynomials evaluations at `univariate_challenge` (denoted by
 /// $\hat{u}_1$) and verifies that this value is correct. The argument `unskipped_sumcheck_challenges`
 /// holds the challenges of the sumcheck following the univariate round.
-pub fn verify_sumcheck_outputs<F>(
-	claims: &[SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>],
+pub fn verify_sumcheck_output<F>(
+	claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+	skip_rounds: usize,
 	univariate_challenge: F,
 	unskipped_sumcheck_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
@@ -106,66 +107,56 @@ where
 		mut multilinear_evals,
 	} = sumcheck_output;
 
-	assert_eq!(multilinear_evals.len(), claims.len());
+    if claim.n_vars() != skip_rounds {
+		bail!(Error::IncorrectUnivariatizingReductionClaims);
+    }
 
-	// Check that the claims are in descending order by n_vars
-	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		bail!(Error::ClaimsOutOfOrder);
+	if reduction_sumcheck_challenges.len() != skip_rounds || multilinear_evals.len() != 1 {
+		bail!(Error::IncorrectUnivariatizingReductionSumcheck);
 	}
 
-	let max_n_vars = claims
-		.first()
-		.map(|claim| claim.n_vars())
-		.unwrap_or_default();
+	let subspace = BinarySubspace::<F::Canonical>::with_dim(skip_rounds)?.isomorphic::<F>();
+	let evaluation_domain =
+		EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
 
-	assert_eq!(reduction_sumcheck_challenges.len(), max_n_vars);
+	let lagrange_mle =
+		lagrange_evals_multilinear_extension::<F, F, F>(&evaluation_domain, univariate_challenge)?;
 
-	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
-		let skip_rounds = claim.n_vars();
+	let query = make_portable_backend().multilinear_query::<F>(&reduction_sumcheck_challenges)?;
+	let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
 
-		let subspace = BinarySubspace::<F::Canonical>::with_dim(skip_rounds)?.isomorphic::<F>();
-		let evaluation_domain =
-			EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
+    let first_claim_multilinear_evals = multilinear_evals.first_mut().expect("exactly one claim in reduction sumcheck");
 
-		let lagrange_mle = lagrange_evals_multilinear_extension::<F, F, F>(
-			&evaluation_domain,
-			univariate_challenge,
-		)?;
+	let multilinear_evals_last_eval = first_claim_multilinear_evals
+		.pop()
+		.ok_or(VerificationError::NumberOfFinalEvaluations)?;
 
-		let query = make_portable_backend()
-			.multilinear_query::<F>(&reduction_sumcheck_challenges[max_n_vars - skip_rounds..])?;
-		let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
-
-		let multilinear_evals_last = multilinear_evals
-			.pop()
-			.ok_or(VerificationError::NumberOfFinalEvaluations)?;
-
-		if multilinear_evals_last != expected_last_eval {
-			bail!(VerificationError::IncorrectLagrangeMultilinearEvaluation);
-		}
+	if multilinear_evals_last_eval != expected_last_eval {
+		bail!(VerificationError::IncorrectLagrangeMultilinearEvaluation);
 	}
-
-	let mut challenges = Vec::new();
-	challenges.extend(reduction_sumcheck_challenges);
-	challenges.extend(unskipped_sumcheck_challenges);
 
 	let output = BatchSumcheckOutput {
-		challenges,
+		challenges: [&reduction_sumcheck_challenges, unskipped_sumcheck_challenges].concat(),
 		multilinear_evals,
 	};
 
 	Ok(output)
 }
 
+// TODO: rework comment
 // Helper method to create univariatized multilinear oracle evaluation claims.
 // Assumes that multilinear extension of Lagrange evaluations is the last multilinear,
 // uses IndexComposition to multiply each multilinear with it (using BivariateProduct).
-pub(super) fn univariatizing_reduction_composite_sum_claims<F: Field>(
-	univariatized_multilinear_evals: &[F],
+pub(super) fn univariatizing_reduction_composite_sum_claim<F: Field>(
+	univariatized_multilinear_evals: &[impl AsRef<[F]>],
 ) -> Vec<CompositeSumClaim<F, IndexComposition<BivariateProduct, 2>>> {
-	let n_multilinears = univariatized_multilinear_evals.len();
+	let n_multilinears = univariatized_multilinear_evals.iter()
+        .map(|claim_evals| claim_evals.as_ref().len())
+        .sum();
+
 	univariatized_multilinear_evals
 		.iter()
+        .flat_map(|claim_evals| claim_evals.as_ref())
 		.enumerate()
 		.map(|(i, &univariatized_multilinear_eval)| {
 			let composition =

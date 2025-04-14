@@ -43,6 +43,7 @@ use crate::{
 #[instrument(skip_all, level = "debug")]
 pub fn reduce_to_skipped_projection<F, P, M, Backend>(
 	multilinears: Vec<M>,
+	skip_rounds: usize,
 	sumcheck_challenges: &[F],
 	backend: &'_ Backend,
 ) -> Result<Vec<MLEDirectAdapter<P>>, Error>
@@ -54,23 +55,34 @@ where
 {
 	let n_vars = equal_n_vars_check(&multilinears)?;
 
-	if sumcheck_challenges.len() > n_vars {
+	if sumcheck_challenges.len() < n_vars + skip_rounds {
 		bail!(Error::IncorrectNumberOfChallenges);
 	}
 
-	let query = backend.multilinear_query(sumcheck_challenges)?;
+	let skipped_projections = if n_vars < skip_rounds {
+		multilinears
+			.par_iter()
+			.map(|multilinear| {
+				high_pad_small_multilinear(skip_rounds, multilinear).expect_right(
+					"multilinear is shorter than skip_rounds vars, forcing high padding",
+				)
+			})
+			.collect()
+	} else {
+		let query = backend.multilinear_query(&sumcheck_challenges[..n_vars - skip_rounds])?;
 
-	let reduced_multilinears = multilinears
-		.par_iter()
-		.map(|multilinear| {
-			backend
-				.evaluate_partial_high(multilinear, query.to_ref())
-				.expect("0 <= sumcheck_challenges.len() < n_vars")
-				.into()
-		})
-		.collect();
+		multilinears
+			.par_iter()
+			.map(|multilinear| {
+				backend
+					.evaluate_partial_high(multilinear, query.to_ref())
+					.expect("sumcheck_challenges.len() >= n_vars - skip_rounds")
+					.into()
+			})
+			.collect()
+	};
 
-	Ok(reduced_multilinears)
+	Ok(skipped_projections)
 }
 
 pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
@@ -119,7 +131,7 @@ where
 		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
 
 	let prover = RegularSumcheckProver::new(
-		EvaluationOrder::LowToHigh,
+		EvaluationOrder::HighToLow,
 		reduced_multilinears,
 		composite_sum_claims,
 		IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
@@ -339,10 +351,9 @@ where
 	let n_vars = equal_n_vars_check(multilinears)?;
 	let n_multilinears = multilinears.len();
 
-	// TODO: reintroduce!!!!
-	// if skip_rounds > n_vars {
-	// 	bail!(Error::TooManySkippedRounds);
-	// }
+	if skip_rounds > n_vars {
+		bail!(Error::TooManySkippedRounds);
+	}
 
 	let remaining_rounds = n_vars - skip_rounds;
 	if zerocheck_challenges.len() != remaining_rounds {

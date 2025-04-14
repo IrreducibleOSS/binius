@@ -81,8 +81,16 @@ pub enum Error {
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
 	IncorrectNumberOfChallenges,
-	#[error("there are more prebatched coefficients than claims")]
-	TooManyPrebatchedCoeffs,
+	#[error("cannot skip more rounds than the total number of variables")]
+	TooManySkippedRounds,
+	#[error(
+		"univariatizing reduction claim count does not match sumcheck, or n_vars is incorrect"
+	)]
+	IncorrectUnivariatizingReductionClaims,
+	#[error("univariatizing reduction sumcheck of incorrect length")]
+	IncorrectUnivariatizingReductionSumcheck,
+	#[error("the presampled batched coeffs count does not equal the number of claims")]
+	IncorrectPrebatchedCoeffCount,
 	#[error(
 		"specified Lagrange evaluation domain is too small to uniquely recover round polynomial"
 	)]

@@ -335,6 +335,7 @@ where
 	let mut univariatized_multilinears = Vec::new();
 
 	for constraint_set in table_constraints {
+		let n_vars = constraint_set.n_vars;
 		let (constraints, multilinears) =
 			sumcheck::prove::split_constraint_set(constraint_set, &witness)?;
 
@@ -351,13 +352,15 @@ where
 
 		univariatized_multilinears.push(multilinears.clone());
 
+		let zerocheck_challenges = &zerocheck_challenges[..n_vars.saturating_sub(skip_rounds)];
+		let domain_factory = domain_factory.clone();
+
 		let constructor =
 			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _> {
 				constraints,
 				multilinears,
-				domain_factory: domain_factory.clone(),
-				zerocheck_challenges: &zerocheck_challenges
-					[..zerocheck_challenges.len().min(skip_rounds)],
+				zerocheck_challenges,
+				domain_factory,
 				backend,
 				_fdomain_marker: PhantomData,
 			};
@@ -375,8 +378,9 @@ where
 	}
 
 	let BatchZerocheckOutput {
-		univariate_challenge,
 		tail_sumcheck_output,
+        univariate_challenge,
+		reduction_prover,
 	} = sumcheck::prove::batch_prove_zerocheck(zerocheck_provers, skip_rounds, &mut transcript)?;
 
 	let BatchSumcheckOutput {
@@ -388,39 +392,12 @@ where
 		tail_sumcheck_output,
 	)?;
 
-	let mut reduction_claims = Vec::with_capacity(eq_ind_sumcheck_claims.len());
-	let mut reduction_provers = Vec::with_capacity(eq_ind_sumcheck_claims.len());
-
-	for (multilinear_evals, multilinears) in
-		izip!(&univariatized_multilinear_evals, univariatized_multilinears)
-	{
-		let skip_challenges = skip_rounds.min(tail_sumcheck_challenges.len());
-		let reduced_multilinears = sumcheck::prove::reduce_to_skipped_projection(
-			multilinears,
-			&tail_sumcheck_challenges[skip_challenges..],
-			backend,
-		)?;
-
-		let reduction_claim =
-			sumcheck::univariate::univariatizing_reduction_claim(skip_rounds, multilinear_evals)?;
-
-		let reduction_prover =
-			sumcheck::prove::univariatizing_reduction_prover::<_, FDomain<Tower>, _, _>(
-				reduced_multilinears,
-				multilinear_evals,
-				univariate_challenge,
-				backend,
-			)?;
-
-		reduction_claims.push(reduction_claim);
-		reduction_provers.push(reduction_prover);
-	}
-
 	let univariatizing_output =
-		sumcheck::prove::batch_prove_sumcheck(reduction_provers, &mut transcript)?;
+		sumcheck::prove::batch_prove_sumcheck(vec![reduction_prover], &mut transcript)?;
 
-	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
-		&reduction_claims,
+	let zerocheck_output = sumcheck::univariate::verify_sumcheck_output(
+		reduction_claim,
+		skip_rounds,
 		univariate_challenge,
 		&tail_sumcheck_challenges,
 		univariatizing_output,
@@ -429,7 +406,7 @@ where
 	let zerocheck_eval_claims = sumcheck::make_eval_claims(
 		EvaluationOrder::HighToLow,
 		zerocheck_oracle_metas,
-		multilinear_zerocheck_output,
+		zerocheck_output,
 	)?;
 
 	// Prove evaluation claims
