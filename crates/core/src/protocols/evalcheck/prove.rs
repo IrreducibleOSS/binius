@@ -17,7 +17,7 @@ use super::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta,
 	},
-	EvalPoint, EvalPointOracleIdMap, EvalcheckProofAdvice, Subproof,
+	EvalPoint, EvalPointOracleIdMap,
 };
 use crate::{
 	oracle::{
@@ -61,7 +61,6 @@ where
 	visited_claims: EvalPointOracleIdMap<(), F>,
 	evals_memoization: EvalPointOracleIdMap<F, F>,
 	round_claim_index: usize,
-	advices: Vec<EvalcheckProofAdvice>,
 }
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
@@ -93,7 +92,6 @@ where
 			visited_claims: EvalPointOracleIdMap::new(),
 			evals_memoization: EvalPointOracleIdMap::new(),
 			round_claim_index: 0,
-			advices: Vec::new(),
 		}
 	}
 
@@ -125,7 +123,7 @@ where
 	pub fn prove(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	) -> Result<ProofsWithAdvices<F>, Error> {
+	) -> Result<Vec<EvalcheckProof<F>>, Error> {
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
 		self.claim_to_index.clear();
@@ -243,10 +241,7 @@ where
 			self.witness_index,
 		);
 
-		proofs.map(|proofs| ProofsWithAdvices {
-			proofs,
-			advices: std::mem::take(&mut self.advices),
-		})
+		proofs
 	}
 
 	#[instrument(
@@ -349,7 +344,7 @@ where
 	fn prove_multilinear(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-	) -> Result<Option<EvalcheckProof<F>>, Error> {
+	) -> Result<EvalcheckProof<F>, Error> {
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
@@ -359,12 +354,8 @@ where
 		let claim_id = self.claim_to_index.get(id, &eval_point);
 
 		if let Some(claim_id) = claim_id {
-			self.advices
-				.push(EvalcheckProofAdvice::DuplicateClaim(*claim_id));
-			return Ok(None);
+			return Ok(EvalcheckProof::DuplicateClaim(*claim_id));
 		}
-
-		self.advices.push(EvalcheckProofAdvice::HandleClaim);
 
 		self.claim_to_index
 			.insert(id, eval_point.clone(), self.round_claim_index);
@@ -372,8 +363,9 @@ where
 		self.round_claim_index += 1;
 
 		let multilinear = self.oracles.oracle(id);
+
 		let proof = match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => Some(EvalcheckProof::Transparent),
+			MultilinearPolyVariant::Transparent { .. } => EvalcheckProof::Transparent,
 
 			MultilinearPolyVariant::Committed => {
 				let subclaim = EvalcheckMultilinearClaim {
@@ -383,7 +375,7 @@ where
 				};
 
 				self.committed_eval_claims.push(subclaim);
-				Some(EvalcheckProof::Committed)
+				EvalcheckProof::Committed
 			}
 			MultilinearPolyVariant::Repeating { id, .. } => {
 				let n_vars = self.oracles.n_vars(id);
@@ -395,7 +387,7 @@ where
 				};
 
 				let subproof = self.prove_multilinear(subclaim)?;
-				Some(EvalcheckProof::Repeating(Box::new(subproof)))
+				EvalcheckProof::Repeating(Box::new(subproof))
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
@@ -412,19 +404,20 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				Some(EvalcheckProof::Projected(Box::new(self.prove_multilinear(subclaim)?)))
+
+				EvalcheckProof::Projected(Box::new(self.prove_multilinear(subclaim)?))
 			}
 			MultilinearPolyVariant::Shifted { .. } => {
 				self.projected_bivariate_claims.push(evalcheck_claim);
-				Some(EvalcheckProof::Shifted)
+				EvalcheckProof::Shifted
 			}
 			MultilinearPolyVariant::Packed { .. } => {
 				self.projected_bivariate_claims.push(evalcheck_claim);
-				Some(EvalcheckProof::Packed)
+				EvalcheckProof::Packed
 			}
 			MultilinearPolyVariant::Composite { .. } => {
 				self.projected_bivariate_claims.push(evalcheck_claim);
-				Some(EvalcheckProof::CompositeMLE)
+				EvalcheckProof::CompositeMLE
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				let n_polys = linear_combination.n_polys();
@@ -438,7 +431,7 @@ where
 						let subclaim = if let Some(claim_index) =
 							self.claim_to_index.get(suboracle_id, &eval_point)
 						{
-							Subproof::ExistingClaim(*claim_index)
+							(None, EvalcheckProof::DuplicateClaim(*claim_index))
 						} else {
 							let eval = (eval - linear_combination.offset())
 								* coeff.invert().expect("not zero");
@@ -450,7 +443,7 @@ where
 
 							let proof = self.prove_multilinear(subclaim).unwrap();
 
-							Subproof::NewProof { proof, eval }
+							(Some(eval), proof)
 						};
 
 						vec![subclaim]
@@ -463,27 +456,27 @@ where
 								.get(suboracle_id, &eval_point)
 								.expect("precomputed above");
 
-							let subclaim = EvalcheckMultilinearClaim {
-								id: suboracle_id,
-								eval_point: eval_point.clone(),
-								eval,
-							};
-
 							let subclaim = if let Some(claim_index) =
 								self.claim_to_index.get(suboracle_id, &eval_point)
 							{
-								Subproof::ExistingClaim(*claim_index)
+								(None, EvalcheckProof::DuplicateClaim(*claim_index))
 							} else {
+								let subclaim = EvalcheckMultilinearClaim {
+									id: suboracle_id,
+									eval_point: eval_point.clone(),
+									eval,
+								};
+
 								let proof = self.prove_multilinear(subclaim).unwrap();
 
-								Subproof::NewProof { proof, eval }
+								(Some(eval), proof)
 							};
 							Ok(subclaim)
 						})
 						.collect::<Result<Vec<_>, Error>>()?,
 				};
 
-				Some(EvalcheckProof::LinearCombination { subproofs })
+				EvalcheckProof::LinearCombination { subproofs }
 			}
 			MultilinearPolyVariant::ZeroPadded(id) => {
 				let inner_n_vars = self.oracles.n_vars(id);
@@ -503,7 +496,7 @@ where
 
 				let subproof = self.prove_multilinear(subclaim)?;
 
-				Some(EvalcheckProof::ZeroPadded(eval, Box::new(subproof)))
+				EvalcheckProof::ZeroPadded(eval, Box::new(subproof))
 			}
 		};
 		Ok(proof)
@@ -604,9 +597,4 @@ where
 			eval,
 		})
 	}
-}
-
-pub struct ProofsWithAdvices<F: Field> {
-	pub proofs: Vec<Option<EvalcheckProof<F>>>,
-	pub advices: Vec<EvalcheckProofAdvice>,
 }

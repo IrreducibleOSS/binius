@@ -12,11 +12,11 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		serialize_advice, serialize_evalcheck_proof,
+		serialize_evalcheck_proof,
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
-		EvalcheckMultilinearClaim, EvalcheckProver, ProofsWithAdvices,
+		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
-	transcript::{write_u64, ProverTranscript},
+	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };
 
@@ -51,18 +51,10 @@ where
 	let claims: Vec<_> = claims.into_iter().collect();
 
 	// Prove the initial evalcheck claims
-	let ProofsWithAdvices {
-		proofs: evalcheck_proofs,
-		advices,
-	} = evalcheck_prover.prove(claims)?;
-	write_u64(&mut transcript.decommitment(), evalcheck_proofs.len() as u64);
-	write_u64(&mut transcript.decommitment(), advices.len() as u64);
+	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
 	let mut writer = transcript.message();
 	for evalcheck_proof in &evalcheck_proofs {
 		serialize_evalcheck_proof(&mut writer, evalcheck_proof)
-	}
-	for advice in &advices {
-		serialize_advice(&mut writer, advice);
 	}
 
 	loop {
@@ -82,19 +74,11 @@ where
 				backend,
 			)?;
 
-		let ProofsWithAdvices {
-			proofs: new_evalcheck_proofs,
-			advices: new_advices,
-		} = evalcheck_prover.prove(new_evalcheck_claims)?;
+		let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
 
-		write_u64(&mut transcript.decommitment(), new_evalcheck_proofs.len() as u64);
-		write_u64(&mut transcript.decommitment(), new_advices.len() as u64);
 		let mut writer = transcript.message();
 		for evalcheck_proof in &new_evalcheck_proofs {
 			serialize_evalcheck_proof(&mut writer, evalcheck_proof);
-		}
-		for advice in &new_advices {
-			serialize_advice(&mut writer, advice);
 		}
 	}
 

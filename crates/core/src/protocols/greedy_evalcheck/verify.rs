@@ -9,13 +9,10 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::{
-		evalcheck::{
-			deserialize_advice, deserialize_evalcheck_proof, EvalcheckMultilinearClaim,
-			EvalcheckVerifier,
-		},
+		evalcheck::{deserialize_evalcheck_proof, EvalcheckMultilinearClaim, EvalcheckVerifier},
 		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
-	transcript::{read_u64, VerifierTranscript},
+	transcript::VerifierTranscript,
 };
 
 pub fn verify<F, Challenger_>(
@@ -32,21 +29,13 @@ where
 	// Verify the initial evalcheck claims
 	let claims = claims.into_iter().collect::<Vec<_>>();
 
-	let len_initial_evalcheck_proofs = read_u64(&mut transcript.decommitment())? as usize;
-	let len_initial_advices = read_u64(&mut transcript.decommitment())? as usize;
-	let mut initial_evalcheck_proofs = Vec::with_capacity(len_initial_evalcheck_proofs);
-	let mut initial_advices = Vec::with_capacity(len_initial_advices);
+	let mut initial_evalcheck_proofs = Vec::with_capacity(claims.len());
 	let mut reader = transcript.message();
-	for _ in 0..len_initial_evalcheck_proofs {
+	for _ in 0..claims.len() {
 		let eval_check_proof = deserialize_evalcheck_proof(&mut reader)?;
 		initial_evalcheck_proofs.push(eval_check_proof);
 	}
-	for _ in 0..len_initial_advices {
-		let advice = deserialize_advice(&mut reader)?;
-		initial_advices.push(advice);
-	}
-
-	evalcheck_verifier.verify(claims, initial_evalcheck_proofs, initial_advices)?;
+	evalcheck_verifier.verify(claims, initial_evalcheck_proofs)?;
 
 	loop {
 		let SumcheckClaimsWithMeta { claims, metas } = constraint_set_sumcheck_claims(
@@ -63,21 +52,14 @@ where
 		let new_evalcheck_claims =
 			sumcheck::make_eval_claims(EvaluationOrder::HighToLow, metas, sumcheck_output)?;
 
-		let len_new_evalcheck_proofs = read_u64(&mut transcript.decommitment())? as usize;
-		let len_new_advices = read_u64(&mut transcript.decommitment())? as usize;
-		let mut evalcheck_proofs = Vec::with_capacity(len_new_evalcheck_proofs);
-		let mut advices = Vec::with_capacity(len_new_advices);
+		let mut evalcheck_proofs = Vec::with_capacity(new_evalcheck_claims.len());
 		let mut reader = transcript.message();
-		for _ in 0..len_new_evalcheck_proofs {
+		for _ in 0..new_evalcheck_claims.len() {
 			let evalcheck_proof = deserialize_evalcheck_proof(&mut reader)?;
 			evalcheck_proofs.push(evalcheck_proof)
 		}
-		for _ in 0..len_new_advices {
-			let advice = deserialize_advice(&mut reader)?;
-			advices.push(advice);
-		}
 
-		evalcheck_verifier.verify(new_evalcheck_claims, evalcheck_proofs, advices)?;
+		evalcheck_verifier.verify(new_evalcheck_claims, evalcheck_proofs)?;
 	}
 
 	let new_sumchecks = evalcheck_verifier.take_new_sumcheck_constraints().unwrap();
