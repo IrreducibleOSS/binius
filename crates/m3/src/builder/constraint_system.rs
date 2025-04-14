@@ -361,6 +361,23 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect();
 			addition.projected(oracle_lookup[col.table_index], index_values, 0)?
 		}
+		ColumnDef::Projected {
+			col,
+			start_index,
+			query_size,
+			query_bits,
+		} => {
+			let query_values = (0..*query_size)
+				.map(|i| -> F {
+					if (query_bits >> i) & 1 == 0 {
+						F::ZERO
+					} else {
+						F::ONE
+					}
+				})
+				.collect();
+			addition.projected(oracle_lookup[col.table_index], query_values, *start_index)?
+		}
 		ColumnDef::Shifted {
 			col,
 			offset,
