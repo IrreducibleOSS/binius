@@ -8,7 +8,7 @@ use binius_field::{
 	AESTowerField128b, AESTowerField32b, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
 	PackedExtension, TowerField,
 };
-use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
 
@@ -25,11 +25,17 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 			let params = format!("{field}/log_dim={log_dim}/log_s={log_stride_batch}");
 			group.throughput(Throughput::Bytes((data_len * size_of::<PE>()) as u64));
 
+			let shape = NTTShape {
+				log_x: log_stride_batch,
+				log_y: log_dim,
+				..Default::default()
+			};
+
 			let ntt = SingleThreadedNTT::<F>::new(log_dim)
 				.unwrap()
 				.precompute_twiddles();
 			group.bench_function(BenchmarkId::new("single-thread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_stride_batch, 0, log_dim));
+				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0));
 			});
 
 			let ntt = SingleThreadedNTT::<F>::new(log_dim)
@@ -37,7 +43,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 				.precompute_twiddles()
 				.multithreaded();
 			group.bench_function(BenchmarkId::new("multithread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, 0, log_stride_batch, 0, log_dim));
+				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0));
 			});
 		}
 	}

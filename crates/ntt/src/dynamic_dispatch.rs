@@ -5,8 +5,11 @@ use binius_math::BinarySubspace;
 use binius_utils::rayon::get_log_max_threads;
 
 use super::{
-	additive_ntt::AdditiveNTT, error::Error, multithreaded::MultithreadedNTT,
-	single_threaded::SingleThreadedNTT, twiddle::PrecomputedTwiddleAccess,
+	additive_ntt::{AdditiveNTT, NTTShape},
+	error::Error,
+	multithreaded::MultithreadedNTT,
+	single_threaded::SingleThreadedNTT,
+	twiddle::PrecomputedTwiddleAccess,
 };
 
 /// How many threads to use (threads number is a power of 2).
@@ -111,48 +114,28 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_stride_batch: usize,
-		log_batch: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => {
-				ntt.forward_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::SingleThreadedPrecompute(ntt) => {
-				ntt.forward_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::MultiThreaded(ntt) => {
-				ntt.forward_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::MultiThreadedPrecompute(ntt) => {
-				ntt.forward_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
+			Self::SingleThreaded(ntt) => ntt.forward_transform(data, shape, coset),
+			Self::SingleThreadedPrecompute(ntt) => ntt.forward_transform(data, shape, coset),
+			Self::MultiThreaded(ntt) => ntt.forward_transform(data, shape, coset),
+			Self::MultiThreadedPrecompute(ntt) => ntt.forward_transform(data, shape, coset),
 		}
 	}
 
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_stride_batch: usize,
-		log_batch: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => {
-				ntt.inverse_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::SingleThreadedPrecompute(ntt) => {
-				ntt.inverse_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::MultiThreaded(ntt) => {
-				ntt.inverse_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
-			Self::MultiThreadedPrecompute(ntt) => {
-				ntt.inverse_transform(data, coset, log_stride_batch, log_batch, log_n)
-			}
+			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, shape, coset),
+			Self::SingleThreadedPrecompute(ntt) => ntt.inverse_transform(data, shape, coset),
+			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, shape, coset),
+			Self::MultiThreadedPrecompute(ntt) => ntt.inverse_transform(data, shape, coset),
 		}
 	}
 }

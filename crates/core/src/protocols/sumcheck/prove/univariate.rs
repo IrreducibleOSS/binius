@@ -12,7 +12,7 @@ use binius_math::{
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, NTTShape, OddInterpolate, SingleThreadedNTT};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use itertools::izip;
@@ -626,7 +626,11 @@ fn extrapolate_round_evals<F: TowerField>(
 		let next_log_n = log2_ceil_usize(max_domain_size);
 		round_evals.resize(1 << next_log_n, F::ZERO);
 
-		ntt.forward_transform(round_evals, 0, 0, 0, next_log_n)?;
+		let shape = NTTShape {
+			log_y: next_log_n,
+			..Default::default()
+		};
+		ntt.forward_transform(round_evals, shape, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(round_evals[..1 << skip_rounds]
@@ -664,10 +668,14 @@ where
 			>= log2_ceil_usize(domain_size(composition_max_degree, skip_rounds))
 	);
 
-	let log_batch = 0;
+	let shape = NTTShape {
+		log_x: log_stride_batch,
+		log_y: skip_rounds,
+		..Default::default()
+	};
 
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(interleaved_evals, 0, log_stride_batch, log_batch, skip_rounds)?;
+	ntt.inverse_transform(interleaved_evals, shape, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
 	for (i, extrapolated_chunk) in extrapolated_evals
@@ -675,13 +683,7 @@ where
 		.enumerate()
 	{
 		extrapolated_chunk.copy_from_slice(interleaved_evals);
-		ntt.forward_transform(
-			extrapolated_chunk,
-			(i + 1) as u32,
-			log_stride_batch,
-			log_batch,
-			skip_rounds,
-		)?;
+		ntt.forward_transform(extrapolated_chunk, shape, (i + 1) as u32)?;
 	}
 
 	Ok(())

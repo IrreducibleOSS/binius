@@ -7,7 +7,7 @@ use binius_field::{
 	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
 	PackedBinaryField8x32b, PackedField,
 };
-use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 	Throughput,
@@ -130,8 +130,13 @@ fn bench_forward_transform(c: &mut Criterion) {
 			P: PackedField<Scalar = F>,
 		{
 			let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_stride_batch;
+			let shape = NTTShape {
+				log_x: log_stride_batch,
+				log_y: log_n,
+				..Default::default()
+			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.forward_transform(data, 0, log_stride_batch, 0, log_n));
+				b.iter(|| ntt.forward_transform(data, shape, 0));
 			});
 		}
 	}
@@ -155,8 +160,13 @@ fn bench_inverse_transform(c: &mut Criterion) {
 			P: PackedField<Scalar = F>,
 		{
 			let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_stride_batch;
+			let shape = NTTShape {
+				log_x: log_stride_batch,
+				log_y: log_n,
+				..Default::default()
+			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.inverse_transform(data, 0, log_stride_batch, 0, log_n));
+				b.iter(|| ntt.inverse_transform(data, shape, 0));
 			});
 		}
 	}

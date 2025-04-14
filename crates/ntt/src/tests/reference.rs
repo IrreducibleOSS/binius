@@ -8,7 +8,7 @@ use binius_field::{
 };
 use binius_math::BinarySubspace;
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, SingleThreadedNTT};
+use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
 
 /// This trait allows passing packed batches to the simple NTT implementation.
 trait DataAccess<T> {
@@ -180,25 +180,28 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_stride_batch: usize,
-		log_batch: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
-		for stride_batch_index in 0..1 << log_stride_batch {
-			for batch_index in 0..1 << log_batch {
+		let NTTShape {
+			log_x,
+			log_y,
+			log_z,
+		} = shape;
+		for x_index in 0..1 << log_x {
+			for z_index in 0..1 << log_z {
 				let mut batch = BatchedPackedFieldSlice::new(
 					data,
-					log_n,
-					log_stride_batch,
-					stride_batch_index | batch_index << (log_n + log_stride_batch),
+					log_y,
+					log_x,
+					x_index | z_index << (log_x + log_y),
 				);
 				forward_transform_simple(
 					self.log_domain_size(),
 					&self.s_evals,
 					&mut batch,
 					coset,
-					log_n,
+					log_y,
 				)?;
 			}
 		}
@@ -209,25 +212,28 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_stride_batch: usize,
-		log_batch: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
-		for stride_batch_index in 0..1 << log_stride_batch {
-			for batch_index in 0..1 << log_batch {
+		let NTTShape {
+			log_x,
+			log_y,
+			log_z,
+		} = shape;
+		for x_index in 0..1 << log_x {
+			for z_index in 0..1 << log_z {
 				let mut batch = BatchedPackedFieldSlice::new(
 					data,
-					log_n,
-					log_stride_batch,
-					stride_batch_index | batch_index << (log_n + log_stride_batch),
+					log_y,
+					log_x,
+					x_index | z_index << (log_x + log_y),
 				);
 				inverse_transform_simple(
 					self.log_domain_size(),
 					&self.s_evals,
 					&mut batch,
 					coset,
-					log_n,
+					log_y,
 				)?;
 			}
 		}
