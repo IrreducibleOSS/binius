@@ -687,7 +687,7 @@ impl<F: TowerField> Projected<F> {
 		values: Vec<F>,
 		start_index: usize,
 	) -> Result<Self, Error> {
-		if values.len() > oracle.n_vars() {
+		if values.len() + start_index > oracle.n_vars() {
 			bail!(Error::InvalidProjection {
 				n_vars: oracle.n_vars(),
 				values_len: values.len()

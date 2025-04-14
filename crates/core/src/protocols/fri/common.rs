@@ -2,7 +2,10 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
+use binius_field::{
+	packed::len_packed_slice, util::inner_product_unchecked, BinaryField, ExtensionField,
+	PackedField,
+};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
@@ -124,11 +127,11 @@ where
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
-pub fn fold_interleaved_chunk<F, FS>(
+pub fn fold_interleaved_chunk<F, FS, P>(
 	rs_code: &ReedSolomonCode<FS>,
 	log_batch_size: usize,
 	chunk_index: usize,
-	values: &[F],
+	values: &[P],
 	tensor: &[F],
 	fold_challenges: &[F],
 	scratch_buffer: &mut [F],
@@ -136,12 +139,16 @@ pub fn fold_interleaved_chunk<F, FS>(
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	P: PackedField<Scalar = F>,
 {
 	// Preconditions
 	debug_assert!(fold_challenges.len() <= rs_code.log_dim());
-	debug_assert_eq!(values.len(), 1 << (log_batch_size + fold_challenges.len()));
+	debug_assert_eq!(len_packed_slice(values), 1 << (log_batch_size + fold_challenges.len()));
 	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
 	debug_assert!(scratch_buffer.len() >= 2 * (values.len() >> log_batch_size));
+
+	// TODO: handle the case when log_batch_size is not a multiple of P::LOG_WIDTH
+	assert!(log_batch_size >= P::LOG_WIDTH);
 
 	// There are two types of mixing we do in this loop. Buffer 1 is populated with the
 	// folding of symbols from the interleaved codewords into a single codeword. These
@@ -150,8 +157,14 @@ where
 	// folding algorithm.
 	let (buffer1, buffer2) = scratch_buffer.split_at_mut(1 << fold_challenges.len());
 
-	for (interleave_chunk, val) in values.chunks(1 << log_batch_size).zip(buffer1.iter_mut()) {
-		*val = inner_product_unchecked(interleave_chunk.iter().copied(), tensor.iter().copied());
+	for (interleave_chunk, val) in values
+		.chunks(1 << (log_batch_size - P::LOG_WIDTH))
+		.zip(buffer1.iter_mut())
+	{
+		*val = inner_product_unchecked(
+			PackedField::iter_slice(interleave_chunk),
+			tensor.iter().copied(),
+		);
 	}
 
 	if fold_challenges.is_empty() {

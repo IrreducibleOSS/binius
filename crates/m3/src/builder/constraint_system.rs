@@ -15,6 +15,7 @@ use binius_field::{PackedField, TowerField};
 use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
+use itertools::chain;
 
 use super::{
 	channel::{Channel, Flush},
@@ -187,7 +188,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 			});
 		}
 
-		// TODO: new -> with_capacity
 		let mut oracles = MultilinearOracleSet::new();
 		let mut table_constraints = Vec::new();
 		let mut compiled_flushes = Vec::new();
@@ -197,6 +197,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
+			if table.power_of_two_sized && !count.is_power_of_two() {
+				return Err(Error::TableSizePowerOfTwoRequired {
+					table_id: table.id,
+					size: count,
+				});
+			}
+
 			let mut oracle_lookup = Vec::new();
 
 			let mut transparent_single = vec![None; table.columns.len()];
@@ -243,8 +250,12 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down =
-					oracles.add_transparent(StepDown::new(n_vars, count * values_per_row)?)?;
+				let step_down = (!table.power_of_two_sized)
+					.then(|| {
+						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
+						oracles.add_transparent(step_down_poly)
+					})
+					.transpose()?;
 
 				// Translate flushes for the compiled constraint system.
 				for Flush {
@@ -259,11 +270,21 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
+					let mut selectors =
+						chain!(selector.map(|column_idx| oracle_lookup[column_idx]), step_down)
+							.collect::<Vec<_>>();
+					if selectors.len() > 1 {
+						unimplemented!(
+							"Multiple selectors are not supported yet. \
+							Custom selectors are only allowed on tables with power-of-two size."
+						);
+					}
+					let selector = selectors.pop();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
-						selector: selector.unwrap_or(step_down),
+						selector,
 						multiplicity: *multiplicity as u64,
 					});
 				}
@@ -396,4 +417,24 @@ fn add_oracle_for_column<F: TowerField>(
 		)?,
 	};
 	Ok(oracle_id)
+}
+
+#[cfg(test)]
+mod tests {
+	use assert_matches::assert_matches;
+
+	use super::*;
+
+	#[test]
+	fn test_unsatisfied_po2_requirement() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let mut table_builder = cs.add_table("fibonacci");
+		table_builder.require_power_of_two_size();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![15],
+		};
+		assert_matches!(cs.compile(&statement), Err(Error::TableSizePowerOfTwoRequired { .. }));
+	}
 }

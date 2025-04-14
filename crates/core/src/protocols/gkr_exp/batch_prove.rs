@@ -171,13 +171,16 @@ where
 
 	izip!(composite_claims, multilinears, eval_points)
 		.map(|(composite_claims, multilinears, eval_point)| {
-			GKRExpProverBuilder::<'a, P, Backend>::new(backend).build(
-				evaluation_order,
+			GKRExpProverBuilder::<'a, P, _, Backend>::with_switchover(
 				multilinears,
+				immediate_switchover_heuristic,
+				backend,
+			)?
+			.build(
+				evaluation_order,
 				&eval_point,
 				composite_claims,
 				evaluation_domain_factory.clone(),
-				immediate_switchover_heuristic,
 			)
 		})
 		.collect::<Result<Vec<_>, _>>()
