@@ -48,11 +48,8 @@ use crate::{
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
-			prove::{
-				eq_ind::EqIndSumcheckProverBuilder, BatchZerocheckOutput, SumcheckProver,
-				ZerocheckProver,
-			},
-			standard_switchover_heuristic, zerocheck, BatchSumcheckOutput,
+			prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, ZerocheckProver},
+			standard_switchover_heuristic, zerocheck, BatchSumcheckOutput, BatchZerocheckOutput,
 		},
 	},
 	ring_switch,
@@ -377,11 +374,13 @@ where
 		zerocheck_provers.push(zerocheck_prover);
 	}
 
+	let (zerocheck_output, reduction_prover) =
+		sumcheck::prove::batch_prove_zerocheck(zerocheck_provers, skip_rounds, &mut transcript)?;
+
 	let BatchZerocheckOutput {
 		tail_sumcheck_output,
-        univariate_challenge,
-		reduction_prover,
-	} = sumcheck::prove::batch_prove_zerocheck(zerocheck_provers, skip_rounds, &mut transcript)?;
+		univariate_challenge,
+	} = zerocheck_output;
 
 	let BatchSumcheckOutput {
 		challenges: tail_sumcheck_challenges,

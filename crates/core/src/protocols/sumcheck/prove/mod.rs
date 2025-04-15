@@ -12,9 +12,7 @@ pub mod univariate;
 pub mod zerocheck;
 
 pub use batch_sumcheck::{batch_prove as batch_prove_sumcheck, SumcheckProver};
-pub use batch_zerocheck::{
-	batch_prove as batch_prove_zerocheck, BatchZerocheckOutput, ZerocheckProver,
-};
+pub use batch_zerocheck::{batch_prove as batch_prove_zerocheck, ZerocheckProver};
 pub use oracles::{
 	constraint_set_sumcheck_prover, constraint_set_zerocheck_prover, split_constraint_set,
 };

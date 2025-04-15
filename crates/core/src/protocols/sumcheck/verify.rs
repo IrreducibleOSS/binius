@@ -86,9 +86,10 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	if batch_coeffs.len() > claims.len() {
-		bail!(Error::TooManyPrebatchedCoeffs);
-	}
+    // TODO: refactor!
+	// if batch_coeffs.len() > claims.len() {
+		// bail!(Error::TooManyPrebatchedCoeffs);
+	// }
 
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);
 

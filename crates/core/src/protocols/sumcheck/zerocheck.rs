@@ -8,7 +8,7 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
 use super::error::Error;
-use crate::protocols::sumcheck::{eq_ind::EqIndSumcheckClaim, CompositeSumClaim};
+use crate::protocols::sumcheck::{eq_ind::EqIndSumcheckClaim, CompositeSumClaim, BatchSumcheckOutput};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {
@@ -57,6 +57,11 @@ where
 	pub fn composite_zeros(&self) -> &[Composition] {
 		&self.composite_zeros
 	}
+}
+
+pub struct BatchZerocheckOutput<F: Field> {
+	pub tail_sumcheck_output: BatchSumcheckOutput<F>,
+	pub univariate_challenge: F,
 }
 
 pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(

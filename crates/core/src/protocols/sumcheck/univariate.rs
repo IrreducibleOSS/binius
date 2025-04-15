@@ -69,6 +69,8 @@ impl<F: Field> MulAssign<F> for ZerocheckRoundEvals<F> {
 		}
 	}
 }
+
+/// TODO: rework comment
 /// Creates sumcheck claims for the reduction from evaluations of univariatized virtual multilinear oracles to
 /// "regular" multilinear evaluations.
 ///
@@ -78,11 +80,34 @@ impl<F: Field> MulAssign<F> for ZerocheckRoundEvals<F> {
 /// round batching `skip_rounds` variables.
 pub fn univariatizing_reduction_claim<F: Field>(
 	skip_rounds: usize,
-	univariatized_multilinear_evals: &[F],
+	univariatized_multilinear_evals: &[impl AsRef<[F]>],
 ) -> Result<SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>, Error> {
-	let composite_sums =
-		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
-	SumcheckClaim::new(skip_rounds, univariatized_multilinear_evals.len() + 1, composite_sums)
+	let n_multilinears = univariatized_multilinear_evals
+		.iter()
+		.map(|claim_evals| claim_evals.as_ref().len())
+		.sum();
+
+	let composite_sums = univariatized_multilinear_evals
+		.iter()
+		.flat_map(|claim_evals| claim_evals.as_ref())
+		.enumerate()
+		.map(|(i, &univariatized_multilinear_eval)| {
+			let composition =
+				IndexComposition::new(n_multilinears + 1, [i, n_multilinears], BivariateProduct {})
+					.expect("index composition indice correct by construction");
+
+			CompositeSumClaim {
+				composition,
+				sum: univariatized_multilinear_eval,
+			}
+		})
+		.collect();
+
+	// TODO: rework comment
+	// Helper method to create univariatized multilinear oracle evaluation claims.
+	// Assumes that multilinear extension of Lagrange evaluations is the last multilinear,
+	// uses IndexComposition to multiply each multilinear with it (using BivariateProduct).
+	SumcheckClaim::new(skip_rounds, n_multilinears + 1, composite_sums)
 }
 
 /// Verify the validity of sumcheck outputs for the reduction zerocheck.
@@ -107,9 +132,9 @@ where
 		mut multilinear_evals,
 	} = sumcheck_output;
 
-    if claim.n_vars() != skip_rounds {
+	if claim.n_vars() != skip_rounds {
 		bail!(Error::IncorrectUnivariatizingReductionClaims);
-    }
+	}
 
 	if reduction_sumcheck_challenges.len() != skip_rounds || multilinear_evals.len() != 1 {
 		bail!(Error::IncorrectUnivariatizingReductionSumcheck);
@@ -125,7 +150,9 @@ where
 	let query = make_portable_backend().multilinear_query::<F>(&reduction_sumcheck_challenges)?;
 	let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
 
-    let first_claim_multilinear_evals = multilinear_evals.first_mut().expect("exactly one claim in reduction sumcheck");
+	let first_claim_multilinear_evals = multilinear_evals
+		.first_mut()
+		.expect("exactly one claim in reduction sumcheck");
 
 	let multilinear_evals_last_eval = first_claim_multilinear_evals
 		.pop()
@@ -136,39 +163,15 @@ where
 	}
 
 	let output = BatchSumcheckOutput {
-		challenges: [&reduction_sumcheck_challenges, unskipped_sumcheck_challenges].concat(),
+		challenges: [
+			&reduction_sumcheck_challenges,
+			unskipped_sumcheck_challenges,
+		]
+		.concat(),
 		multilinear_evals,
 	};
 
 	Ok(output)
-}
-
-// TODO: rework comment
-// Helper method to create univariatized multilinear oracle evaluation claims.
-// Assumes that multilinear extension of Lagrange evaluations is the last multilinear,
-// uses IndexComposition to multiply each multilinear with it (using BivariateProduct).
-pub(super) fn univariatizing_reduction_composite_sum_claim<F: Field>(
-	univariatized_multilinear_evals: &[impl AsRef<[F]>],
-) -> Vec<CompositeSumClaim<F, IndexComposition<BivariateProduct, 2>>> {
-	let n_multilinears = univariatized_multilinear_evals.iter()
-        .map(|claim_evals| claim_evals.as_ref().len())
-        .sum();
-
-	univariatized_multilinear_evals
-		.iter()
-        .flat_map(|claim_evals| claim_evals.as_ref())
-		.enumerate()
-		.map(|(i, &univariatized_multilinear_eval)| {
-			let composition =
-				IndexComposition::new(n_multilinears + 1, [i, n_multilinears], BivariateProduct {})
-					.expect("index composition indice correct by construction");
-
-			CompositeSumClaim {
-				composition,
-				sum: univariatized_multilinear_eval,
-			}
-		})
-		.collect()
 }
 
 // Given EvaluationDomain, evaluates Lagrange coefficients at a challenge point

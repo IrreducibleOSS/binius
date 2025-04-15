@@ -31,9 +31,6 @@ use crate::{
 			common::fold_partial_eq_ind, zerocheck::high_pad_small_multilinear,
 			RegularSumcheckProver,
 		},
-		univariate::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
-		},
 		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
 		Error, VerificationError,
 	},
@@ -94,6 +91,7 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	Backend,
 >;
 
+/*
 /// Create the sumcheck prover for the univariatizing reduction of multilinears
 /// (see [verifier side](crate::protocols::sumcheck::univariate::univariatizing_reduction_claim))
 ///
@@ -141,7 +139,7 @@ where
 
 	Ok(prover)
 }
-
+*/
 #[derive(Debug)]
 struct ParFoldStates<FBase: Field, P: PackedExtension<FBase>> {
 	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals). Scratch space.
