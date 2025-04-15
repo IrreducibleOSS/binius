@@ -6,11 +6,11 @@ use binius_maybe_rayon::prelude::*;
 use binius_utils::rayon::get_log_max_threads;
 
 use super::{
+	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
-	single_threaded::{self, check_batch_transform_inputs_and_params},
+	single_threaded::{self, check_batch_transform_inputs_and_params, SingleThreadedNTT},
 	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
-	AdditiveNTT, SingleThreadedNTT,
 };
 use crate::twiddle::OnTheFlyTwiddleAccess;
 
@@ -61,17 +61,15 @@ where
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_batch_size: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
 		forward_transform(
 			self.log_domain_size(),
 			self.single_threaded.twiddles(),
 			data,
+			shape,
 			coset,
-			log_batch_size,
-			log_n,
 			self.log_max_threads,
 		)
 	}
@@ -79,62 +77,60 @@ where
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_batch_size: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
 			self.log_domain_size(),
 			self.single_threaded.twiddles(),
 			data,
+			shape,
 			coset,
-			log_batch_size,
-			log_n,
 			self.log_max_threads,
 		)
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
+	shape: NTTShape,
 	coset: u32,
-	log_batch_size: usize,
-	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::forward_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					coset,
-					log_batch_size,
-					log_n,
-				),
+				_ => {
+					single_threaded::forward_transform(log_domain_size, s_evals, data, shape, coset)
+				}
 			};
 		}
 		_ => {}
 	};
 
+	let NTTShape {
+		log_x,
+		log_y,
+		log_z,
+	} = shape;
+
 	let log_w = P::LOG_WIDTH;
-
-	let log_b = log_batch_size;
-
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_x);
 
-	let par_rounds = (log_n - cutoff).min(log_max_threads);
-	let log_height = par_rounds;
-	let log_width = log_n + log_b - log_w - log_height;
+	let log_height = (log_y + log_z).saturating_sub(cutoff).min(log_max_threads);
+	let log_width = (log_x + log_y + log_z).saturating_sub(log_w + log_height);
+
+	let par_rounds = log_height.saturating_sub(log_z);
 
 	// Perform the column-wise NTTs in parallel over vertical strides of the matrix.
 	{
@@ -147,23 +143,30 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		matrix
 			.into_par_strides(1 << log_stride_len)
 			.for_each(|mut stride| {
+				// i indexes the layer of the NTT network, also the binary subspace.
 				for i in (0..par_rounds).rev() {
-					let coset_twiddle = s_evals[log_n - par_rounds + i]
-						.coset(log_domain_size - log_n, coset as usize);
+					let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+					let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
-					for j in 0..1 << (par_rounds - 1 - i) {
-						let twiddle = P::broadcast(coset_twiddle.get(j));
-						for k in 0..1 << i {
-							for l in 0..1 << log_stride_len {
-								let idx0 = j << (i + 1) | k;
-								let idx1 = idx0 | 1 << i;
+					// j indexes the outer Z tensor axis.
+					for j in 0..1 << log_z {
+						// k indexes the block within the layer. Each block performs butterfly operations with
+						// the same twiddle factor.
+						for k in 0..1 << (par_rounds - 1 - i) {
+							let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
+							// l indexes parallel stride columns
+							for l in 0..1 << i {
+								for m in 0..1 << log_stride_len {
+									let idx0 = j << par_rounds | k << (i + 1) | l;
+									let idx1 = idx0 | 1 << i;
 
-								let mut u = stride[(idx0, l)];
-								let mut v = stride[(idx1, l)];
-								u += v * twiddle;
-								v += u;
-								stride[(idx0, l)] = u;
-								stride[(idx1, l)] = v;
+									let mut u = stride[(idx0, m)];
+									let mut v = stride[(idx1, m)];
+									u += v * twiddle;
+									v += u;
+									stride[(idx0, m)] = u;
+									stride[(idx1, m)] = v;
+								}
 							}
 						}
 					}
@@ -171,76 +174,85 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 			});
 	}
 
-	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
+	let log_row_z = log_z.saturating_sub(log_height);
+	let single_thread_log_y = log_width + log_w - log_x - log_row_z;
 
-	data.par_chunks_mut(1 << log_width)
-		.enumerate()
+	data.par_chunks_mut(1 << (log_width + par_rounds))
+		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::forward_transform(
 				log_domain_size,
-				&s_evals[0..log_n - par_rounds],
+				&s_evals[0..log_y - par_rounds],
 				chunk,
-				coset << par_rounds | (inner_coset as u32),
-				log_batch_size,
-				single_thread_log_n,
+				NTTShape {
+					log_x,
+					log_y: single_thread_log_y,
+					log_z: log_row_z,
+				},
+				coset << par_rounds | inner_coset as u32,
 			)
 		})?;
 
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
+	shape: NTTShape,
 	coset: u32,
-	log_batch_size: usize,
-	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::inverse_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					coset,
-					log_batch_size,
-					log_n,
-				),
+				_ => {
+					single_threaded::inverse_transform(log_domain_size, s_evals, data, shape, coset)
+				}
 			};
 		}
 		_ => {}
 	};
 
+	let NTTShape {
+		log_x,
+		log_y,
+		log_z,
+	} = shape;
+
 	let log_w = P::LOG_WIDTH;
-
-	let log_b = log_batch_size;
-
-	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_b);
+	let cutoff = log_w.saturating_sub(log_x);
 
-	let par_rounds = (log_n - cutoff).min(log_max_threads);
-	let log_height = par_rounds;
-	let log_width = log_n + log_b - log_w - log_height;
-	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
+	let log_height = (log_y + log_z).saturating_sub(cutoff).min(log_max_threads);
+	let log_width = (log_x + log_y + log_z).saturating_sub(log_w + log_height);
 
-	data.par_chunks_mut(1 << log_width)
-		.enumerate()
+	let par_rounds = log_height.saturating_sub(log_z);
+	let log_row_z = log_z.saturating_sub(log_height);
+
+	let single_thread_log_y = log_width + log_w - log_x - log_row_z;
+
+	data.par_chunks_mut(1 << (log_width + par_rounds))
+		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::inverse_transform(
 				log_domain_size,
-				&s_evals[0..log_n - par_rounds],
+				&s_evals[0..log_y - par_rounds],
 				chunk,
-				coset << par_rounds | (inner_coset as u32),
-				log_batch_size,
-				single_thread_log_n,
+				NTTShape {
+					log_x,
+					log_y: single_thread_log_y,
+					log_z: log_row_z,
+				},
+				coset << par_rounds | inner_coset as u32,
 			)
 		})?;
 
@@ -254,23 +266,30 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	matrix
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
+			// i indexes the layer of the NTT network, also the binary subspace.
 			for i in 0..par_rounds {
-				let coset_twiddle =
-					s_evals[log_n - par_rounds + i].coset(log_domain_size - log_n, coset as usize);
+				let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+				let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
-				for j in 0..1 << (par_rounds - 1 - i) {
-					let twiddle = P::broadcast(coset_twiddle.get(j));
-					for k in 0..1 << i {
-						for l in 0..1 << log_stride_len {
-							let idx0 = j << (i + 1) | k;
-							let idx1 = idx0 | 1 << i;
+				// j indexes the outer Z tensor axis.
+				for j in 0..1 << log_z {
+					// k indexes the block within the layer. Each block performs butterfly operations with
+					// the same twiddle factor.
+					for k in 0..1 << (par_rounds - 1 - i) {
+						let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
+						// l indexes parallel stride columns
+						for l in 0..1 << i {
+							for m in 0..1 << log_stride_len {
+								let idx0 = j << par_rounds | k << (i + 1) | l;
+								let idx1 = idx0 | 1 << i;
 
-							let mut u = stride[(idx0, l)];
-							let mut v = stride[(idx1, l)];
-							v += u;
-							u += v * twiddle;
-							stride[(idx0, l)] = u;
-							stride[(idx1, l)] = v;
+								let mut u = stride[(idx0, m)];
+								let mut v = stride[(idx1, m)];
+								v += u;
+								u += v * twiddle;
+								stride[(idx0, m)] = u;
+								stride[(idx1, m)] = v;
+							}
 						}
 					}
 				}

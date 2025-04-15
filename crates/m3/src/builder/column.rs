@@ -129,6 +129,12 @@ pub enum ColumnDef<F: TowerField = B128> {
 		index: usize,
 		index_bits: usize,
 	},
+	Projected {
+		col: ColumnId,
+		start_index: usize,
+		query_size: usize,
+		query_bits: usize,
+	},
 	Shifted {
 		col: ColumnId,
 		offset: usize,

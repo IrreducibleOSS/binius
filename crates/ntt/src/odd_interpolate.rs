@@ -4,7 +4,11 @@ use binius_field::BinaryField;
 use binius_math::Matrix;
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 
-use crate::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
+use crate::{
+	additive_ntt::{AdditiveNTT, NTTShape},
+	error::Error,
+	twiddle::TwiddleAccess,
+};
 
 pub struct OddInterpolate<F: BinaryField> {
 	vandermonde_inverse: Matrix<F>,
@@ -66,8 +70,12 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
+		let shape = NTTShape {
+			log_y: ell,
+			..Default::default()
+		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, i as u32, 0, ell)?;
+			ntt.inverse_transform(chunk, shape, i as u32)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is $d\times d$,
@@ -164,8 +172,11 @@ mod tests {
 				let next_log_n = log2_ceil_usize(expected_novel.len());
 				ntt_evals.resize(1 << next_log_n, F::ZERO);
 				// apply forward transform and then run our odd interpolation routine.
-				ntt.forward_transform(&mut ntt_evals, 0, 0, next_log_n)
-					.unwrap();
+				let shape = NTTShape {
+					log_y: next_log_n,
+					..Default::default()
+				};
+				ntt.forward_transform(&mut ntt_evals, shape, 0).unwrap();
 
 				let odd_interpolate = OddInterpolate::new(d, ell, &ntt.s_evals).unwrap();
 				odd_interpolate

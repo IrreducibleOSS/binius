@@ -408,7 +408,7 @@ mod tests {
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement};
+	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
 
 	#[test]
 	fn test_sbox() {
@@ -426,11 +426,10 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let mut segment = table_witness.full_segment();
@@ -462,11 +461,10 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
@@ -516,11 +514,10 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![1 << 8],
 		};
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
-		let table_witness = witness.get_table(table_id).unwrap();
+		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let in_states = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))

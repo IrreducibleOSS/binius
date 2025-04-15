@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
+use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
 use tracing::instrument;
@@ -134,21 +134,20 @@ where
 			code.copy_within(0..msgs_len, i * msgs_len);
 		}
 
+		let shape = NTTShape {
+			log_x: log_batch_size,
+			log_y: self.log_dim(),
+			..Default::default()
+		};
 		if self.multithreaded {
 			(0..(1 << self.log_inv_rate))
 				.into_par_iter()
 				.zip(code.par_chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| {
-					self.ntt
-						.forward_transform(data, i, log_batch_size, self.log_dim())
-				})
+				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
 		} else {
 			(0..(1 << self.log_inv_rate))
 				.zip(code.chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| {
-					self.ntt
-						.forward_transform(data, i, log_batch_size, self.log_dim())
-				})
+				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
 		}
 	}
 

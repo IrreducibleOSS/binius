@@ -18,7 +18,7 @@ mod strided_array;
 mod tests;
 pub mod twiddle;
 
-pub use additive_ntt::AdditiveNTT;
+pub use additive_ntt::{AdditiveNTT, NTTShape};
 pub use dynamic_dispatch::{DynamicDispatchNTT, NTTOptions, ThreadingSettings};
 pub use error::Error;
 pub use multithreaded::MultithreadedNTT;

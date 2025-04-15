@@ -11,9 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
@@ -21,6 +19,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
+use tracing::instrument;
 
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPointOracleIdMap};
 use crate::{
@@ -78,7 +77,7 @@ pub fn process_shifted_sumcheck<F, P>(
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	process_projected_bivariate_witness(
@@ -447,6 +446,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			})
 	}
 
+	#[instrument(skip_all, name = "memoize_query_par", level = "debug")]
 	pub fn memoize_query_par(
 		&mut self,
 		eval_points: &[&[P::Scalar]],
