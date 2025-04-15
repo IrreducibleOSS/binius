@@ -41,14 +41,18 @@ use crate::{
 	transcript::ProverTranscript,
 };
 
+#[inline(always)]
+fn reverse_bits(x: usize, log_len: usize) -> usize {
+	x.reverse_bits()
+		.wrapping_shr((usize::BITS as usize - log_len) as _)
+}
+
 /// Reorders the scalars in a slice of packed field elements by reversing the bits of their indices.
 /// TODO: investigate if we can optimize this.
 fn reverse_index_bits<F>(collection: &mut impl ScalarsCollectionMut<F>) {
 	let log_len = checked_log_2(collection.len());
 	for i in 0..collection.len() {
-		let bit_reversed_index = i
-			.reverse_bits()
-			.wrapping_shr((usize::BITS as usize - log_len) as _);
+		let bit_reversed_index = reverse_bits(i, log_len);
 		if i < bit_reversed_index {
 			// Safety: `i` and `j` are guaranteed to be in bounds of the slice
 			unsafe {
@@ -368,4 +372,50 @@ where
 		}
 	}
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use std::iter::repeat_with;
+
+	use binius_field::PackedBinaryField16x8b;
+	use rand::{rngs::StdRng, SeedableRng};
+
+	use super::*;
+
+	#[test]
+	fn test_merge_multilins() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let multilins: Vec<MLEDirectAdapter<PackedBinaryField16x8b>> = (0usize..8)
+			.map(|n_vars| {
+				let data = repeat_with(|| PackedField::random(&mut rng))
+					.take(1 << n_vars.saturating_sub(PackedBinaryField16x8b::LOG_WIDTH))
+					.collect::<Vec<_>>();
+
+				let packed_mle = MultilinearExtension::new(n_vars, data).unwrap();
+				MLEDirectAdapter::from(packed_mle)
+			})
+			.collect();
+		let scalars = (0..8).map(|i| 1usize << i).sum::<usize>();
+		let mut buffer =
+			vec![PackedBinaryField16x8b::zero(); scalars.div_ceil(PackedBinaryField16x8b::WIDTH)];
+		merge_multilins(&multilins, &mut buffer);
+
+		let scalars = PackedField::iter_slice(&buffer).take(scalars).collect_vec();
+		let mut offset = 0;
+		for multilin in multilins.iter().rev() {
+			let scalars = &scalars[offset..];
+			for (i, v) in PackedField::iter_slice(multilin.packed_evals().unwrap())
+				.take(1 << (multilin.n_vars() - multilin.log_extension_degree()))
+				.enumerate()
+			{
+				assert_eq!(
+					scalars[reverse_bits(i, multilin.n_vars() - multilin.log_extension_degree())],
+					v
+				);
+			}
+			offset += 1 << (multilin.n_vars() - multilin.log_extension_degree());
+		}
+	}
 }
