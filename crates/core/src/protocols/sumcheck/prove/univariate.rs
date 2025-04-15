@@ -8,7 +8,7 @@ use binius_field::{
 	util::inner_product_unchecked,
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
 };
-use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_hal::ComputationBackend;
 use binius_math::{
 	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
@@ -36,52 +36,6 @@ use crate::{
 	},
 };
 
-/// Helper method to reduce the witness to skipped variables via a partial high projection.
-#[instrument(skip_all, level = "debug")]
-pub fn reduce_to_skipped_projection<F, P, M, Backend>(
-	multilinears: Vec<M>,
-	skip_rounds: usize,
-	sumcheck_challenges: &[F],
-	backend: &'_ Backend,
-) -> Result<Vec<MLEDirectAdapter<P>>, Error>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	let n_vars = equal_n_vars_check(&multilinears)?;
-
-	if sumcheck_challenges.len() < n_vars + skip_rounds {
-		bail!(Error::IncorrectNumberOfChallenges);
-	}
-
-	let skipped_projections = if n_vars < skip_rounds {
-		multilinears
-			.par_iter()
-			.map(|multilinear| {
-				high_pad_small_multilinear(skip_rounds, multilinear).expect_right(
-					"multilinear is shorter than skip_rounds vars, forcing high padding",
-				)
-			})
-			.collect()
-	} else {
-		let query = backend.multilinear_query(&sumcheck_challenges[..n_vars - skip_rounds])?;
-
-		multilinears
-			.par_iter()
-			.map(|multilinear| {
-				backend
-					.evaluate_partial_high(multilinear, query.to_ref())
-					.expect("sumcheck_challenges.len() >= n_vars - skip_rounds")
-					.into()
-			})
-			.collect()
-	};
-
-	Ok(skipped_projections)
-}
-
 pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	'a,
 	FDomain,
@@ -91,55 +45,6 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	Backend,
 >;
 
-/*
-/// Create the sumcheck prover for the univariatizing reduction of multilinears
-/// (see [verifier side](crate::protocols::sumcheck::univariate::univariatizing_reduction_claim))
-///
-/// This method takes multilinears projected to first `skip_rounds` variables, constructs a multilinear
-/// extension of Lagrange evaluations at `univariate_challenge`, and creates a regular sumcheck prover,
-/// placing Lagrange evaluation in the last witness column.
-///
-/// Note that `univariatized_multilinear_evals` come from a previous sumcheck with a univariate first round.
-pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
-	mut reduced_multilinears: Vec<MLEDirectAdapter<P>>,
-	univariatized_multilinear_evals: &[F],
-	univariate_challenge: F,
-	backend: &'a Backend,
-) -> Result<Prover<'a, FDomain, P, Backend>, Error>
-where
-	F: TowerField,
-	FDomain: TowerField,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
-	Backend: ComputationBackend,
-{
-	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
-
-	if univariatized_multilinear_evals.len() != reduced_multilinears.len() {
-		bail!(VerificationError::NumberOfFinalEvaluations);
-	}
-
-	let subspace =
-		BinarySubspace::<FDomain::Canonical>::with_dim(skip_rounds)?.isomorphic::<FDomain>();
-	let ntt_domain = EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
-
-	reduced_multilinears
-		.push(lagrange_evals_multilinear_extension(&ntt_domain, univariate_challenge)?.into());
-
-	let composite_sum_claims =
-		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
-
-	let prover = RegularSumcheckProver::new(
-		EvaluationOrder::HighToLow,
-		reduced_multilinears,
-		composite_sum_claims,
-		IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
-		immediate_switchover_heuristic,
-		backend,
-	)?;
-
-	Ok(prover)
-}
-*/
 #[derive(Debug)]
 struct ParFoldStates<FBase: Field, P: PackedExtension<FBase>> {
 	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals). Scratch space.
@@ -212,7 +117,6 @@ where
 	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
-	pub skip_rounds: usize,
 	pub subcube_lagrange_coeffs: Vec<F>,
 	pub claimed_sums: Vec<F>,
 	pub partial_eq_ind_evals: Backend::Vec<P>,
@@ -286,7 +190,6 @@ where
 			.collect();
 
 		Ok(ZerocheckUnivariateFoldResult {
-			skip_rounds,
 			subcube_lagrange_coeffs,
 			claimed_sums,
 			partial_eq_ind_evals,

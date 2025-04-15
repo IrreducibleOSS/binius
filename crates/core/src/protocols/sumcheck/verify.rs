@@ -38,34 +38,14 @@ where
 	Composition: CompositionPoly<F>,
 	Challenger_: Challenger,
 {
-	let start = BatchVerifyStart {
-		batch_coeffs: Vec::new(),
-		sum: F::ZERO,
-		max_degree: 0,
-		skip_rounds: 0,
-	};
-
-	batch_verify_with_start(evaluation_order, start, claims, transcript)
-}
-
-/// A struct describing the starting state of batched sumcheck verify invocation.
-#[derive(Debug)]
-pub struct BatchVerifyStart<F: Field> {
-	/// Batching coefficients for the already batched claims.
-	pub batch_coeffs: Vec<F>,
-	/// Batched sum claims.
-	pub sum: F,
-	/// Maximum individual degree of the already batched claims
-	pub max_degree: usize,
-	/// Number of multilinear rounds to skip during verification.
-	pub skip_rounds: usize,
+	batch_verify_with_start(evaluation_order, None(start), claims, transcript)
 }
 
 /// Verify a batched sumcheck protocol execution, but after some rounds have been processed.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_with_start<F, Composition, Challenger_>(
+pub fn batch_verify_with_coeffs<F, Composition, Challenger_>(
 	evaluation_order: EvaluationOrder,
-	start: BatchVerifyStart<F>,
+	prebatched_coeffs: Option<Vec<F>>,
 	claims: &[SumcheckClaim<F, Composition>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
@@ -74,6 +54,8 @@ where
 	Composition: CompositionPoly<F>,
 	Challenger_: Challenger,
 {
+	if let Some(start) = start {}
+
 	let BatchVerifyStart {
 		mut batch_coeffs,
 		mut sum,
@@ -86,9 +68,9 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-    // TODO: refactor!
+	// TODO: refactor!
 	// if batch_coeffs.len() > claims.len() {
-		// bail!(Error::TooManyPrebatchedCoeffs);
+	// bail!(Error::TooManyPrebatchedCoeffs);
 	// }
 
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);

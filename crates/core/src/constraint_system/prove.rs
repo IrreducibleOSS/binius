@@ -49,7 +49,9 @@ use crate::{
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
 			prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, ZerocheckProver},
-			standard_switchover_heuristic, zerocheck, BatchSumcheckOutput, BatchZerocheckOutput,
+			standard_switchover_heuristic,
+			univariate::univariatizing_reduction_claim,
+			zerocheck, BatchSumcheckOutput, BatchZerocheckOutput,
 		},
 	},
 	ring_switch,
@@ -390,6 +392,9 @@ where
 		&zerocheck_challenges,
 		tail_sumcheck_output,
 	)?;
+
+	let reduction_claim =
+		univariatizing_reduction_claim(skip_rounds, &univariatized_multilinear_evals)?;
 
 	let univariatizing_output =
 		sumcheck::prove::batch_prove_sumcheck(vec![reduction_prover], &mut transcript)?;

@@ -8,7 +8,9 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
 use super::error::Error;
-use crate::protocols::sumcheck::{eq_ind::EqIndSumcheckClaim, CompositeSumClaim, BatchSumcheckOutput};
+use crate::protocols::sumcheck::{
+	eq_ind::EqIndSumcheckClaim, BatchSumcheckOutput, CompositeSumClaim,
+};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {

@@ -36,6 +36,7 @@ pub const fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: 
 	composition_degree.saturating_sub(1) << skip_rounds
 }
 
+/// TODO: rework comment
 /// Verify a batched zerocheck univariate round.
 ///
 /// Unlike `batch_verify`, all round evaluations are on a univariate domain of predetermined size,
@@ -43,7 +44,7 @@ pub const fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: 
 /// of the underlying composites, checks that univariatized round polynomial agrees with them on
 /// challenge point, and outputs sumcheck claims for `batch_verify` on the remaining variables.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_zerocheck_univariate_round<F, Composition, Challenger_>(
+pub fn batch_verify_zerocheck<F, Composition, Challenger_>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	skip_rounds: usize,
 	transcript: &mut VerifierTranscript<Challenger_>,
@@ -59,20 +60,17 @@ where
 	}
 
 	let max_n_vars = claims.first().map(|claim| claim.n_vars()).unwrap_or(0);
-	let min_n_vars = claims.last().map(|claim| claim.n_vars()).unwrap_or(0);
 
-	if max_n_vars - min_n_vars > skip_rounds {
+	if max_n_vars < skip_rounds {
 		bail!(VerificationError::IncorrectSkippedRoundsCount);
 	}
 
 	let max_domain_size = claims
 		.iter()
-		.map(|claim| {
-			domain_size(claim.max_individual_degree(), skip_rounds + claim.n_vars() - max_n_vars)
-		})
+		.map(|claim| domain_size(claim.max_individual_degree(), skip_rounds))
 		.max()
 		.unwrap_or(0);
-	let zeros_prefix_len = (1 << (skip_rounds + min_n_vars - max_n_vars)).min(max_domain_size);
+	let zeros_prefix_len = (1 << skip_rounds).min(max_domain_size);
 
 	let mut batch_coeffs = Vec::with_capacity(claims.len());
 	let mut max_degree = 0;
