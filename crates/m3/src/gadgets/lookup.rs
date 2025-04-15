@@ -1,9 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_core::{
-	constraint_system::channel::ChannelId, tower::CanonicalOptimalPackedTowerFamily,
-};
+use binius_core::constraint_system::channel::ChannelId;
 use binius_field::{ExtensionField, PackedExtension, PackedField, PackedSubfield, TowerField};
 use itertools::Itertools;
 
@@ -82,6 +80,7 @@ impl LookupProducer {
 mod tests {
 	use std::{cmp::Reverse, iter, iter::repeat_with};
 
+	use binius_core::tower::CanonicalOptimalPackedTowerFamily;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
 	use rand::{rngs::StdRng, Rng, SeedableRng};

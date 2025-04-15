@@ -365,6 +365,7 @@ macro_rules! define_byte_sliced_3d {
 
 		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
 			#[inline(always)]
+			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed],
 			) -> Result<&mut [Self], crate::Error> {
@@ -447,6 +448,7 @@ macro_rules! byte_sliced_common {
 	($name:ident, $packed_storage:ty, $scalar_type:ty, $storage_tower_level:ty) => {
 		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
 			#[inline(always)]
+			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
 				slice: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed],
 			) -> Result<&mut [Self], crate::Error> {
@@ -471,6 +473,7 @@ macro_rules! byte_sliced_common {
 
 		impl TryRepackSliceInplace<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
 			#[inline(always)]
+			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
 				slice: &mut [$name],
 			) -> Result<&mut [Self], crate::Error> {

@@ -8,7 +8,7 @@ use std::{array, iter};
 
 use anyhow::Result;
 use array_util::ArrayExt;
-use binius_core::{oracle::ShiftVariant, tower::CanonicalOptimalPackedTowerFamily};
+use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	ext_basis,
 	linear_transformation::{
@@ -400,6 +400,7 @@ fn pack_b8<const V: usize>(bits: [Col<B1, V>; 8]) -> Expr<B8, V> {
 mod tests {
 	use std::iter::repeat_with;
 
+	use binius_core::tower::CanonicalOptimalPackedTowerFamily;
 	use binius_field::{
 		arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero, as_packed_field::PackedType,
 	};

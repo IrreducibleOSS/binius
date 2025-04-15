@@ -117,7 +117,7 @@ impl<F: TowerField> ColumnInfo<F> {
 		>,
 	{
 		ColumnInfo {
-			id: self.id.clone(),
+			id: self.id,
 			col: self.col.convert_to_tower::<SourceTower, TargetTower>(),
 			name: self.name.clone(),
 			shape: self.shape,
@@ -239,7 +239,7 @@ where
 	F: TowerField,
 	PackedExt: PackedExtension<F, Scalar: TowerField>,
 {
-	let packed_data = pack_slice(&source);
+	let packed_data = pack_slice(source);
 	let mle = MultilinearExtensionTransparent::<
 	PackedExt::PackedSubfield,
 		PackedExt,
