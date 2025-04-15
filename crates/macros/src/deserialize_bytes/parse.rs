@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 use syn::{
 	parse::Parse,
 	punctuated::Punctuated,
