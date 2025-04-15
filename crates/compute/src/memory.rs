@@ -54,6 +54,15 @@ pub trait ComputeMemory<F> {
 		range: impl RangeBounds<usize>,
 	) -> Self::FSliceMut<'a>;
 
+	/// Splits an immutable slice into two disjoint subslices.
+	///
+	/// ## Preconditions
+	///
+	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn split_at(data: Self::FSlice<'_>, mid: usize) -> (Self::FSlice<'_>, Self::FSlice<'_>) {
+		(Self::slice(data, ..mid), Self::slice(data, mid..))
+	}
+
 	/// Splits a mutable slice into two disjoint subslices.
 	///
 	/// ## Preconditions

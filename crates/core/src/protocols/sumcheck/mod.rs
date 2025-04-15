@@ -16,6 +16,7 @@ pub mod prove;
 mod tests;
 pub mod univariate;
 pub mod univariate_zerocheck;
+mod v3;
 pub mod verify;
 pub mod zerocheck;
 

@@ -320,7 +320,11 @@ impl<F: Field> ArithExpr<F> {
 		})
 	}
 
-	fn evaluate(&self, vars: &[F]) -> F {
+	/// Evaluate the expression as a tree.
+	///
+	/// This is a naive evaluation of the expression, not optimized for performance. On
+	/// critical paths, consider using [`binius_core::polynomial::ArithCircuitPoly`] instead.
+	pub fn evaluate(&self, vars: &[F]) -> F {
 		match self {
 			Self::Const(val) => *val,
 			Self::Var(index) => vars[*index],

@@ -8,7 +8,7 @@ use binius_field::{
 };
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
-pub trait TowerFamily: Sized {
+pub trait TowerFamily: Sized + 'static {
 	type B1: TowerField + TryFrom<Self::B128>;
 	type B8: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1>;
 	type B16: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1> + ExtensionField<Self::B8>;

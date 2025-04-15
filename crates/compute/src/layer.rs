@@ -1,6 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
-use crate::memory::ComputeMemory;
+use std::ops::Range;
+
+use binius_field::Field;
+use binius_math::ArithExpr;
+use binius_utils::checked_arithmetics::checked_log_2;
+
+use crate::memory::{ComputeMemory, DevSlice};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -10,10 +16,18 @@ pub enum Error {
 	DeviceError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-pub trait Executor {}
+pub trait ComputeLayer<F: Field>: ComputeMemory<F> {
+	type Exec;
+	type KernelExec;
+	type KernelValue;
+	type OpValue;
+	type ExprEvaluator;
 
-pub trait ComputeLayer<F>: ComputeMemory<F> {
-	type Exec: Executor;
+	fn kernel_decl_value(
+		&self,
+		exec: &mut Self::KernelExec,
+		init: F,
+	) -> Result<Self::KernelValue, Error>;
 
 	/// Returns the inner product of a vector of subfield elements with big field elements.
 	///
@@ -39,7 +53,7 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 		a_edeg: usize,
 		a_in: Self::FSlice<'a>,
 		b_in: Self::FSlice<'a>,
-	) -> Result<F, Error>;
+	) -> Result<Self::OpValue, Error>;
 
 	/// Computes the iterative tensor product of the input with the given coordinates.
 	///
@@ -71,13 +85,49 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 		data: &mut Self::FSliceMut<'a>,
 	) -> Result<(), Error>;
 
+	fn kernel_add(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: Self::FSlice<'_>,
+		src2: Self::FSlice<'_>,
+		dst: &mut Self::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
+	fn compile_expr(&self, expr: &ArithExpr<F>) -> Result<Self::ExprEvaluator, Error>;
+
+	fn sum_composition_evals(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		inputs: &[Self::FSlice<'_>],
+		composition: &Self::ExprEvaluator,
+		batch_coeff: F,
+		accumulator: &mut Self::KernelValue,
+	) -> Result<(), Error>;
+
 	/// Combinator for an operation that depends on the concurrent execution of two inner operations.
 	fn join<Out1, Out2>(
 		&self,
 		exec: &mut Self::Exec,
-		lhs: impl Fn(&mut Self::Exec) -> Result<Out1, Error>,
-		rhs: impl Fn(&mut Self::Exec) -> Result<Out2, Error>,
+		lhs: impl FnOnce(&mut Self::Exec) -> Result<Out1, Error>,
+		rhs: impl FnOnce(&mut Self::Exec) -> Result<Out2, Error>,
 	) -> Result<(Out1, Out2), Error>;
+
+	/// Overfit for sumcheck, but that's OK.
+	fn accumulate_kernels(
+		&self,
+		exec: &mut Self::Exec,
+		map: impl for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, F, Self>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
+		inputs: Vec<KernelMemMap<'_, F, Self>>,
+	) -> Result<Vec<Self::OpValue>, Error>
+	// This is probably not necessary after Mem becomes associated
+	where
+		Self: Sized;
 
 	/// Combinator for an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
@@ -107,9 +157,52 @@ pub trait ComputeLayer<F>: ComputeMemory<F> {
 	/// Executes an operation.
 	///
 	/// A HAL operation is an abstract function that runs with an executor reference.
-	fn execute<In, Out>(
+	fn execute(
 		&self,
-		f: impl Fn(&mut Self::Exec, In) -> Result<Out, Error>,
-		input: In,
-	) -> Result<Out, Error>;
+		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<Self::OpValue>, Error>,
+	) -> Result<Vec<F>, Error>;
+}
+
+pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
+	Chunked {
+		data: Mem::FSlice<'a>,
+		log_min_chunk_size: usize,
+	},
+	ChunkedMut {
+		data: Mem::FSliceMut<'a>,
+		log_min_chunk_size: usize,
+	},
+	Local {
+		log_size: usize,
+	},
+}
+
+pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
+	Ref(Mem::FSlice<'a>),
+	Mut(Mem::FSliceMut<'a>),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
+	pub fn log_chunks_range(mappings: &[KernelMemMap<'a, F, Mem>]) -> Option<Range<usize>> {
+		mappings
+			.iter()
+			.map(|mapping| match mapping {
+				Self::Chunked {
+					data,
+					log_min_chunk_size,
+				} => {
+					let log_data_size = checked_log_2(data.len());
+					(log_data_size - log_min_chunk_size)..log_data_size
+				}
+				Self::ChunkedMut {
+					data,
+					log_min_chunk_size,
+				} => {
+					let log_data_size = checked_log_2(data.len());
+					(log_data_size - log_min_chunk_size)..log_data_size
+				}
+				Self::Local { log_size } => 0..*log_size,
+			})
+			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
+	}
 }
