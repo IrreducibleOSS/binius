@@ -156,7 +156,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 
 	pub fn repack<'cs_2, P2: TryRepackSliceInplace<P, Scalar: TowerField>>(
 		self,
-		converted_cs: &'cs_2 mut ConstraintSystem<P2::Scalar>,
+		converted_cs: &'cs_2 ConstraintSystem<P2::Scalar>,
 	) -> Result<WitnessIndex<'cs_2, 'alloc, P2>, super::Error> {
 		let mut tables = Vec::with_capacity(self.tables.len());
 		for table in self.tables {
@@ -1155,9 +1155,11 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use assert_matches::assert_matches;
+	use binius_core::tower::{AESTowerFamily, CanonicalTowerFamily};
 	use binius_field::{
-		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
+		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlierByteSliced128b},
 		packed::{len_packed_slice, set_packed_slice},
+		AESTowerField128b, AESTowerField32b,
 	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -1474,6 +1476,60 @@ mod tests {
 		assert_matches!(
 			index.fill_table_sequential(&test_table, &[]),
 			Err(Error::IncorrectNumberOfTableEvents { .. })
+		);
+	}
+
+	#[test]
+	fn test_repack_succeeds() {
+		let mut cs = ConstraintSystem::new();
+		let test_table = TestTable::new(&mut cs);
+		let allocator = Bump::new();
+
+		let table_size = 512;
+		let mut rng = StdRng::seed_from_u64(0);
+		let rows = repeat_with(|| rng.gen())
+			.take(table_size)
+			.collect::<Vec<_>>();
+
+		let mut index =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let table_index = index.init_table(test_table.id(), table_size).unwrap();
+		table_index.fill_sequential(&test_table, &rows).unwrap();
+		let segment = table_index.full_segment();
+		let col0 = segment.get_scalars(test_table.col0).unwrap().to_vec();
+		let col1 = segment.get_scalars(test_table.col1).unwrap().to_vec();
+
+		let converted_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
+		let mut repacked_index = index
+			.repack::<PackedType<OptimalUnderlierByteSliced128b, AESTowerField128b>>(&converted_cs)
+			.unwrap();
+
+		let repacked_table = repacked_index
+			.get_table(test_table.id())
+			.unwrap()
+			.full_segment();
+		let repacked_col0 = repacked_table
+			.get(test_table.col0.convert_field::<AESTowerField32b>())
+			.unwrap()
+			.to_vec();
+		let repacked_col1 = repacked_table
+			.get(test_table.col1.convert_field::<AESTowerField32b>())
+			.unwrap()
+			.to_vec();
+
+		assert_eq!(
+			col0.iter()
+				.copied()
+				.map(AESTowerField32b::from)
+				.collect::<Vec<_>>(),
+			PackedField::iter_slice(&repacked_col0).collect::<Vec<_>>()
+		);
+		assert_eq!(
+			col1.iter()
+				.copied()
+				.map(AESTowerField32b::from)
+				.collect::<Vec<_>>(),
+			PackedField::iter_slice(&repacked_col1).collect::<Vec<_>>()
 		);
 	}
 }

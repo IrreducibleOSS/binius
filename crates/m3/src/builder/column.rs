@@ -69,6 +69,18 @@ impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 			table_index: self.table_index,
 		}
 	}
+
+	pub fn convert_field<FTarget>(&self) -> Col<FTarget, VALUES_PER_ROW>
+	where
+		FTarget: TowerField + From<F>,
+	{
+		Col {
+			table_id: self.table_id,
+			table_index: self.table_index,
+			partition_index: self.partition_index,
+			_marker: PhantomData,
+		}
+	}
 }
 
 /// Upcast a column from a subfield to an extension field..

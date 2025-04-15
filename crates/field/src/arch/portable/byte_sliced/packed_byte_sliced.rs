@@ -363,7 +363,9 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
-		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
+		// Implementation that converts from packed canonical tower and repacks to byte-sliced packed field.
+		// Operation succeeds if the slice length is divisible by `storage_tower_level::WIDTH`.
+		unsafe impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
 			#[inline(always)]
 			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
@@ -391,7 +393,8 @@ macro_rules! define_byte_sliced_3d {
 					}
 				}
 
-				Ok(bytemuck::must_cast_slice_mut(
+				// This cast won't panic because the slice length is divisible by `storage_tower_level::WIDTH`.
+				Ok(bytemuck::cast_slice_mut(
 					underliers,
 				))
 			}
@@ -446,7 +449,9 @@ macro_rules! impl_init_with_transpose {
 
 macro_rules! byte_sliced_common {
 	($name:ident, $packed_storage:ty, $scalar_type:ty, $storage_tower_level:ty) => {
-		impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
+		// Repack in-place from ordinary field to byte-sliced packed field.
+		// Operations succeeds if the slice length is divisible by `storage_tower_level::WIDTH`.
+		unsafe impl TryRepackSliceInplace<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed> for $name {
 			#[inline(always)]
 			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
@@ -465,22 +470,21 @@ macro_rules! byte_sliced_common {
 					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_to_byte_sliced::<$storage_tower_level>(chunk_array);
 				}
 
-				Ok(bytemuck::must_cast_slice_mut(
+				// This cast won't panic because the slice length is divisible by `storage_tower_level::WIDTH`.
+				Ok(bytemuck::cast_slice_mut(
 					underliers,
 				))
 			}
 		}
 
-		impl TryRepackSliceInplace<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
+		// Repack in-place from byte-sliced packed field to ordinary field.
+		// Operations always succeeds.
+		unsafe impl TryRepackSliceInplace<$name> for <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed{
 			#[inline(always)]
 			#[allow(clippy::modulo_one)]
 			fn try_repack_slice(
 				slice: &mut [$name],
 			) -> Result<&mut [Self], crate::Error> {
-				if slice.len() % <$storage_tower_level>::WIDTH != 0 {
-					return Err(crate::Error::MismatchedLengths);
-				}
-
 				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] = bytemuck::must_cast_slice_mut(slice);
 
 				for chunk in underliers.chunks_exact_mut($name::HEIGHT_BYTES) {

@@ -85,4 +85,7 @@ cfg_if! {
 
 /// Optimal underlier for byte-sliced packed field for the current architecture.
 /// This underlier can pack up to 128b scalars.
+pub type OptimalUnderlierByteSliced128b = ByteSlicedUnderlier<OptimalUnderlier128b, 16>;
+pub type OptimalUnderlierByteSliced256b = ByteSlicedUnderlier<OptimalUnderlier256b, 16>;
+pub type OptimalUnderlierByteSliced512b = ByteSlicedUnderlier<OptimalUnderlier512b, 16>;
 pub type OptimalUnderlierByteSliced = ByteSlicedUnderlier<OptimalUnderlier, 16>;

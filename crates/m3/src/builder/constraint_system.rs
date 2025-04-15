@@ -439,9 +439,14 @@ fn add_oracle_for_column<F: TowerField>(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_core::tower::CanonicalOptimalPackedTowerFamily;
+	use binius_core::tower::{
+		AESTowerFamily, CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily,
+	};
+	use binius_field::Field;
+	use binius_macros::arith_expr;
 
 	use super::*;
+	use crate::builder::B32;
 
 	#[test]
 	fn test_unsatisfied_po2_requirement() {
@@ -456,6 +461,40 @@ mod tests {
 		assert_matches!(
 			cs.compile::<CanonicalOptimalPackedTowerFamily>(&statement),
 			Err(Error::TableSizePowerOfTwoRequired { .. })
+		);
+	}
+
+	#[test]
+	fn test_convert_tower() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let mut table_builder = cs.add_table("fibonacci");
+		let col_1 = table_builder.add_committed::<B32, 2>("col_1");
+		let col_2 = table_builder.add_committed::<B32, 2>("col_2");
+		let col_3 = table_builder.add_constant("col_3", [B32::ONE, B32::ZERO]);
+		table_builder.assert_zero("constraint", col_1 + col_2 - col_3);
+
+		assert_eq!(cs.tables.len(), 1);
+		assert_eq!(cs.tables[0].name, "fibonacci");
+		assert_eq!(cs.tables[0].columns.len(), 3);
+		assert_eq!(cs.tables[0].partitions.len(), 1);
+		assert_eq!(cs.tables[0].partitions[1].zero_constraints.len(), 1);
+		assert_eq!(cs.tables[0].partitions[1].zero_constraints[0].name, "constraint");
+		assert_eq!(
+			cs.tables[0].partitions[1].zero_constraints[0].expr,
+			arith_expr!([x, y, z] = x + y - z).convert_field()
+		);
+
+		let converted_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
+
+		assert_eq!(converted_cs.tables.len(), 1);
+		assert_eq!(converted_cs.tables[0].name, "fibonacci");
+		assert_eq!(converted_cs.tables[0].columns.len(), 3);
+		assert_eq!(converted_cs.tables[0].partitions.len(), 1);
+		assert_eq!(converted_cs.tables[0].partitions[1].zero_constraints.len(), 1);
+		assert_eq!(converted_cs.tables[0].partitions[1].zero_constraints[0].name, "constraint");
+		assert_eq!(
+			converted_cs.tables[0].partitions[1].zero_constraints[0].expr,
+			arith_expr!([x, y, z] = x + y - z).convert_field()
 		);
 	}
 }

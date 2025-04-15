@@ -5,7 +5,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	arch::OptimalUnderlier,
+	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
@@ -58,7 +58,9 @@ pub trait ProverTowerFamily: TowerFamily {
 		Top: PackedField<Scalar = Self::B128>;
 }
 
+/// A tower family of packed fields that are repacked extensions of each other.
 pub trait PackedTowerFamily {
+	/// The corresponding tower family of scalars.
 	type Tower: TowerFamily;
 
 	type PackedB1: PackedField<Scalar = <Self::Tower as TowerFamily>::B1>
@@ -89,6 +91,7 @@ pub trait PackedTowerFamily {
 		+ RepackedExtension<Self::PackedB8>
 		+ RepackedExtension<Self::PackedB1>;
 }
+
 /// The canonical Fan-Paar tower family.
 #[derive(Debug)]
 pub struct CanonicalTowerFamily;
@@ -180,6 +183,8 @@ trait_set! {
 		+ PackedExtension<Tower::B128>;
 }
 
+/// A packed family with the specified underlier type.
+/// This is a handy type for creating aliases for arcv optimal underlier types.
 pub struct PackUnderlierFamily<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> {
 	_pd: PhantomData<(Tower, Underlier)>,
 }
@@ -200,3 +205,5 @@ impl<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> PackedTowerFamily
 pub type CanonicalOptimalPackedTowerFamily =
 	PackUnderlierFamily<CanonicalTowerFamily, OptimalUnderlier>;
 pub type AESOptimalPackedTowerFamily = PackUnderlierFamily<AESTowerFamily, OptimalUnderlier>;
+pub type AESOptimalByteSlicedPackedTowerFamily =
+	PackUnderlierFamily<AESTowerFamily, OptimalUnderlierByteSliced>;
