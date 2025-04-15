@@ -6,7 +6,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::{bail, SerializeBytes};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize, SerializeBytes};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
@@ -231,12 +231,10 @@ where
 	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 
-	// take the first arity as coset_log_len, or use log_inv_rate if arities are empty
-	let coset_log_len = params
-		.fold_arities()
-		.first()
-		.copied()
-		.unwrap_or_else(|| rs_code.log_inv_rate());
+	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
+	let coset_log_len = params.fold_arities().first().copied().unwrap_or_else(|| {
+		log2_strict_usize(encoded.len() * P::WIDTH).saturating_sub(rs_code.log_inv_rate())
+	});
 
 	let log_len = params.log_len() - coset_log_len;
 
@@ -382,7 +380,16 @@ where
 			.fold_arities()
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
-			.unwrap_or_else(|| self.params.rs_code().inv_rate());
+			.unwrap_or_else(|| {
+				println!(
+					"fold {}",
+					log2_strict_usize(folded_codeword.len())
+						.saturating_sub(self.params.rs_code().log_inv_rate())
+				);
+
+				1 << log2_strict_usize(folded_codeword.len())
+					.saturating_sub(self.params.rs_code().log_inv_rate())
+			});
 
 		let (commitment, committed) = self
 			.merkle_prover

@@ -4,7 +4,7 @@ use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize, DeserializeBytes};
 use bytes::Buf;
 use itertools::izip;
 use tracing::instrument;
@@ -143,13 +143,15 @@ where
 	///
 	/// Returns the fully-folded message value.
 	pub fn verify_last_oracle(&self, terminate_codeword: &[F]) -> Result<F, Error> {
+		let log_batch_size = log2_strict_usize(terminate_codeword.len())
+			.saturating_sub(self.params.rs_code().log_inv_rate());
 		self.vcs
 			.verify_vector(
 				self.round_commitments
 					.last()
 					.unwrap_or(self.codeword_commitment),
 				terminate_codeword,
-				1 << self.params.rs_code().log_inv_rate(),
+				1 << log_batch_size,
 			)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
