@@ -2,6 +2,7 @@
 
 use std::{
 	cmp::Ordering,
+	collections::BTreeMap,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -320,6 +321,33 @@ impl<F: Field> ArithExpr<F> {
 		})
 	}
 
+	pub fn linear_normal_form_2(&self) -> Result<DenseLinearPolynomial<F>, Error> {
+		match self {
+			ArithExpr::Const(val) => Ok((*val).into()),
+			ArithExpr::Var(index) => Ok(DenseLinearPolynomial {
+				constant: F::ZERO,
+				var_coeffs: vec![(*index, F::ONE)],
+			}),
+			ArithExpr::Add(left, right) => {
+				Ok(left.linear_normal_form_2()? + right.linear_normal_form_2()?)
+			}
+			ArithExpr::Mul(left, right) => {
+				left.linear_normal_form_2()? * right.linear_normal_form_2()?
+			}
+			ArithExpr::Pow(_, 0) => Ok(F::ONE.into()),
+			ArithExpr::Pow(expr, 1) => expr.linear_normal_form_2(),
+			ArithExpr::Pow(expr, pow) => expr.linear_normal_form_2().and_then(|linear_form| {
+				if linear_form.var_coeffs.len() > 0 {
+					return Err(Error::NonLinearExpression);
+				}
+				Ok(DenseLinearPolynomial {
+					constant: linear_form.constant.pow(*pow),
+					var_coeffs: vec![],
+				})
+			}),
+		}
+	}
+
 	fn evaluate(&self, vars: &[F]) -> F {
 		match self {
 			Self::Const(val) => *val,
@@ -454,6 +482,79 @@ pub struct LinearNormalForm<F: Field> {
 	pub constant: F,
 	/// A vector mapping variable indices to their coefficients.
 	pub var_coeffs: Vec<F>,
+}
+
+struct DenseLinearPolynomial<F: Field> {
+	/// The constant offset of the expression.
+	pub constant: F,
+	/// A vector mapping variable indices to their coefficients.
+	pub var_coeffs: Vec<(usize, F)>,
+}
+
+impl<F: Field> From<F> for DenseLinearPolynomial<F> {
+	fn from(value: F) -> Self {
+		Self {
+			constant: value,
+			var_coeffs: vec![],
+		}
+	}
+}
+
+impl<F: Field> Add for DenseLinearPolynomial<F> {
+	type Output = Self;
+	fn add(self, rhs: Self) -> Self::Output {
+		let mut result = DenseLinearPolynomial {
+			constant: self.constant + rhs.constant,
+			var_coeffs: Vec::new(),
+		};
+		let mut left_iter = self.var_coeffs.into_iter();
+		let mut right_iter = rhs.var_coeffs.into_iter();
+		let mut left_elem = left_iter.next();
+		let mut right_elem = left_iter.next();
+		while let Some(((left_index, left_value), (right_index, right_value))) =
+			left_elem.zip(right_elem)
+		{
+			if left_index == right_index {
+				result
+					.var_coeffs
+					.push((left_index, left_value + right_value));
+				left_elem = left_iter.next();
+				right_elem = right_iter.next();
+			} else if left_index < right_index {
+				result.var_coeffs.push((left_index, left_value));
+				left_elem = left_iter.next();
+			} else {
+				result.var_coeffs.push((right_index, right_value));
+				right_elem = right_iter.next();
+			}
+		}
+		for (index, value) in left_iter.chain(right_iter) {
+			result.var_coeffs.push((index, value));
+		}
+		result
+	}
+}
+
+impl<F: Field> Mul for DenseLinearPolynomial<F> {
+	type Output = Result<Self, Error>;
+	fn mul(self, rhs: Self) -> Result<Self, Error> {
+		if !self.var_coeffs.is_empty() && !rhs.var_coeffs.is_empty() {
+			return Err(Error::NonLinearExpression);
+		}
+		let (result, consumable) = if self.var_coeffs.is_empty() {
+			(rhs, self)
+		} else {
+			(self, rhs)
+		};
+		Ok(Self {
+			constant: result.constant * consumable.constant,
+			var_coeffs: result
+				.var_coeffs
+				.into_iter()
+				.map(|(index, value)| (index, value * consumable.constant))
+				.collect(),
+		})
+	}
 }
 
 #[cfg(test)]
