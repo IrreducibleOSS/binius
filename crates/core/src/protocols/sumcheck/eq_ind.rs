@@ -174,7 +174,7 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 	})
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExtraProduct<Composition> {
 	pub inner: Composition,
 }

@@ -62,11 +62,12 @@ where
 }
 
 pub struct BatchZerocheckOutput<F: Field> {
-	pub tail_sumcheck_output: BatchSumcheckOutput<F>,
-	pub univariate_challenge: F,
+	pub reduction_output: BatchSumcheckOutput<F>,
+	pub unskipped_challenges: Vec<F>,
 }
 
 pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(
+	skip_rounds: usize,
 	claims: &[ZerocheckClaim<F, Composition>],
 ) -> Result<Vec<EqIndSumcheckClaim<F, &Composition>>, Error> {
 	// Check that the claims are in descending order by n_vars
@@ -84,7 +85,7 @@ pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 				..
 			} = zerocheck_claim;
 			EqIndSumcheckClaim::new(
-				n_vars,
+				n_vars.saturating_sub(skip_rounds),
 				n_multilinears,
 				composite_zeros
 					.iter()

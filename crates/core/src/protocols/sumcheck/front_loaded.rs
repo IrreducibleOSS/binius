@@ -62,13 +62,7 @@ where
 	F: TowerField,
 	C: CompositionPoly<F> + Clone,
 {
-	/// Constructs a new verifier for the front-loaded batched sumcheck.
-	///
-	/// The constructor samples batching coefficients from the proof transcript.
-	///
-	/// ## Throws
-	///
-	/// * if the claims are not sorted in ascending order by number of variables
+	/// TODO: comment
 	pub fn new<Transcript>(
 		claims: &[SumcheckClaim<F, C>],
 		transcript: &mut Transcript,
@@ -76,10 +70,6 @@ where
 	where
 		Transcript: CanSample<F>,
 	{
-		if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars())) {
-			return Err(Error::ClaimsOutOfOrder);
-		}
-
 		// Sample batch mixing coefficients
 		let batch_coeffs = transcript.sample_vec(claims.len());
 
@@ -95,6 +85,27 @@ where
 				)
 			})
 			.sum();
+
+		Self::new_prebatched(batch_coeffs, sum, claims)
+	}
+
+	/// Constructs a new verifier for the front-loaded batched sumcheck.
+	///
+	/// The constructor samples batching coefficients from the proof transcript.
+	///
+	/// ## Throws
+	///
+	/// * if the claims are not sorted in ascending order by number of variables
+	pub fn new_prebatched(
+		batch_coeffs: Vec<F>,
+		sum: F,
+		claims: &[SumcheckClaim<F, C>],
+	) -> Result<Self, Error> {
+		if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars())) {
+			return Err(Error::ClaimsOutOfOrder);
+		}
+
+		// TODO: validate batch_coeffs len
 
 		let mut claims = iter::zip(claims.iter().cloned(), batch_coeffs)
 			.map(|(claim, batch_coeff)| {

@@ -241,60 +241,9 @@ where
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
-	let univariate_cnt = zerocheck_claims
-		.partition_point(|zerocheck_claim| zerocheck_claim.n_vars() > max_n_vars - skip_rounds);
-
-	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
-		&zerocheck_claims[..univariate_cnt],
-		skip_rounds,
-		&mut transcript,
-	)?;
-
-	let univariate_challenge = univariate_output.univariate_challenge;
-
-	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
-	let regular_sumcheck_claims =
-		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
-
-	let sumcheck_output = sumcheck::batch_verify_with_start(
-		EvaluationOrder::LowToHigh,
-		univariate_output.batch_verify_start,
-		&regular_sumcheck_claims,
-		&mut transcript,
-	)?;
-
-	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
-		&eq_ind_sumcheck_claims,
-		&zerocheck_challenges,
-		sumcheck_output,
-	)?;
-
-	let univariate_cnt =
-		zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
-
-	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
-	for (claim, univariatized_multilinear_evals) in
-		iter::zip(&zerocheck_claims, &zerocheck_output.multilinear_evals)
-	{
-		let claim_skip_rounds = claim.n_vars().saturating_sub(max_n_vars - skip_rounds);
-
-		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
-			claim_skip_rounds,
-			univariatized_multilinear_evals,
-		)?;
-
-		reduction_claims.push(reduction_claim);
-	}
-
-	let univariatizing_output =
-		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &reduction_claims, &mut transcript)?;
-
-	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
-		&reduction_claims,
-		univariate_challenge,
-		&zerocheck_output.challenges,
-		univariatizing_output,
-	)?;
+	// challenges?
+	let zerocheck_eval_claims =
+		sumcheck::batch_verify_zerocheck(&zerocheck_claims, skip_rounds, &mut transcript)?;
 
 	let zerocheck_eval_claims = sumcheck::make_eval_claims(
 		EvaluationOrder::LowToHigh,
