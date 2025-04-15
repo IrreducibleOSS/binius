@@ -47,13 +47,13 @@ const IV: [u32; 8] = [
 const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
 
 #[derive(Debug, Default, Copy, Clone)]
-struct Blake3CompressState {
-	cv: [u32; 8],
-	block: [u32; 16],
-	counter_low: u32,
-	counter_high: u32,
-	block_len: u32,
-	flags: u32,
+pub struct Blake3CompressState {
+	pub cv: [u32; 8],
+	pub block: [u32; 16],
+	pub counter_low: u32,
+	pub counter_high: u32,
+	pub block_len: u32,
+	pub flags: u32,
 }
 
 pub struct Blake3CompressOracles {
@@ -64,7 +64,7 @@ pub struct Blake3CompressOracles {
 type F32 = BinaryField32b;
 type F1 = BinaryField1b;
 
-fn blake3_compress(
+pub fn blake3_compress(
 	builder: &mut ConstraintSystemBuilder,
 	input_witness: &Option<impl AsRef<[Blake3CompressState]>>,
 	states_amount: usize,

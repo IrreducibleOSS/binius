@@ -1,21 +1,19 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::array;
+
 use anyhow::Result;
 use binius_circuits::{
-	blake3::{BLAKE3_STATE_LEN, CHAINING_VALUE_LEN},
+	blake3::Blake3CompressState,
 	builder::{types::U, ConstraintSystemBuilder},
-	unconstrained::unconstrained,
 };
-use binius_core::{
-	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
-};
-use binius_field::BinaryField1b;
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use rand::Rng;
+use rand::{rngs::OsRng, Rng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -27,8 +25,6 @@ struct Args {
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
 }
-
-const COMPRESSION_LOG_LEN: usize = 5;
 
 fn main() -> Result<()> {
 	const SECURITY_BITS: usize = 100;
@@ -43,30 +39,38 @@ fn main() -> Result<()> {
 
 	println!("Verifying {} Blake3 compressions", args.n_compressions);
 
-	let log_n_compressions = log2_ceil_usize(args.n_compressions as usize);
-
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let input: [OracleId; BLAKE3_STATE_LEN] = array_util::try_from_fn(|i| {
-		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
-	})?;
 
-	let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array_util::try_from_fn(|i| {
-		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
-	})?;
+	let mut rng = OsRng;
+	let input_witness = (0..args.n_compressions as usize)
+		.into_iter()
+		.map(|_| {
+			let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
+			let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
+			let counter = rng.gen::<u64>();
+			let counter_low = counter as u32;
+			let counter_high = (counter >> 32) as u32;
+			let block_len = rng.gen::<u32>();
+			let flags = rng.gen::<u32>();
 
-	let mut rng = rand::thread_rng();
-	let _state_out = binius_circuits::blake3::compress(
+			Blake3CompressState {
+				cv,
+				block,
+				counter_low,
+				counter_high,
+				block_len,
+				flags,
+			}
+		})
+		.collect::<Vec<Blake3CompressState>>();
+
+	let _state_out = binius_circuits::blake3::blake3_compress(
 		&mut builder,
-		"blake3-compression",
-		&chaining_value,
-		&input,
-		rng.gen(),
-		rng.gen(),
-		rng.gen(),
-		log_n_compressions + COMPRESSION_LOG_LEN,
+		&Some(input_witness),
+		args.n_compressions as usize,
 	)?;
 	drop(trace_gen_scope);
 
