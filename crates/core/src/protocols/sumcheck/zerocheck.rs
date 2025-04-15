@@ -97,7 +97,7 @@ mod tests {
 
 	use binius_field::{
 		BinaryField128b, BinaryField32b, BinaryField8b, PackedBinaryField1x128b, PackedExtension,
-		PackedFieldIndexable, PackedSubfield, RepackedExtension,
+		PackedField, PackedSubfield, RepackedExtension,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 	use binius_hash::groestl::Groestl256;
@@ -143,7 +143,7 @@ mod tests {
 	where
 		F: Field,
 		FDomain: Field,
-		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
 		Composition: CompositionPoly<P>,
 		M: MultilinearPoly<P> + Send + Sync + 'static,
 		Backend: ComputationBackend,
