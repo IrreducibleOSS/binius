@@ -209,9 +209,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
 		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
 
-		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let log_values_per_row = checked_log_2(VALUES_PER_ROW);
 		// This is also the value of the start_index.
-		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_new_values_per_row = checked_log_2(NEW_VALUES_PER_ROW);
 		// Get the log size of the query.
 		let log_query_size = log_values_per_row - log_new_values_per_row;
 
