@@ -87,12 +87,10 @@ where
 		full_packed_mles.push((evals, chunk));
 		remaining_buffer = rest;
 	}
-	full_packed_mles
-		.into_par_iter()
-		.for_each(|(evals, mut chunk)| {
-			chunk.copy_from_slice(evals);
-			reverse_index_bits(&mut chunk);
-		});
+	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
+		chunk.copy_from_slice(evals);
+		reverse_index_bits(&mut PackedSliceMut::new(chunk));
+	});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
 	// packed elements.
