@@ -22,6 +22,8 @@ pub enum Error {
 	},
 	#[error("cannot construct witness index for empty table {table_id}")]
 	EmptyTable { table_id: TableId },
+	#[error("table {table_id} index has already been initialized")]
+	TableIndexAlreadyInitialized { table_id: TableId },
 	#[error("column is not in table; column table ID: {column_table_id}, witness table ID: {witness_table_id}")]
 	TableMismatch {
 		column_table_id: TableId,
