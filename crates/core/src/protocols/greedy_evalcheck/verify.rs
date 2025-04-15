@@ -12,7 +12,7 @@ use crate::{
 		evalcheck::{deserialize_evalcheck_proof, EvalcheckMultilinearClaim, EvalcheckVerifier},
 		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
-	transcript::{read_u64, VerifierTranscript},
+	transcript::VerifierTranscript,
 };
 
 pub fn verify<F, Challenger_>(
@@ -29,14 +29,12 @@ where
 	// Verify the initial evalcheck claims
 	let claims = claims.into_iter().collect::<Vec<_>>();
 
-	let len_initial_evalcheck_proofs = read_u64(&mut transcript.decommitment())? as usize;
-	let mut initial_evalcheck_proofs = Vec::with_capacity(len_initial_evalcheck_proofs);
+	let mut initial_evalcheck_proofs = Vec::with_capacity(claims.len());
 	let mut reader = transcript.message();
-	for _ in 0..len_initial_evalcheck_proofs {
+	for _ in 0..claims.len() {
 		let eval_check_proof = deserialize_evalcheck_proof(&mut reader)?;
 		initial_evalcheck_proofs.push(eval_check_proof);
 	}
-
 	evalcheck_verifier.verify(claims, initial_evalcheck_proofs)?;
 
 	loop {

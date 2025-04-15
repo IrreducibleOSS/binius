@@ -16,7 +16,7 @@ use crate::{
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
-	transcript::{write_u64, ProverTranscript},
+	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };
 
@@ -52,7 +52,6 @@ where
 
 	// Prove the initial evalcheck claims
 	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
-	write_u64(&mut transcript.decommitment(), evalcheck_proofs.len() as u64);
 	let mut writer = transcript.message();
 	for evalcheck_proof in &evalcheck_proofs {
 		serialize_evalcheck_proof(&mut writer, evalcheck_proof)
