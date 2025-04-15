@@ -1,598 +1,651 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::array;
-
+use anyhow::anyhow;
 use binius_core::oracle::{OracleId, ShiftVariant};
-use binius_field::{BinaryField1b, Field};
+use binius_field::{BinaryField1b, BinaryField32b, Field, TowerField};
+use binius_macros::arith_expr;
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 
 use crate::{
-	arithmetic::{
-		self,
-		u32::{u32const_repeating, LOG_U32_BITS},
-		Flags,
-	},
-	bitwise,
+	arithmetic::u32::LOG_U32_BITS,
 	builder::{types::F, ConstraintSystemBuilder},
 };
 
+const STATE_SIZE: usize = 32;
+
+// This defines how long state columns should be
+const SINGLE_COMPRESSION_N_VARS: usize = 6;
+
+// Number of initial state mutations until getting output value
+const TEMP_STATE_OUT_INDEX: usize = 56;
+
+// Number of initial state mutations (TEMP_STATE_OUT_INDEX) in "binary" form
+const TEMP_STATE_OUT_INDEX_BINARY: [F; SINGLE_COMPRESSION_N_VARS] = [
+	Field::ZERO,
+	Field::ZERO,
+	Field::ZERO,
+	Field::ONE,
+	Field::ONE,
+	Field::ONE,
+];
+
+// Defines overall N_VARS for state transition columns
+const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
+
+// Deifines N_VARS for so-called 'out' columns used for finalising every compression
+const OUT_HEIGHT: usize = 8;
+
+// Defines how many temp U32 additions are involved
+const ADDITION_OPERATIONS_NUMBER: usize = 6;
+
+// Blake3 specific constant
+const IV: [u32; 8] = [
+	0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+];
+
+// Blake3 specific constant
+const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+
+#[derive(Debug, Default, Copy, Clone)]
+struct Blake3CompressState {
+	cv: [u32; 8],
+	block: [u32; 16],
+	counter_low: u32,
+	counter_high: u32,
+	block_len: u32,
+	flags: u32,
+}
+
+pub struct Blake3CompressOracles {
+	pub input: [OracleId; STATE_SIZE],
+	pub output: [OracleId; STATE_SIZE],
+}
+
+type F32 = BinaryField32b;
 type F1 = BinaryField1b;
-pub const CHAINING_VALUE_LEN: usize = 8;
-pub const BLAKE3_STATE_LEN: usize = 16;
-const MSG_PERMUTATION: [usize; BLAKE3_STATE_LEN] =
-	[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
-const IV_0_4: [u32; 4] = [0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A];
 
-// Gadget that performs two u32 variables XOR and then rotates the result
-fn xor_rotate_right(
+fn blake3_compress(
 	builder: &mut ConstraintSystemBuilder,
-	name: impl ToString,
-	log_size: usize,
-	a: OracleId,
-	b: OracleId,
-	rotate_right_offset: u32,
-) -> Result<OracleId, anyhow::Error> {
-	assert!(rotate_right_offset <= 32);
+	input_witness: &Option<impl AsRef<[Blake3CompressState]>>,
+	states_amount: usize,
+) -> Result<Blake3CompressOracles, anyhow::Error> {
+	// state
+	let state_n_vars = log2_ceil_usize(states_amount * SINGLE_COMPRESSION_HEIGHT);
+	let state_transitions: [OracleId; STATE_SIZE] =
+		builder.add_committed_multiple("state_transitions", state_n_vars, F32::TOWER_LEVEL);
 
-	builder.push_namespace(name);
+	// input
+	let input: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+		builder.add_projected(
+			"input",
+			state_transitions[xy],
+			vec![F::ZERO; SINGLE_COMPRESSION_N_VARS],
+			0,
+		)
+	})?;
 
-	let xor = builder
-		.add_linear_combination("xor", log_size, [(a, F::ONE), (b, F::ONE)])
-		.unwrap();
+	// output
+	let output: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+		builder.add_projected(
+			"output",
+			state_transitions[xy],
+			TEMP_STATE_OUT_INDEX_BINARY.to_vec(),
+			0,
+		)
+	})?;
 
-	let rotate = builder.add_shifted(
-		"rotate",
-		xor,
-		32 - rotate_right_offset as usize,
+	// columns for enforcing cv computation
+	let out_n_vars = log2_ceil_usize(states_amount * OUT_HEIGHT);
+	let cv: OracleId = builder.add_committed("cv", out_n_vars, F32::TOWER_LEVEL);
+	let state_i = builder.add_committed("state_i", out_n_vars, F32::TOWER_LEVEL);
+	let state_i_8 = builder.add_committed("state_i_8", out_n_vars, F32::TOWER_LEVEL);
+
+	let state_i_xor_state_i_8 = builder.add_linear_combination(
+		"state_i_xor_state_i_8",
+		out_n_vars,
+		[(state_i, F::ONE), (state_i_8, F::ONE)],
+	)?;
+
+	let cv_oracle_xor_state_i_8 = builder.add_linear_combination(
+		"cv_oracle_xor_state_i_8",
+		out_n_vars,
+		[(cv, F::ONE), (state_i_8, F::ONE)],
+	)?;
+
+	// columns for enforcing correct computation of temp variables
+	let a_in: OracleId = builder.add_committed("a_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let b_in: OracleId = builder.add_committed("b_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let c_in: OracleId = builder.add_committed("c_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let d_in: OracleId = builder.add_committed("d_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let mx_in: OracleId = builder.add_committed("mx_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let my_in: OracleId = builder.add_committed("my_in", state_n_vars + 5, F1::TOWER_LEVEL);
+	let a_0_tmp: OracleId = builder.add_committed("a_0_tmp", state_n_vars + 5, F1::TOWER_LEVEL);
+	let a_0: OracleId = builder.add_committed("a_0", state_n_vars + 5, F1::TOWER_LEVEL);
+	let c_0: OracleId = builder.add_committed("c_0", state_n_vars + 5, F1::TOWER_LEVEL);
+	let b_in_xor_c_0: OracleId = builder.add_linear_combination(
+		"b_in_xor_c_0",
+		state_n_vars + 5,
+		[(b_in, F::ONE), (c_0, F::ONE)],
+	)?;
+	let b_0: OracleId = builder.add_shifted(
+		"d_1",
+		b_in_xor_c_0,
+		(32 - 12) as usize,
+		LOG_U32_BITS,
+		ShiftVariant::CircularLeft,
+	)?;
+	let d_in_xor_a_0: OracleId = builder.add_linear_combination(
+		"d_in_xor_a_0",
+		state_n_vars + 5,
+		[(d_in, F::ONE), (a_0, F::ONE)],
+	)?;
+	let d_0: OracleId = builder.add_shifted(
+		"d_0",
+		d_in_xor_a_0,
+		(32 - 16) as usize,
+		LOG_U32_BITS,
+		ShiftVariant::CircularLeft,
+	)?;
+	let a_1_tmp: OracleId = builder.add_committed("a_1_tmp", state_n_vars + 5, F1::TOWER_LEVEL);
+	let a_1: OracleId = builder.add_committed("a_1", state_n_vars + 5, F1::TOWER_LEVEL);
+	let d_0_xor_a_1: OracleId = builder.add_linear_combination(
+		"d_0_xor_a_1",
+		state_n_vars + 5,
+		[(d_0, F::ONE), (a_1, F::ONE)],
+	)?;
+	let d_1: OracleId = builder.add_shifted(
+		"d_1",
+		d_0_xor_a_1,
+		(32 - 8) as usize,
+		LOG_U32_BITS,
+		ShiftVariant::CircularLeft,
+	)?;
+	let c_1: OracleId = builder.add_committed("c_1", state_n_vars + 5, F1::TOWER_LEVEL);
+	let b_0_xor_c_1: OracleId = builder.add_linear_combination(
+		"b_0_xor_c_1",
+		state_n_vars + 5,
+		[(b_0, F::ONE), (c_1, F::ONE)],
+	)?;
+	let b_1: OracleId = builder.add_shifted(
+		"b_1",
+		b_0_xor_c_1,
+		(32 - 7) as usize,
 		LOG_U32_BITS,
 		ShiftVariant::CircularLeft,
 	)?;
 
+	let cout: [OracleId; ADDITION_OPERATIONS_NUMBER] =
+		builder.add_committed_multiple("cout", state_n_vars + 5, F1::TOWER_LEVEL);
+	let cin: [OracleId; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
+		builder.add_shifted("cin", cout[xy], 1, 5, ShiftVariant::LogicalLeft)
+	})?;
+
+	// witness population (columns creation and data writing)
 	if let Some(witness) = builder.witness() {
-		let a_value = witness.get::<F1>(a)?.as_slice::<u32>();
-		let b_value = witness.get::<F1>(b)?.as_slice::<u32>();
+		let input_witness = input_witness
+			.as_ref()
+			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?
+			.as_ref();
 
-		let mut xor_witness = witness.new_column::<F1>(xor);
-		let xor_value = xor_witness.as_mut_slice::<u32>();
+		// columns creation
 
-		for (idx, v) in xor_value.iter_mut().enumerate() {
-			*v = a_value[idx] ^ b_value[idx];
-		}
+		let mut state_cols = state_transitions.map(|id| witness.new_column::<F32>(id));
+		let mut input_cols = input.map(|id| witness.new_column::<F32>(id));
+		let mut output_cols = output.map(|id| witness.new_column::<F32>(id));
 
-		let mut rotate_witness = witness.new_column::<F1>(rotate);
-		let rotate_value = rotate_witness.as_mut_slice::<u32>();
-		for (idx, v) in rotate_value.iter_mut().enumerate() {
-			*v = xor_value[idx].rotate_right(rotate_right_offset);
+		let mut cv_col = witness.new_column::<F32>(cv);
+		let mut state_i_col = witness.new_column::<F32>(state_i);
+		let mut state_i_8_col = witness.new_column::<F32>(state_i_8);
+		let mut state_i_xor_state_i_8_col = witness.new_column::<F32>(state_i_xor_state_i_8);
+		let mut cv_oracle_xor_state_i_8_col = witness.new_column::<F32>(cv_oracle_xor_state_i_8);
+
+		let mut a_in_col = witness.new_column::<F1>(a_in);
+		let mut b_in_col = witness.new_column::<F1>(b_in);
+		let mut c_in_col = witness.new_column::<F1>(c_in);
+		let mut d_in_col = witness.new_column::<F1>(d_in);
+		let mut mx_in_col = witness.new_column::<F1>(mx_in);
+		let mut my_in_col = witness.new_column::<F1>(my_in);
+		let mut a_0_tmp_col = witness.new_column::<F1>(a_0_tmp);
+		let mut a_0_col = witness.new_column::<F1>(a_0);
+		let mut b_in_xor_c_0_col = witness.new_column::<F1>(b_in_xor_c_0);
+		let mut b_0_col = witness.new_column::<F1>(b_0);
+		let mut c_0_col = witness.new_column::<F1>(c_0);
+		let mut d_in_xor_a_0_col = witness.new_column::<F1>(d_in_xor_a_0);
+		let mut d_0_col = witness.new_column::<F1>(d_0);
+		let mut a_1_tmp_col = witness.new_column::<F1>(a_1_tmp);
+		let mut a_1_col = witness.new_column::<F1>(a_1);
+		let mut d_0_xor_a_1_col = witness.new_column::<F1>(d_0_xor_a_1);
+		let mut d_1_col = witness.new_column::<F1>(d_1);
+		let mut c_1_col = witness.new_column::<F1>(c_1);
+		let mut b_0_xor_c_1_col = witness.new_column::<F1>(b_0_xor_c_1);
+		let mut b_1_col = witness.new_column::<F1>(b_1);
+		let mut cout_cols = cout.map(|id| witness.new_column::<F1>(id));
+		let mut cin_cols = cin.map(|id| witness.new_column::<F1>(id));
+
+		// values
+
+		let state_vals = state_cols.each_mut().map(|col| col.as_mut_slice::<u32>());
+		let input_vals = input_cols.each_mut().map(|col| col.as_mut_slice::<u32>());
+		let output_vals = output_cols.each_mut().map(|col| col.as_mut_slice::<u32>());
+
+		let cv_vals = cv_col.as_mut_slice::<u32>();
+		let state_i_vals = state_i_col.as_mut_slice::<u32>();
+		let state_i_8_vals = state_i_8_col.as_mut_slice::<u32>();
+		let state_i_xor_state_i_8_vals = state_i_xor_state_i_8_col.as_mut_slice::<u32>();
+		let cv_oracle_xor_state_i_8_vals = cv_oracle_xor_state_i_8_col.as_mut_slice::<u32>();
+
+		let a_in_vals = a_in_col.as_mut_slice::<u32>();
+		let b_in_vals = b_in_col.as_mut_slice::<u32>();
+		let c_in_vals = c_in_col.as_mut_slice::<u32>();
+		let d_in_vals = d_in_col.as_mut_slice::<u32>();
+		let mx_in_vals = mx_in_col.as_mut_slice::<u32>();
+		let my_in_vals = my_in_col.as_mut_slice::<u32>();
+		let a_0_tmp_vals = a_0_tmp_col.as_mut_slice::<u32>();
+		let a_0_vals = a_0_col.as_mut_slice::<u32>();
+		let b_in_xor_c_0_vals = b_in_xor_c_0_col.as_mut_slice::<u32>();
+		let b_0_vals = b_0_col.as_mut_slice::<u32>();
+		let c_0_vals = c_0_col.as_mut_slice::<u32>();
+		let d_in_xor_a_0_vals = d_in_xor_a_0_col.as_mut_slice::<u32>();
+		let d_0_vals = d_0_col.as_mut_slice::<u32>();
+		let a_1_tmp_vals = a_1_tmp_col.as_mut_slice::<u32>();
+		let a_1_vals = a_1_col.as_mut_slice::<u32>();
+		let d_0_xor_a_1_vals = d_0_xor_a_1_col.as_mut_slice::<u32>();
+		let d_1_vals = d_1_col.as_mut_slice::<u32>();
+		let c_1_vals = c_1_col.as_mut_slice::<u32>();
+		let b_0_xor_c_1_vals = b_0_xor_c_1_col.as_mut_slice::<u32>();
+		let b_1_vals = b_1_col.as_mut_slice::<u32>();
+
+		let cout_vals = cout_cols.each_mut().map(|col| col.as_mut_slice::<u32>());
+		let cin_vals = cin_cols.each_mut().map(|col| col.as_mut_slice::<u32>());
+
+		/* Populating */
+
+		// indices from Blake3 reference:
+		// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L53
+		let a = [0, 1, 2, 3, 0, 1, 2, 3];
+		let b = [4, 5, 6, 7, 5, 6, 7, 4];
+		let c = [8, 9, 10, 11, 10, 11, 8, 9];
+		let d = [12, 13, 14, 15, 15, 12, 13, 14];
+
+		// we consider message 'm' as part of the state
+		let mx = [16, 18, 20, 22, 24, 26, 28, 30];
+		let my = [17, 19, 21, 23, 25, 27, 29, 31];
+
+		let mut compression_offset = 0usize;
+		for compression_idx in 0..states_amount {
+			let state = input_witness
+				.get(compression_idx)
+				.copied()
+				.unwrap_or_default();
+
+			let mut state_idx = 0;
+
+			// populate current state
+			for i in 0..state.cv.len() {
+				state_vals[state_idx][compression_offset] = state.cv[i];
+				state_idx += 1;
+			}
+
+			state_vals[state_idx + 0][compression_offset] = IV[0];
+			state_vals[state_idx + 1][compression_offset] = IV[1];
+			state_vals[state_idx + 2][compression_offset] = IV[2];
+			state_vals[state_idx + 3][compression_offset] = IV[3];
+			state_vals[state_idx + 4][compression_offset] = state.counter_low;
+			state_vals[state_idx + 5][compression_offset] = state.counter_high;
+			state_vals[state_idx + 6][compression_offset] = state.block_len;
+			state_vals[state_idx + 7][compression_offset] = state.flags;
+
+			state_idx += 8;
+
+			for i in 0..state.block.len() {
+				state_vals[state_idx][compression_offset] = state.block[i];
+				state_idx += 1;
+			}
+
+			// populate input, which consists from initial values of each state_transition
+			for xy in 0..STATE_SIZE {
+				input_vals[xy][compression_idx] = state_vals[xy][compression_offset];
+			}
+
+			assert_eq!(state_idx, STATE_SIZE);
+
+			// we start from 1, since initial state is at 0
+			let mut state_offset = 1usize;
+			let mut temp_vars_offset = 0usize;
+
+			fn add(a: u32, b: u32) -> (u32, u32, u32) {
+				let cin;
+				let cout;
+				let zout;
+				let carry;
+
+				(zout, carry) = a.overflowing_add(b);
+				cin = a ^ b ^ zout;
+				cout = ((carry as u32) << 31) | (cin >> 1);
+
+				(cin, cout, zout)
+			}
+
+			// state transition
+			for round_idx in 0..7 {
+				for j in 0..8 {
+					let state_transition_idx = state_offset + compression_offset;
+					let var_offset = temp_vars_offset + compression_offset;
+					let mut add_offset = 0usize;
+
+					// column-wise copy of the previous state to the next one
+					for i in 0..STATE_SIZE {
+						state_vals[i][state_transition_idx] =
+							state_vals[i][state_transition_idx - 1];
+					}
+
+					// take input from previous state
+					a_in_vals[var_offset] = state_vals[a[j]][state_transition_idx - 1];
+					b_in_vals[var_offset] = state_vals[b[j]][state_transition_idx - 1];
+					c_in_vals[var_offset] = state_vals[c[j]][state_transition_idx - 1];
+					d_in_vals[var_offset] = state_vals[d[j]][state_transition_idx - 1];
+					mx_in_vals[var_offset] = state_vals[mx[j]][state_transition_idx - 1];
+					my_in_vals[var_offset] = state_vals[my[j]][state_transition_idx - 1];
+
+					// compute values of temp vars
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						a_0_tmp_vals[var_offset],
+					) = add(a_in_vals[var_offset], b_in_vals[var_offset]);
+					add_offset += 1;
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						a_0_vals[var_offset],
+					) = add(a_0_tmp_vals[var_offset], mx_in_vals[var_offset]);
+					add_offset += 1;
+
+					d_in_xor_a_0_vals[var_offset] = d_in_vals[var_offset] ^ a_0_vals[var_offset];
+
+					d_0_vals[var_offset] = d_in_xor_a_0_vals[var_offset].rotate_right(16);
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						c_0_vals[var_offset],
+					) = add(c_in_vals[var_offset], d_0_vals[var_offset]);
+					add_offset += 1;
+
+					b_in_xor_c_0_vals[var_offset] = b_in_vals[var_offset] ^ c_0_vals[var_offset];
+
+					b_0_vals[var_offset] = b_in_xor_c_0_vals[var_offset].rotate_right(12);
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						a_1_tmp_vals[var_offset],
+					) = add(a_0_vals[var_offset], b_0_vals[var_offset]);
+					add_offset += 1;
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						a_1_vals[var_offset],
+					) = add(a_1_tmp_vals[var_offset], my_in_vals[var_offset]);
+					add_offset += 1;
+
+					d_0_xor_a_1_vals[var_offset] = d_0_vals[var_offset] ^ a_1_vals[var_offset];
+
+					d_1_vals[var_offset] = d_0_xor_a_1_vals[var_offset].rotate_right(8);
+
+					(
+						cin_vals[add_offset][var_offset],
+						cout_vals[add_offset][var_offset],
+						c_1_vals[var_offset],
+					) = add(c_0_vals[var_offset], d_1_vals[var_offset]);
+					add_offset += 1;
+
+					b_0_xor_c_1_vals[var_offset] = b_0_vals[var_offset] ^ c_1_vals[var_offset];
+
+					b_1_vals[var_offset] = b_0_xor_c_1_vals[var_offset].rotate_right(7);
+
+					// mutate state
+					state_vals[a[j]][state_transition_idx] = a_1_vals[var_offset];
+					state_vals[b[j]][state_transition_idx] = b_1_vals[var_offset];
+					state_vals[c[j]][state_transition_idx] = c_1_vals[var_offset];
+					state_vals[d[j]][state_transition_idx] = d_1_vals[var_offset];
+
+					state_offset += 1;
+					temp_vars_offset += 1;
+					assert_eq!(add_offset, ADDITION_OPERATIONS_NUMBER);
+				}
+
+				// permutation (just shuffling the indices - no constraining is required)
+				if round_idx < 6 {
+					let mut permuted = [0u32; 16];
+					for i in 0..16 {
+						permuted[i] = state_vals[16 + MSG_PERMUTATION[i]]
+							[state_offset + compression_offset - 1];
+					}
+
+					for i in 0..16 {
+						state_vals[16 + i][state_offset + compression_offset - 1] = permuted[i];
+					}
+				}
+			}
+
+			assert_eq!(state_offset, TEMP_STATE_OUT_INDEX + 1);
+
+			for i in 0..8 {
+				// populate 'cv', 'state[i]' and 'state[i + 8]' columns
+				cv_vals[i * compression_idx + i] = state_vals[i][compression_offset];
+				state_i_vals[i * compression_idx + i] =
+					state_vals[i][state_offset + compression_offset - 1];
+				state_i_8_vals[i * compression_idx + i] =
+					state_vals[i + 8][state_offset + compression_offset - 1];
+
+				// compute 'state[i]' values
+				state_vals[i][state_offset + compression_offset - 1] ^=
+					state_vals[i + 8][state_offset + compression_offset - 1];
+
+				// populate 'state[i] ^ state[i + 8]' linear combination
+				state_i_xor_state_i_8_vals[i * compression_idx + i] =
+					state_vals[i][state_offset + compression_offset - 1];
+
+				// compute 'state[i + 8]' values
+				state_vals[i + 8][state_offset + compression_offset - 1] ^=
+					state_vals[i][compression_offset];
+
+				// populate 'cv ^ state[i + 8]' linear combination
+				cv_oracle_xor_state_i_8_vals[i * compression_idx + i] =
+					state_vals[i + 8][state_offset + compression_offset - 1];
+			}
+
+			// copy final state transition (of the given compression) to the output
+			for i in 0..STATE_SIZE {
+				output_vals[i][compression_idx] =
+					state_vals[i][state_offset + compression_offset - 1];
+			}
+
+			compression_offset += SINGLE_COMPRESSION_HEIGHT;
 		}
 	}
 
-	builder.pop_namespace();
+	/* Constraints */
 
-	Ok(rotate)
-}
+	// TODO: remove this technical constraint (figure out how to properly constrain the 'state_i_8')
+	builder.assert_zero("state_i_8", [state_i_8], arith_expr!([x] = x - x).convert_field());
 
-// Gadget for Blake3 g function
-#[allow(clippy::too_many_arguments)]
-pub fn g(
-	builder: &mut ConstraintSystemBuilder,
-	name: impl ToString,
-	a_in: OracleId,
-	b_in: OracleId,
-	c_in: OracleId,
-	d_in: OracleId,
-	mx: OracleId,
-	my: OracleId,
-	log_size: usize,
-) -> Result<[OracleId; 4], anyhow::Error> {
-	builder.push_namespace(name);
+	let xins = [a_in, a_0_tmp, c_in, a_0, a_1_tmp, c_0];
+	let yins = [b_in, mx_in, d_0, b_0, my_in, d_1];
+	let zouts = [a_0_tmp, a_0, c_0, a_1_tmp, a_1, c_1];
 
-	let ab = arithmetic::u32::add(builder, "a_in + b_in", a_in, b_in, Flags::Unchecked)?;
-	let a1 = arithmetic::u32::add(builder, "a_in + b_in + mx", ab, mx, Flags::Unchecked)?;
+	for (idx, (xin, (yin, zout))) in xins
+		.into_iter()
+		.zip(yins.into_iter().zip(zouts.into_iter()))
+		.enumerate()
+	{
+		builder.assert_zero(
+			format!("sum{}", idx),
+			[xin, yin, cin[idx], zout],
+			arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
+		);
 
-	let d1 = xor_rotate_right(builder, "(d_in ^ a1).rotate_right(16)", log_size, d_in, a1, 16u32)?;
+		builder.assert_zero(
+			format!("carry{}", idx),
+			[xin, yin, cin[idx], cout[idx]],
+			arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout)
+				.convert_field(),
+		);
+	}
 
-	let c1 = arithmetic::u32::add(builder, "c_in + d1", c_in, d1, Flags::Unchecked)?;
-
-	let b1 = xor_rotate_right(builder, "(b_in ^ c1).rotate_right(12)", log_size, b_in, c1, 12u32)?;
-
-	let a1b1 = arithmetic::u32::add(builder, "a1 + b1", a1, b1, Flags::Unchecked)?;
-	let a2 = arithmetic::u32::add(builder, "a1 + b1 + my_in", a1b1, my, Flags::Unchecked)?;
-
-	let d2 = xor_rotate_right(builder, "(d1 ^ a2).rotate_right(8)", log_size, d1, a2, 8u32)?;
-
-	let c2 = arithmetic::u32::add(builder, "c1 + d2", c1, d2, Flags::Unchecked)?;
-
-	let b2 = xor_rotate_right(builder, "(b1 ^ c2).rotate_right(7)", log_size, b1, c2, 7u32)?;
-
-	builder.pop_namespace();
-
-	Ok([a2, b2, c2, d2])
-}
-
-// Gadget for Blake3 round function
-pub fn round(
-	builder: &mut ConstraintSystemBuilder,
-	name: impl ToString,
-	state: &[OracleId; BLAKE3_STATE_LEN],
-	m: &[OracleId; BLAKE3_STATE_LEN],
-	log_size: usize,
-) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
-	builder.push_namespace(name);
-
-	// Mixing columns
-	let [s0, s4, s8, s12] =
-		g(builder, "mix-columns-0", state[0], state[4], state[8], state[12], m[0], m[1], log_size)?;
-
-	let [s1, s5, s9, s13] =
-		g(builder, "mix-columns-1", state[1], state[5], state[9], state[13], m[2], m[3], log_size)?;
-	#[rustfmt::skip]
-	let [s2, s6, s10, s14] =
-		g(builder, "mix-columns-2", state[2], state[6], state[10], state[14], m[4], m[5], log_size)?;
-	#[rustfmt::skip]
-	let [s3, s7, s11, s15] =
-		g(builder, "mix-columns-3", state[3], state[7], state[11], state[15], m[6], m[7], log_size)?;
-
-	// Mixing diagonals
-	let [s0, s5, s10, s15] = g(builder, "mix-diagonals-0", s0, s5, s10, s15, m[8], m[9], log_size)?;
-	#[rustfmt::skip]
-	let [s1, s6, s11, s12] = g(builder, "mix-diagonals-1", s1, s6, s11, s12, m[10], m[11], log_size)?;
-
-	let [s2, s7, s8, s13] = g(builder, "mix-diagonals-2", s2, s7, s8, s13, m[12], m[13], log_size)?;
-
-	let [s3, s4, s9, s14] = g(builder, "mix-diagonals-3", s3, s4, s9, s14, m[14], m[15], log_size)?;
-
-	builder.pop_namespace();
-
-	Ok([
-		s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15,
-	])
-}
-
-pub fn permute(block_words: &[OracleId; BLAKE3_STATE_LEN]) -> [OracleId; BLAKE3_STATE_LEN] {
-	array::from_fn(|i| block_words[MSG_PERMUTATION[i]])
-}
-
-// Gadget for Blake3 compress function
-#[allow(clippy::too_many_arguments)]
-pub fn compress(
-	builder: &mut ConstraintSystemBuilder,
-	name: impl ToString,
-	chaining_value: &[OracleId; CHAINING_VALUE_LEN],
-	block_words: &[OracleId; BLAKE3_STATE_LEN],
-	counter: u64,
-	block_len: u32,
-	flags: u32,
-	log_size: usize,
-) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
-	builder.push_namespace(name);
-
-	let counter_low = counter as u32;
-	let counter_high = (counter >> 32) as u32;
-
-	let mut state = [OracleId::MAX; BLAKE3_STATE_LEN];
-	state[0..8].copy_from_slice(chaining_value);
-
-	let iv_oracles =
-		IV_0_4.map(|val| u32const_repeating(log_size, builder, val, "blake3_iv").unwrap());
-
-	state[8..12].copy_from_slice(&iv_oracles);
-
-	state[12] = u32const_repeating(log_size, builder, counter_low, "counter_low")?;
-
-	state[13] = u32const_repeating(log_size, builder, counter_high, "counter_high")?;
-
-	state[14] = u32const_repeating(log_size, builder, block_len, "block_len")?;
-
-	state[15] = u32const_repeating(log_size, builder, flags, "flags")?;
-
-	let new_state = round(builder, "round_1", &state, block_words, log_size)?;
-	let new_block_words = permute(block_words);
-
-	let new_state = round(builder, "round_2", &new_state, &new_block_words, log_size)?;
-	let new_block_words = permute(&new_block_words);
-
-	let new_state = round(builder, "round_3", &new_state, &new_block_words, log_size)?;
-	let new_block_words = permute(&new_block_words);
-
-	let new_state = round(builder, "round_4", &new_state, &new_block_words, log_size)?;
-	let new_block_words = permute(&new_block_words);
-
-	let new_state = round(builder, "round_5", &new_state, &new_block_words, log_size)?;
-	let new_block_words = permute(&new_block_words);
-
-	let new_state = round(builder, "round_6", &new_state, &new_block_words, log_size)?;
-	let new_block_words = permute(&new_block_words);
-
-	let pre_final_state = round(builder, "round_7", &new_state, &new_block_words, log_size)?;
-
-	let final_state_left = (0..8)
-		.map(|idx| {
-			bitwise::xor(builder, "final_state_0_8", pre_final_state[idx], pre_final_state[idx + 8])
-				.unwrap()
-		})
-		.collect::<Vec<OracleId>>();
-
-	let final_state_right = (0..8)
-		.map(|idx| {
-			bitwise::xor(builder, "final_state_8_16", pre_final_state[idx + 8], chaining_value[idx])
-				.unwrap()
-		})
-		.collect::<Vec<OracleId>>();
-
-	builder.pop_namespace();
-
-	Ok([final_state_left, final_state_right]
-		.concat()
-		.try_into()
-		.unwrap())
+	Ok(Blake3CompressOracles { input, output })
 }
 
 #[cfg(test)]
 mod tests {
 	use std::array;
 
-	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
-	use binius_field::BinaryField1b;
-	use binius_maybe_rayon::prelude::*;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use crate::{
-		blake3::{
-			compress, g, round, BLAKE3_STATE_LEN, CHAINING_VALUE_LEN, IV_0_4, MSG_PERMUTATION,
-		},
-		builder::ConstraintSystemBuilder,
-		unconstrained::{fixed_u32, unconstrained},
+		blake3::{blake3_compress, Blake3CompressState, F32, IV, MSG_PERMUTATION},
+		builder::test_utils::test_circuit,
 	};
 
-	type F1 = BinaryField1b;
-
-	const LOG_SIZE: usize = 10;
-
-	// The Blake3 mixing function, G, which mixes either a column or a diagonal.
-	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L42
-	const fn g_out_of_circuit(
-		a_in: u32,
-		b_in: u32,
-		c_in: u32,
-		d_in: u32,
-		mx: u32,
-		my: u32,
-	) -> (u32, u32, u32, u32) {
-		let a1 = a_in.wrapping_add(b_in).wrapping_add(mx);
-		let d1 = (d_in ^ a1).rotate_right(16);
-		let c1 = c_in.wrapping_add(d1);
-		let b1 = (b_in ^ c1).rotate_right(12);
-
-		let a2 = a1.wrapping_add(b1).wrapping_add(my);
-		let d2 = (d1 ^ a2).rotate_right(8);
-		let c2 = c1.wrapping_add(d2);
-		let b2 = (b1 ^ c2).rotate_right(7);
-
-		(a2, b2, c2, d2)
-	}
-
-	#[test]
-	fn test_vector_g() {
-		// Let's use some fixed data input to check that our in-circuit computation
-		// produces same output as out-of-circuit one
-		let a = 0xaaaaaaaau32;
-		let b = 0xbbbbbbbbu32;
-		let c = 0xccccccccu32;
-		let d = 0xddddddddu32;
-		let mx = 0xffff00ffu32;
-		let my = 0xff00ffffu32;
-
-		let (expected_0, expected_1, expected_2, expected_3) = g_out_of_circuit(a, b, c, d, mx, my);
-
-		let size = 1 << LOG_SIZE;
-
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let a_in = fixed_u32::<F1>(&mut builder, "a", LOG_SIZE, vec![a; size]).unwrap();
-		let b_in = fixed_u32::<F1>(&mut builder, "b", LOG_SIZE, vec![b; size]).unwrap();
-		let c_in = fixed_u32::<F1>(&mut builder, "c", LOG_SIZE, vec![c; size]).unwrap();
-		let d_in = fixed_u32::<F1>(&mut builder, "d", LOG_SIZE, vec![d; size]).unwrap();
-		let mx_in = fixed_u32::<F1>(&mut builder, "mx", LOG_SIZE, vec![mx; size]).unwrap();
-		let my_in = fixed_u32::<F1>(&mut builder, "my", LOG_SIZE, vec![my; size]).unwrap();
-
-		let output = g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
-
-		if let Some(witness) = builder.witness() {
-			(
-				witness.get::<F1>(output[0]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[1]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[2]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[3]).unwrap().as_slice::<u32>(),
-			)
-				.into_par_iter()
-				.for_each(|(actual_0, actual_1, actual_2, actual_3)| {
-					assert_eq!(*actual_0, expected_0);
-					assert_eq!(*actual_1, expected_1);
-					assert_eq!(*actual_2, expected_2);
-					assert_eq!(*actual_3, expected_3);
-				});
-		}
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
-	}
-
-	#[test]
-	fn test_random_input_g() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let a_in = unconstrained::<F1>(&mut builder, "a", LOG_SIZE).unwrap();
-		let b_in = unconstrained::<F1>(&mut builder, "b", LOG_SIZE).unwrap();
-		let c_in = unconstrained::<F1>(&mut builder, "c", LOG_SIZE).unwrap();
-		let d_in = unconstrained::<F1>(&mut builder, "d", LOG_SIZE).unwrap();
-		let mx_in = unconstrained::<F1>(&mut builder, "mx", LOG_SIZE).unwrap();
-		let my_in = unconstrained::<F1>(&mut builder, "my", LOG_SIZE).unwrap();
-
-		g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
-	}
-
-	// The Blake3 round function:
-	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L53
-	const fn round_out_of_circuit(
-		state: &[u32; BLAKE3_STATE_LEN],
-		m: &[u32; BLAKE3_STATE_LEN],
-	) -> [u32; BLAKE3_STATE_LEN] {
-		// Mix the columns.
-		let (s0, s4, s8, s12) =
-			g_out_of_circuit(state[0], state[4], state[8], state[12], m[0], m[1]);
-		let (s1, s5, s9, s13) =
-			g_out_of_circuit(state[1], state[5], state[9], state[13], m[2], m[3]);
-		let (s2, s6, s10, s14) =
-			g_out_of_circuit(state[2], state[6], state[10], state[14], m[4], m[5]);
-		let (s3, s7, s11, s15) =
-			g_out_of_circuit(state[3], state[7], state[11], state[15], m[6], m[7]);
-
-		// Mix the diagonals.
-		let (s0, s5, s10, s15) = g_out_of_circuit(s0, s5, s10, s15, m[8], m[9]);
-		let (s1, s6, s11, s12) = g_out_of_circuit(s1, s6, s11, s12, m[10], m[11]);
-		let (s2, s7, s8, s13) = g_out_of_circuit(s2, s7, s8, s13, m[12], m[13]);
-		let (s3, s4, s9, s14) = g_out_of_circuit(s3, s4, s9, s14, m[14], m[15]);
-
-		[
-			s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15,
-		]
-	}
-
-	#[test]
-	fn test_vector_round() {
-		let state = [
-			0xfffffff0, 0xfffffff1, 0xfffffff2, 0xfffffff3, 0xfffffff4, 0xfffffff5, 0xfffffff6,
-			0xfffffff7, 0xfffffff8, 0xfffffff9, 0xfffffffa, 0xfffffffb, 0xfffffffc, 0xfffffffd,
-			0xfffffffe, 0xffffffff,
-		];
-
-		let m = [
-			0x09ffffff, 0x08ffffff, 0x07ffffff, 0x06ffffff, 0x05ffffff, 0x04ffffff, 0x03ffffff,
-			0x02ffffff, 0x01ffffff, 0x00ffffff, 0x0fffffff, 0x0effffff, 0x0dffffff, 0x0cffffff,
-			0x0bffffff, 0x0affffff,
-		];
-
-		assert_eq!(state.len(), BLAKE3_STATE_LEN);
-		assert_eq!(state.len(), m.len());
-
-		let expected = round_out_of_circuit(&state, &m);
-
-		let size = 1 << LOG_SIZE;
-
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		// populate State and Message columns with some fixed values
-		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			fixed_u32::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE, vec![state[idx]; size])
-				.unwrap()
-		});
-
-		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			fixed_u32::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE, vec![m[idx]; size])
-				.unwrap()
-		});
-
-		// execute 'round' gadget
-		let actual = round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
-
-		// compare output values with expected ones
-		if let Some(witness) = builder.witness() {
-			for (i, expected_i) in expected.into_iter().enumerate() {
-				let values = witness.get::<F1>(actual[i]).unwrap().as_slice::<u32>();
-				assert!(values.iter().all(|v| *v == expected_i));
-			}
-		}
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
-	}
-
-	#[test]
-	fn test_random_input_round() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			unconstrained::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE).unwrap()
-		});
-
-		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			unconstrained::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE).unwrap()
-		});
-
-		round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
-	}
-
-	fn compress_out_of_circuit(
+	// taken (and slightly refactored) from reference Blake3 implementation:
+	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs
+	fn compress(
 		chaining_value: &[u32; 8],
 		block_words: &[u32; 16],
 		counter: u64,
 		block_len: u32,
 		flags: u32,
 	) -> [u32; 16] {
-		fn permute(m: &mut [u32; 16]) {
-			let mut permuted = [0; 16];
-			for i in 0..16 {
-				permuted[i] = m[MSG_PERMUTATION[i]];
-			}
-			*m = permuted;
-		}
-
 		let counter_low = counter as u32;
 		let counter_high = (counter >> 32) as u32;
 
-		let mut state = [
-			chaining_value[0],
-			chaining_value[1],
-			chaining_value[2],
-			chaining_value[3],
-			chaining_value[4],
-			chaining_value[5],
-			chaining_value[6],
-			chaining_value[7],
-			IV_0_4[0],
-			IV_0_4[1],
-			IV_0_4[2],
-			IV_0_4[3],
-			counter_low,
-			counter_high,
-			block_len,
-			flags,
-		];
-		let mut block = *block_words;
+		#[rustfmt::skip]
+    let mut state = [
+        chaining_value[0], chaining_value[1], chaining_value[2], chaining_value[3],
+        chaining_value[4], chaining_value[5], chaining_value[6], chaining_value[7],
+        IV[0],             IV[1],             IV[2],             IV[3],
+        counter_low,       counter_high,      block_len,         flags,
+		block_words[0], block_words[1], block_words[2], block_words[3],
+		block_words[4], block_words[5], block_words[6], block_words[7],
+		block_words[8], block_words[9], block_words[10], block_words[11],
+		block_words[12], block_words[13], block_words[14], block_words[15],
+    ];
 
-		state = round_out_of_circuit(&state, &block); // round 1
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 2
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 3
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 4
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 5
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 6
-		permute(&mut block);
-		state = round_out_of_circuit(&state, &block); // round 7
+		let a = [0, 1, 2, 3, 0, 1, 2, 3];
+		let b = [4, 5, 6, 7, 5, 6, 7, 4];
+		let c = [8, 9, 10, 11, 10, 11, 8, 9];
+		let d = [12, 13, 14, 15, 15, 12, 13, 14];
+		let mx = [16, 18, 20, 22, 24, 26, 28, 30];
+		let my = [17, 19, 21, 23, 25, 27, 29, 31];
+
+		// we have 7 rounds in total
+		for round_idx in 0..7 {
+			for j in 0..8 {
+				let a_in = state[a[j]];
+				let b_in = state[b[j]];
+				let c_in = state[c[j]];
+				let d_in = state[d[j]];
+				let mx_in = state[mx[j]];
+				let my_in = state[my[j]];
+
+				let a_0 = a_in.wrapping_add(b_in).wrapping_add(mx_in);
+				let d_0 = (d_in ^ a_0).rotate_right(16);
+				let c_0 = c_in.wrapping_add(d_0);
+				let b_0 = (b_in ^ c_0).rotate_right(12);
+
+				let a_1 = a_0.wrapping_add(b_0).wrapping_add(my_in);
+				let d_1 = (d_0 ^ a_1).rotate_right(8);
+				let c_1 = c_0.wrapping_add(d_1);
+				let b_1 = (b_0 ^ c_1).rotate_right(7);
+
+				state[a[j]] = a_1;
+				state[b[j]] = b_1;
+				state[c[j]] = c_1;
+				state[d[j]] = d_1;
+			}
+
+			// execute permutation for the 6 first rounds
+			if round_idx < 6 {
+				let mut permuted = [0; 16];
+				for i in 0..16 {
+					permuted[i] = state[16 + MSG_PERMUTATION[i]];
+				}
+				for i in 0..16 {
+					state[i + 16] = permuted[i];
+				}
+			}
+		}
 
 		for i in 0..8 {
 			state[i] ^= state[i + 8];
 			state[i + 8] ^= chaining_value[i];
 		}
-		state
+
+		let state_out: [u32; 16] = std::array::from_fn(|i| state[i]);
+		state_out
 	}
 
 	#[test]
-	fn test_vector_compress() {
-		let chaining_value = [
-			0xfffffff0, 0xfffffff1, 0xfffffff2, 0xfffffff3, 0xfffffff4, 0xfffffff5, 0xfffffff6,
-			0xfffffff7,
-		];
+	fn test_blake3_compression() {
+		test_circuit(|builder| {
+			let compressions = 8;
+			let mut rng = StdRng::seed_from_u64(0);
+			let mut expected = vec![];
+			let states = (0..compressions)
+				.into_iter()
+				.map(|_| {
+					let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
+					let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
+					let counter = rng.gen::<u64>();
+					let counter_low = counter as u32;
+					let counter_high = (counter >> 32) as u32;
+					let block_len = rng.gen::<u32>();
+					let flags = rng.gen::<u32>();
 
-		let m = [
-			0x09ffffff, 0x08ffffff, 0x07ffffff, 0x06ffffff, 0x05ffffff, 0x04ffffff, 0x03ffffff,
-			0x02ffffff, 0x01ffffff, 0x00ffffff, 0x0fffffff, 0x0effffff, 0x0dffffff, 0x0cffffff,
-			0x0bffffff, 0x0affffff,
-		];
+					// save expected value to use later in test
+					expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());
 
-		let counter = u64::MAX;
-		let block_len = u32::MAX;
-		let flags = u32::MAX;
+					Blake3CompressState {
+						cv,
+						block,
+						counter_low,
+						counter_high,
+						block_len,
+						flags,
+					}
+				})
+				.collect::<Vec<Blake3CompressState>>();
 
-		let expected = compress_out_of_circuit(&chaining_value, &m, counter, block_len, flags);
+			// transpose
+			let expected = transpose(expected);
 
-		let size = 1 << LOG_SIZE;
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
-			fixed_u32::<F1>(
-				&mut builder,
-				format!("cv{}", idx),
-				LOG_SIZE,
-				vec![chaining_value[idx]; size],
-			)
-			.unwrap()
-		});
-
-		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			fixed_u32::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE, vec![m[idx]; size])
-				.unwrap()
-		});
-
-		let actual = compress(
-			&mut builder,
-			"compress",
-			&chaining_value,
-			&block_words,
-			counter,
-			block_len,
-			flags,
-			LOG_SIZE,
-		)
-		.unwrap();
-
-		// compare output values with expected ones
-		if let Some(witness) = builder.witness() {
-			for (i, expected_i) in expected.into_iter().enumerate() {
-				let values = witness.get::<F1>(actual[i]).unwrap().as_slice::<u32>();
-				assert!(values.iter().all(|v| *v == expected_i));
+			let states_len = states.len();
+			let state_out = blake3_compress(builder, &Some(states), states_len)?;
+			if let Some(witness) = builder.witness() {
+				for i in 0..expected.len() {
+					let actual = witness
+						.get::<F32>(state_out.output[i])
+						.unwrap()
+						.as_slice::<u32>();
+					assert_eq!(actual, expected[i]);
+				}
 			}
-		}
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 
-	#[test]
-	fn test_random_input_compress() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let chaining_values: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
-			unconstrained::<F1>(&mut builder, format!("cv{}", idx), LOG_SIZE).unwrap()
-		});
-
-		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
-			unconstrained::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE).unwrap()
-		});
-
-		let counter = u64::MAX;
-		let block_len = u32::MAX;
-		let flags = u32::MAX;
-
-		compress(
-			&mut builder,
-			"compress",
-			&chaining_values,
-			&block_words,
-			counter,
-			block_len,
-			flags,
-			LOG_SIZE,
-		)
-		.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraints_system = builder.build().unwrap();
-
-		validate_witness(&constraints_system, &[], &witness).unwrap();
+	fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+	where
+		T: Clone,
+	{
+		assert!(!v.is_empty());
+		(0..v[0].len())
+			.map(|i| v.iter().map(|inner| inner[i].clone()).collect::<Vec<T>>())
+			.collect()
 	}
 }
