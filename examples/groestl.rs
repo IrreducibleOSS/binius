@@ -17,7 +17,8 @@ use binius_field::{
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B1, B128, B8,
+		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
+		B128, B8,
 	},
 	gadgets::hash::groestl,
 };
@@ -108,9 +109,7 @@ fn main() -> Result<()> {
 		.collect::<Vec<_>>();
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let mut witness = cs
-		.build_witness::<PackedType<OptimalUnderlier, B128>>(&allocator, &statement)
-		.unwrap();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 	witness.fill_table_sequential(&table, &events)?;
 	drop(trace_gen_scope);
 

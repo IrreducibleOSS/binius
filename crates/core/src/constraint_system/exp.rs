@@ -84,20 +84,18 @@ where
 
 			let (exp_witness, tower_level) = match exp.base {
 				OracleOrConst::Const { base, tower_level } => {
-					let witness = gkr_exp::BaseExpWitness::new_with_static_base(
-						fast_exponent_witnesses,
-						base.into(),
-					)?;
+					let witness = gkr_exp::BaseExpWitness::new_with_static_base::<
+						PackedType<U, FFastExt<Tower>>,
+					>(fast_exponent_witnesses, base.into())?;
 					(witness, tower_level)
 				}
 				OracleOrConst::Oracle(base_id) => {
 					let fast_base_witnesses =
 						to_fast_witness::<U, Tower>(witness.get_multilin_poly(base_id)?)?;
 
-					let witness = gkr_exp::BaseExpWitness::new_with_dynamic_base(
-						fast_exponent_witnesses,
-						fast_base_witnesses,
-					)?;
+					let witness = gkr_exp::BaseExpWitness::new_with_dynamic_base::<
+						PackedType<U, FFastExt<Tower>>,
+					>(fast_exponent_witnesses, fast_base_witnesses)?;
 
 					let tower_level = oracles.tower_level(base_id);
 

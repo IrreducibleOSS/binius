@@ -10,7 +10,7 @@ workspace = true
 [dependencies]
 binius_field = { path = "../field", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
-binius_ntt = { path = "../ntt" }
+binius_ntt = { path = "../ntt", default-features = false  }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 bytes.workspace = true

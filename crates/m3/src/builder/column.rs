@@ -261,6 +261,12 @@ pub enum ColumnDef<F: TowerField = B128> {
 		index: usize,
 		index_bits: usize,
 	},
+	Projected {
+		col: ColumnId,
+		start_index: usize,
+		query_size: usize,
+		query_bits: usize,
+	},
 	Shifted {
 		col: ColumnId,
 		offset: usize,
@@ -314,6 +320,17 @@ impl<F: TowerField> ColumnDef<F> {
 				variant,
 			},
 			&Self::Packed { col, log_degree } => ColumnDef::Packed { col, log_degree },
+			&Self::Projected {
+				col,
+				start_index,
+				query_size,
+				query_bits,
+			} => ColumnDef::Projected {
+				col,
+				start_index,
+				query_size,
+				query_bits,
+			},
 			Self::Computed { cols, expr } => ColumnDef::Computed {
 				cols: cols.clone(),
 				expr: expr.convert_field::<TargetTower::B128>(),

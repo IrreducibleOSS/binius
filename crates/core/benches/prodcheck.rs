@@ -8,18 +8,16 @@ use binius_core::{
 	transcript::ProverTranscript,
 };
 use binius_field::{
-	arch::OptimalUnderlier,
+	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	AESTowerField8b, BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField8b,
-	ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField, BINARY_TO_POLYVAL_TRANSFORMATION,
+	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField128b, BinaryField128bPolyval,
+	BinaryField8b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	BINARY_TO_POLYVAL_TRANSFORMATION,
 };
 use binius_hal::{make_portable_backend, CpuBackend};
 use binius_hash::groestl::Groestl256;
-use binius_math::{
-	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
-};
+use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory};
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
@@ -89,15 +87,9 @@ where
 			let (gpa_witnesses, gpa_claims): (Vec<_>, Vec<_>) = (0..N_CLAIMS)
 				.into_par_iter()
 				.map(|_| {
-					let numerator =
-						MultilinearExtension::<P, &[P]>::from_values_generic(numerator).unwrap();
-					let gpa_witness = GrandProductWitness::<P>::new(
-						MLEDirectAdapter::from(numerator).upcast_arc_dyn(),
-					)
-					.unwrap();
-
+					let gpa_witness =
+						GrandProductWitness::<P>::new(n_vars, numerator.to_vec()).unwrap();
 					let product = gpa_witness.grand_product_evaluation();
-
 					(gpa_witness, GrandProductClaim { n_vars, product })
 				})
 				.collect::<Vec<_>>()
@@ -146,15 +138,8 @@ fn bench_gpa_polyval_with_isomorphism<U>(
 				.into_par_iter()
 				.map(|_| {
 					let transformed_values = apply_transformation(numerator, &transform_to_polyval);
-					let numerator = MultilinearExtension::from_values(transformed_values).unwrap();
-
-					let gpa_witness = GrandProductWitness::<
-						<U as PackScalar<BinaryField128bPolyval>>::Packed,
-					>::new(numerator.specialize_arc_dyn())
-					.unwrap();
-
+					let gpa_witness = GrandProductWitness::new(n_vars, transformed_values).unwrap();
 					let product = gpa_witness.grand_product_evaluation();
-
 					(gpa_witness, GrandProductClaim { n_vars, product })
 				})
 				.collect::<Vec<_>>()
@@ -204,24 +189,8 @@ fn bench_binary_128b(c: &mut Criterion) {
 }
 
 fn bench_byte_sliced_aes_128b(c: &mut Criterion) {
-	bench_gpa::<ByteSlicedAES16x128b, AESTowerField8b>(
+	bench_gpa::<PackedType<OptimalUnderlierByteSliced, AESTowerField128b>, AESTowerField8b>(
 		"gpa_byte_sliced_aes_128b",
-		EvaluationOrder::HighToLow,
-		c,
-	);
-}
-
-fn bench_byte_sliced_aes_256b(c: &mut Criterion) {
-	bench_gpa::<ByteSlicedAES32x128b, AESTowerField8b>(
-		"gpa_byte_sliced_aes_256b",
-		EvaluationOrder::HighToLow,
-		c,
-	);
-}
-
-fn bench_byte_sliced_aes_512b(c: &mut Criterion) {
-	bench_gpa::<ByteSlicedAES64x128b, AESTowerField8b>(
-		"gpa_byte_sliced_aes_512b",
 		EvaluationOrder::HighToLow,
 		c,
 	);
@@ -242,7 +211,5 @@ criterion_group!(
 	bench_polyval_high_to_low,
 	bench_binary_128b,
 	bench_byte_sliced_aes_128b,
-	bench_byte_sliced_aes_256b,
-	bench_byte_sliced_aes_512b,
 	bench_binary_128b_isomorphic
 );

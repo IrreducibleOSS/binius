@@ -11,9 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
@@ -27,7 +25,7 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
 		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, MultilinearPolyVariant, OracleId, Packed, ProjectionVariant, Shifted,
+		MultilinearOracleSet, MultilinearPolyVariant, OracleId, Packed, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -78,7 +76,7 @@ pub fn process_shifted_sumcheck<F, P>(
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
 	process_projected_bivariate_witness(
@@ -236,11 +234,8 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	let inner = oracles.oracle(inner_id);
 
 	let (projected_eval_point, projected_id) = if projected_n_vars < inner.n_vars() {
-		let projected_id = oracles.add_projected(
-			inner_id,
-			eval_point[projected_n_vars..].to_vec(),
-			ProjectionVariant::LastVars,
-		)?;
+		let projected_id =
+			oracles.add_projected_last_vars(inner_id, eval_point[projected_n_vars..].to_vec())?;
 
 		(&eval_point[..projected_n_vars], Some(projected_id))
 	} else {

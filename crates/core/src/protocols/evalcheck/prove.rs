@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{PackedFieldIndexable, TowerField};
+use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
@@ -20,7 +20,7 @@ use super::{
 use crate::{
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyOracle, MultilinearPolyVariant, OracleId, ProjectionVariant,
+		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
 	},
 	protocols::evalcheck::subclaims::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
@@ -37,7 +37,7 @@ use crate::{
 #[derive(Getters, MutGetters)]
 pub struct EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -62,7 +62,7 @@ where
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -214,10 +214,12 @@ where
 			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
 			.collect::<Result<Vec<_>, Error>>()?;
 
+		let projected_bivariate_claims = std::mem::take(&mut self.projected_bivariate_claims);
+
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
@@ -225,22 +227,20 @@ where
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
 
-		for (claim, meta, projected) in izip!(
-			std::mem::take(&mut self.projected_bivariate_claims),
-			&projected_bivariate_metas,
-			projected_mles
-		) {
+		for (claim, meta, projected) in
+			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
+		{
 			self.process_sumcheck(claim, meta, projected)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
 			&projected_bivariate_metas,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.oracles,
 			self.witness_index,
 		);
@@ -344,15 +344,12 @@ where
 
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => {
-						values.iter().copied().chain(eval_point.to_vec()).collect()
-					}
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.clone());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {
@@ -426,18 +423,14 @@ where
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => values
-						.iter()
-						.copied()
-						.chain((*eval_point).to_vec())
-						.collect(),
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.clone());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
+
 				self.finalized_proofs
 					.get(id, &new_eval_point)
 					.map(|(_, subproof)| subproof.clone())
@@ -517,15 +510,12 @@ where
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = match projected.projection_variant() {
-					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.to_vec();
-						new_eval_point.extend(values);
-						new_eval_point
-					}
-					ProjectionVariant::FirstVars => {
-						values.iter().copied().chain(eval_point.to_vec()).collect()
-					}
+				let new_eval_point = {
+					let idx = projected.start_index();
+					let mut new_eval_point = eval_point[0..idx].to_vec();
+					new_eval_point.extend(values.clone());
+					new_eval_point.extend(eval_point[idx..].to_vec());
+					new_eval_point
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {
@@ -594,7 +584,7 @@ where
 
 	fn process_sumcheck(
 		&mut self,
-		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
 		meta: &ProjectedBivariateMeta,
 		projected: Option<MultilinearExtension<P>>,
 	) -> Result<(), Error> {
@@ -604,12 +594,12 @@ where
 			eval,
 		} = evalcheck_claim;
 
-		match self.oracles.oracle(id).variant {
+		match self.oracles.oracle(*id).variant {
 			MultilinearPolyVariant::Shifted(shifted) => process_shifted_sumcheck(
 				&shifted,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -619,8 +609,8 @@ where
 				self.oracles,
 				&packed,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -632,7 +622,7 @@ where
 					meta,
 					&mut self.new_sumchecks_constraints,
 					&composite,
-					eval,
+					*eval,
 				);
 				Ok(())
 			}

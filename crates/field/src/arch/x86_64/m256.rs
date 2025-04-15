@@ -1396,6 +1396,7 @@ mod tests {
 
 	proptest! {
 		#[test]
+		#[allow(clippy::tuple_array_conversions)] // false positive
 		fn test_conversion(a in any::<u128>(), b in any::<u128>()) {
 			check_roundtrip::<[u128; 2]>([a, b].into());
 			check_roundtrip::<__m256i>([a, b].into());
@@ -1409,6 +1410,7 @@ mod tests {
 		}
 
 		#[test]
+		#[allow(clippy::tuple_array_conversions)] // false positive
 		fn test_negate(a in any::<u128>(), b in any::<u128>()) {
 			assert_eq!(M256::from([!a, ! b]), !M256::from([a, b]))
 		}

@@ -75,8 +75,8 @@ mod arithmetization {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller, TableId,
-			TableWitnessSegment, B1, B128, B32,
+			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableBuilder, TableFiller,
+			TableId, TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -97,6 +97,10 @@ mod arithmetization {
 	impl FibonacciTable {
 		pub fn new(cs: &mut ConstraintSystem, fibonacci_pairs: ChannelId) -> Self {
 			let mut table = cs.add_table("fibonacci");
+			Self::with_table_builder(&mut table, fibonacci_pairs)
+		}
+
+		pub fn with_table_builder(table: &mut TableBuilder, fibonacci_pairs: ChannelId) -> Self {
 			let f0_bits = table.add_committed("f0_bits");
 			let f1_bits = table.add_committed("f1_bits");
 			let f2_bits = U32Add::new(
@@ -184,9 +188,8 @@ mod arithmetization {
 			table_sizes: vec![trace.rows.len()],
 		};
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&fibonacci_table, &trace.rows)
@@ -205,40 +208,13 @@ mod arithmetization {
 		.unwrap();
 	}
 
-	#[test]
-	fn test_fibonacci_prove_verify_small_table() {
-		let mut cs = ConstraintSystem::new();
-		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
-		let fibonacci_table = FibonacciTable::new(&mut cs, fibonacci_pairs);
-		let trace = FibonacciTrace::generate((0, 1), 1);
-		let statement = Statement {
-			boundaries: vec![
-				Boundary {
-					values: vec![B128::new(0), B128::new(1)],
-					channel_id: fibonacci_pairs,
-					direction: FlushDirection::Push,
-					multiplicity: 1,
-				},
-				Boundary {
-					values: vec![B128::new(1), B128::new(2)],
-					channel_id: fibonacci_pairs,
-					direction: FlushDirection::Pull,
-					multiplicity: 1,
-				},
-			],
-			table_sizes: vec![trace.rows.len()],
-		};
-		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
-
-		witness
-			.fill_table_sequential(&fibonacci_table, &trace.rows)
-			.unwrap();
-
+	fn compile_validate_prove_verify(
+		cs: &ConstraintSystem,
+		statement: &Statement,
+		witness: WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
+	) {
 		let compiled_cs = cs
-			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.compile::<CanonicalOptimalPackedTowerFamily>(statement)
 			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
@@ -277,5 +253,77 @@ mod arithmetization {
 			HasherChallenger<Groestl256>,
 		>(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
 		.unwrap();
+	}
+
+	#[test]
+	fn test_fibonacci_prove_verify_small_table() {
+		let mut cs = ConstraintSystem::new();
+		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
+		let fibonacci_table = FibonacciTable::new(&mut cs, fibonacci_pairs);
+		let trace = FibonacciTrace::generate((0, 1), 1);
+		let statement = Statement {
+			boundaries: vec![
+				Boundary {
+					values: vec![B128::new(0), B128::new(1)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Push,
+					multiplicity: 1,
+				},
+				Boundary {
+					values: vec![B128::new(1), B128::new(2)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Pull,
+					multiplicity: 1,
+				},
+			],
+			table_sizes: vec![trace.rows.len()],
+		};
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		witness
+			.fill_table_sequential(&fibonacci_table, &trace.rows)
+			.unwrap();
+
+		compile_validate_prove_verify(&cs, &statement, witness);
+	}
+
+	#[test]
+	fn test_fibonacci_prove_verify_po2_sized() {
+		let mut cs = ConstraintSystem::new();
+		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
+		let mut fib_table_builder = cs.add_table("fibonacci");
+		fib_table_builder.require_power_of_two_size();
+		let fibonacci_table =
+			FibonacciTable::with_table_builder(&mut fib_table_builder, fibonacci_pairs);
+		let trace = FibonacciTrace::generate((0, 1), 31);
+
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		witness
+			.fill_table_sequential(&fibonacci_table, &trace.rows)
+			.unwrap();
+
+		let statement = Statement {
+			boundaries: vec![
+				Boundary {
+					values: vec![B128::new(0), B128::new(1)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Push,
+					multiplicity: 1,
+				},
+				Boundary {
+					values: vec![B128::new(2178309), B128::new(3524578)],
+					channel_id: fibonacci_pairs,
+					direction: FlushDirection::Pull,
+					multiplicity: 1,
+				},
+			],
+			table_sizes: witness.table_sizes(),
+		};
+		compile_validate_prove_verify(&cs, &statement, witness);
 	}
 }

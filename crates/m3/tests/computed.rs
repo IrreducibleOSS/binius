@@ -10,7 +10,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, B128,
+	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B128,
 };
 use bumpalo::Bump;
 
@@ -83,13 +83,8 @@ fn test_m3_computed_col() {
 	let allocator = Bump::new();
 	let mut cs = ConstraintSystem::<B128>::new();
 	let table = MyTable::new(&mut cs);
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![N_ROWS],
-	};
-	let mut witness = cs
-		.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-		.unwrap();
+
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 	witness
 		.fill_table_sequential(
 			&table,
@@ -99,6 +94,10 @@ fn test_m3_computed_col() {
 		)
 		.unwrap();
 
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: witness.table_sizes(),
+	};
 	let constraint_system = cs
 		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 		.unwrap();

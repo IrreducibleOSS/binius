@@ -1,37 +1,31 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	packed::packed_from_fn_with_offset, Field, PackedExtension, PackedField, TowerField,
-};
+use binius_field::{Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
-use binius_math::{
-	extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
-	MultilinearExtension, MultilinearPoly,
-};
-use binius_maybe_rayon::prelude::*;
+use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
+use itertools::izip;
 use tracing::instrument;
 
 use super::{
 	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
-	packed_field_storage::PackedFieldStorage,
 	Error, GrandProductClaim, GrandProductWitness,
 };
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		self, equal_n_vars_check, immediate_switchover_heuristic,
-		prove::eq_ind::{eq_ind_expand, EqIndSumcheckProver, EqIndSumcheckProverBuilder},
-		CompositeSumClaim, Error as SumcheckError,
+		self,
+		prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver},
+		BatchSumcheckOutput, CompositeSumClaim,
 	},
 	transcript::ProverTranscript,
 };
 
-/// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
+/// Proves batch reduction turning each GrandProductClaim into LayerClaim on original multilinear.
 ///
 /// REQUIRES:
 /// * witnesses and claims are of the same length
@@ -53,361 +47,235 @@ where
 	Backend: ComputationBackend,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together
-	// 	For each witness-claim pair, create GrandProductProver
-	let witness_vec = witnesses.into_iter().collect::<Vec<_>>();
+	// 	For each witness-claim pair, create GrandProductProverState
+	let witnesses = witnesses.into_iter().collect::<Vec<_>>();
 
-	let n_claims = claims.len();
-	if n_claims == 0 {
-		return Ok(GrandProductBatchProveOutput::default());
-	}
-	if witness_vec.len() != n_claims {
+	if witnesses.len() != claims.len() {
 		bail!(Error::MismatchedWitnessClaimLength);
 	}
 
 	// Create a vector of GrandProductProverStates
-	let provers_vec = witness_vec
-		.iter()
-		.zip(claims)
-		.map(|(witness, claim)| GrandProductProverState::new(claim, witness, backend))
+	let prover_states = izip!(witnesses, claims)
+		.map(|(witness, claim)| GrandProductProverState::new(claim, witness))
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let (original_indices, mut sorted_provers) =
-		stable_sort(provers_vec, |prover| prover.input_vars(), true);
+	let (original_indices, mut sorted_prover_states) =
+		stable_sort(prover_states, |state| state.remaining_layers.len(), true);
 
-	let max_n_vars = sorted_provers
-		.first()
-		.expect("sorted_provers is not empty by invariant")
-		.input_vars();
+	let mut reverse_sorted_final_layer_claims = Vec::with_capacity(claims.len());
+	let mut eval_point = Vec::new();
 
-	let mut reverse_sorted_final_layer_claims = Vec::with_capacity(n_claims);
-
-	for layer_no in 0..max_n_vars {
+	loop {
 		// Step 1: Process finished provers
 		process_finished_provers(
-			layer_no,
-			&mut sorted_provers,
+			&mut sorted_prover_states,
 			&mut reverse_sorted_final_layer_claims,
+			&eval_point,
 		)?;
+
+		if sorted_prover_states.is_empty() {
+			break;
+		}
 
 		// Now we must create the batch layer proof for the kth to k+1th layer reduction
 
 		// Step 2: Create sumcheck batch proof
-		let batch_sumcheck_output = {
-			let gpa_sumcheck_prover = GrandProductProverState::stage_gpa_sumcheck_provers(
+		let BatchSumcheckOutput {
+			challenges,
+			multilinear_evals,
+		} = {
+			let eq_ind_sumcheck_prover = GrandProductProverState::stage_sumcheck_provers(
 				evaluation_order,
-				&sorted_provers,
+				&mut sorted_prover_states,
 				evaluation_domain_factory.clone(),
+				&eval_point,
+				backend,
 			)?;
 
-			sumcheck::batch_prove(vec![gpa_sumcheck_prover], transcript)?
+			sumcheck::batch_prove(vec![eq_ind_sumcheck_prover], transcript)?
 		};
 
 		// Step 3: Sample a challenge for the next layer
 		let gpa_challenge = transcript.sample();
 
+		eval_point.copy_from_slice(&challenges);
+		eval_point.push(gpa_challenge);
+
 		// Step 4: Finalize each prover to update its internal current_layer_claim
-		for (i, prover) in sorted_provers.iter_mut().enumerate() {
-			prover.finalize_batch_layer_proof(
-				batch_sumcheck_output.multilinear_evals[0][2 * i],
-				batch_sumcheck_output.multilinear_evals[0][2 * i + 1],
-				batch_sumcheck_output.challenges.clone(),
-				gpa_challenge,
-			)?;
+		debug_assert_eq!(multilinear_evals.len(), 1);
+		let multilinear_evals = multilinear_evals
+			.first()
+			.expect("exactly one prover in a batch");
+		for (state, evals) in izip!(&mut sorted_prover_states, multilinear_evals.chunks_exact(2)) {
+			state.update_layer_eval(evals[0], evals[1], gpa_challenge);
 		}
 	}
 	process_finished_provers(
-		max_n_vars,
-		&mut sorted_provers,
+		&mut sorted_prover_states,
 		&mut reverse_sorted_final_layer_claims,
+		&eval_point,
 	)?;
 
-	debug_assert!(sorted_provers.is_empty());
-	debug_assert_eq!(reverse_sorted_final_layer_claims.len(), n_claims);
+	debug_assert!(sorted_prover_states.is_empty());
+	debug_assert_eq!(reverse_sorted_final_layer_claims.len(), claims.len());
 
 	reverse_sorted_final_layer_claims.reverse();
-	let sorted_final_layer_claim = reverse_sorted_final_layer_claims;
+	let sorted_final_layer_claims = reverse_sorted_final_layer_claims;
 
-	let final_layer_claims = unsort(original_indices, sorted_final_layer_claim);
-
+	let final_layer_claims = unsort(original_indices, sorted_final_layer_claims);
 	Ok(GrandProductBatchProveOutput { final_layer_claims })
 }
 
-fn process_finished_provers<F, P, Backend>(
-	layer_no: usize,
-	sorted_provers: &mut Vec<GrandProductProverState<'_, F, P, Backend>>,
+fn process_finished_provers<F, P>(
+	sorted_prover_states: &mut Vec<GrandProductProverState<P>>,
 	reverse_sorted_final_layer_claims: &mut Vec<LayerClaim<F>>,
+	eval_point: &[F],
 ) -> Result<(), Error>
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,
-	Backend: ComputationBackend,
 {
-	while let Some(prover) = sorted_provers.last() {
-		if prover.input_vars() != layer_no {
-			break;
-		}
-		debug_assert!(layer_no > 0);
-		let finished_prover = sorted_provers.pop().expect("not empty");
-		let final_layer_claim = finished_prover.finalize()?;
-		reverse_sorted_final_layer_claims.push(final_layer_claim);
+	let first_finished =
+		sorted_prover_states.partition_point(|state| !state.remaining_layers.is_empty());
+
+	for state in sorted_prover_states.drain(first_finished..).rev() {
+		reverse_sorted_final_layer_claims.push(state.finalize(eval_point)?);
 	}
 
 	Ok(())
 }
 
-/// GPA protocol prover state
+/// GPA protocol state for a single witness
 ///
 /// Coordinates the proving of a grand product claim before and after
 /// the sumcheck-based layer reductions.
 #[derive(Debug)]
-struct GrandProductProverState<'a, F, P, Backend>
+struct GrandProductProverState<P>
 where
-	F: Field + From<P::Scalar>,
-	P: PackedField,
-	P::Scalar: Field + From<F>,
-	Backend: ComputationBackend,
+	P: PackedField<Scalar: TowerField>,
 {
-	n_vars: usize,
-	// Layers of the product circuit as multilinear polynomials
-	// The ith element is the ith layer of the product circuit
-	layers: Vec<MLEDirectAdapter<P, PackedFieldStorage<'a, P>>>,
-	// The ith element consists of a tuple of the
-	// first and second halves of the (i+1)th layer of the product circuit
-	next_layer_halves: Vec<[MLEDirectAdapter<P, PackedFieldStorage<'a, P>>; 2]>,
-	// The current claim about a layer multilinear of the product circuit
-	current_layer_claim: LayerClaim<F>,
-
-	backend: Backend,
+	// Remaining layers of the product circuit, ordered from largest to smallest.
+	// Each step removes the last layer.
+	remaining_layers: Vec<Vec<P>>,
+	// The current eval claim (on a shared eval point).
+	layer_eval: P::Scalar,
 }
 
-impl<'a, F, P, Backend> GrandProductProverState<'a, F, P, Backend>
+impl<F, P> GrandProductProverState<P>
 where
-	F: TowerField + From<P::Scalar>,
+	F: TowerField,
 	P: PackedField<Scalar = F>,
-	Backend: ComputationBackend,
 {
 	/// Create a new GrandProductProverState
-	fn new(
-		claim: &GrandProductClaim<F>,
-		witness: &'a GrandProductWitness<P>,
-		backend: Backend,
-	) -> Result<Self, Error> {
-		let n_vars = claim.n_vars;
-		if n_vars != witness.n_vars() || witness.grand_product_evaluation() != claim.product {
+	fn new(claim: &GrandProductClaim<F>, witness: GrandProductWitness<P>) -> Result<Self, Error> {
+		if claim.n_vars != witness.n_vars() || witness.grand_product_evaluation() != claim.product {
 			bail!(Error::ProverClaimWitnessMismatch);
 		}
 
-		// Build multilinear polynomials from circuit evaluations
-		let n_layers = n_vars + 1;
-		let next_layer_halves = (1..n_layers)
-			.map(|i| {
-				let (left_evals, right_evals) = witness.ith_layer_eval_halves(i)?;
-				let left = MultilinearExtension::try_from(left_evals)?;
-				let right = MultilinearExtension::try_from(right_evals)?;
-				Ok([left, right].map(MLEDirectAdapter::from))
-			})
-			.collect::<Result<Vec<_>, Error>>()?;
-
-		let layers = (0..n_layers)
-			.map(|i| {
-				let ith_layer_evals = witness.ith_layer_evals(i)?;
-				let ith_layer_evals = if P::LOG_WIDTH < i {
-					PackedFieldStorage::from(ith_layer_evals)
-				} else {
-					debug_assert_eq!(ith_layer_evals.len(), 1);
-					PackedFieldStorage::new_inline(ith_layer_evals[0].iter().take(1 << i))
-						.expect("length is a power of 2")
-				};
-
-				let mle = MultilinearExtension::try_from(ith_layer_evals)?;
-				Ok(mle.into())
-			})
-			.collect::<Result<Vec<_>, Error>>()?;
-
-		debug_assert_eq!(next_layer_halves.len(), n_vars);
-		debug_assert_eq!(layers.len(), n_vars + 1);
+		let mut remaining_layers = witness.into_circuit_layers();
+		debug_assert_eq!(remaining_layers.len(), claim.n_vars + 1);
+		let _ = remaining_layers
+			.pop()
+			.expect("remaining_layers cannot be empty");
 
 		// Initialize Layer Claim
-		let layer_claim = LayerClaim {
-			eval_point: vec![],
-			eval: claim.product,
-		};
+		let layer_eval = claim.product;
 
 		// Return new GrandProductProver and the common product
 		Ok(Self {
-			n_vars,
-			next_layer_halves,
-			layers,
-			current_layer_claim: layer_claim,
-			backend,
+			remaining_layers,
+			layer_eval,
 		})
-	}
-
-	const fn input_vars(&self) -> usize {
-		self.n_vars
-	}
-
-	fn current_layer_no(&self) -> usize {
-		self.current_layer_claim.eval_point.len()
 	}
 
 	#[allow(clippy::type_complexity)]
 	#[instrument(skip_all, level = "debug")]
-	fn stage_gpa_sumcheck_provers<FDomain>(
+	fn stage_sumcheck_provers<'a, FDomain, Backend>(
 		evaluation_order: EvaluationOrder,
-		provers: &[Self],
+		states: &mut [Self],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	) -> Result<
-		EqIndSumcheckProver<
-			FDomain,
-			P,
-			IndexComposition<BivariateProduct, 2>,
-			impl MultilinearPoly<P> + Send + Sync + 'a,
-			Backend,
-		>,
-		Error,
-	>
+		eq_ind_challenges: &[P::Scalar],
+		backend: &'a Backend,
+	) -> Result<impl SumcheckProver<P::Scalar> + 'a, Error>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
+		Backend: ComputationBackend,
 	{
-		// test same layer
-		let Some(first_prover) = provers.first() else {
-			unreachable!();
-		};
-
-		// construct witness
-		let n_claims = provers.len();
-		let n_multilinears = provers.len() * 2;
-		let current_layer_no = first_prover.current_layer_no();
+		let n_vars = eq_ind_challenges.len();
+		let n_claims = states.len();
+		let n_multilinears = n_claims * 2;
 
 		let mut composite_claims = Vec::with_capacity(n_claims);
 		let mut multilinears = Vec::with_capacity(n_multilinears);
+		let mut const_suffixes = Vec::with_capacity(n_multilinears);
 
-		for (i, prover) in provers.iter().enumerate() {
+		for (i, state) in states.iter_mut().enumerate() {
 			let indices = [2 * i, 2 * i + 1];
 
 			let composite_claim = CompositeSumClaim {
-				sum: prover.current_layer_claim.eval,
+				sum: state.layer_eval,
 				composition: IndexComposition::new(n_multilinears, indices, BivariateProduct {})?,
 			};
 
 			composite_claims.push(composite_claim);
-			multilinears.extend(prover.next_layer_halves[current_layer_no].clone());
+
+			let layer = state
+				.remaining_layers
+				.pop()
+				.expect("not staging more than n_vars times");
+
+			let multilinear_pair =
+				if n_vars >= P::LOG_WIDTH && layer.len() < 1 << (n_vars - P::LOG_WIDTH) {
+					[layer, vec![]]
+				} else if n_vars >= P::LOG_WIDTH {
+					let mut evals_0 = layer;
+					let evals_1 = evals_0.split_off(1 << (n_vars - P::LOG_WIDTH));
+					[evals_0, evals_1]
+				} else {
+					let mut evals_0 = P::zero();
+					let mut evals_1 = P::zero();
+					let only_packed = layer.first().copied().unwrap_or_else(P::one);
+
+					for i in 0..1 << n_vars {
+						evals_0.set(i, only_packed.get(i));
+						evals_1.set(i, only_packed.get(i | 1 << n_vars));
+					}
+
+					[vec![evals_0], vec![evals_1]]
+				};
+
+			for multilinear in multilinear_pair {
+				let suffix_len = (1usize << n_vars).saturating_sub(multilinear.len() * P::WIDTH);
+				const_suffixes.push((F::ONE, suffix_len));
+				multilinears.push(multilinear);
+			}
 		}
 
-		let eq_ind_challenges = &first_prover.current_layer_claim.eval_point;
-		let n_vars = eq_ind_challenges.len();
-
-		let first_layer_mle_advice = provers
-			.iter()
-			.map(|prover| prover.layers[current_layer_no].clone())
-			.collect::<Vec<_>>();
-
-		let eq_ind_partial_evals =
-			eq_ind_expand(evaluation_order, n_vars, eq_ind_challenges, &first_prover.backend)?;
-
-		let first_round_eval_1s = first_round_eval_1s_from_first_layer_mle_advice(
-			evaluation_order,
-			n_vars,
-			&first_layer_mle_advice,
-			&eq_ind_partial_evals,
-		)?;
-
-		let prover = EqIndSumcheckProverBuilder::new(&first_prover.backend)
-			.with_first_round_eval_1s(&first_round_eval_1s)
-			.with_eq_ind_partial_evals(eq_ind_partial_evals)
+		let prover = EqIndSumcheckProverBuilder::without_switchover(n_vars, multilinears, backend)
+			.with_const_suffixes(&const_suffixes)?
 			.build(
 				evaluation_order,
-				multilinears,
 				eq_ind_challenges,
 				composite_claims,
 				evaluation_domain_factory,
-				// We use GPA protocol only for big fields, which is why switchover is trivial
-				immediate_switchover_heuristic,
 			)?;
 
 		Ok(prover)
 	}
 
-	fn finalize_batch_layer_proof(
-		&mut self,
-		zero_eval: F,
-		one_eval: F,
-		sumcheck_challenge: Vec<F>,
-		gpa_challenge: F,
-	) -> Result<(), Error> {
-		if self.current_layer_no() >= self.input_vars() {
-			bail!(Error::TooManyRounds);
-		}
-		let new_eval = extrapolate_line_scalar::<F, F>(zero_eval, one_eval, gpa_challenge);
-		let mut layer_challenge = sumcheck_challenge;
-		layer_challenge.push(gpa_challenge);
-
-		self.current_layer_claim = LayerClaim {
-			eval_point: layer_challenge,
-			eval: new_eval,
-		};
-
-		Ok(())
+	fn update_layer_eval(&mut self, zero_eval: F, one_eval: F, gpa_challenge: F) {
+		self.layer_eval = extrapolate_line_scalar::<F, F>(zero_eval, one_eval, gpa_challenge);
 	}
 
-	fn finalize(self) -> Result<LayerClaim<F>, Error> {
-		if self.current_layer_no() != self.input_vars() {
+	fn finalize(self, eval_point: &[F]) -> Result<LayerClaim<F>, Error> {
+		if !self.remaining_layers.is_empty() {
 			bail!(Error::PrematureFinalize);
 		}
 
-		let final_layer_claim = LayerClaim {
-			eval_point: self.current_layer_claim.eval_point,
-			eval: self.current_layer_claim.eval,
-		};
-		Ok(final_layer_claim)
-	}
-}
-
-pub fn first_round_eval_1s_from_first_layer_mle_advice<P, M>(
-	evaluation_order: EvaluationOrder,
-	n_vars: usize,
-	first_layer_mle_advice: &[M],
-	eq_ind_partial_evals: &[P],
-) -> Result<Vec<P::Scalar>, Error>
-where
-	P: PackedField,
-	M: MultilinearPoly<P> + Sync,
-{
-	let advice_n_vars = equal_n_vars_check(first_layer_mle_advice)?;
-
-	if n_vars != advice_n_vars {
-		bail!(Error::IncorrectFirstLayerAdviceLength);
-	}
-
-	if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(P::LOG_WIDTH + 1) {
-		bail!(SumcheckError::IncorrectEqIndPartialEvalsSize);
-	}
-
-	let high_to_low_offset = 1 << n_vars.saturating_sub(1);
-	let first_round_eval_1s = first_layer_mle_advice
-		.into_par_iter()
-		.map(|advice_mle| {
-			let packed_sum = eq_ind_partial_evals
-				.par_iter()
-				.enumerate()
-				.map(|(i, &eq_ind)| {
-					eq_ind
-						* packed_from_fn_with_offset::<P>(i, |j| {
-							let index = match evaluation_order {
-								EvaluationOrder::LowToHigh => j << 1 | 1,
-								EvaluationOrder::HighToLow => j | high_to_low_offset,
-							};
-							advice_mle
-								.evaluate_on_hypercube(index)
-								.unwrap_or(P::Scalar::ZERO)
-						})
-				})
-				.sum::<P>();
-			packed_sum.iter().take(1 << n_vars).sum()
+		Ok(LayerClaim {
+			eval_point: eval_point.to_vec(),
+			eval: self.layer_eval,
 		})
-		.collect();
-
-	Ok(first_round_eval_1s)
+	}
 }

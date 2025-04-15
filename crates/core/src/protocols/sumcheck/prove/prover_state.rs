@@ -13,10 +13,7 @@ use tracing::instrument;
 
 use crate::{
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{
-		common::{equal_n_vars_check, RoundCoeffs},
-		error::Error,
-	},
+	protocols::sumcheck::{common::RoundCoeffs, error::Error},
 };
 
 pub trait SumcheckInterpolator<F: Field> {
@@ -36,11 +33,6 @@ pub trait SumcheckInterpolator<F: Field> {
 enum ProverStateCoeffsOrSums<F: Field> {
 	Coeffs(Vec<RoundCoeffs<F>>),
 	Sums(Vec<F>),
-}
-
-pub struct MultilinearInput<M> {
-	pub multilinear: M,
-	pub zero_scalars_suffix: usize,
 }
 
 /// The stored state of a sumcheck prover, which encapsulates common implementation logic.
@@ -81,50 +73,59 @@ where
 	#[instrument(skip_all, level = "debug", name = "ProverState::new")]
 	pub fn new(
 		evaluation_order: EvaluationOrder,
-		multilinears: Vec<MultilinearInput<M>>,
+		n_vars: usize,
+		multilinears: Vec<SumcheckMultilinear<P, M>>,
 		claimed_sums: Vec<F>,
 		nontrivial_evaluation_points: Vec<FDomain>,
-		switchover_fn: impl Fn(usize) -> usize,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let n_vars = equal_n_vars_check(multilinears.iter().map(|input| &input.multilinear))?;
+		for multilinear in &multilinears {
+			match *multilinear {
+				SumcheckMultilinear::Transparent {
+					ref multilinear,
+					const_suffix: (_, suffix_len),
+					..
+				} => {
+					if multilinear.n_vars() != n_vars {
+						bail!(Error::NumberOfVariablesMismatch);
+					}
 
-		if multilinears
-			.iter()
-			.any(|input| input.zero_scalars_suffix > 1 << n_vars)
-		{
-			bail!(Error::IncorrectZeroScalarsSuffixes);
+					if suffix_len > 1 << n_vars {
+						bail!(Error::IncorrectConstSuffixes);
+					}
+				}
+
+				SumcheckMultilinear::Folded {
+					large_field_folded_evals: ref evals,
+					..
+				} => {
+					if evals.len() > 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
+						bail!(Error::IncorrectConstSuffixes);
+					}
+				}
+			}
 		}
 
-		let switchover_rounds = multilinears
+		let tensor_query = multilinears
 			.iter()
-			.map(|input| switchover_fn(1 << input.multilinear.log_extension_degree()))
-			.collect::<Vec<_>>();
-		let max_switchover_round = switchover_rounds.iter().copied().max().unwrap_or_default();
-
-		let multilinears = izip!(multilinears, switchover_rounds)
-			.map(|(input, switchover_round)| {
-				let MultilinearInput {
-					multilinear,
-					zero_scalars_suffix,
-				} = input;
+			.filter_map(|multilinear| match multilinear {
 				SumcheckMultilinear::Transparent {
-					multilinear,
-					switchover_round,
-					zero_scalars_suffix,
-				}
+					switchover_round, ..
+				} => Some(switchover_round),
+				_ => None,
 			})
-			.collect::<Vec<_>>();
-
-		let tensor_query = MultilinearQuery::with_capacity(max_switchover_round + 1);
+			.max()
+			.map(|&max_switchover_round| {
+				MultilinearQuery::with_capacity(max_switchover_round.min(n_vars) + 1)
+			});
 
 		Ok(Self {
 			n_vars,
 			evaluation_order,
 			multilinears,
 			nontrivial_evaluation_points,
+			tensor_query,
 			challenges: Vec::new(),
-			tensor_query: Some(tensor_query),
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
 			backend,
 		})
@@ -209,9 +210,10 @@ where
 					}
 					SumcheckMultilinear::Folded {
 						large_field_folded_evals,
+						suffix_eval,
 					} => Ok(large_field_folded_evals
 						.first()
-						.map_or(F::ZERO, |packed| packed.get(0))
+						.map_or(suffix_eval, |packed| packed.get(0))
 						.get(0)),
 				}
 				.map_err(Error::MathError)

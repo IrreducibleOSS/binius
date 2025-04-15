@@ -17,7 +17,9 @@ use binius_field::{
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
+use bumpalo::Bump;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
+use either::Either;
 use getset::CopyGetters;
 use itertools::Itertools;
 
@@ -37,51 +39,119 @@ use crate::builder::multi_iter::MultiIterator;
 /// gets converted into a multilinear extension index, which maintains references to the data
 /// allocated by the allocator, but does not need to maintain a reference to the constraint system,
 /// which can then be dropped.
-#[derive(Debug, Default, CopyGetters)]
+#[derive(Debug)]
 pub struct WitnessIndex<'cs, 'alloc, P = PackedType<OptimalUnderlier, B128>>
 where
 	P: PackedField,
 	P::Scalar: TowerField,
 {
-	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, P>>>,
+	allocator: &'alloc Bump,
+	/// Each entry is Left if the index hasn't been initialized & filled, and Right if it has.
+	tables: Vec<Either<&'cs Table<P::Scalar>, TableWitnessIndex<'cs, 'alloc, P>>>,
 }
 
 impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, 'alloc, P> {
+	/// Creates and allocates the witness index for a constraint system.
+	pub fn new(cs: &'cs ConstraintSystem<F>, allocator: &'alloc Bump) -> Self {
+		Self {
+			allocator,
+			tables: cs.tables.iter().map(Either::Left).collect(),
+		}
+	}
+
+	pub fn init_table(
+		&mut self,
+		table_id: TableId,
+		size: usize,
+	) -> Result<&mut TableWitnessIndex<'cs, 'alloc, P>, Error> {
+		match self.tables.get_mut(table_id) {
+			Some(entry) => match entry {
+				Either::Left(table) => {
+					if size == 0 {
+						Err(Error::EmptyTable { table_id })
+					} else {
+						let table_witness = TableWitnessIndex::new(self.allocator, table, size)?;
+						*entry = Either::Right(table_witness);
+						let Either::Right(table_witness) = entry else {
+							unreachable!("entry is assigned to this pattern on the previous line")
+						};
+						Ok(table_witness)
+					}
+				}
+				Either::Right(_) => Err(Error::TableIndexAlreadyInitialized { table_id }),
+			},
+			None => Err(Error::MissingTable { table_id }),
+		}
+	}
+
 	pub fn get_table(
 		&mut self,
 		table_id: TableId,
 	) -> Option<&mut TableWitnessIndex<'cs, 'alloc, P>> {
-		self.tables
-			.get_mut(table_id)
-			.and_then(|inner| inner.as_mut())
+		self.tables.get_mut(table_id).and_then(|table| match table {
+			Either::Left(_) => None,
+			Either::Right(index) => Some(index),
+		})
 	}
 
 	pub fn fill_table_sequential<T: TableFiller<P>>(
 		&mut self,
-		table: &T,
+		filler: &T,
 		rows: &[T::Event],
 	) -> Result<(), Error> {
-		if !rows.is_empty() {
-			let table_id = table.id();
-			let witness = self
-				.get_table(table_id)
-				.ok_or(Error::MissingTable { table_id })?;
-			witness.fill_sequential(table, rows)?;
-		}
-		Ok(())
+		self.init_and_fill_table(
+			filler.id(),
+			|table_witness, rows| table_witness.fill_sequential(filler, rows),
+			rows,
+		)
 	}
 
-	pub fn fill_table_parallel<T>(&mut self, table: &T, rows: &[T::Event]) -> Result<(), Error>
+	pub fn fill_table_parallel<T>(&mut self, filler: &T, rows: &[T::Event]) -> Result<(), Error>
 	where
 		T: TableFiller<P> + Sync,
 		T::Event: Sync,
 	{
-		let table_id = table.id();
-		let witness = self
-			.get_table(table_id)
-			.ok_or(Error::MissingTable { table_id })?;
-		witness.fill_parallel(table, rows)?;
-		Ok(())
+		self.init_and_fill_table(
+			filler.id(),
+			|table_witness, rows| table_witness.fill_parallel(filler, rows),
+			rows,
+		)
+	}
+
+	fn init_and_fill_table<Event>(
+		&mut self,
+		table_id: TableId,
+		fill: impl FnOnce(&mut TableWitnessIndex<'cs, 'alloc, P>, &[Event]) -> Result<(), Error>,
+		rows: &[Event],
+	) -> Result<(), Error> {
+		match self.tables.get_mut(table_id) {
+			Some(entry) => match entry {
+				Either::Right(witness) => fill(witness, rows),
+				Either::Left(table) => {
+					if rows.is_empty() {
+						Ok(())
+					} else {
+						let mut table_witness =
+							TableWitnessIndex::new(self.allocator, table, rows.len())?;
+						fill(&mut table_witness, rows)?;
+						*entry = Either::Right(table_witness);
+						Ok(())
+					}
+				}
+			},
+			None => Err(Error::MissingTable { table_id }),
+		}
+	}
+
+	/// Returns the sizes of all tables in the witness, indexed by table ID.
+	pub fn table_sizes(&self) -> Vec<usize> {
+		self.tables
+			.iter()
+			.map(|entry| match entry {
+				Either::Left(_) => 0,
+				Either::Right(index) => index.size(),
+			})
+			.collect()
 	}
 
 	pub fn repack<'cs_2, P2: TryRepackSliceInplace<P, Scalar: TowerField>>(
@@ -90,33 +160,42 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 	) -> Result<WitnessIndex<'cs_2, 'alloc, P2>, super::Error> {
 		let mut tables = Vec::with_capacity(self.tables.len());
 		for table in self.tables {
-			if let Some(table) = table {
-				let cols = table
-					.cols
-					.into_iter()
-					.map(|col| {
-						let data = col.data.try_repack::<P2>()?;
-						Ok(WitnessIndexColumn::<'_, P2> {
-							shape: col.shape,
-							data,
-							is_single_row: col.is_single_row,
+			let converted_table = match table {
+				Either::Right(table) => {
+					let cols = table
+						.cols
+						.into_iter()
+						.map(|col| {
+							let data = col.data.try_repack::<P2>()?;
+							Ok(WitnessIndexColumn::<'_, P2> {
+								shape: col.shape,
+								data,
+								is_single_row: col.is_single_row,
+							})
 						})
+						.collect::<Result<Vec<_>, super::Error>>()?;
+					let table_id = table.table.id;
+					Either::Right(TableWitnessIndex {
+						table: converted_cs.get_table(table_id),
+						oracle_offset: table.oracle_offset,
+						cols,
+						size: table.size,
+						log_capacity: table.log_capacity,
+						min_log_segment_size: table.min_log_segment_size,
 					})
-					.collect::<Result<Vec<_>, super::Error>>()?;
-				let table_id = table.table.id;
-				tables.push(Some(TableWitnessIndex {
-					table: converted_cs.get_table(table_id),
-					oracle_offset: table.oracle_offset,
-					cols,
-					size: table.size,
-					log_capacity: table.log_capacity,
-					min_log_segment_size: table.min_log_segment_size,
-				}));
-			} else {
-				tables.push(None);
-			}
+				}
+				Either::Left(table) => {
+					let table_id = table.id;
+					Either::Left(converted_cs.get_table(table_id))
+				}
+			};
+
+			tables.push(converted_table);
 		}
-		Ok(WitnessIndex { tables })
+		Ok(WitnessIndex {
+			tables,
+			allocator: self.allocator,
+		})
 	}
 
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
@@ -131,7 +210,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table_witness in self.tables {
-			let Some(table_witness) = table_witness else {
+			let Either::Right(table_witness) = table_witness else {
 				continue;
 			};
 			let table = table_witness.table();
@@ -159,19 +238,21 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				count += 1;
 			}
 
-			// Every table partition has a step_down appended to the end of the table to support
-			// non-power of two height tables.
-			for log_values_per_row in table.partitions.keys() {
-				let oracle_id = first_oracle_id_in_table + count;
-				let size = table_witness.size << log_values_per_row;
-				let log_size = table_witness.log_capacity + log_values_per_row;
-				let witness = StepDown::new(log_size, size)
-					.unwrap()
-					.multilinear_extension::<PackedSubfield<P, B1>>()
-					.unwrap()
-					.specialize_arc_dyn();
-				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
-				count += 1;
+			if !table.power_of_two_sized {
+				// Every table partition has a step_down appended to the end of the table to support
+				// non-power of two height tables.
+				for log_values_per_row in table.partitions.keys() {
+					let oracle_id = first_oracle_id_in_table + count;
+					let size = table_witness.size << log_values_per_row;
+					let log_size = table_witness.log_capacity + log_values_per_row;
+					let witness = StepDown::new(log_size, size)
+						.unwrap()
+						.multilinear_extension::<PackedSubfield<P, B1>>()
+						.unwrap()
+						.specialize_arc_dyn();
+					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+					count += 1;
+				}
 			}
 
 			first_oracle_id_in_table += count;
@@ -1083,7 +1164,7 @@ mod tests {
 	use super::*;
 	use crate::builder::{
 		types::{B1, B32, B8},
-		ConstraintSystem, Statement, TableBuilder,
+		ConstraintSystem, TableBuilder,
 	};
 
 	#[test]
@@ -1295,15 +1376,11 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 
 		let table_size = 11;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let mut index = cs.build_witness(&allocator, &statement).unwrap();
-		let table_index = index.get_table(test_table.id()).unwrap();
+		let mut index = WitnessIndex::new(&cs, &allocator);
+		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let rows = repeat_with(|| rng.gen())
@@ -1343,15 +1420,11 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 
 		let table_size = 11;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let mut index = cs.build_witness(&allocator, &statement).unwrap();
-		let table_index = index.get_table(test_table.id()).unwrap();
+		let mut index = WitnessIndex::new(&cs, &allocator);
+		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let rows = repeat_with(|| rng.gen())
@@ -1384,5 +1457,23 @@ mod tests {
 		assert_eq!(col0[13].val(), rows[9]);
 		assert_eq!(col0[14].val(), rows[10]);
 		assert_eq!(col0[15].val(), rows[10]);
+	}
+
+	#[test]
+	fn test_fill_empty_rows_non_empty_table() {
+		let mut cs = ConstraintSystem::new();
+		let test_table = TestTable::new(&mut cs);
+
+		let allocator = Bump::new();
+
+		let table_size = 11;
+		let mut index = WitnessIndex::new(&cs, &allocator);
+
+		index.init_table(test_table.id(), table_size).unwrap();
+
+		assert_matches!(
+			index.fill_table_sequential(&test_table, &[]),
+			Err(Error::IncorrectNumberOfTableEvents { .. })
+		);
 	}
 }

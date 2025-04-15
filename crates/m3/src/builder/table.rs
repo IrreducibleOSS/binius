@@ -38,6 +38,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		}
 	}
 
+	pub fn require_power_of_two_size(&mut self) {
+		self.table.power_of_two_sized = true;
+	}
+
 	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
 		TableBuilder {
 			namespace: Some(self.namespaced_name(namespace)),
@@ -191,6 +195,30 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_projected<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		query_size: usize,
+		query_bits: usize,
+		start_index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(start_index < VALUES_PER_ROW);
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Projected {
+				col: col.id(),
+				start_index,
+				query_size,
+				query_bits,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -305,6 +333,8 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
+	/// Whether the table size is required to be a power of two.
+	pub power_of_two_sized: bool,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
@@ -337,6 +367,7 @@ impl<F: TowerField> Table<F> {
 			name: self.name.clone(),
 			columns,
 			partitions,
+			power_of_two_sized: self.power_of_two_sized,
 		}
 	}
 }
@@ -434,6 +465,7 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
+			power_of_two_sized: false,
 			partitions: SparseIndex::new(),
 		}
 	}
