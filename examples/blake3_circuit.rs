@@ -46,7 +46,6 @@ fn main() -> Result<()> {
 
 	let mut rng = OsRng;
 	let input_witness = (0..args.n_compressions as usize)
-		.into_iter()
 		.map(|_| {
 			let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
 			let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());

@@ -286,7 +286,7 @@ pub fn blake3_compress(
 				state_idx += 1;
 			}
 
-			state_vals[state_idx + 0][compression_offset] = IV[0];
+			state_vals[state_idx][compression_offset] = IV[0];
 			state_vals[state_idx + 1][compression_offset] = IV[1];
 			state_vals[state_idx + 2][compression_offset] = IV[2];
 			state_vals[state_idx + 3][compression_offset] = IV[3];
@@ -314,14 +314,12 @@ pub fn blake3_compress(
 			let mut temp_vars_offset = 0usize;
 
 			fn add(a: u32, b: u32) -> (u32, u32, u32) {
-				let cin;
-				let cout;
 				let zout;
 				let carry;
 
 				(zout, carry) = a.overflowing_add(b);
-				cin = a ^ b ^ zout;
-				cout = ((carry as u32) << 31) | (cin >> 1);
+				let cin = a ^ b ^ zout;
+				let cout = ((carry as u32) << 31) | (cin >> 1);
 
 				(cin, cout, zout)
 			}
@@ -334,6 +332,7 @@ pub fn blake3_compress(
 					let mut add_offset = 0usize;
 
 					// column-wise copy of the previous state to the next one
+					#[allow(clippy::needless_range_loop)]
 					for i in 0..STATE_SIZE {
 						state_vals[i][state_transition_idx] =
 							state_vals[i][state_transition_idx - 1];
@@ -574,9 +573,7 @@ mod tests {
 				for i in 0..16 {
 					permuted[i] = state[16 + MSG_PERMUTATION[i]];
 				}
-				for i in 0..16 {
-					state[i + 16] = permuted[i];
-				}
+				state[16..32].copy_from_slice(&permuted);
 			}
 		}
 
@@ -596,7 +593,6 @@ mod tests {
 			let mut rng = StdRng::seed_from_u64(0);
 			let mut expected = vec![];
 			let states = (0..compressions)
-				.into_iter()
 				.map(|_| {
 					let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
 					let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
@@ -626,12 +622,13 @@ mod tests {
 			let states_len = states.len();
 			let state_out = blake3_compress(builder, &Some(states), states_len)?;
 			if let Some(witness) = builder.witness() {
-				for i in 0..expected.len() {
+				for (i, expected_i) in expected.into_iter().enumerate() {
 					let actual = witness
 						.get::<F32>(state_out.output[i])
 						.unwrap()
 						.as_slice::<u32>();
-					assert_eq!(actual, expected[i]);
+					let len = expected_i.len();
+					assert_eq!(actual[..len], expected_i);
 				}
 			}
 			Ok(vec![])
