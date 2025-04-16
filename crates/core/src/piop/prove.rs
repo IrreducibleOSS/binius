@@ -245,9 +245,11 @@ where
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
 		.enumerate()
-		.filter(|(_n_vars, desc)| !desc.composite_sums.is_empty());
+		// Keep sumcheck claims with >0 committed multilinears, even with 0 composite claims. This
+		// indicates unconstrained columns, but we still need the final evaluations from the
+		// sumcheck prover in order to derive the final FRI value.
+		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
 	let sumcheck_provers = non_empty_sumcheck_descs
-		.clone()
 		.map(|(_n_vars, desc)| {
 			let multilins = chain!(
 				packed_committed_multilins[desc.committed_indices.clone()]
