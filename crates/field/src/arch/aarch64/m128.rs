@@ -5,6 +5,11 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Shl, Shr},
 };
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	serialization::{assert_enough_data_for, assert_enough_space_for},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, Zeroable};
 use derive_more::Not;
 use rand::RngCore;
@@ -152,6 +157,31 @@ impl From<poly16x8_t> for M128 {
 impl From<poly64x2_t> for M128 {
 	fn from(value: poly64x2_t) -> Self {
 		Self(unsafe { vreinterpretq_p128_p64(value) })
+	}
+}
+
+impl SerializeBytes for M128 {
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		_mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
+		write_buf.put_u128_le(self.0);
+		Ok(())
+	}
+}
+
+impl DeserializeBytes for M128 {
+	fn deserialize(
+		mut read_buf: impl Buf,
+		_mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		assert_enough_data_for(&read_buf, std::mem::size_of::<Self>())?;
+		Ok(Self(read_buf.get_u128_le()))
 	}
 }
 

@@ -13,7 +13,12 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	checked_arithmetics::checked_int_div,
+	iter::IterExtensions,
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
@@ -36,7 +41,9 @@ pub struct PackedPrimitiveType<U: UnderlierType, Scalar: BinaryField>(
 	pub PhantomData<Scalar>,
 );
 
-impl<U: UnderlierType, Scalar: BinaryField> PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField>
+	PackedPrimitiveType<U, Scalar>
+{
 	pub const WIDTH: usize = {
 		assert!(U::BITS % Scalar::N_BITS == 0);
 
@@ -59,6 +66,31 @@ impl<U: UnderlierType, Scalar: BinaryField> PackedPrimitiveType<U, Scalar> {
 	#[inline]
 	pub const fn to_underlier(self) -> U {
 		self.0
+	}
+}
+
+impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField> SerializeBytes
+	for PackedPrimitiveType<U, Scalar>
+{
+	fn serialize(
+		&self,
+		write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		self.0.serialize(write_buf, mode)
+	}
+}
+
+impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField> DeserializeBytes
+	for PackedPrimitiveType<U, Scalar>
+{
+	fn deserialize(
+		read_buf: impl Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError> {
+		let value = U::deserialize(read_buf, mode)?;
+
+		Ok(Self::from_underlier(value))
 	}
 }
 
