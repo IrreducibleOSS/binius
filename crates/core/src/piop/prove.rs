@@ -410,7 +410,7 @@ where
 mod tests {
 	use std::iter::repeat_with;
 
-	use binius_field::{PackedBinaryField16x8b, PackedBinaryField2x128b};
+	use binius_field::PackedBinaryField2x128b;
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
@@ -430,7 +430,7 @@ mod tests {
 			.collect::<Vec<_>>();
 		let scalars = (0..8).map(|i| 1usize << i).sum::<usize>();
 		let mut buffer =
-			vec![PackedBinaryField2x128b::zero(); scalars.div_ceil(PackedBinaryField16x8b::WIDTH)];
+			vec![PackedBinaryField2x128b::zero(); scalars.div_ceil(PackedBinaryField2x128b::WIDTH)];
 		merge_multilins(&multilins, &mut buffer);
 
 		let scalars = PackedField::iter_slice(&buffer).take(scalars).collect_vec();
