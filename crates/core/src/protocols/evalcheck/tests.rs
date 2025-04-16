@@ -636,7 +636,7 @@ fn test_evalcheck_serialization() {
 		let mut rng = thread_rng();
 		EvalcheckProof::LinearCombination {
 			subproofs: elems
-				.map(|x| (F::random(&mut rng), x.clone()))
+				.map(|x| (Some(F::random(&mut rng)), x.clone()))
 				.collect::<Vec<_>>(),
 		}
 	}
