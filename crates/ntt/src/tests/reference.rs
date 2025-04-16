@@ -4,10 +4,10 @@ use std::marker::PhantomData;
 
 use binius_field::{
 	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
-	scalars_collection::{ScalarsCollection, ScalarsCollectionMut},
 	BinaryField, ExtensionField, PackedField,
 };
 use binius_math::BinarySubspace;
+use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
 use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
 
@@ -31,7 +31,7 @@ impl<'a, P> BatchedPackedFieldSlice<'a, P> {
 	}
 }
 
-impl<P> ScalarsCollection<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+impl<P> RandomAccessSequence<P::Scalar> for BatchedPackedFieldSlice<'_, P>
 where
 	P: PackedField,
 {
@@ -44,7 +44,7 @@ where
 	}
 }
 
-impl<P> ScalarsCollectionMut<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+impl<P> RandomAccessSequenceMut<P::Scalar> for BatchedPackedFieldSlice<'_, P>
 where
 	P: PackedField,
 {
@@ -61,7 +61,7 @@ where
 fn forward_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl ScalarsCollectionMut<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>
@@ -106,7 +106,7 @@ where
 fn inverse_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl ScalarsCollectionMut<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>

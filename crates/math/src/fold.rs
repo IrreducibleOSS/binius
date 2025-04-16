@@ -11,8 +11,8 @@ use binius_field::{
 	},
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
+		PackedSlice,
 	},
-	scalars_collection::PackedSlice,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
 	Field, PackedField,

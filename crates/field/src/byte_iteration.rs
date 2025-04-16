@@ -2,6 +2,7 @@
 
 use std::any::TypeId;
 
+use binius_utils::random_access_sequence::RandomAccessSequence;
 use bytemuck::{zeroed_vec, Pod};
 
 use crate::{
@@ -11,7 +12,6 @@ use crate::{
 		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
-	scalars_collection::ScalarsCollection,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
 	BinaryField8b, PackedField,
@@ -385,7 +385,7 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 ///    ...
 /// ]
 pub fn create_partial_sums_lookup_tables<P: PackedField>(
-	values: impl ScalarsCollection<P>,
+	values: impl RandomAccessSequence<P>,
 ) -> Vec<P> {
 	let len = values.len();
 	assert!(len % 8 == 0);

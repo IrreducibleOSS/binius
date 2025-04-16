@@ -10,6 +10,7 @@ pub mod examples;
 pub mod felts;
 pub mod graph;
 pub mod iter;
+pub mod random_access_sequence;
 pub mod rayon;
 pub mod serialization;
 pub mod sorting;

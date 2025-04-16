@@ -1,8 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	scalars_collection::{CollectionSubrangeMut, PackedSliceMut, ScalarsCollectionMut},
-	BinaryField, Field, PackedExtension, PackedField, TowerField,
+	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -12,7 +11,11 @@ use binius_math::{
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::{
-	bail, checked_arithmetics::checked_log_2, sorting::is_sorted_ascending, SerializeBytes,
+	bail,
+	checked_arithmetics::checked_log_2,
+	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
+	sorting::is_sorted_ascending,
+	SerializeBytes,
 };
 use either::Either;
 use itertools::{chain, Itertools};
@@ -49,7 +52,7 @@ fn reverse_bits(x: usize, log_len: usize) -> usize {
 
 /// Reorders the scalars in a slice of packed field elements by reversing the bits of their indices.
 /// TODO: investigate if we can optimize this.
-fn reverse_index_bits<F>(collection: &mut impl ScalarsCollectionMut<F>) {
+fn reverse_index_bits<T: Copy>(collection: &mut impl RandomAccessSequenceMut<T>) {
 	let log_len = checked_log_2(collection.len());
 	for i in 0..collection.len() {
 		let bit_reversed_index = reverse_bits(i, log_len);
@@ -106,8 +109,7 @@ where
 			.expect("guaranteed by function precondition");
 		let packed_eval = evals[0];
 		let len = 1 << get_n_packed_vars(mle);
-		let mut packed_chunk =
-			CollectionSubrangeMut::new(&mut remaining_buffer, scalar_offset, len);
+		let mut packed_chunk = SequenceSubrangeMut::new(&mut remaining_buffer, scalar_offset, len);
 		for i in 0..len {
 			packed_chunk.set(i, packed_eval.get(i));
 		}
