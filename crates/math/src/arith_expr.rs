@@ -2,7 +2,7 @@
 
 use std::{
 	cmp::Ordering,
-	collections::BTreeMap,
+	collections::{BTreeMap, HashMap},
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -296,54 +296,30 @@ impl<F: Field> ArithExpr<F> {
 	///
 	/// - [`Error::NonLinearExpression`] if the expression is not linear.
 	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
-		if self.degree() > 1 {
-			return Err(Error::NonLinearExpression);
-		}
-
-		let n_vars = self.n_vars();
-
-		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
-		// Evaluating with all variables set to 0, should give the constant term
-		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
-
-		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
-		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
-		let var_coeffs = (0..n_vars)
-			.map(|i| {
-				let mut vars = vec![F::ZERO; n_vars];
-				vars[i] = F::ONE;
-				self.evaluate(&vars) - constant
-			})
-			.collect();
-		Ok(LinearNormalForm {
-			constant,
-			var_coeffs,
-		})
+		self.dense_linear_normal_form().map(Into::into)
 	}
 
-	pub fn linear_normal_form_2(&self) -> Result<DenseLinearPolynomial<F>, Error> {
+	fn dense_linear_normal_form(&self) -> Result<DenseLinearNormalForm<F>, Error> {
 		match self {
 			ArithExpr::Const(val) => Ok((*val).into()),
-			ArithExpr::Var(index) => Ok(DenseLinearPolynomial {
+			ArithExpr::Var(index) => Ok(DenseLinearNormalForm {
 				constant: F::ZERO,
-				var_coeffs: vec![(*index, F::ONE)],
+				max_var_index: *index,
+				var_coeffs: [(*index, F::ONE)].into(),
 			}),
 			ArithExpr::Add(left, right) => {
-				Ok(left.linear_normal_form_2()? + right.linear_normal_form_2()?)
+				Ok(left.dense_linear_normal_form()? + right.dense_linear_normal_form()?)
 			}
 			ArithExpr::Mul(left, right) => {
-				left.linear_normal_form_2()? * right.linear_normal_form_2()?
+				left.dense_linear_normal_form()? * right.dense_linear_normal_form()?
 			}
 			ArithExpr::Pow(_, 0) => Ok(F::ONE.into()),
-			ArithExpr::Pow(expr, 1) => expr.linear_normal_form_2(),
-			ArithExpr::Pow(expr, pow) => expr.linear_normal_form_2().and_then(|linear_form| {
+			ArithExpr::Pow(expr, 1) => expr.dense_linear_normal_form(),
+			ArithExpr::Pow(expr, pow) => expr.dense_linear_normal_form().and_then(|linear_form| {
 				if linear_form.var_coeffs.len() > 0 {
 					return Err(Error::NonLinearExpression);
 				}
-				Ok(DenseLinearPolynomial {
-					constant: linear_form.constant.pow(*pow),
-					var_coeffs: vec![],
-				})
+				Ok(linear_form.constant.pow(*pow).into())
 			}),
 		}
 	}
@@ -484,76 +460,79 @@ pub struct LinearNormalForm<F: Field> {
 	pub var_coeffs: Vec<F>,
 }
 
-struct DenseLinearPolynomial<F: Field> {
+struct DenseLinearNormalForm<F: Field> {
 	/// The constant offset of the expression.
 	pub constant: F,
-	/// A vector mapping variable indices to their coefficients.
-	pub var_coeffs: Vec<(usize, F)>,
+	/// The maximum variable index in the expression.
+	pub max_var_index: usize,
+	/// A variable index -> coefficients map.
+	pub var_coeffs: HashMap<usize, F>,
 }
 
-impl<F: Field> From<F> for DenseLinearPolynomial<F> {
+impl<F: Field> From<F> for DenseLinearNormalForm<F> {
 	fn from(value: F) -> Self {
 		Self {
 			constant: value,
-			var_coeffs: vec![],
+			max_var_index: 0,
+			var_coeffs: HashMap::new(),
 		}
 	}
 }
 
-impl<F: Field> Add for DenseLinearPolynomial<F> {
+impl<F: Field> Add for DenseLinearNormalForm<F> {
 	type Output = Self;
 	fn add(self, rhs: Self) -> Self::Output {
-		let mut result = DenseLinearPolynomial {
-			constant: self.constant + rhs.constant,
-			var_coeffs: Vec::new(),
+		let (mut result, consumable) = if self.var_coeffs.len() < rhs.var_coeffs.len() {
+			(rhs, self)
+		} else {
+			(self, rhs)
 		};
-		let mut left_iter = self.var_coeffs.into_iter();
-		let mut right_iter = rhs.var_coeffs.into_iter();
-		let mut left_elem = left_iter.next();
-		let mut right_elem = left_iter.next();
-		while let Some(((left_index, left_value), (right_index, right_value))) =
-			left_elem.zip(right_elem)
-		{
-			if left_index == right_index {
-				result
-					.var_coeffs
-					.push((left_index, left_value + right_value));
-				left_elem = left_iter.next();
-				right_elem = right_iter.next();
-			} else if left_index < right_index {
-				result.var_coeffs.push((left_index, left_value));
-				left_elem = left_iter.next();
-			} else {
-				result.var_coeffs.push((right_index, right_value));
-				right_elem = right_iter.next();
-			}
+		result.constant += consumable.constant;
+		if consumable.max_var_index > result.max_var_index {
+			result.max_var_index = consumable.max_var_index;
 		}
-		for (index, value) in left_iter.chain(right_iter) {
-			result.var_coeffs.push((index, value));
+
+		for (index, coeff) in consumable.var_coeffs {
+			result
+				.var_coeffs
+				.entry(index)
+				.and_modify(|res_coeff| {
+					*res_coeff += coeff;
+				})
+				.or_insert(coeff);
 		}
 		result
 	}
 }
 
-impl<F: Field> Mul for DenseLinearPolynomial<F> {
+impl<F: Field> Mul for DenseLinearNormalForm<F> {
 	type Output = Result<Self, Error>;
 	fn mul(self, rhs: Self) -> Result<Self, Error> {
 		if !self.var_coeffs.is_empty() && !rhs.var_coeffs.is_empty() {
 			return Err(Error::NonLinearExpression);
 		}
-		let (result, consumable) = if self.var_coeffs.is_empty() {
+		let (mut result, consumable) = if self.var_coeffs.is_empty() {
 			(rhs, self)
 		} else {
 			(self, rhs)
 		};
-		Ok(Self {
-			constant: result.constant * consumable.constant,
-			var_coeffs: result
-				.var_coeffs
-				.into_iter()
-				.map(|(index, value)| (index, value * consumable.constant))
-				.collect(),
-		})
+		for coeff in result.var_coeffs.values_mut() {
+			*coeff *= consumable.constant;
+		}
+		Ok(result)
+	}
+}
+
+impl<F: Field> From<DenseLinearNormalForm<F>> for LinearNormalForm<F> {
+	fn from(value: DenseLinearNormalForm<F>) -> Self {
+		let mut var_coeffs = vec![F::ZERO; value.max_var_index];
+		for (i, coeff) in value.var_coeffs {
+			var_coeffs[i] = coeff;
+		}
+		Self {
+			constant: value.constant,
+			var_coeffs,
+		}
 	}
 }
 
