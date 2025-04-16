@@ -2,6 +2,7 @@
 
 use std::any::TypeId;
 
+use binius_utils::random_access_sequence::RandomAccessSequence;
 use bytemuck::{zeroed_vec, Pod};
 
 use crate::{
@@ -11,10 +12,9 @@ use crate::{
 		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
-	packed::get_packed_slice,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
-	BinaryField8b, Field, PackedField,
+	BinaryField8b, PackedField,
 };
 
 /// A marker trait that the slice of packed values can be iterated as a sequence of bytes.
@@ -377,53 +377,6 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 	}
 }
 
-/// Scalars collection abstraction.
-/// This trait is used to abstract over different types of collections of field elements.
-pub trait ScalarsCollection<T> {
-	fn len(&self) -> usize;
-	fn get(&self, i: usize) -> T;
-	fn is_empty(&self) -> bool {
-		self.len() == 0
-	}
-}
-
-impl<F: Field> ScalarsCollection<F> for &[F] {
-	#[inline(always)]
-	fn len(&self) -> usize {
-		<[F]>::len(self)
-	}
-
-	#[inline(always)]
-	fn get(&self, i: usize) -> F {
-		self[i]
-	}
-}
-
-#[derive(Clone)]
-pub struct PackedSlice<'a, P: PackedField> {
-	slice: &'a [P],
-	len: usize,
-}
-
-impl<'a, P: PackedField> PackedSlice<'a, P> {
-	#[inline(always)]
-	pub const fn new(slice: &'a [P], len: usize) -> Self {
-		Self { slice, len }
-	}
-}
-
-impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'_, P> {
-	#[inline(always)]
-	fn len(&self) -> usize {
-		self.len
-	}
-
-	#[inline(always)]
-	fn get(&self, i: usize) -> P::Scalar {
-		get_packed_slice(self.slice, i)
-	}
-}
-
 /// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding to bits in a byte.
 /// The lookup table has the following structure:
 /// [
@@ -432,7 +385,7 @@ impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'_, P> {
 ///    ...
 /// ]
 pub fn create_partial_sums_lookup_tables<P: PackedField>(
-	values: impl ScalarsCollection<P>,
+	values: impl RandomAccessSequence<P>,
 ) -> Vec<P> {
 	let len = values.len();
 	assert!(len % 8 == 0);

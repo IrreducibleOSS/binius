@@ -1,8 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked},
-	BinaryField, Field, PackedExtension, PackedField, TowerField,
+	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -12,7 +11,11 @@ use binius_math::{
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::{
-	bail, checked_arithmetics::checked_log_2, sorting::is_sorted_ascending, SerializeBytes,
+	bail,
+	checked_arithmetics::checked_log_2,
+	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
+	sorting::is_sorted_ascending,
+	SerializeBytes,
 };
 use either::Either;
 use itertools::{chain, Itertools};
@@ -41,24 +44,24 @@ use crate::{
 	transcript::ProverTranscript,
 };
 
+#[inline(always)]
+fn reverse_bits(x: usize, log_len: usize) -> usize {
+	x.reverse_bits()
+		.wrapping_shr((usize::BITS as usize - log_len) as _)
+}
+
 /// Reorders the scalars in a slice of packed field elements by reversing the bits of their indices.
 /// TODO: investigate if we can optimize this.
-fn reverse_slice_index_bits<P: PackedField>(slice: &mut [P]) {
-	let log_len = checked_log_2(slice.len()) + P::LOG_WIDTH;
-	for i in 0..slice.len() << P::LOG_WIDTH {
-		let bit_reversed_index = i
-			.reverse_bits()
-			.wrapping_shr((usize::BITS as usize - log_len) as _);
+fn reverse_index_bits<T: Copy>(collection: &mut impl RandomAccessSequenceMut<T>) {
+	let log_len = checked_log_2(collection.len());
+	for i in 0..collection.len() {
+		let bit_reversed_index = reverse_bits(i, log_len);
 		if i < bit_reversed_index {
 			// Safety: `i` and `j` are guaranteed to be in bounds of the slice
 			unsafe {
-				let tmp = get_packed_slice_unchecked(slice, i);
-				set_packed_slice_unchecked(
-					slice,
-					i,
-					get_packed_slice_unchecked(slice, bit_reversed_index),
-				);
-				set_packed_slice_unchecked(slice, bit_reversed_index, tmp);
+				let tmp = collection.get_unchecked(i);
+				collection.set_unchecked(i, collection.get_unchecked(bit_reversed_index));
+				collection.set_unchecked(bit_reversed_index, tmp);
 			}
 		}
 	}
@@ -93,21 +96,26 @@ where
 	}
 	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
 		chunk.copy_from_slice(evals);
-		reverse_slice_index_bits(chunk);
+		reverse_index_bits(&mut PackedSliceMut::new(chunk));
 	});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
 	// packed elements.
 	let mut scalar_offset = 0;
+	let mut remaining_buffer = PackedSliceMut::new(remaining_buffer);
 	for mle in mle_iter {
 		let evals = mle
 			.packed_evals()
 			.expect("guaranteed by function precondition");
 		let packed_eval = evals[0];
-		for i in 0..1 << mle.n_vars() {
-			set_packed_slice(remaining_buffer, scalar_offset, packed_eval.get(i));
-			scalar_offset += 1;
+		let len = 1 << get_n_packed_vars(mle);
+		let mut packed_chunk = SequenceSubrangeMut::new(&mut remaining_buffer, scalar_offset, len);
+		for i in 0..len {
+			packed_chunk.set(i, packed_eval.get(i));
 		}
+		reverse_index_bits(&mut packed_chunk);
+
+		scalar_offset += len;
 	}
 }
 
@@ -366,4 +374,50 @@ where
 		}
 	}
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use std::iter::repeat_with;
+
+	use binius_field::PackedBinaryField16x8b;
+	use rand::{rngs::StdRng, SeedableRng};
+
+	use super::*;
+
+	#[test]
+	fn test_merge_multilins() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let multilins: Vec<MLEDirectAdapter<PackedBinaryField16x8b>> = (0usize..8)
+			.map(|n_vars| {
+				let data = repeat_with(|| PackedField::random(&mut rng))
+					.take(1 << n_vars.saturating_sub(PackedBinaryField16x8b::LOG_WIDTH))
+					.collect::<Vec<_>>();
+
+				let packed_mle = MultilinearExtension::new(n_vars, data).unwrap();
+				MLEDirectAdapter::from(packed_mle)
+			})
+			.collect();
+		let scalars = (0..8).map(|i| 1usize << i).sum::<usize>();
+		let mut buffer =
+			vec![PackedBinaryField16x8b::zero(); scalars.div_ceil(PackedBinaryField16x8b::WIDTH)];
+		merge_multilins(&multilins, &mut buffer);
+
+		let scalars = PackedField::iter_slice(&buffer).take(scalars).collect_vec();
+		let mut offset = 0;
+		for multilin in multilins.iter().rev() {
+			let scalars = &scalars[offset..];
+			for (i, v) in PackedField::iter_slice(multilin.packed_evals().unwrap())
+				.take(1 << (multilin.n_vars() - multilin.log_extension_degree()))
+				.enumerate()
+			{
+				assert_eq!(
+					scalars[reverse_bits(i, multilin.n_vars() - multilin.log_extension_degree())],
+					v
+				);
+			}
+			offset += 1 << (multilin.n_vars() - multilin.log_extension_degree());
+		}
+	}
 }
