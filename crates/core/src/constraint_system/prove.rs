@@ -4,16 +4,14 @@ use std::{cmp::Reverse, env, marker::PhantomData, slice::from_mut};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	linear_transformation::{PackedTransformationFactory, Transformation},
-	underlier::WithUnderlier,
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
+	TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
-	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
+	MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -34,7 +32,7 @@ use super::{
 };
 use crate::{
 	constraint_system::{
-		common::{FDomain, FEncode, FExt, FFastExt},
+		common::{FDomain, FEncode, FExt},
 		exp,
 		verify::{make_flush_sumcheck_metas, FlushSumcheckMeta},
 	},
@@ -56,7 +54,7 @@ use crate::{
 		},
 	},
 	ring_switch,
-	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -72,8 +70,8 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
-	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
@@ -81,14 +79,12 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
+		+ PackedField // REVIEW: remove this bound after piop::commit is adjusted
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
 		+ RepackedExtension<PackedType<U, Tower::B32>>
 		+ RepackedExtension<PackedType<U, Tower::B64>>
-		+ RepackedExtension<PackedType<U, Tower::B128>>
-		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
-	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+		+ RepackedExtension<PackedType<U, Tower::B128>>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -97,7 +93,6 @@ where
 	);
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain<Tower>>::default();
-	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
 	transcript.observe().write_slice(boundaries);
@@ -151,29 +146,18 @@ where
 	// GKR exp
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
-	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
-		.into_iter()
-		.map(|x| x.into())
-		.collect::<Vec<_>>();
+	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?;
 
 	let mut writer = transcript.message();
 	writer.write_scalar_slice(&exp_evals);
 
-	let exp_challenge = exp_challenge
-		.into_iter()
-		.map(|x| x.into())
-		.collect::<Vec<_>>();
+	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?;
 
-	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
-		.into_iter()
-		.map(|claim| claim.isomorphic())
-		.collect::<Vec<_>>();
-
-	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
+	let base_exp_output = gkr_exp::batch_prove::<_, _, FDomain<Tower>, _, _>(
 		EvaluationOrder::HighToLow,
 		exp_witnesses,
 		&exp_claims,
-		fast_domain_factory.clone(),
+		&domain_factory,
 		&mut transcript,
 		backend,
 	)?
@@ -183,12 +167,13 @@ where
 
 	// Grand product arguments
 	// Grand products for non-zero checking
-	let non_zero_fast_witnesses = make_fast_masked_flush_witnesses::<U, _>(
+	let non_zero_fast_witnesses = make_masked_flush_witnesses::<U, _>(
 		&oracles,
 		&witness,
 		&non_zero_oracle_ids,
 		&vec![None; non_zero_oracle_ids.len()],
 	)?;
+
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
@@ -227,7 +212,7 @@ where
 
 	make_unmasked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids)?;
 	// there are no oracle ids associated with these flush_witnesses
-	let flush_witnesses = make_fast_masked_flush_witnesses::<U, _>(
+	let flush_witnesses = make_masked_flush_witnesses::<U, _>(
 		&oracles,
 		&witness,
 		&flush_oracle_ids,
@@ -253,11 +238,11 @@ where
 		.collect::<Vec<_>>();
 
 	let GrandProductBatchProveOutput { final_layer_claims } =
-		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+		gkr_gpa::batch_prove::<FExt<Tower>, _, FDomain<Tower>, _, _>(
 			EvaluationOrder::LowToHigh,
 			all_gpa_witnesses,
 			&all_gpa_claims,
-			&fast_domain_factory,
+			&domain_factory,
 			&mut transcript,
 			backend,
 		)?;
@@ -585,8 +570,8 @@ fn make_unmasked_flush_witnesses<'a, U, Tower>(
 	flush_oracle_ids: &[OracleId],
 ) -> Result<(), Error>
 where
-	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
 {
 	// The function is on the critical path, parallelize.
 	let flush_witnesses: Result<Vec<MultilinearWitness<'a, _>>, Error> = flush_oracle_ids
@@ -635,26 +620,23 @@ where
 
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-fn make_fast_masked_flush_witnesses<'a, U, Tower>(
+fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracles: &[OracleId],
 	flush_selectors: &[Option<OracleId>],
-) -> Result<Vec<(usize, Vec<PackedType<U, FFastExt<Tower>>>)>, Error>
+) -> Result<Vec<(usize, Vec<PackedType<U, FExt<Tower>>>)>, Error>
 where
-	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
-	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
 {
-	let to_fast = Tower::packed_transformation_to_fast();
-
 	// The function is on the critical path, parallelize.
 	(flush_oracles, flush_selectors)
 		.into_par_iter()
 		.map(|(&flush_oracle_id, &flush_selector)| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
-			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
+			let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
 			let width = 1 << log_width;
 
 			let poly = witness.get_multilin_poly(flush_oracle_id)?;
@@ -670,35 +652,20 @@ where
 				.map_or(1 << n_vars, |entry| entry.nonzero_scalars_prefix);
 			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
 
-			let mut fast_ext_result = vec![
-				PackedType::<U, FFastExt<Tower>>::one();
-				non_const_subcubes * subcube_packed_size
-			];
+			let mut ext_result =
+				vec![PackedType::<U, FExt<Tower>>::one(); non_const_subcubes * subcube_packed_size];
 
-			fast_ext_result
+			ext_result
 				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
-				.for_each(|(subcube_index, fast_subcube)| {
-					let underliers =
-						PackedType::<U, FFastExt<Tower>>::to_underliers_ref_mut(fast_subcube);
-
-					let subcube_evals =
-						PackedType::<U, FExt<Tower>>::from_underliers_ref_mut(underliers);
+				.for_each(|(subcube_index, subcube_evals)| {
 					poly.subcube_evals(subcube_vars, subcube_index, 0, subcube_evals)
 						.expect("witness data populated by make_unmasked_flush_witnesses()");
 
-					for underlier in underliers.iter_mut() {
-						let src = PackedType::<U, FExt<Tower>>::from_underlier(*underlier);
-						let dest = to_fast.transform(&src);
-						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
-					}
-
 					if let Some(selector_index_entry) = selector_index_entry.as_ref() {
-						let fast_subcube =
-							PackedType::<U, FFastExt<Tower>>::from_underliers_ref_mut(underliers);
-
+						// TODO: optimize bytsliced
 						let mut ones_mask = PackedType::<U, FExt<Tower>>::default();
-						for (i, packed) in fast_subcube.iter_mut().enumerate() {
+						for (i, packed) in subcube_evals.iter_mut().enumerate() {
 							selector_index_entry
 								.multilin_poly
 								.subcube_evals(
@@ -714,7 +681,7 @@ where
 							} else if ones_mask != PackedField::one() {
 								for j in 0..width {
 									if ones_mask.get(j) == FExt::<Tower>::ZERO {
-										packed.set(j, FFastExt::<Tower>::ONE);
+										packed.set(j, FExt::<Tower>::ONE);
 									}
 								}
 							}
@@ -722,8 +689,8 @@ where
 					}
 				});
 
-			fast_ext_result.truncate(non_const_scalars);
-			Ok((n_vars, fast_ext_result))
+			ext_result.truncate(non_const_scalars);
+			Ok((n_vars, ext_result))
 		})
 		.collect()
 }
@@ -745,8 +712,8 @@ fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>
 	backend: &'b Backend,
 ) -> Result<FlushSumcheckProvers<impl SumcheckProver<Tower::B128> + 'b>, Error>
 where
-	U: ProverTowerUnderlier<Tower> + PackScalar<FDomain>,
-	Tower: ProverTowerFamily,
+	U: TowerUnderlier<Tower> + PackScalar<FDomain>,
+	Tower: TowerFamily,
 	Tower::B128: ExtensionField<FDomain>,
 	FDomain: Field,
 	DomainFactory: EvaluationDomainFactory<FDomain>,

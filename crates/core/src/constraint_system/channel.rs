@@ -56,7 +56,10 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearPoly;
 
 use super::error::{Error, VerificationError};
-use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use crate::{
+	oracle::{MultilinearOracleSet, OracleId},
+	witness::MultilinearExtensionIndex,
+};
 
 pub type ChannelId = usize;
 
@@ -65,6 +68,19 @@ pub enum OracleOrConst<F: Field> {
 	Oracle(usize),
 	Const { base: F, tower_level: usize },
 }
+
+impl<F: Field> OracleOrConst<F> {
+	pub fn tower_level(&self, oracles: &MultilinearOracleSet<F>) -> usize
+	where
+		F: TowerField,
+	{
+		match self {
+			Self::Oracle(id) => oracles.tower_level(*id),
+			Self::Const { tower_level, .. } => *tower_level,
+		}
+	}
+}
+
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Flush<F: TowerField> {
 	pub oracles: Vec<OracleOrConst<F>>,

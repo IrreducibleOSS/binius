@@ -2,7 +2,7 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
@@ -43,7 +43,7 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 ) -> Result<ReducedWitness<P>, Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
@@ -249,7 +249,7 @@ fn make_ring_switch_eq_inds<F, P, Tower>(
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
 {
@@ -269,7 +269,7 @@ fn make_ring_switch_eq_ind<P, Tower>(
 	mixing_coeff: FExt<Tower>,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where
-	P: PackedFieldIndexable<Scalar = FExt<Tower>>,
+	P: PackedField<Scalar = FExt<Tower>>,
 	Tower: TowerFamily,
 {
 	let eq_ind = match suffix_desc.kappa {
