@@ -434,7 +434,7 @@ where
 fn sample_bits_reader<Reader: Buf>(mut reader: Reader, bits: usize) -> usize {
 	let bits = bits.min(usize::BITS as usize);
 
-	let bytes_to_sample = bits.div_ceil(8);
+	let bytes_to_sample: usize = 4; // bits.div_ceil(8);
 
 	let mut bytes = [0u8; std::mem::size_of::<usize>()];
 
