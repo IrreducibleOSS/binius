@@ -43,7 +43,7 @@ pub fn make_oracle_commit_meta<F: TowerField>(
 	let mut n_multilins_by_vars = ResizeableIndex::<usize>::new();
 	for oracle in oracles.iter() {
 		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
-			let n_packed_vars = n_packed_vars_for_committed_oracle(&oracle)?;
+			let n_packed_vars = n_packed_vars_for_committed_oracle(&oracle);
 			let n_multilins_for_vars = n_multilins_by_vars.get_mut(n_packed_vars);
 
 			first_pass_index.set(
@@ -107,18 +107,10 @@ where
 		.collect())
 }
 
-fn n_packed_vars_for_committed_oracle<F: TowerField>(
-	oracle: &MultilinearPolyOracle<F>,
-) -> Result<usize, Error> {
+fn n_packed_vars_for_committed_oracle<F: TowerField>(oracle: &MultilinearPolyOracle<F>) -> usize {
 	let n_vars = oracle.n_vars();
 	let tower_level = oracle.binary_tower_level();
-	n_vars
-		.checked_sub(F::TOWER_LEVEL - tower_level)
-		.ok_or_else(|| Error::OracleTooSmall {
-			id: oracle.id(),
-			n_vars,
-			min_vars: F::TOWER_LEVEL - tower_level,
-		})
+	(n_vars + tower_level).saturating_sub(F::TOWER_LEVEL)
 }
 
 #[cfg(test)]

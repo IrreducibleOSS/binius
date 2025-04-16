@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::{borrow::Cow, ops::Deref};
+
 use binius_field::{
 	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
@@ -74,22 +76,22 @@ fn reverse_index_bits<T: Copy>(collection: &mut impl RandomAccessSequenceMut<T>)
 // * multilinears are sorted in ascending order by number of packed variables
 // * `message_buffer` is initialized to all zeros
 // * `message_buffer` is larger than the total number of scalars in the multilinears
-fn merge_multilins<P, M>(multilins: &[M], message_buffer: &mut [P])
-where
-	P: PackedField,
-	M: MultilinearPoly<P>,
+fn merge_multilins<F, P, Data>(
+	multilins: &[MultilinearExtension<P, Data>],
+	message_buffer: &mut [P],
+) where
+	F: TowerField,
+	P: PackedField<Scalar = F>,
+	Data: Deref<Target = [P]>,
 {
 	let mut mle_iter = multilins.iter().rev();
 
 	// First copy all the polynomials where the number of elements is a multiple of the packing
 	// width.
-	let get_n_packed_vars = |mle: &M| mle.n_vars() - mle.log_extension_degree();
 	let mut full_packed_mles = Vec::new(); // (evals, corresponding buffer where to copy)
 	let mut remaining_buffer = message_buffer;
-	for mle in mle_iter.peeking_take_while(|mle| get_n_packed_vars(mle) >= P::LOG_WIDTH) {
-		let evals = mle
-			.packed_evals()
-			.expect("guaranteed by function precondition");
+	for mle in mle_iter.peeking_take_while(|mle| mle.n_vars() >= P::LOG_WIDTH) {
+		let evals = mle.evals();
 		let (chunk, rest) = remaining_buffer.split_at_mut(evals.len());
 		full_packed_mles.push((evals, chunk));
 		remaining_buffer = rest;
@@ -104,11 +106,8 @@ where
 	let mut scalar_offset = 0;
 	let mut remaining_buffer = PackedSliceMut::new(remaining_buffer);
 	for mle in mle_iter {
-		let evals = mle
-			.packed_evals()
-			.expect("guaranteed by function precondition");
-		let packed_eval = evals[0];
-		let len = 1 << get_n_packed_vars(mle);
+		let packed_eval = mle.evals()[0];
+		let len = 1 << mle.n_vars();
 		let mut packed_chunk = SequenceSubrangeMut::new(&mut remaining_buffer, scalar_offset, len);
 		for i in 0..len {
 			packed_chunk.set(i, packed_eval.get(i));
@@ -140,32 +139,19 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	multilins: &[M],
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
 where
-	F: BinaryField,
+	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 {
-	for (i, multilin) in multilins.iter().enumerate() {
-		if multilin.n_vars() < multilin.log_extension_degree() {
-			return Err(Error::OracleTooSmall {
-				// i is not an OracleId, but whatever, that's a problem for whoever has to debug
-				// this
-				id: i,
-				n_vars: multilin.n_vars(),
-				min_vars: multilin.log_extension_degree(),
-			});
-		}
-		if multilin.packed_evals().is_none() {
-			return Err(Error::CommittedPackedEvaluationsMissing { id: i });
-		}
-	}
-
-	let n_packed_vars = multilins
+	let packed_multilins = multilins
 		.iter()
-		.map(|multilin| multilin.n_vars() - multilin.log_extension_degree());
-	if !is_sorted_ascending(n_packed_vars) {
+		.enumerate()
+		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.collect::<Result<Vec<_>, _>>()?;
+	if !is_sorted_ascending(packed_multilins.iter().map(|mle| mle.n_vars())) {
 		return Err(Error::CommittedsNotSorted);
 	}
 
@@ -180,7 +166,7 @@ where
 	)?;
 	let output =
 		fri::commit_interleaved_with(&rs_code, fri_params, merkle_prover, |message_buffer| {
-			merge_multilins(multilins, message_buffer)
+			merge_multilins(&packed_multilins, message_buffer)
 		})?;
 
 	Ok(output)
@@ -233,12 +219,8 @@ where
 	let packed_committed_multilins = committed_multilins
 		.iter()
 		.enumerate()
-		.map(|(i, committed_multilin)| {
-			let packed_evals = committed_multilin
-				.packed_evals()
-				.ok_or(Error::CommittedPackedEvaluationsMissing { id: i })?;
-			let packed_multilin = MultilinearExtension::from_values_slice(packed_evals)?;
-			Ok::<_, Error>(MLEDirectAdapter::from(packed_multilin))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(i, unpacked_committed).map(MLEDirectAdapter::from)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -336,13 +318,7 @@ where
 	let packed_committed = committed_multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| {
-			let packed_evals = unpacked_committed
-				.packed_evals()
-				.ok_or(Error::CommittedPackedEvaluationsMissing { id: i })?;
-			let packed_committed = MultilinearExtension::from_values_slice(packed_evals)?;
-			Ok::<_, Error>(packed_committed)
-		})
+		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for (i, claim) in claims.iter().enumerate() {
@@ -378,11 +354,63 @@ where
 	Ok(())
 }
 
+/// Creates a multilinear extension of the packed evalations of a small-field multilinear.
+///
+/// Given a multilinear $P \in T_{\iota}[X_0, \ldots, X_{n-1}]$, this creates the multilinear
+/// extension $\hat{P} \in T_{\tau}[X_0, \ldots, X_{n - \kappa - 1}]$. In the case where
+/// $n < \kappa$, which is when a polynomial is too full to have even a single packed evaluation,
+/// the polynomial is extended by padding with more variables, which corresponds to repeating its
+/// subcube evaluations.
+fn packed_committed<F, P, M>(
+	id: usize,
+	unpacked_committed: &M,
+) -> Result<MultilinearExtension<P, Cow<'_, [P]>>, Error>
+where
+	F: TowerField,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P>,
+{
+	let unpacked_n_vars = unpacked_committed.n_vars();
+	let packed_committed = if unpacked_n_vars < unpacked_committed.log_extension_degree() {
+		let packed_eval = padded_packed_eval(unpacked_committed);
+		MultilinearExtension::new(0, Cow::Owned(vec![P::set_single(packed_eval)]))
+	} else {
+		let packed_evals = unpacked_committed
+			.packed_evals()
+			.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
+		MultilinearExtension::from_values_generic(Cow::Borrowed(packed_evals))
+	}?;
+	Ok(packed_committed)
+}
+
+#[inline]
+fn padded_packed_eval<F, P, M>(multilin: &M) -> F
+where
+	F: TowerField,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P>,
+{
+	let n_vars = multilin.n_vars();
+	let kappa = multilin.log_extension_degree();
+	assert!(n_vars < kappa);
+
+	(0..1 << kappa)
+		.map(|i| {
+			let iota = F::TOWER_LEVEL - kappa;
+			let scalar = <F as TowerField>::basis(iota, i)
+				.expect("i is in range 0..1 << log_extension_degree");
+			multilin
+				.evaluate_on_hypercube_and_scale(i % (1 << n_vars), scalar)
+				.expect("i is in range 0..1 << n_vars")
+		})
+		.sum()
+}
+
 #[cfg(test)]
 mod tests {
 	use std::iter::repeat_with;
 
-	use binius_field::PackedBinaryField16x8b;
+	use binius_field::{PackedBinaryField16x8b, PackedBinaryField2x128b};
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
@@ -391,35 +419,31 @@ mod tests {
 	fn test_merge_multilins() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let multilins: Vec<MLEDirectAdapter<PackedBinaryField16x8b>> = (0usize..8)
+		let multilins = (0usize..8)
 			.map(|n_vars| {
-				let data = repeat_with(|| PackedField::random(&mut rng))
-					.take(1 << n_vars.saturating_sub(PackedBinaryField16x8b::LOG_WIDTH))
+				let data = repeat_with(|| PackedBinaryField2x128b::random(&mut rng))
+					.take(1 << n_vars.saturating_sub(PackedBinaryField2x128b::LOG_WIDTH))
 					.collect::<Vec<_>>();
 
-				let packed_mle = MultilinearExtension::new(n_vars, data).unwrap();
-				MLEDirectAdapter::from(packed_mle)
+				MultilinearExtension::new(n_vars, data).unwrap()
 			})
-			.collect();
+			.collect::<Vec<_>>();
 		let scalars = (0..8).map(|i| 1usize << i).sum::<usize>();
 		let mut buffer =
-			vec![PackedBinaryField16x8b::zero(); scalars.div_ceil(PackedBinaryField16x8b::WIDTH)];
+			vec![PackedBinaryField2x128b::zero(); scalars.div_ceil(PackedBinaryField16x8b::WIDTH)];
 		merge_multilins(&multilins, &mut buffer);
 
 		let scalars = PackedField::iter_slice(&buffer).take(scalars).collect_vec();
 		let mut offset = 0;
 		for multilin in multilins.iter().rev() {
 			let scalars = &scalars[offset..];
-			for (i, v) in PackedField::iter_slice(multilin.packed_evals().unwrap())
-				.take(1 << (multilin.n_vars() - multilin.log_extension_degree()))
+			for (i, v) in PackedField::iter_slice(multilin.evals())
+				.take(1 << multilin.n_vars())
 				.enumerate()
 			{
-				assert_eq!(
-					scalars[reverse_bits(i, multilin.n_vars() - multilin.log_extension_degree())],
-					v
-				);
+				assert_eq!(scalars[reverse_bits(i, multilin.n_vars())], v);
 			}
-			offset += 1 << (multilin.n_vars() - multilin.log_extension_degree());
+			offset += 1 << multilin.n_vars();
 		}
 	}
 }
