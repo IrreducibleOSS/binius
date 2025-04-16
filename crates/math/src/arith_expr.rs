@@ -304,7 +304,7 @@ impl<F: Field> ArithExpr<F> {
 			ArithExpr::Const(val) => Ok((*val).into()),
 			ArithExpr::Var(index) => Ok(DenseLinearNormalForm {
 				constant: F::ZERO,
-				max_var_index: *index,
+				linear_form_len: *index + 1,
 				var_coeffs: [(*index, F::ONE)].into(),
 			}),
 			ArithExpr::Add(left, right) => {
@@ -464,7 +464,7 @@ struct DenseLinearNormalForm<F: Field> {
 	/// The constant offset of the expression.
 	pub constant: F,
 	/// The maximum variable index in the expression.
-	pub max_var_index: usize,
+	pub linear_form_len: usize,
 	/// A variable index -> coefficients map.
 	pub var_coeffs: HashMap<usize, F>,
 }
@@ -473,7 +473,7 @@ impl<F: Field> From<F> for DenseLinearNormalForm<F> {
 	fn from(value: F) -> Self {
 		Self {
 			constant: value,
-			max_var_index: 0,
+			linear_form_len: 0,
 			var_coeffs: HashMap::new(),
 		}
 	}
@@ -488,8 +488,8 @@ impl<F: Field> Add for DenseLinearNormalForm<F> {
 			(self, rhs)
 		};
 		result.constant += consumable.constant;
-		if consumable.max_var_index > result.max_var_index {
-			result.max_var_index = consumable.max_var_index;
+		if consumable.linear_form_len > result.linear_form_len {
+			result.linear_form_len = consumable.linear_form_len;
 		}
 
 		for (index, coeff) in consumable.var_coeffs {
@@ -516,6 +516,7 @@ impl<F: Field> Mul for DenseLinearNormalForm<F> {
 		} else {
 			(self, rhs)
 		};
+		result.constant *= consumable.constant;
 		for coeff in result.var_coeffs.values_mut() {
 			*coeff *= consumable.constant;
 		}
@@ -525,7 +526,7 @@ impl<F: Field> Mul for DenseLinearNormalForm<F> {
 
 impl<F: Field> From<DenseLinearNormalForm<F>> for LinearNormalForm<F> {
 	fn from(value: DenseLinearNormalForm<F>) -> Self {
-		let mut var_coeffs = vec![F::ZERO; value.max_var_index];
+		let mut var_coeffs = vec![F::ZERO; value.linear_form_len];
 		for (i, coeff) in value.var_coeffs {
 			var_coeffs[i] = coeff;
 		}
@@ -650,14 +651,40 @@ mod tests {
 	fn test_linear_normal_form() {
 		type F = BinaryField128b;
 		use ArithExpr::{Const, Var};
-		let expr = Const(F::new(133))
-			+ Const(F::new(42)) * Var(0)
-			+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
-		let normal_form = expr.linear_normal_form().unwrap();
-		assert_eq!(normal_form.constant, F::new(133));
-		assert_eq!(
-			normal_form.var_coeffs,
-			vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]
-		);
+		struct Case {
+			expr: ArithExpr<F>,
+			expected: LinearNormalForm<F>,
+		}
+		let cases = vec![
+			Case {
+				expr: Const(F::new(133)),
+				expected: LinearNormalForm {
+					constant: F::new(133),
+					var_coeffs: vec![],
+				},
+			},
+			Case {
+				expr: (Const(F::new(2)) * Const(F::new(3))).pow(2)
+					+ Const(F::new(3)) * (Const(F::new(4)) + Var(0)),
+				expected: LinearNormalForm {
+					constant: (F::new(2) * F::new(3)).pow(2) + F::new(3) * F::new(4),
+					var_coeffs: vec![F::new(3)],
+				},
+			},
+			Case {
+				expr: Const(F::new(133))
+					+ Const(F::new(42)) * Var(0)
+					+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3),
+				expected: LinearNormalForm {
+					constant: F::new(133),
+					var_coeffs: vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)],
+				},
+			},
+		];
+		for Case { expr, expected } in cases {
+			let normal_form = expr.linear_normal_form().unwrap();
+			assert_eq!(normal_form.constant, expected.constant);
+			assert_eq!(normal_form.var_coeffs, expected.var_coeffs);
+		}
 	}
 }
