@@ -299,12 +299,12 @@ impl<F: Field> ArithExpr<F> {
 		self.dense_linear_normal_form().map(Into::into)
 	}
 
-	fn dense_linear_normal_form(&self) -> Result<DenseLinearNormalForm<F>, Error> {
+	fn dense_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
 		match self {
 			Self::Const(val) => Ok((*val).into()),
-			Self::Var(index) => Ok(DenseLinearNormalForm {
+			Self::Var(index) => Ok(SparseLinearNormalForm {
 				constant: F::ZERO,
-				linear_form_len: *index + 1,
+				dense_linear_form_len: *index + 1,
 				var_coeffs: [(*index, F::ONE)].into(),
 			}),
 			Self::Add(left, right) => {
@@ -316,7 +316,7 @@ impl<F: Field> ArithExpr<F> {
 			Self::Pow(_, 0) => Ok(F::ONE.into()),
 			Self::Pow(expr, 1) => expr.dense_linear_normal_form(),
 			Self::Pow(expr, pow) => expr.dense_linear_normal_form().and_then(|linear_form| {
-				if linear_form.linear_form_len != 0 {
+				if linear_form.dense_linear_form_len != 0 {
 					return Err(Error::NonLinearExpression);
 				}
 				Ok(linear_form.constant.pow(*pow).into())
@@ -450,26 +450,27 @@ pub struct LinearNormalForm<F: Field> {
 	pub var_coeffs: Vec<F>,
 }
 
-struct DenseLinearNormalForm<F: Field> {
+struct SparseLinearNormalForm<F: Field> {
 	/// The constant offset of the expression.
 	pub constant: F,
-	/// The maximum variable index in the expression.
-	pub linear_form_len: usize,
-	/// A variable index -> coefficients map.
+	/// A map of variable indices to their coefficients.
 	pub var_coeffs: HashMap<usize, F>,
+	/// The `var_coeffs` vector len if converted to [`LinearNormalForm`].
+	/// It is used for optimization of conversion to [`LinearNormalForm`].
+	pub dense_linear_form_len: usize,
 }
 
-impl<F: Field> From<F> for DenseLinearNormalForm<F> {
+impl<F: Field> From<F> for SparseLinearNormalForm<F> {
 	fn from(value: F) -> Self {
 		Self {
 			constant: value,
-			linear_form_len: 0,
+			dense_linear_form_len: 0,
 			var_coeffs: HashMap::new(),
 		}
 	}
 }
 
-impl<F: Field> Add for DenseLinearNormalForm<F> {
+impl<F: Field> Add for SparseLinearNormalForm<F> {
 	type Output = Self;
 	fn add(self, rhs: Self) -> Self::Output {
 		let (mut result, consumable) = if self.var_coeffs.len() < rhs.var_coeffs.len() {
@@ -478,8 +479,8 @@ impl<F: Field> Add for DenseLinearNormalForm<F> {
 			(self, rhs)
 		};
 		result.constant += consumable.constant;
-		if consumable.linear_form_len > result.linear_form_len {
-			result.linear_form_len = consumable.linear_form_len;
+		if consumable.dense_linear_form_len > result.dense_linear_form_len {
+			result.dense_linear_form_len = consumable.dense_linear_form_len;
 		}
 
 		for (index, coeff) in consumable.var_coeffs {
@@ -495,7 +496,7 @@ impl<F: Field> Add for DenseLinearNormalForm<F> {
 	}
 }
 
-impl<F: Field> Mul for DenseLinearNormalForm<F> {
+impl<F: Field> Mul for SparseLinearNormalForm<F> {
 	type Output = Result<Self, Error>;
 	fn mul(self, rhs: Self) -> Result<Self, Error> {
 		if !self.var_coeffs.is_empty() && !rhs.var_coeffs.is_empty() {
@@ -514,9 +515,9 @@ impl<F: Field> Mul for DenseLinearNormalForm<F> {
 	}
 }
 
-impl<F: Field> From<DenseLinearNormalForm<F>> for LinearNormalForm<F> {
-	fn from(value: DenseLinearNormalForm<F>) -> Self {
-		let mut var_coeffs = vec![F::ZERO; value.linear_form_len];
+impl<F: Field> From<SparseLinearNormalForm<F>> for LinearNormalForm<F> {
+	fn from(value: SparseLinearNormalForm<F>) -> Self {
+		let mut var_coeffs = vec![F::ZERO; value.dense_linear_form_len];
 		for (i, coeff) in value.var_coeffs {
 			var_coeffs[i] = coeff;
 		}
