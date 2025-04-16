@@ -296,10 +296,10 @@ impl<F: Field> ArithExpr<F> {
 	///
 	/// - [`Error::NonLinearExpression`] if the expression is not linear.
 	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
-		self.dense_linear_normal_form().map(Into::into)
+		self.sparse_linear_normal_form().map(Into::into)
 	}
 
-	fn dense_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
+	fn sparse_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
 		match self {
 			Self::Const(val) => Ok((*val).into()),
 			Self::Var(index) => Ok(SparseLinearNormalForm {
@@ -308,14 +308,14 @@ impl<F: Field> ArithExpr<F> {
 				var_coeffs: [(*index, F::ONE)].into(),
 			}),
 			Self::Add(left, right) => {
-				Ok(left.dense_linear_normal_form()? + right.dense_linear_normal_form()?)
+				Ok(left.sparse_linear_normal_form()? + right.sparse_linear_normal_form()?)
 			}
 			Self::Mul(left, right) => {
-				left.dense_linear_normal_form()? * right.dense_linear_normal_form()?
+				left.sparse_linear_normal_form()? * right.sparse_linear_normal_form()?
 			}
 			Self::Pow(_, 0) => Ok(F::ONE.into()),
-			Self::Pow(expr, 1) => expr.dense_linear_normal_form(),
-			Self::Pow(expr, pow) => expr.dense_linear_normal_form().and_then(|linear_form| {
+			Self::Pow(expr, 1) => expr.sparse_linear_normal_form(),
+			Self::Pow(expr, pow) => expr.sparse_linear_normal_form().and_then(|linear_form| {
 				if linear_form.dense_linear_form_len != 0 {
 					return Err(Error::NonLinearExpression);
 				}
