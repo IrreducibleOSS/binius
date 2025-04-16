@@ -648,6 +648,13 @@ mod tests {
 		}
 		let cases = vec![
 			Case {
+				expr: Const(F::ONE),
+				expected: LinearNormalForm {
+					constant: F::ONE,
+					var_coeffs: vec![],
+				},
+			},
+			Case {
 				expr: (Const(F::new(2)) * Const(F::new(3))).pow(2)
 					+ Const(F::new(3)) * (Const(F::new(4)) + Var(0)),
 				expected: LinearNormalForm {
