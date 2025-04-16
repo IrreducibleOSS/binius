@@ -2,7 +2,7 @@
 
 use std::{
 	cmp::Ordering,
-	collections::{BTreeMap, HashMap},
+	collections::HashMap,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -301,36 +301,26 @@ impl<F: Field> ArithExpr<F> {
 
 	fn dense_linear_normal_form(&self) -> Result<DenseLinearNormalForm<F>, Error> {
 		match self {
-			ArithExpr::Const(val) => Ok((*val).into()),
-			ArithExpr::Var(index) => Ok(DenseLinearNormalForm {
+			Self::Const(val) => Ok((*val).into()),
+			Self::Var(index) => Ok(DenseLinearNormalForm {
 				constant: F::ZERO,
 				linear_form_len: *index + 1,
 				var_coeffs: [(*index, F::ONE)].into(),
 			}),
-			ArithExpr::Add(left, right) => {
+			Self::Add(left, right) => {
 				Ok(left.dense_linear_normal_form()? + right.dense_linear_normal_form()?)
 			}
-			ArithExpr::Mul(left, right) => {
+			Self::Mul(left, right) => {
 				left.dense_linear_normal_form()? * right.dense_linear_normal_form()?
 			}
-			ArithExpr::Pow(_, 0) => Ok(F::ONE.into()),
-			ArithExpr::Pow(expr, 1) => expr.dense_linear_normal_form(),
-			ArithExpr::Pow(expr, pow) => expr.dense_linear_normal_form().and_then(|linear_form| {
-				if linear_form.var_coeffs.len() > 0 {
+			Self::Pow(_, 0) => Ok(F::ONE.into()),
+			Self::Pow(expr, 1) => expr.dense_linear_normal_form(),
+			Self::Pow(expr, pow) => expr.dense_linear_normal_form().and_then(|linear_form| {
+				if linear_form.linear_form_len != 0 {
 					return Err(Error::NonLinearExpression);
 				}
 				Ok(linear_form.constant.pow(*pow).into())
 			}),
-		}
-	}
-
-	fn evaluate(&self, vars: &[F]) -> F {
-		match self {
-			Self::Const(val) => *val,
-			Self::Var(index) => vars[*index],
-			Self::Add(left, right) => left.evaluate(vars) + right.evaluate(vars),
-			Self::Mul(left, right) => left.evaluate(vars) * right.evaluate(vars),
-			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
 		}
 	}
 
@@ -656,13 +646,6 @@ mod tests {
 			expected: LinearNormalForm<F>,
 		}
 		let cases = vec![
-			Case {
-				expr: Const(F::new(133)),
-				expected: LinearNormalForm {
-					constant: F::new(133),
-					var_coeffs: vec![],
-				},
-			},
 			Case {
 				expr: (Const(F::new(2)) * Const(F::new(3))).pow(2)
 					+ Const(F::new(3)) * (Const(F::new(4)) + Var(0)),
