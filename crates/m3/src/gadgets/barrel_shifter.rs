@@ -21,7 +21,7 @@ pub struct BarrelShifterFlags {
 	pub(crate) commit_output: bool,
 }
 
-/// A gadget for performing a barrel shift circuit (https://en.wikipedia.org/wiki/Barrel_shifter).
+/// A gadget for performing a barrel shift circuit (<https://en.wikipedia.org/wiki/Barrel_shifter>).
 ///
 /// The `BarrelShifter` gadget allows for left shifts, right shifts, and
 /// rotations on 32-bit inputs, with a configurable shift amount and direction.
