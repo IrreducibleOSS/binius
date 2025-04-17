@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp::Reverse, iter};
+use std::cmp::Reverse;
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
@@ -32,7 +32,7 @@ use crate::{
 		gkr_gpa::{self, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, zerocheck, BatchSumcheckOutput,
+			self, constraint_set_zerocheck_claim, univariate_zerocheck, BatchSumcheckOutput,
 			CompositeSumClaim, EqIndSumcheckClaim, ZerocheckClaim,
 		},
 	},
@@ -236,20 +236,17 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let (max_n_vars, skip_rounds) =
+	let (_max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, <FDomain<Tower>>::N_BITS);
 
-	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
-
-	// challenges?
-	let zerocheck_eval_claims =
-		sumcheck::batch_verify_zerocheck(&zerocheck_claims, skip_rounds, &mut transcript)?;
-
-	let zerocheck_eval_claims = sumcheck::make_eval_claims(
-		EvaluationOrder::LowToHigh,
-		zerocheck_oracle_metas,
-		multilinear_zerocheck_output,
+	let zerocheck_output = univariate_zerocheck::batch_verify_zerocheck(
+		&zerocheck_claims,
+		skip_rounds,
+		&mut transcript,
 	)?;
+
+	let zerocheck_eval_claims =
+		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(

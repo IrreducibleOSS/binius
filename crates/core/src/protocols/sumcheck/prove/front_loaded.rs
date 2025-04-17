@@ -32,6 +32,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BatchProver<F: Field, Prover> {
 	provers: VecDeque<(Prover, F)>,
+	multilinear_evals: Vec<Vec<F>>,
 	round: usize,
 }
 
@@ -68,7 +69,11 @@ where
 		let batch_coeffs = transcript.sample_vec(provers.len());
 		let provers = iter::zip(provers, batch_coeffs).collect();
 
-		Ok(Self { provers, round: 0 })
+		Ok(Self {
+			provers,
+			multilinear_evals: Vec::new(),
+			round: 0,
+		})
 	}
 
 	fn finish_claim_provers<B>(&mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
@@ -80,8 +85,9 @@ where
 				break;
 			}
 			let (prover, _) = self.provers.pop_front().expect("front returned Some");
-			let multilinear_evals = Box::new(prover).finish()?;
-			transcript.write_scalar_slice(&multilinear_evals);
+			let claim_multilinear_evals = Box::new(prover).finish()?;
+			transcript.write_scalar_slice(&claim_multilinear_evals);
+			self.multilinear_evals.push(claim_multilinear_evals);
 		}
 		Ok(())
 	}
@@ -114,7 +120,7 @@ where
 	}
 
 	/// Finishes the remaining instance provers and checks that all rounds are completed.
-	pub fn finish<B>(mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
+	pub fn finish<B>(mut self, transcript: &mut TranscriptWriter<B>) -> Result<Vec<Vec<F>>, Error>
 	where
 		B: BufMut,
 	{
@@ -122,6 +128,8 @@ where
 		if !self.provers.is_empty() {
 			return Err(Error::ExpectedFold);
 		}
-		Ok(())
+
+		self.multilinear_evals.reverse();
+		Ok(self.multilinear_evals)
 	}
 }

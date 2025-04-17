@@ -98,22 +98,6 @@ impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Pro
 /// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove<F, Prover, Challenger_>(
-	provers: Vec<Prover>,
-	transcript: &mut ProverTranscript<Challenger_>,
-) -> Result<BatchSumcheckOutput<F>, Error>
-where
-	F: TowerField,
-	Prover: SumcheckProver<F>,
-	Challenger_: Challenger,
-{
-	batch_prove_with_coeffs(None, provers, transcript)
-}
-
-/// TODO: rework comment
-/// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
-#[instrument(skip_all, name = "sumcheck::batch_prove")]
-pub fn batch_prove_with_coeffs<F, Prover, Challenger_>(
-	prebatched_coeffs: Option<Vec<F>>,
 	mut provers: Vec<Prover>,
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
@@ -122,12 +106,6 @@ where
 	Prover: SumcheckProver<F>,
 	Challenger_: Challenger,
 {
-	if let Some(prebatched_coeffs) = &prebatched_coeffs {
-		if prebatched_coeffs.len() != provers.len() {
-			bail!(Error::IncorrectPrebatchedCoeffCount);
-		}
-	}
-
 	let Some(first_prover) = provers.first() else {
 		return Ok(BatchSumcheckOutput {
 			challenges: Vec::new(),
@@ -166,12 +144,7 @@ where
 				break;
 			}
 
-			let next_batch_coeff = if let Some(prebatched_coeffs) = &prebatched_coeffs {
-				prebatched_coeffs[batch_coeffs.len()]
-			} else {
-				transcript.sample()
-			};
-
+			let next_batch_coeff = transcript.sample();
 			batch_coeffs.push(next_batch_coeff);
 		}
 

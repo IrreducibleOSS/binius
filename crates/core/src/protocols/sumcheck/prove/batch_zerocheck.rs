@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{Field, TowerField};
-use binius_hal::make_portable_backend;
+use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
+use binius_hal::{make_portable_backend, CpuBackend};
 use binius_math::{
 	BinarySubspace, EvaluationDomain, EvaluationOrder, IsomorphicEvaluationDomainFactory,
 	MLEDirectAdapter,
@@ -13,7 +13,7 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		immediate_switchover_heuristic,
-		prove::{batch_sumcheck, RegularSumcheckProver, SumcheckProver},
+		prove::{batch_sumcheck, front_loaded::BatchProver, RegularSumcheckProver, SumcheckProver},
 		univariate::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
 			ZerocheckRoundEvals,
@@ -38,7 +38,7 @@ use crate::{
 /// that can be driven to completion to prove the remaining multilinear rounds.
 ///
 /// This trait is object-safe.
-pub trait ZerocheckProver<'a, F: Field> {
+pub trait ZerocheckProver<'a, P: PackedField> {
 	/// The number of variables in the multivariate polynomial.
 	fn n_vars(&self) -> usize;
 
@@ -54,24 +54,27 @@ pub trait ZerocheckProver<'a, F: Field> {
 	/// Lagrange basis.
 	fn execute_univariate_round(
 		&mut self,
+		skip_rounds: usize,
 		max_domain_size: usize,
-		batch_coeff: F,
-	) -> Result<ZerocheckRoundEvals<F>, Error>;
+		batch_coeff: P::Scalar,
+	) -> Result<ZerocheckRoundEvals<P::Scalar>, Error>;
 
 	/// Folds into a regular multilinear prover for the remaining rounds.
 	fn fold_univariate_round(
 		&mut self,
-		challenge: F,
-	) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error>;
+		challenge: P::Scalar,
+	) -> Result<Box<dyn SumcheckProver<P::Scalar> + 'a>, Error>;
 
 	fn project_to_skipped_variables(
 		self: Box<Self>,
-		challenges: &[F],
-	) -> Result<Vec<MLEDirectAdapter<F>>, Error>;
+		challenges: &[P::Scalar],
+	) -> Result<Vec<MLEDirectAdapter<P>>, Error>;
 }
 
 // NB: auto_impl does not currently handle ?Sized bound on Box<Self> receivers correctly.
-impl<'a, F: Field, Prover: ZerocheckProver<'a, F> + ?Sized> ZerocheckProver<'a, F> for Box<Prover> {
+impl<'a, P: PackedField, Prover: ZerocheckProver<'a, P> + ?Sized> ZerocheckProver<'a, P>
+	for Box<Prover>
+{
 	fn n_vars(&self) -> usize {
 		(**self).n_vars()
 	}
@@ -82,40 +85,45 @@ impl<'a, F: Field, Prover: ZerocheckProver<'a, F> + ?Sized> ZerocheckProver<'a, 
 
 	fn execute_univariate_round(
 		&mut self,
+		skip_rounds: usize,
 		max_domain_size: usize,
-		batch_coeff: F,
-	) -> Result<ZerocheckRoundEvals<F>, Error> {
-		(**self).execute_univariate_round(max_domain_size, batch_coeff)
+		batch_coeff: P::Scalar,
+	) -> Result<ZerocheckRoundEvals<P::Scalar>, Error> {
+		(**self).execute_univariate_round(skip_rounds, max_domain_size, batch_coeff)
 	}
 
 	fn fold_univariate_round(
 		&mut self,
-		challenge: F,
-	) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error> {
+		challenge: P::Scalar,
+	) -> Result<Box<dyn SumcheckProver<P::Scalar> + 'a>, Error> {
 		(**self).fold_univariate_round(challenge)
 	}
 
 	fn project_to_skipped_variables(
 		self: Box<Self>,
-		challenges: &[F],
-	) -> Result<Vec<MLEDirectAdapter<F>>, Error> {
+		challenges: &[P::Scalar],
+	) -> Result<Vec<MLEDirectAdapter<P>>, Error> {
 		(*self).project_to_skipped_variables(challenges)
 	}
 }
 
-fn univariatizing_reduction_prover<F>(
-	mut projected_multilinears: Vec<MLEDirectAdapter<F>>,
+fn univariatizing_reduction_prover<'a, F, FDomain, P>(
+	mut projected_multilinears: Vec<MLEDirectAdapter<P>>,
 	skip_rounds: usize,
 	univariatized_multilinear_evals: Vec<Vec<F>>,
 	univariate_challenge: F,
-) -> Result<impl SumcheckProver<F>, Error>
+	backend: &'a CpuBackend,
+) -> Result<impl SumcheckProver<F> + 'a, Error>
 where
-	F: TowerField,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: TowerField,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 {
 	let sumcheck_claim =
 		univariatizing_reduction_claim(skip_rounds, &univariatized_multilinear_evals)?;
 
-	let subspace = BinarySubspace::<F::Canonical>::with_dim(skip_rounds)?.isomorphic::<F>();
+	let subspace =
+		BinarySubspace::<FDomain::Canonical>::with_dim(skip_rounds)?.isomorphic::<FDomain>();
 	let ntt_domain = EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
 
 	projected_multilinears
@@ -123,14 +131,14 @@ where
 
 	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but this sumcheck
 	//         is very small anyway.
-	let prover = RegularSumcheckProver::new(
+	let prover = RegularSumcheckProver::<FDomain, P, _, _, _>::new(
 		EvaluationOrder::HighToLow,
 		projected_multilinears,
-		sumcheck_claim.composite_sums().iter().copied(),
-		IsomorphicEvaluationDomainFactory::<F::Canonical>::default(),
+		sumcheck_claim.composite_sums().iter().cloned(),
+		IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
 		immediate_switchover_heuristic,
-		make_portable_backend(),
-	);
+		backend,
+	)?;
 
 	Ok(prover)
 }
@@ -147,20 +155,24 @@ where
 /// verification.
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-pub fn batch_prove<'a, F, Prover, Challenger_>(
+pub fn batch_prove<'a, F, FDomain, P, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
 	transcript: &mut ProverTranscript<Challenger_>,
-) -> Result<(BatchZerocheckOutput<F>, impl SumcheckProver<F>), Error>
+) -> Result<BatchZerocheckOutput<P::Scalar>, Error>
 where
-	F: TowerField,
-	Prover: ZerocheckProver<'a, F>,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: TowerField,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	Prover: ZerocheckProver<'a, P>,
 	Challenger_: Challenger,
 {
 	// Check that the provers are in descending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
 	}
+
+	let max_n_vars = provers.first().map(|prover| prover.n_vars()).unwrap_or(0);
 
 	let max_domain_size = provers
 		.iter()
@@ -175,7 +187,7 @@ where
 		batch_coeffs.push(next_batch_coeff);
 
 		let prover_round_evals =
-			prover.execute_univariate_round(max_domain_size, next_batch_coeff)?;
+			prover.execute_univariate_round(skip_rounds, max_domain_size, next_batch_coeff)?;
 
 		round_evals.add_assign_lagrange(&(prover_round_evals * next_batch_coeff))?;
 	}
@@ -189,30 +201,57 @@ where
 		tail_sumcheck_provers.push(tail_sumcheck_prover);
 	}
 
-	let tail_sumcheck_output = batch_sumcheck::batch_prove_with_coeffs(
-		Some(batch_coeffs),
-		tail_sumcheck_provers,
-		transcript,
-	)?;
+	let tail_rounds = max_n_vars.saturating_sub(skip_rounds);
+
+	let mut tail_sumchecks = BatchProver::new(tail_sumcheck_provers, transcript)?;
+
+	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
+	for _round_no in 0..tail_rounds {
+		let mut writer = transcript.message();
+		tail_sumchecks.send_round_proof(&mut writer)?;
+
+		let challenge = transcript.sample();
+		unskipped_challenges.push(challenge);
+
+		tail_sumchecks.receive_challenge(challenge)?;
+	}
+	let mut writer = transcript.message();
+	let univariatized_multilinear_evals = tail_sumchecks.finish(&mut writer)?;
+
+	unskipped_challenges.reverse();
 
 	let mut projected_multilinears = Vec::new();
 
 	for prover in provers {
-		projected_multilinears.extend(
-			Box::new(prover).project_to_skipped_variables(&tail_sumcheck_output.challenges),
-		);
+		let claim_projected_multilinears =
+			Box::new(prover).project_to_skipped_variables(&unskipped_challenges)?;
+
+		projected_multilinears.extend(claim_projected_multilinears);
 	}
 
-	let reduction_prover = univariatizing_reduction_prover(
+	let backend = make_portable_backend();
+	let reduction_prover = univariatizing_reduction_prover::<_, FDomain, _>(
 		projected_multilinears,
-		&tail_sumcheck_output.multilinear_evals,
+		skip_rounds,
+		univariatized_multilinear_evals,
 		univariate_challenge,
+		&backend,
 	)?;
 
+	let BatchSumcheckOutput {
+		challenges: skipped_challenges,
+		multilinear_evals: mut concat_multilinear_evals,
+	} = batch_sumcheck::batch_prove(vec![reduction_prover], transcript)?;
+
+	let concat_multilinear_evals = concat_multilinear_evals
+		.pop()
+		.expect("multilinear_evals.len() == 1");
+
 	let output = BatchZerocheckOutput {
-		tail_sumcheck_output,
-		univariate_challenge,
+		skipped_challenges,
+		unskipped_challenges,
+		concat_multilinear_evals,
 	};
 
-	Ok((output, reduction_prover))
+	Ok(output)
 }

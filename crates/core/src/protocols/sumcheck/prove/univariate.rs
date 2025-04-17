@@ -11,7 +11,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_math::{
 	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, EvaluationOrder,
-	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
+	MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, NTTShape, OddInterpolate, SingleThreadedNTT};
@@ -24,15 +24,10 @@ use tracing::instrument;
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		common::{
-			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
-		},
-		prove::{
-			common::fold_partial_eq_ind, zerocheck::high_pad_small_multilinear,
-			RegularSumcheckProver,
-		},
+		common::{equal_n_vars_check, small_field_embedding_degree_check},
+		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
 		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
-		Error, VerificationError,
+		Error,
 	},
 };
 

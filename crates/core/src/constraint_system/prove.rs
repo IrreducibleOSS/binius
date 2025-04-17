@@ -50,8 +50,6 @@ use crate::{
 			self, constraint_set_zerocheck_claim,
 			prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, ZerocheckProver},
 			standard_switchover_heuristic,
-			univariate::univariatizing_reduction_claim,
-			zerocheck, BatchSumcheckOutput, BatchZerocheckOutput,
 		},
 	},
 	ring_switch,
@@ -321,8 +319,6 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
-
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
 
@@ -376,42 +372,16 @@ where
 		zerocheck_provers.push(zerocheck_prover);
 	}
 
-	let (zerocheck_output, reduction_prover) =
-		sumcheck::prove::batch_prove_zerocheck(zerocheck_provers, skip_rounds, &mut transcript)?;
+	let zerocheck_output = sumcheck::prove::batch_prove_zerocheck::<
+		FExt<Tower>,
+		FDomain<Tower>,
+		PackedType<U, FExt<Tower>>,
+		_,
+		_,
+	>(zerocheck_provers, skip_rounds, &mut transcript)?;
 
-	let BatchZerocheckOutput {
-		tail_sumcheck_output,
-		univariate_challenge,
-	} = zerocheck_output;
-
-	let BatchSumcheckOutput {
-		challenges: tail_sumcheck_challenges,
-		multilinear_evals: univariatized_multilinear_evals,
-	} = sumcheck::eq_ind::verify_sumcheck_outputs(
-		&eq_ind_sumcheck_claims,
-		&zerocheck_challenges,
-		tail_sumcheck_output,
-	)?;
-
-	let reduction_claim =
-		univariatizing_reduction_claim(skip_rounds, &univariatized_multilinear_evals)?;
-
-	let univariatizing_output =
-		sumcheck::prove::batch_prove_sumcheck(vec![reduction_prover], &mut transcript)?;
-
-	let zerocheck_output = sumcheck::univariate::verify_sumcheck_output(
-		reduction_claim,
-		skip_rounds,
-		univariate_challenge,
-		&tail_sumcheck_challenges,
-		univariatizing_output,
-	)?;
-
-	let zerocheck_eval_claims = sumcheck::make_eval_claims(
-		EvaluationOrder::HighToLow,
-		zerocheck_oracle_metas,
-		zerocheck_output,
-	)?;
+	let zerocheck_eval_claims =
+		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -472,7 +442,7 @@ where
 	})
 }
 
-type TypeErasedZerocheck<'a, F> = Box<dyn ZerocheckProver<'a, F> + 'a>;
+type TypeErasedZerocheck<'a, P> = Box<dyn ZerocheckProver<'a, P> + 'a>;
 
 struct ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, Backend>
 where
@@ -495,7 +465,7 @@ where
 	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
 	Backend: ComputationBackend,
 {
-	fn create<FBase>(self) -> Result<TypeErasedZerocheck<'a, F>, Error>
+	fn create<FBase>(self) -> Result<TypeErasedZerocheck<'a, P>, Error>
 	where
 		FBase: TowerField + ExtensionField<FDomain> + TryFrom<F>,
 		P: PackedExtension<F, PackedSubfield = P>
@@ -512,8 +482,7 @@ where
 				self.backend,
 			)?;
 
-		let type_erased_zerocheck_prover =
-			Box::new(zerocheck_prover) as TypeErasedZerocheck<'a, P::Scalar>;
+		let type_erased_zerocheck_prover = Box::new(zerocheck_prover) as TypeErasedZerocheck<'a, P>;
 
 		Ok(type_erased_zerocheck_prover)
 	}

@@ -4,7 +4,6 @@ use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
-use tracing::instrument;
 
 use super::{
 	common::{batch_weighted_value, BatchSumcheckOutput, RoundProof, SumcheckClaim},

@@ -1,14 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{
-	iter,
-	ops::{Mul, MulAssign},
-};
+use std::ops::{Mul, MulAssign};
 
 use binius_field::{packed::set_packed_slice, ExtensionField, Field, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{BinarySubspace, EvaluationDomain, MultilinearExtension};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 
@@ -117,12 +114,11 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// the multilinear extension of Lagrange polynomials evaluations at `univariate_challenge` (denoted by
 /// $\hat{u}_1$) and verifies that this value is correct. The argument `unskipped_sumcheck_challenges`
 /// holds the challenges of the sumcheck following the univariate round.
-pub fn verify_sumcheck_output<F>(
+pub fn verify_reduction_sumcheck_output<F>(
 	claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 	skip_rounds: usize,
 	univariate_challenge: F,
-	unskipped_sumcheck_challenges: &[F],
-	sumcheck_output: BatchSumcheckOutput<F>,
+	reduction_sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
@@ -130,7 +126,7 @@ where
 	let BatchSumcheckOutput {
 		challenges: reduction_sumcheck_challenges,
 		mut multilinear_evals,
-	} = sumcheck_output;
+	} = reduction_sumcheck_output;
 
 	if claim.n_vars() != skip_rounds {
 		bail!(Error::IncorrectUnivariatizingReductionClaims);
@@ -163,11 +159,7 @@ where
 	}
 
 	let output = BatchSumcheckOutput {
-		challenges: [
-			&reduction_sumcheck_challenges,
-			unskipped_sumcheck_challenges,
-		]
-		.concat(),
+		challenges: reduction_sumcheck_challenges.to_vec(),
 		multilinear_evals,
 	};
 

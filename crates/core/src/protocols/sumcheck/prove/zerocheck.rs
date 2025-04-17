@@ -15,7 +15,6 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use getset::Getters;
 use itertools::{izip, Either};
 use tracing::instrument;
 
@@ -176,8 +175,14 @@ enum ZerocheckProverState<
 	},
 }
 
-impl<Compositions, EvalsOutput, DomainFactory> Default
-	for ZerocheckProverState<Compositions, EvalsOutput, DomainFactory>
+impl<Multilinears, PaddedMultilinears, Compositions, EvalsOutput, DomainFactory> Default
+	for ZerocheckProverState<
+		Multilinears,
+		PaddedMultilinears,
+		Compositions,
+		EvalsOutput,
+		DomainFactory,
+	>
 {
 	fn default() -> Self {
 		ZerocheckProverState::IllegalState
@@ -250,7 +255,7 @@ where
 }
 
 impl<'a, F, FDomain, FBase, P, CompositionBase, Composition, M, DomainFactory, Backend>
-	ZerocheckProver<'a, F>
+	ZerocheckProver<'a, P>
 	for ZerocheckProverImpl<
 		'a,
 		FDomain,
@@ -448,7 +453,7 @@ where
 	fn project_to_skipped_variables(
 		self: Box<Self>,
 		challenges: &[F],
-	) -> Result<Vec<MLEDirectAdapter<F>>, Error> {
+	) -> Result<Vec<MLEDirectAdapter<P>>, Error> {
 		let ZerocheckProverState::Projection {
 			skip_rounds,
 			padded_multilinears,
@@ -483,18 +488,6 @@ where
 				.collect::<Vec<_>>()
 		};
 
-		// TODO: comment on smallness
-		let skipped_projections = packed_skipped_projections
-			.into_iter()
-			.map(|packed| {
-				let mut scalars = zeroed_vec(1 << skip_rounds);
-				for (i, dest) in scalars.iter_mut().enumerate() {
-					*dest = get_packed_slice(packed.as_ref().evals(), i);
-				}
-				Ok(MultilinearExtension::from_values_generic(scalars)?.into())
-			})
-			.collect::<Result<_, Error>>()?;
-
-		Ok(skipped_projections)
+		Ok(packed_skipped_projections)
 	}
 }

@@ -23,6 +23,6 @@ pub use common::*;
 pub use eq_ind::EqIndSumcheckClaim;
 pub use error::*;
 pub use oracles::*;
-pub use univariate_zerocheck::batch_verify_zerocheck_univariate_round;
-pub use verify::{batch_verify, batch_verify_with_start};
+pub use univariate_zerocheck::*;
+pub use verify::batch_verify;
 pub use zerocheck::{BatchZerocheckOutput, ZerocheckClaim};
