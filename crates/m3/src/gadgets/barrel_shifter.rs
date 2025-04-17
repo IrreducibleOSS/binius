@@ -200,9 +200,9 @@ mod tests {
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 		let mut segment = table_witness.full_segment();
 
-		for (i, (input, shift_amount)) in (&mut *segment.get_mut_as(input).unwrap())
+		for (i, (input, shift_amount)) in (*segment.get_mut_as(input).unwrap())
 			.iter_mut()
-			.zip(&mut *segment.get_mut_as(shift_amount).unwrap())
+			.zip(segment.get_mut_as(shift_amount).unwrap().iter_mut())
 			.enumerate()
 		{
 			*input = input_val;
@@ -220,10 +220,10 @@ mod tests {
 			let i = i % 32;
 			println!("i: {}, output: {:#x}", i, output);
 			let expected_output = match variant {
-				ShiftVariant::LogicalLeft => (0x1234 as u32) << (i % 32),
-				ShiftVariant::LogicalRight => (0x1234 as u32) >> (i % 32),
+				ShiftVariant::LogicalLeft => input_val << (i % 32),
+				ShiftVariant::LogicalRight => input_val >> (i % 32),
 				ShiftVariant::CircularLeft => {
-					((0x1234 as u32) << (i % 32)) | ((0x1234 as u32) >> ((32 - i) % 32))
+					(input_val << (i % 32)) | (input_val >> ((32 - i) % 32))
 				}
 			};
 			assert_eq!(output, expected_output);
