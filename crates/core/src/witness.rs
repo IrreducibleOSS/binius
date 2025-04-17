@@ -18,9 +18,7 @@ pub struct IndexEntry<'a, P: PackedField> {
 /// Data structure that indexes multilinear extensions by oracle ID.
 ///
 /// A [`crate::oracle::MultilinearOracleSet`] indexes multilinear polynomial oracles by assigning
-/// unique, sequential oracle IDs. The caller can get the [`MultilinearExtension`] defined natively
-/// over a subfield. This is possible because the [`MultilinearExtensionIndex::get`] method is
-/// generic over the subfield type and the struct itself only stores the underlying data.
+/// unique, sequential oracle IDs.
 #[derive(Default, Debug)]
 pub struct MultilinearExtensionIndex<'a, P>
 where
