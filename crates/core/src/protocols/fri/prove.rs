@@ -381,12 +381,6 @@ where
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| {
-				println!(
-					"fold {}",
-					log2_strict_usize(folded_codeword.len())
-						.saturating_sub(self.params.rs_code().log_inv_rate())
-				);
-
 				1 << log2_strict_usize(folded_codeword.len())
 					.saturating_sub(self.params.rs_code().log_inv_rate())
 			});
