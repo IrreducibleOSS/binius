@@ -41,7 +41,7 @@ where
 {
 	fn serialize(
 		&self,
-		write_buf: impl bytes::BufMut,
+		write_buf: &mut dyn bytes::BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		let elems = PE::iter_slice(

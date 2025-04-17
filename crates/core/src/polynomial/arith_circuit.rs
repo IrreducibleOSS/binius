@@ -144,16 +144,16 @@ impl<F: Field> Eq for ArithCircuitPoly<F> {}
 impl<F: TowerField> SerializeBytes for ArithCircuitPoly<F> {
 	fn serialize(
 		&self,
-		mut write_buf: impl bytes::BufMut,
+		write_buf: &mut dyn bytes::BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		(&self.expr, self.n_vars).serialize(&mut write_buf, mode)
+		(&self.expr, self.n_vars).serialize(write_buf, mode)
 	}
 }
 
 impl<F: TowerField> DeserializeBytes for ArithCircuitPoly<F> {
 	fn deserialize(
-		read_buf: impl bytes::Buf,
+		read_buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where

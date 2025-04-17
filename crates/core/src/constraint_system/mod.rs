@@ -37,19 +37,19 @@ pub struct ConstraintSystem<F: TowerField> {
 
 impl DeserializeBytes for ConstraintSystem<BinaryField128b> {
 	fn deserialize(
-		mut read_buf: impl bytes::Buf,
+		read_buf: &mut dyn bytes::Buf,
 		mode: SerializationMode,
 	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
 		Ok(Self {
-			oracles: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			table_constraints: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			non_zero_oracle_ids: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			flushes: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			exponents: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			max_channel_id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			oracles: DeserializeBytes::deserialize(read_buf, mode)?,
+			table_constraints: DeserializeBytes::deserialize(read_buf, mode)?,
+			non_zero_oracle_ids: DeserializeBytes::deserialize(read_buf, mode)?,
+			flushes: DeserializeBytes::deserialize(read_buf, mode)?,
+			exponents: DeserializeBytes::deserialize(read_buf, mode)?,
+			max_channel_id: DeserializeBytes::deserialize(read_buf, mode)?,
 		})
 	}
 }

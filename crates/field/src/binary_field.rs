@@ -769,7 +769,7 @@ macro_rules! serialize_deserialize {
 		impl SerializeBytes for $bin_type {
 			fn serialize(
 				&self,
-				write_buf: impl BufMut,
+				write_buf: &mut dyn BufMut,
 				mode: SerializationMode,
 			) -> Result<(), SerializationError> {
 				self.0.serialize(write_buf, mode)
@@ -778,7 +778,7 @@ macro_rules! serialize_deserialize {
 
 		impl DeserializeBytes for $bin_type {
 			fn deserialize(
-				read_buf: impl Buf,
+				read_buf: &mut dyn Buf,
 				mode: SerializationMode,
 			) -> Result<Self, SerializationError> {
 				Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?))
