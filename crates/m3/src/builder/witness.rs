@@ -7,7 +7,10 @@ use std::{
 };
 
 use binius_core::{
-	oracle::OracleId, polynomial::ArithCircuitPoly, transparent::step_down::StepDown,
+	oracle::OracleId,
+	polynomial::ArithCircuitPoly,
+	tower::{CanonicalTowerFamily, PackedTop, TowerFamily},
+	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -27,7 +30,7 @@ use super::{
 	column::{Col, ColumnShape},
 	error::Error,
 	table::{Table, TableId},
-	types::{B1, B128, B16, B32, B64, B8},
+	types::B128,
 	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 };
 use crate::builder::multi_iter::MultiIterator;
@@ -153,15 +156,19 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			})
 			.collect()
 	}
+}
 
-	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
+impl<'alloc, P> WitnessIndex<'_, 'alloc, P>
+where
+	P: PackedField,
+	P::Scalar: TowerField,
+{
+	pub fn into_multilinear_extension_index_over_tower<Tower>(
+		self,
+	) -> MultilinearExtensionIndex<'alloc, P>
 	where
-		P: PackedExtension<B1>
-			+ PackedExtension<B8>
-			+ PackedExtension<B16>
-			+ PackedExtension<B32>
-			+ PackedExtension<B64>
-			+ PackedExtension<B128>,
+		Tower: TowerFamily,
+		P: PackedTop<Tower>,
 	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
@@ -184,7 +191,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				let n_vars = log_capacity + col.shape.log_values_per_row;
 				let underlier_count = 1
 					<< (n_vars + col.shape.tower_height)
-						.saturating_sub(P::LOG_WIDTH + F::TOWER_LEVEL);
+						.saturating_sub(P::LOG_WIDTH + Tower::B128::TOWER_LEVEL);
 				let witness = multilin_poly_from_underlier_data(
 					&col.data[..underlier_count],
 					n_vars,
@@ -203,7 +210,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 					let log_size = table_witness.log_capacity + log_values_per_row;
 					let witness = StepDown::new(log_size, size)
 						.unwrap()
-						.multilinear_extension::<PackedSubfield<P, B1>>()
+						.multilinear_extension::<PackedSubfield<P, Tower::B1>>()
 						.unwrap()
 						.specialize_arc_dyn();
 					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -217,36 +224,41 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 	}
 }
 
-fn multilin_poly_from_underlier_data<P>(
+impl<'alloc, P> WitnessIndex<'_, 'alloc, P>
+where
+	P: PackedTop<CanonicalTowerFamily>,
+{
+	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P> {
+		self.into_multilinear_extension_index_over_tower()
+	}
+}
+
+fn multilin_poly_from_underlier_data<Tower, P>(
 	data: &[P],
 	n_vars: usize,
 	tower_height: usize,
 ) -> Arc<dyn MultilinearPoly<P> + Send + Sync + '_>
 where
-	P: PackedExtension<B1>
-		+ PackedExtension<B8>
-		+ PackedExtension<B16>
-		+ PackedExtension<B32>
-		+ PackedExtension<B64>
-		+ PackedExtension<B128>,
+	Tower: TowerFamily,
+	P: PackedTop<Tower>,
 {
 	match tower_height {
-		0 => MultilinearExtension::new(n_vars, PackedExtension::<B1>::cast_bases(data))
+		0 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B1>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
-		3 => MultilinearExtension::new(n_vars, PackedExtension::<B8>::cast_bases(data))
+		3 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B8>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
-		4 => MultilinearExtension::new(n_vars, PackedExtension::<B16>::cast_bases(data))
+		4 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B16>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
-		5 => MultilinearExtension::new(n_vars, PackedExtension::<B32>::cast_bases(data))
+		5 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B32>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
-		6 => MultilinearExtension::new(n_vars, PackedExtension::<B64>::cast_bases(data))
+		6 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B64>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
-		7 => MultilinearExtension::new(n_vars, PackedExtension::<B128>::cast_bases(data))
+		7 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B128>::cast_bases(data))
 			.unwrap()
 			.specialize_arc_dyn(),
 		_ => {
