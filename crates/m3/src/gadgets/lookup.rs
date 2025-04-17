@@ -85,7 +85,7 @@ mod tests {
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
-	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement};
+	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement, WitnessIndex};
 
 	// Test configurations
 	enum MultiplicityConfig {
@@ -242,9 +242,8 @@ mod tests {
 		};
 
 		let allocator = Bump::new();
-		let mut witness = cs
-			.build_witness::<PackedType<OptimalUnderlier128b, B128>>(&allocator, &statement)
-			.unwrap();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		// Fill the lookup table
 		witness
@@ -295,6 +294,10 @@ mod tests {
 			)
 			.unwrap();
 
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: witness.table_sizes(),
+		};
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 

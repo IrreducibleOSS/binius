@@ -41,6 +41,10 @@ pub enum VerificationError {
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
+	#[error("LinearCombination must contain an eval")]
+	MissingLinearCombinationEval,
+	#[error("The referenced duplicate claim is different from expected")]
+	DuplicateClaimMismatch,
 }
 
 impl VerificationError {

@@ -10,7 +10,10 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::iter::IterExtensions;
+use binius_utils::{
+	iter::IterExtensions,
+	random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut},
+};
 use bytemuck::Zeroable;
 use rand::RngCore;
 
@@ -468,6 +471,81 @@ pub fn copy_packed_from_scalars_slice<P: PackedField>(src: &[P::Scalar], dst: &m
 	);
 }
 
+/// A slice of packed field elements as a collection of scalars.
+#[derive(Clone)]
+pub struct PackedSlice<'a, P: PackedField> {
+	slice: &'a [P],
+	len: usize,
+}
+
+impl<'a, P: PackedField> PackedSlice<'a, P> {
+	#[inline(always)]
+	pub fn new(slice: &'a [P]) -> Self {
+		Self {
+			slice,
+			len: len_packed_slice(slice),
+		}
+	}
+
+	#[inline(always)]
+	pub fn new_with_len(slice: &'a [P], len: usize) -> Self {
+		assert!(len <= len_packed_slice(slice));
+
+		Self { slice, len }
+	}
+}
+
+impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSlice<'_, P> {
+	#[inline(always)]
+	fn len(&self) -> usize {
+		self.len
+	}
+
+	#[inline(always)]
+	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
+		get_packed_slice_unchecked(self.slice, index)
+	}
+}
+
+/// A mutable slice of packed field elements as a collection of scalars.
+pub struct PackedSliceMut<'a, P: PackedField> {
+	slice: &'a mut [P],
+	len: usize,
+}
+
+impl<'a, P: PackedField> PackedSliceMut<'a, P> {
+	#[inline(always)]
+	pub fn new(slice: &'a mut [P]) -> Self {
+		let len = len_packed_slice(slice);
+		Self { slice, len }
+	}
+
+	#[inline(always)]
+	pub fn new_with_len(slice: &'a mut [P], len: usize) -> Self {
+		assert!(len <= len_packed_slice(slice));
+
+		Self { slice, len }
+	}
+}
+
+impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSliceMut<'_, P> {
+	#[inline(always)]
+	fn len(&self) -> usize {
+		self.len
+	}
+
+	#[inline(always)]
+	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
+		get_packed_slice_unchecked(self.slice, index)
+	}
+}
+impl<P: PackedField> RandomAccessSequenceMut<P::Scalar> for PackedSliceMut<'_, P> {
+	#[inline(always)]
+	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
+		set_packed_slice_unchecked(self.slice, index, value);
+	}
+}
+
 impl<F: Field> Broadcast<F> for F {
 	fn broadcast(scalar: F) -> Self {
 		scalar
@@ -553,6 +631,7 @@ impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 
 #[cfg(test)]
 mod tests {
+	use itertools::Itertools;
 	use rand::{
 		distributions::{Distribution, Uniform},
 		rngs::StdRng,
@@ -819,5 +898,73 @@ mod tests {
 
 		check_copy_from_scalars::<PackedBinaryField16x8b>(&mut rng);
 		check_copy_from_scalars::<PackedBinaryField32x4b>(&mut rng);
+	}
+
+	fn check_collection<F: Field>(collection: &impl RandomAccessSequence<F>, expected: &[F]) {
+		assert_eq!(collection.len(), expected.len());
+
+		for (i, v) in expected.iter().enumerate() {
+			assert_eq!(&collection.get(i), v);
+			assert_eq!(&unsafe { collection.get_unchecked(i) }, v);
+		}
+	}
+
+	fn check_collection_get_set<F: Field>(
+		collection: &mut impl RandomAccessSequenceMut<F>,
+		gen: &mut impl FnMut() -> F,
+	) {
+		for i in 0..collection.len() {
+			let value = gen();
+			collection.set(i, value);
+			assert_eq!(collection.get(i), value);
+			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
+		}
+	}
+
+	#[test]
+	fn check_packed_slice() {
+		let slice: &[PackedBinaryField16x8b] = &[];
+		let packed_slice = PackedSlice::new(slice);
+		check_collection(&packed_slice, &[]);
+		let packed_slice = PackedSlice::new_with_len(slice, 0);
+		check_collection(&packed_slice, &[]);
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let slice: &[PackedBinaryField16x8b] = &[
+			PackedBinaryField16x8b::random(&mut rng),
+			PackedBinaryField16x8b::random(&mut rng),
+		];
+		let packed_slice = PackedSlice::new(slice);
+		check_collection(&packed_slice, &PackedField::iter_slice(slice).collect_vec());
+
+		let packed_slice = PackedSlice::new_with_len(slice, 3);
+		check_collection(&packed_slice, &PackedField::iter_slice(slice).take(3).collect_vec());
+	}
+
+	#[test]
+	fn check_packed_slice_mut() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let mut gen = || <BinaryField8b as Field>::random(&mut rng);
+
+		let slice: &mut [PackedBinaryField16x8b] = &mut [];
+		let packed_slice = PackedSliceMut::new(slice);
+		check_collection(&packed_slice, &[]);
+		let packed_slice = PackedSliceMut::new_with_len(slice, 0);
+		check_collection(&packed_slice, &[]);
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let slice: &mut [PackedBinaryField16x8b] = &mut [
+			PackedBinaryField16x8b::random(&mut rng),
+			PackedBinaryField16x8b::random(&mut rng),
+		];
+		let values = PackedField::iter_slice(slice).collect_vec();
+		let mut packed_slice = PackedSliceMut::new(slice);
+		check_collection(&packed_slice, &values);
+		check_collection_get_set(&mut packed_slice, &mut gen);
+
+		let values = PackedField::iter_slice(slice).collect_vec();
+		let mut packed_slice = PackedSliceMut::new_with_len(slice, 3);
+		check_collection(&packed_slice, &values[..3]);
+		check_collection_get_set(&mut packed_slice, &mut gen);
 	}
 }

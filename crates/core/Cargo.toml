@@ -15,7 +15,7 @@ binius_field = { path = "../field", default-features = false }
 binius_hal = { path = "../hal", default-features = false }
 binius_hash = { path = "../hash", default-features = false }
 binius_math = { path = "../math", default-features = false }
-binius_ntt = { path = "../ntt" }
+binius_ntt = { path = "../ntt", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytes.workspace = true

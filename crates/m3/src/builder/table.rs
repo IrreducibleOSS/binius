@@ -200,6 +200,37 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_selected_block<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
+
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		// This is also the value of the start_index.
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		// Get the log size of the query.
+		let log_query_size = log_values_per_row - log_new_values_per_row;
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Projected {
+				col: col.id(),
+				start_index: log_new_values_per_row,
+				query_size: log_query_size,
+				query_bits: index,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,

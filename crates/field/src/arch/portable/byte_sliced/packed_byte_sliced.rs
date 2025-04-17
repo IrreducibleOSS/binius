@@ -185,17 +185,32 @@ macro_rules! define_byte_sliced_3d {
 				Self { data }
 			}
 
+			impl_init_with_transpose!($packed_storage, $scalar_type, $storage_tower_level);
+
+			// Transposing values first is faster. Also we know that the scalar is at least 8b,
+			// so we can cast the transposed array to the array of scalars.
 			#[inline]
-			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
-				let mut result = Self::default();
+			fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Clone + Send + '_ {
+				type TransposePacked = <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed;
 
-				// TODO: use transposition here as soon as implemented
-				for i in 0..Self::WIDTH {
-					//SAFETY: i doesn't exceed Self::WIDTH
-					unsafe { result.set_unchecked(i, f(i)) };
-				}
+				let mut data: [TransposePacked; Self::HEIGHT_BYTES] = bytemuck::must_cast(self.data);
+				let mut underliers = WithUnderlier::to_underliers_arr_ref_mut(&mut data);
+				UnderlierWithBitOps::transpose_bytes_from_byte_sliced::<$storage_tower_level>(&mut underliers);
 
-				result
+				let data: [Self::Scalar; {Self::WIDTH}] = bytemuck::must_cast(data);
+				data.into_iter()
+			}
+
+			#[inline]
+			fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Clone + Send {
+				type TransposePacked = <<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed;
+
+				let mut data: [TransposePacked; Self::HEIGHT_BYTES] = bytemuck::must_cast(self.data);
+				let mut underliers = WithUnderlier::to_underliers_arr_ref_mut(&mut data);
+				UnderlierWithBitOps::transpose_bytes_from_byte_sliced::<$storage_tower_level>(&mut underliers);
+
+				let data: [Self::Scalar; {Self::WIDTH}] = bytemuck::must_cast(data);
+				data.into_iter()
 			}
 
 			#[inline]
@@ -343,6 +358,51 @@ macro_rules! define_byte_sliced_3d {
 				});
 
 				TransformationWrapperNxN(transformations_8b)
+			}
+		}
+	};
+}
+
+/// This macro implements the `from_fn` and `from_scalars` methods for byte-sliced packed fields
+/// using transpose operations. This is faster both for 1b and non-1b scalars.
+macro_rules! impl_init_with_transpose {
+	($packed_storage:ty, $scalar_type:ty, $storage_tower_level:ty) => {
+		#[inline]
+		fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+			type TransposePacked =
+				<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed;
+
+			let mut data: [TransposePacked; Self::HEIGHT_BYTES] = array::from_fn(|i| {
+				PackedField::from_fn(|j| f((i << TransposePacked::LOG_WIDTH) + j))
+			});
+			let mut underliers = WithUnderlier::to_underliers_arr_ref_mut(&mut data);
+			UnderlierWithBitOps::transpose_bytes_to_byte_sliced::<$storage_tower_level>(
+				&mut underliers,
+			);
+
+			Self {
+				data: bytemuck::must_cast(data),
+			}
+		}
+
+		#[inline]
+		fn from_scalars(scalars: impl IntoIterator<Item = Self::Scalar>) -> Self {
+			type TransposePacked =
+				<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed;
+
+			let mut data = [TransposePacked::default(); Self::HEIGHT_BYTES];
+			let mut iter = scalars.into_iter();
+			for v in data.iter_mut() {
+				*v = TransposePacked::from_scalars(&mut iter);
+			}
+
+			let mut underliers = WithUnderlier::to_underliers_arr_ref_mut(&mut data);
+			UnderlierWithBitOps::transpose_bytes_to_byte_sliced::<$storage_tower_level>(
+				&mut underliers,
+			);
+
+			Self {
+				data: bytemuck::must_cast(data),
 			}
 		}
 	};
@@ -631,6 +691,11 @@ macro_rules! define_byte_sliced_3d_1b {
 				Self { data }
 			}
 
+			impl_init_with_transpose!($packed_storage, BinaryField1b, $storage_tower_level);
+
+			// Benchmarks show that transposing before the iteration makes it slower for 1b case,
+			// so do not override the default implementations of `iter` and `into_iter`.
+
 			#[allow(unreachable_patterns)]
 			#[inline]
 			fn broadcast(scalar: Self::Scalar) -> Self {
@@ -640,17 +705,6 @@ macro_rules! define_byte_sliced_3d_1b {
 				Self {
 					data: array::from_fn(|_| WithUnderlier::from_underlier(underlier)),
 				}
-			}
-
-			#[inline]
-			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
-				let data = array::from_fn(|row| {
-					<$packed_storage>::from_fn(|col| {
-						f(row * 8 + 8 * Self::HEIGHT_BYTES * (col / 8) + col % 8)
-					})
-				});
-
-				Self { data }
 			}
 
 			#[inline]

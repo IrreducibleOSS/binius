@@ -3,67 +3,57 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice, set_packed_slice},
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
 };
 use binius_math::BinarySubspace;
+use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, SingleThreadedNTT};
-
-/// This trait allows passing packed batches to the simple NTT implementation.
-trait DataAccess<T> {
-	fn get(&self, index: usize) -> T;
-	fn set(&mut self, index: usize, value: T);
-
-	fn len(&self) -> usize;
-}
-
-impl<T: Clone> DataAccess<T> for [T] {
-	fn len(&self) -> usize {
-		self.len()
-	}
-
-	fn get(&self, index: usize) -> T {
-		self[index].clone()
-	}
-
-	fn set(&mut self, index: usize, value: T) {
-		self[index] = value;
-	}
-}
+use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
 struct BatchedPackedFieldSlice<'a, P> {
 	data: &'a mut [P],
+	log_n: usize,
 	log_batch_count: usize,
 	batch_index: usize,
 }
 
 impl<'a, P> BatchedPackedFieldSlice<'a, P> {
-	fn new(data: &'a mut [P], log_batch_count: usize, batch_index: usize) -> Self {
+	fn new(data: &'a mut [P], log_n: usize, log_batch_count: usize, batch_index: usize) -> Self {
 		Self {
 			data,
+			log_n,
 			log_batch_count,
 			batch_index,
 		}
 	}
 }
 
-impl<P> DataAccess<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+impl<P> RandomAccessSequence<P::Scalar> for BatchedPackedFieldSlice<'_, P>
 where
 	P: PackedField,
 {
-	fn get(&self, index: usize) -> P::Scalar {
-		get_packed_slice(self.data, self.batch_index + (index << self.log_batch_count))
-	}
-
-	fn set(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice(self.data, self.batch_index + (index << self.log_batch_count), value)
+	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
+		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
 	}
 
 	fn len(&self) -> usize {
-		(self.data.len() * P::WIDTH) >> self.log_batch_count
+		1 << self.log_n
+	}
+}
+
+impl<P> RandomAccessSequenceMut<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+where
+	P: PackedField,
+{
+	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
+		set_packed_slice_unchecked(
+			self.data,
+			self.batch_index + (index << self.log_batch_count),
+			value,
+		);
 	}
 }
 
@@ -71,7 +61,7 @@ where
 fn forward_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl DataAccess<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>
@@ -116,7 +106,7 @@ where
 fn inverse_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl DataAccess<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>
@@ -178,19 +168,30 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_batch_size: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
-		for batch_index in 0..1 << log_batch_size {
-			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			forward_transform_simple(
-				self.log_domain_size(),
-				&self.s_evals,
-				&mut batch,
-				coset,
-				log_n,
-			)?;
+		let NTTShape {
+			log_x,
+			log_y,
+			log_z,
+		} = shape;
+		for x_index in 0..1 << log_x {
+			for z_index in 0..1 << log_z {
+				let mut batch = BatchedPackedFieldSlice::new(
+					data,
+					log_y,
+					log_x,
+					x_index | z_index << (log_x + log_y),
+				);
+				forward_transform_simple(
+					self.log_domain_size(),
+					&self.s_evals,
+					&mut batch,
+					coset,
+					log_y,
+				)?;
+			}
 		}
 
 		Ok(())
@@ -199,19 +200,30 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
+		shape: NTTShape,
 		coset: u32,
-		log_batch_size: usize,
-		log_n: usize,
 	) -> Result<(), Error> {
-		for batch_index in 0..1 << log_batch_size {
-			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			inverse_transform_simple(
-				self.log_domain_size(),
-				&self.s_evals,
-				&mut batch,
-				coset,
-				log_n,
-			)?;
+		let NTTShape {
+			log_x,
+			log_y,
+			log_z,
+		} = shape;
+		for x_index in 0..1 << log_x {
+			for z_index in 0..1 << log_z {
+				let mut batch = BatchedPackedFieldSlice::new(
+					data,
+					log_y,
+					log_x,
+					x_index | z_index << (log_x + log_y),
+				);
+				inverse_transform_simple(
+					self.log_domain_size(),
+					&self.s_evals,
+					&mut batch,
+					coset,
+					log_y,
+				)?;
+			}
 		}
 
 		Ok(())
