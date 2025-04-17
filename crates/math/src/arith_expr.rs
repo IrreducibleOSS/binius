@@ -211,14 +211,14 @@ where
 		}
 	}
 
-	const fn is_composite(&self) -> bool {
+	pub const fn is_composite(&self) -> bool {
 		match self {
 			Self::Const(_) | Self::Var(_) => false,
 			Self::Add(_, _) | Self::Mul(_, _) | Self::Pow(_, _) => true,
 		}
 	}
 
-	const fn constant(&self) -> Option<F> {
+	pub const fn constant(&self) -> Option<F> {
 		if let Self::Const(val) = self {
 			Some(*val)
 		} else {
@@ -642,25 +642,56 @@ impl<F: Field> ArithExpr<F> {
 		&self.root
 	}
 
+	pub fn nodes(&self) -> usize {
+		self.root.nodes()
+	}
+
 	pub fn unique_nodes(&self) -> usize {
 		self.root.unique_nodes()
 	}
 }
 
-impl<F: TowerField> SerializeBytes for ArithExpr<F> {
+impl<F: Field> Add<ArithExprNode<F>> for ArithExpr<F> {
+	type Output = Self;
+
+	fn add(self, rhs: ArithExprNode<F>) -> Self {
+		let new_expr = (*self.root).clone() + rhs;
+		new_expr.into()
+	}
+}
+
+impl<F: Field> Sub<ArithExprNode<F>> for ArithExpr<F> {
+	type Output = Self;
+
+	fn sub(self, rhs: ArithExprNode<F>) -> Self {
+		let new_expr = (*self.root).clone() - rhs;
+		new_expr.into()
+	}
+}
+
+impl<F: Field> Mul<ArithExprNode<F>> for ArithExpr<F> {
+	type Output = Self;
+
+	fn mul(self, rhs: ArithExprNode<F>) -> Self {
+		let new_expr = (*self.root).clone() * rhs;
+		new_expr.into()
+	}
+}
+
+impl<F: Field> SerializeBytes for ArithExpr<F> {
 	fn serialize(
 		&self,
 		write_buf: impl BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		stackalloc_with_default::<ArithCircuitStep<F>, _, _>(self.root.nodes(), |mut steps_buf| {
+		stackalloc_with_default::<ArithCircuitStep<F>, _, _>(self.nodes(), |mut steps_buf| {
 			let circuit = ArithCircuit::from_expr(self, &mut steps_buf);
 			circuit.serialize(write_buf, mode)
 		})
 	}
 }
 
-impl<F: TowerField> DeserializeBytes for ArithExpr<F> {
+impl<F: Field> DeserializeBytes for ArithExpr<F> {
 	fn deserialize(
 		read_buf: impl Buf,
 		mode: SerializationMode,
@@ -988,7 +1019,7 @@ mod tests {
 		assert_eq!(expr.unique_nodes(), 8);
 	}
 
-	fn check_serialize_bytes_roundtrip<F: TowerField>(expr: ArithExprNode<F>) {
+	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExprNode<F>) {
 		let expr = ArithExpr::from(expr);
 		let mut buf = Vec::new();
 		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
