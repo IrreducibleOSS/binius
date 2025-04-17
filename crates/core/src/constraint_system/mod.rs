@@ -9,8 +9,7 @@ pub mod validate;
 mod verify;
 
 use binius_field::{BinaryField128b, TowerField};
-use binius_macros::SerializeBytes;
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode};
+use binius_macros::{DeserializeBytes, SerializeBytes};
 use channel::{ChannelId, Flush};
 use exp::Exp;
 pub use prove::prove;
@@ -25,7 +24,8 @@ use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
 ///
 /// As a result, a ConstraintSystem allows us to validate all of these
 /// constraints against a witness, as well as enabling generic prove/verify
-#[derive(Debug, Clone, SerializeBytes)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
+#[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct ConstraintSystem<F: TowerField> {
 	pub oracles: MultilinearOracleSet<F>,
 	pub table_constraints: Vec<ConstraintSet<F>>,
@@ -33,25 +33,6 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub flushes: Vec<Flush<F>>,
 	pub exponents: Vec<Exp<F>>,
 	pub max_channel_id: ChannelId,
-}
-
-impl DeserializeBytes for ConstraintSystem<BinaryField128b> {
-	fn deserialize(
-		mut read_buf: impl bytes::Buf,
-		mode: SerializationMode,
-	) -> Result<Self, SerializationError>
-	where
-		Self: Sized,
-	{
-		Ok(Self {
-			oracles: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			table_constraints: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			non_zero_oracle_ids: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			flushes: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			exponents: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			max_channel_id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-		})
-	}
 }
 
 impl<F: TowerField> ConstraintSystem<F> {
