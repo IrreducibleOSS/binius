@@ -229,18 +229,6 @@ mod tests {
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
 			.collect::<Vec<_>>();
 
-		// Table order in statement depends on table creation order
-		let table_sizes = if looker_first {
-			vec![looker_1_size, lookup_table_size, looker_2_size]
-		} else {
-			vec![lookup_table_size, looker_1_size, looker_2_size]
-		};
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes,
-		};
-
 		let allocator = Bump::new();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
