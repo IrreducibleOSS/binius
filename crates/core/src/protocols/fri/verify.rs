@@ -4,7 +4,7 @@ use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, DeserializeBytes};
+use binius_utils::{bail, DeserializeBytes};
 use bytes::Buf;
 use itertools::izip;
 use tracing::instrument;
@@ -143,20 +143,19 @@ where
 	///
 	/// Returns the fully-folded message value.
 	pub fn verify_last_oracle(&self, terminate_codeword: &[F]) -> Result<F, Error> {
-		let log_batch_size = log2_strict_usize(terminate_codeword.len())
-			.saturating_sub(self.params.rs_code().log_inv_rate());
+		let n_final_challenges = self.params.n_final_challenges();
+
 		self.vcs
 			.verify_vector(
 				self.round_commitments
 					.last()
 					.unwrap_or(self.codeword_commitment),
 				terminate_codeword,
-				1 << log_batch_size,
+				1 << n_final_challenges,
 			)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 		let repetition_codeword = if self.n_oracles() != 0 {
-			let n_final_challenges = self.params.n_final_challenges();
 			let n_prior_challenges = self.fold_challenges.len() - n_final_challenges;
 			let final_challenges = &self.fold_challenges[n_prior_challenges..];
 			let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
