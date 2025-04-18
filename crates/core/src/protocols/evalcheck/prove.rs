@@ -145,6 +145,7 @@ where
 		self.claims_queue.extend(evalcheck_claims.clone());
 
 		// Step 1: Use modified BFS to memoize evaluations.
+		let mle_fold_full_span = tracing::info_span!("[task] MLE Fold Full", phase = "evalcheck", perfetto_category = "task.main").entered();
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
@@ -195,6 +196,7 @@ where
 				.into_iter()
 				.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 		}
+		drop(mle_fold_full_span);
 
 		// Step 2: Prove multilinears
 		let proofs = evalcheck_claims
@@ -204,6 +206,7 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
+		let evalcheck_mle_fold_high_span = tracing::info_span!("[task] MLE Fold High", phase = "evalcheck", perfetto_category = "task.main").entered();
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
@@ -219,6 +222,7 @@ where
 			self.witness_index,
 			self.backend,
 		)?;
+		drop(evalcheck_mle_fold_high_span);
 
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
