@@ -2,7 +2,7 @@
 
 use std::ops::RangeBounds;
 
-use crate::alloc::ComputeBufferAllocator;
+use crate::alloc::Error;
 
 /// A trait for types that behave like slices but may have different underlying representations.
 ///
@@ -33,153 +33,132 @@ impl<T> OpaqueSlice<T> for &mut [T] {
 	}
 }
 
-/// A trait defining the memory types and slice representations for a compute device.
+/// A trait for memory types that can be used in compute operations.
 ///
-/// This trait specifies the slice types and minimum slice length requirements for memory
-/// that can be used with a particular compute device (e.g. CPU, GPU).
+/// This trait defines the core memory operations needed to work with slices of data across
+/// different compute devices and memory types. It provides:
 ///
-/// The generic parameter `F` represents the element type stored in the memory.
+/// - Associated slice types that may have different representations on different devices
+/// - Methods for borrowing and splitting slices safely
+/// - A minimum slice length that implementations must respect
 ///
-/// # Type Parameters
-///
-/// - `FSlice<'a>`: The immutable slice type for this memory, must implement `OpaqueSlice<F>`
-/// - `FSliceMut<'a>`: The mutable slice type for this memory, must implement `OpaqueSlice<F>`
-///
-/// # Associated Constants
-///
-/// - `MIN_SLICE_LEN`: The minimum allowed length for slices of this memory type. Memory
-///   operations must use slice lengths that are multiples of this value.
-pub trait ComputeMemoryTypes<F> {
-	type FSlice<'a>: OpaqueSlice<F>;
-	type FSliceMut<'a>: OpaqueSlice<F>;
-	const MIN_SLICE_LEN: usize;
-}
-
-/// A trait defining memory operations that can be performed on compute device memory.
-///
-/// This trait provides a common interface for performing slice operations on memory,
-/// regardless of whether it is host-accessible or device-accessible. The operations
-/// include converting between mutable and immutable views, taking subslices, and
-/// splitting slices.
-///
-/// # Type Parameters
-///
-/// - `F`: The element type stored in memory
-/// - `MemTypes`: The memory types trait defining the slice representations
+/// The trait is parameterized over the element type `F` to allow for different data types
+/// while maintaining type safety.
 ///
 /// # Safety
 ///
-/// Implementations must ensure:
-/// - All slice operations maintain proper alignment and size requirements
-/// - Mutable slices have exclusive access to their memory regions
-/// - Range bounds in slice operations are valid for the underlying memory
+/// Implementations must ensure that:
+/// - Slices do not outlive their parent memory
+/// - Mutable slices provide exclusive access
+/// - All operations respect the `MIN_SLICE_LEN` constant
 /// - Split operations produce non-overlapping slices
-pub trait ComputeMemoryOperations<F, MemTypes: ComputeMemoryTypes<F>> {
+pub trait ComputeMemory<F> {
+	type FSlice<'a>: OpaqueSlice<F>;
+	type FSliceMut<'a>: OpaqueSlice<F>;
+	const MIN_SLICE_LEN: usize;
+
 	/// Borrows a mutable memory slice as immutable.
 	///
 	/// This allows the immutable reference to be copied.
-	fn as_const<'a>(data: &'a MemTypes::FSliceMut<'_>) -> MemTypes::FSlice<'a>;
+	fn as_const<'a>(data: &'a Self::FSliceMut<'_>) -> Self::FSlice<'a>;
 
 	/// Borrows a subslice of an immutable memory slice.
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of `MemTypes::MIN_SLICE_LEN`
-	fn slice(data: MemTypes::FSlice<'_>, range: impl RangeBounds<usize>) -> MemTypes::FSlice<'_>;
+	/// - the range bounds must be multiples of `MIN_SLICE_LEN`
+	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
 
 	/// Borrows a subslice of a mutable memory slice.
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of `MemTypes::MIN_SLICE_LEN`
+	/// - the range bounds must be multiples of `Self::MIN_SLICE_LEN`
 	fn slice_mut<'a>(
-		data: &'a mut MemTypes::FSliceMut<'_>,
+		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
-	) -> MemTypes::FSliceMut<'a>;
+	) -> Self::FSliceMut<'a>;
 
 	/// Splits a mutable slice into two disjoint subslices.
 	///
 	/// ## Preconditions
 	///
-	/// - `mid` must be a multiple of `MemTypes::MIN_SLICE_LEN`
+	/// - `mid` must be a multiple of `MIN_SLICE_LEN`
 	fn split_at_mut(
-		data: MemTypes::FSliceMut<'_>,
+		data: Self::FSliceMut<'_>,
 		mid: usize,
-	) -> (MemTypes::FSliceMut<'_>, MemTypes::FSliceMut<'_>);
+	) -> (Self::FSliceMut<'_>, Self::FSliceMut<'_>);
 
 	fn split_at_mut_borrowed<'a>(
-		data: &'a mut MemTypes::FSliceMut<'_>,
+		data: &'a mut Self::FSliceMut<'_>,
 		mid: usize,
-	) -> (MemTypes::FSliceMut<'a>, MemTypes::FSliceMut<'a>) {
+	) -> (Self::FSliceMut<'a>, Self::FSliceMut<'a>) {
 		let borrowed = Self::slice_mut(data, ..);
 		Self::split_at_mut(borrowed, mid)
 	}
 }
 
-/// A trait for host-side memory types that can be accessed as Rust slices.
+/// A trait for host-accessible memory that can be accessed as standard Rust slices.
 ///
-/// This trait extends [`ComputeMemoryTypes`] to require that the slice types can be converted
-/// to standard Rust slices via [`AsRef`] and [`AsMut`]. This enables direct access to the
-/// underlying memory on the host side.
+/// This trait extends `ComputeMemory` by requiring that its slice types implement
+/// `AsRef<[F]>` and `AsMut<[F]>`, allowing direct access to the underlying memory
+/// as standard Rust slices. This enables efficient host-side operations and
+/// interoperability with standard Rust code.
 ///
-/// Host memory types are used for data that needs to be accessed directly by the CPU, as opposed
-/// to device memory which may live in a separate address space (e.g. GPU memory).
-pub trait ComputeMemoryTypesHost<F>: ComputeMemoryTypes<F>
+/// The trait is automatically implemented for any `ComputeMemory` type whose slices
+/// implement the required conversion traits.
+pub trait ComputeMemoryHost<F>: ComputeMemory<F>
 where
 	for<'a> Self::FSlice<'a>: AsRef<[F]>,
 	for<'a> Self::FSliceMut<'a>: AsMut<[F]>,
 {
 }
 
-/// A trait that defines a complete memory management suite for a compute device.
+/// A trait for managing memory allocation and data transfer between host and device memory.
 ///
-/// This trait combines host and device memory types, memory operations, and allocators into a
-/// single abstraction that can be used to manage memory across the host-device boundary.
+/// This trait provides a unified interface for allocating memory on both host and device,
+/// and copying data between them. It is designed to work with any pair of memory types
+/// that implement `ComputeMemory`, where the host memory type additionally implements
+/// `ComputeMemoryHost`.
 ///
-/// The type parameters are:
-/// - `'a`: lifetime of host memory allocations
-/// - `'b`: lifetime of device memory allocations  
-/// - `F`: the field element type being stored
+/// The trait is parameterized by:
+/// - `'a`: The lifetime of host allocated memory
+/// - `'b`: The lifetime of device allocated memory
+/// - `F`: The element type stored in memory, which must implement `Copy`
 ///
-/// The associated types define:
-/// - `MemTypesHost`: Memory types for host-accessible memory
-/// - `MemTypesDevice`: Memory types for device-accessible memory
-/// - `HostComputeMemoryOperations`: Operations on host memory
-/// - `HostAllocator`: Allocator for host memory
-/// - `DeviceComputeMemoryOperations`: Operations on device memory  
-/// - `DeviceAllocator`: Allocator for device memory
+/// The associated types specify:
+/// - `MemHost`: The host memory type, which must implement `ComputeMemoryHost<F>`
+/// - `MemDevice`: The device memory type, which must implement `ComputeMemory<F>`
 ///
-/// The trait provides methods to copy data between host and device memory.
+/// The trait provides methods for:
+/// - Allocating memory on both host and device
+/// - Copying data from host to device memory
+/// - Copying data from device to host memory
 pub trait ComputeMemorySuite<'a, 'b, F: Copy>
 where
-	for<'c> <<Self as ComputeMemorySuite<'a, 'b, F>>::MemTypesHost as ComputeMemoryTypes<F>>::FSlice<'c>:
+	for<'c> <<Self as ComputeMemorySuite<'a, 'b, F>>::MemHost as ComputeMemory<F>>::FSlice<'c>:
 		AsRef<[F]>,
-	for<'c> <<Self as ComputeMemorySuite<'a, 'b, F>>::MemTypesHost as ComputeMemoryTypes<F>>::FSliceMut<'c>:
+	for<'c> <<Self as ComputeMemorySuite<'a, 'b, F>>::MemHost as ComputeMemory<F>>::FSliceMut<'c>:
 		AsMut<[F]>,
 {
-	type MemTypesHost: ComputeMemoryTypesHost<F>;
-	type MemTypesDevice: ComputeMemoryTypes<F>;
-	type HostComputeMemoryOperations: ComputeMemoryOperations<F, Self::MemTypesHost>;
-	type HostAllocator: ComputeBufferAllocator<
-		'a,
-		F,
-		Self::MemTypesHost,
-		Self::HostComputeMemoryOperations,
-	>;
-	type DeviceComputeMemoryOperations: ComputeMemoryOperations<F, Self::MemTypesDevice>;
-	type DeviceAllocator: ComputeBufferAllocator<
-		'b,
-		F,
-		Self::MemTypesDevice,
-		Self::DeviceComputeMemoryOperations,
-	>;
+	type MemHost: ComputeMemoryHost<F>;
+	type MemDevice: ComputeMemory<F>;
+
+	fn alloc_host(
+		&self,
+		n: usize,
+	) -> Result<<Self::MemHost as ComputeMemory<F>>::FSliceMut<'a>, Error>;
+	fn alloc_device(
+		&self,
+		n: usize,
+	) -> Result<<Self::MemDevice as ComputeMemory<F>>::FSliceMut<'b>, Error>;
 
 	fn copy_host_to_device(
-		host_slice: <Self::MemTypesHost as ComputeMemoryTypes<F>>::FSlice<'_>,
-		device_slice: &mut <Self::MemTypesDevice as ComputeMemoryTypes<F>>::FSliceMut<'_>,
+		host_slice: <Self::MemHost as ComputeMemory<F>>::FSlice<'_>,
+		device_slice: &mut <Self::MemDevice as ComputeMemory<F>>::FSliceMut<'_>,
 	);
 	fn copy_device_to_host(
-		device_slice: <Self::MemTypesDevice as ComputeMemoryTypes<F>>::FSlice<'_>,
-		host_slice: &mut <Self::MemTypesHost as ComputeMemoryTypes<F>>::FSliceMut<'_>,
+		device_slice: <Self::MemDevice as ComputeMemory<F>>::FSlice<'_>,
+		host_slice: &mut <Self::MemHost as ComputeMemory<F>>::FSliceMut<'_>,
 	);
 }

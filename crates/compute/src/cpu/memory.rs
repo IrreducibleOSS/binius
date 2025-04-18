@@ -4,35 +4,22 @@ use std::{collections::Bound, ops::RangeBounds};
 
 use crate::{
 	alloc::BumpAllocator,
-	memory::{
-		ComputeMemoryOperations, ComputeMemorySuite, ComputeMemoryTypes, ComputeMemoryTypesHost,
-	},
+	memory::{ComputeMemory, ComputeMemoryHost, ComputeMemorySuite},
 };
 
 #[derive(Debug)]
-pub struct CpuMemoryTypes {}
+pub struct CpuMemory {}
 
-impl<F: 'static> ComputeMemoryTypes<F> for CpuMemoryTypes {
+impl<F: 'static> ComputeMemory<F> for CpuMemory {
 	const MIN_SLICE_LEN: usize = 1;
 	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];
-}
 
-impl<F: 'static> ComputeMemoryTypesHost<F> for CpuMemoryTypes {}
-
-pub struct CpuMemory {}
-
-impl<F: 'static> ComputeMemoryOperations<F, CpuMemoryTypes> for CpuMemory {
-	fn as_const<'a>(
-		data: &'a <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
-	) -> <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSlice<'a> {
+	fn as_const<'a>(data: &'a Self::FSliceMut<'_>) -> Self::FSlice<'a> {
 		*data
 	}
 
-	fn slice(
-		data: <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSlice<'_>,
-		range: impl RangeBounds<usize>,
-	) -> <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSlice<'_> {
+	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_> {
 		let start = match range.start_bound() {
 			Bound::Included(&start) => start,
 			Bound::Excluded(&start) => start + 1,
@@ -61,29 +48,41 @@ impl<F: 'static> ComputeMemoryOperations<F, CpuMemoryTypes> for CpuMemory {
 	}
 
 	fn split_at_mut(
-		data: <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
+		data: Self::FSliceMut<'_>,
 		mid: usize,
-	) -> (
-		<CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
-		<CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
-	) {
+	) -> (Self::FSliceMut<'_>, Self::FSliceMut<'_>) {
 		data.split_at_mut(mid)
 	}
 }
 
-struct CpuComputeMemorySuite {}
+impl<F: 'static> ComputeMemoryHost<F> for CpuMemory {}
 
-impl<'a, 'b, F: 'static + Copy> ComputeMemorySuite<'a, 'b, F> for CpuComputeMemorySuite {
-	type HostComputeMemoryOperations = CpuMemory;
-	type HostAllocator = BumpAllocator<'a, F, CpuMemoryTypes, CpuMemory>;
-	type DeviceComputeMemoryOperations = CpuMemory;
-	type DeviceAllocator = BumpAllocator<'b, F, CpuMemoryTypes, CpuMemory>;
-	type MemTypesHost = CpuMemoryTypes;
-	type MemTypesDevice = CpuMemoryTypes;
+struct CpuComputeMemorySuite<'a, 'b, F: 'static> {
+	host_allocator: BumpAllocator<'a, F, CpuMemory>,
+	device_allocator: BumpAllocator<'b, F, CpuMemory>,
+}
+
+impl<'a, 'b, F> CpuComputeMemorySuite<'a, 'b, F>
+where
+	F: 'static + Copy,
+{
+	pub fn new(host_buffer: &'a mut [F], device_buffer: &'b mut [F]) -> Self {
+		let host_allocator = BumpAllocator::<F, CpuMemory>::new(host_buffer);
+		let device_allocator = BumpAllocator::<F, CpuMemory>::new(device_buffer);
+		CpuComputeMemorySuite {
+			host_allocator,
+			device_allocator,
+		}
+	}
+}
+
+impl<'a, 'b, F: 'static + Copy> ComputeMemorySuite<'a, 'b, F> for CpuComputeMemorySuite<'a, 'b, F> {
+	type MemHost = CpuMemory;
+	type MemDevice = CpuMemory;
 
 	fn copy_host_to_device(
-		host_slice: <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSlice<'_>,
-		device_slice: &mut <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
+		host_slice: <Self::MemHost as ComputeMemory<F>>::FSlice<'_>,
+		device_slice: &mut <Self::MemDevice as ComputeMemory<F>>::FSliceMut<'_>,
 	) {
 		// TODO consider implementing a copy-on-write mechanism for CpuComputeMemorySuite to skip copying data until the original
 		// version is modified.
@@ -91,17 +90,30 @@ impl<'a, 'b, F: 'static + Copy> ComputeMemorySuite<'a, 'b, F> for CpuComputeMemo
 	}
 
 	fn copy_device_to_host(
-		device_slice: <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSlice<'_>,
-		host_slice: &mut <CpuMemoryTypes as ComputeMemoryTypes<F>>::FSliceMut<'_>,
+		device_slice: <Self::MemDevice as ComputeMemory<F>>::FSlice<'_>,
+		host_slice: &mut <Self::MemHost as ComputeMemory<F>>::FSliceMut<'_>,
 	) {
 		host_slice.as_mut().copy_from_slice(device_slice.as_ref());
+	}
+
+	fn alloc_device(
+		&self,
+		n: usize,
+	) -> Result<<Self::MemDevice as ComputeMemory<F>>::FSliceMut<'b>, crate::alloc::Error> {
+		self.device_allocator.alloc(n)
+	}
+
+	fn alloc_host(
+		&self,
+		n: usize,
+	) -> Result<<Self::MemHost as ComputeMemory<F>>::FSliceMut<'a>, crate::alloc::Error> {
+		self.host_allocator.alloc(n)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::alloc::ComputeBufferAllocator;
 
 	#[test]
 	fn test_try_slice_on_mem_slice() {
@@ -133,25 +145,18 @@ mod tests {
 	}
 
 	fn run_alloc_and_copy_roundtrip<'a, 'b, Suite: ComputeMemorySuite<'a, 'b, u128>>(
-		host_allocator: &Suite::HostAllocator,
-		device_allocator: &Suite::DeviceAllocator,
+		suite: &Suite,
 	) {
 		const BUFFER_SIZE: usize = 4;
-		let mut host_source_data = host_allocator.alloc(BUFFER_SIZE).unwrap();
-		let mut host_dest_data = host_allocator.alloc(BUFFER_SIZE).unwrap();
-		let mut device_data = device_allocator.alloc(BUFFER_SIZE).unwrap();
+		let mut host_source_data = suite.alloc_host(BUFFER_SIZE).unwrap();
+		let mut host_dest_data = suite.alloc_host(BUFFER_SIZE).unwrap();
+		let mut device_data = suite.alloc_device(BUFFER_SIZE).unwrap();
 		for idx in 0..BUFFER_SIZE {
 			host_source_data.as_mut()[idx] = idx as u128 + 1024;
 			assert_ne!(host_dest_data.as_mut()[idx], host_source_data.as_mut()[idx]);
 		}
-		Suite::copy_host_to_device(
-			Suite::HostComputeMemoryOperations::as_const(&host_source_data),
-			&mut device_data,
-		);
-		Suite::copy_device_to_host(
-			Suite::DeviceComputeMemoryOperations::as_const(&device_data),
-			&mut host_dest_data,
-		);
+		Suite::copy_host_to_device(Suite::MemHost::as_const(&host_source_data), &mut device_data);
+		Suite::copy_device_to_host(Suite::MemDevice::as_const(&device_data), &mut host_dest_data);
 		for idx in 0..BUFFER_SIZE {
 			assert_eq!(host_source_data.as_mut()[idx], host_dest_data.as_mut()[idx]);
 		}
@@ -161,9 +166,7 @@ mod tests {
 	fn test_alloc_and_copy_roundtrip() {
 		let mut host_data = (0..256u128).collect::<Vec<_>>();
 		let mut device_data = (0..256u128).collect::<Vec<_>>();
-		let host_allocator = BumpAllocator::<u128, CpuMemoryTypes, CpuMemory>::new(&mut host_data);
-		let device_allocator =
-			BumpAllocator::<u128, CpuMemoryTypes, CpuMemory>::new(&mut device_data);
-		run_alloc_and_copy_roundtrip::<CpuComputeMemorySuite>(&host_allocator, &device_allocator);
+		let suite = CpuComputeMemorySuite::new(&mut host_data, &mut device_data);
+		run_alloc_and_copy_roundtrip::<CpuComputeMemorySuite<u128>>(&suite);
 	}
 }

@@ -2,75 +2,35 @@
 
 use std::cell::Cell;
 
-use crate::memory::{ComputeMemoryOperations, ComputeMemoryTypes, OpaqueSlice};
-/// A trait for allocating slices from a compute memory buffer.
-///
-/// This trait provides an interface for allocating fixed-size slices from an underlying
-/// memory buffer, such as device memory or host memory. The allocator maintains ownership
-/// of the buffer and hands out slices with lifetimes tied to the allocator.
-///
-/// # Type Parameters
-///
-/// - `'a`: The lifetime of the allocator and allocated slices
-/// - `F`: The element type stored in the buffer
-/// - `Mem`: The memory types trait defining slice representations
-/// - `MemOperations`: The memory operations trait for manipulating slices
-///
-/// # Safety
-///
-/// Implementations must ensure:
-/// - Allocated slices do not overlap
-/// - Slice lengths are valid multiples of `Mem::MIN_SLICE_LEN`
-/// - Slices remain valid for their full lifetime
-/// - The total allocation size does not exceed the underlying buffer
-pub trait ComputeBufferAllocator<'a, F, Mem, MemOperations>
-where
-	Mem: ComputeMemoryTypes<F>,
-	MemOperations: ComputeMemoryOperations<F, Mem>,
-{
-	/// Allocates a slice of elements.
-	///
-	/// This method operates on an immutable self reference so that multiple allocator references
-	/// can co-exist.
-	///
-	/// ## Pre-conditions
-	///
-	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
-	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error>;
-}
+use super::memory::{ComputeMemory, OpaqueSlice};
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
-pub struct BumpAllocator<
-	'a,
-	F,
-	Mem: ComputeMemoryTypes<F>,
-	MemOperations: ComputeMemoryOperations<F, Mem>,
-> {
+pub struct BumpAllocator<'a, F, Mem: ComputeMemory<F>> {
 	buffer: Cell<Option<Mem::FSliceMut<'a>>>,
-	_phantom: std::marker::PhantomData<fn() -> MemOperations>,
 }
 
-impl<'a, F, Mem, MemOperations> BumpAllocator<'a, F, Mem, MemOperations>
+impl<'a, F, Mem> BumpAllocator<'a, F, Mem>
 where
-	Mem: ComputeMemoryTypes<F>,
-	MemOperations: ComputeMemoryOperations<F, Mem>,
+	F: 'static,
+	Mem: ComputeMemory<F> + 'a,
 {
 	pub fn new(buffer: Mem::FSliceMut<'a>) -> Self {
 		Self {
 			buffer: Cell::new(Some(buffer)),
-			_phantom: std::marker::PhantomData,
 		}
 	}
-}
 
-impl<'a, F, Mem, MemOperations> ComputeBufferAllocator<'a, F, Mem, MemOperations>
-	for BumpAllocator<'a, F, Mem, MemOperations>
-where
-	Mem: ComputeMemoryTypes<F>,
-	MemOperations: ComputeMemoryOperations<F, Mem>,
-{
-	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error> {
+	/// Allocates a slice of elements.
+	///
+	/// This method operates on an immutable self reference so that multiple allocator references
+	/// can co-exist. This follows how the `bumpalo` crate's `Bump` interface works. It may not be
+	/// necessary actually (since this partitions a borrowed slice, whereas `Bump` owns its memory).
+	///
+	/// ## Pre-conditions
+	///
+	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
+	pub fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error> {
 		let buffer = self
 			.buffer
 			.take()
@@ -81,7 +41,7 @@ where
 			// buffer contains Some, invariant restored
 			Err(Error::OutOfMemory)
 		} else {
-			let (lhs, rhs) = MemOperations::split_at_mut(buffer, n.max(Mem::MIN_SLICE_LEN));
+			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::MIN_SLICE_LEN));
 			self.buffer.set(Some(rhs));
 			// buffer contains Some, invariant restored
 			Ok(lhs)
@@ -100,14 +60,14 @@ mod tests {
 	use assert_matches::assert_matches;
 
 	use super::*;
-	use crate::cpu::memory::{CpuMemory, CpuMemoryTypes};
+	use crate::cpu::memory::CpuMemory;
 
 	#[test]
 	fn test_alloc() {
 		let mut data = (0..256u128).collect::<Vec<_>>();
 
 		{
-			let bump = BumpAllocator::<u128, CpuMemoryTypes, CpuMemory>::new(&mut data);
+			let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_eq!(bump.alloc(100).unwrap().len(), 100);
 			assert_matches!(bump.alloc(100), Err(Error::OutOfMemory));
@@ -115,7 +75,7 @@ mod tests {
 		}
 
 		// Reuse memory
-		let bump = BumpAllocator::<u128, CpuMemoryTypes, CpuMemory>::new(&mut data);
+		let bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
 		let data = bump.alloc(100).unwrap();
 		assert_eq!(data.len(), 100);
 	}
