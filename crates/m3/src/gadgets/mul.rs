@@ -4,9 +4,8 @@ use std::{array, marker::PhantomData, ops::MulAssign};
 
 use anyhow::Result;
 use binius_field::{
-	ext_basis, packed::set_packed_slice, BinaryField, BinaryField128b, BinaryField1b,
-	BinaryField32b, BinaryField64b, ExtensionField, Field, PackedExtension, PackedField,
-	TowerField,
+	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
+	PackedField, TowerField,
 };
 
 use crate::builder::{
@@ -60,21 +59,21 @@ impl UnsignedMulPrimitives for u32 {
 }
 
 impl UnsignedMulPrimitives for u64 {
-	type FP = BinaryField64b;
-	type FPExt = BinaryField128b;
+	type FP = B64;
+	type FPExt = B128;
 
 	fn get_bit_length() -> usize {
 		64
 	}
 
-	fn mul(x: BinaryField64b, y: BinaryField64b) -> (BinaryField64b, BinaryField64b) {
+	fn mul(x: B64, y: B64) -> (B64, B64) {
 		let res = x.val() as u128 * y.val() as u128;
-		let low = BinaryField64b::new(res as u64);
-		let high = BinaryField64b::new((res >> 64) as u64);
+		let low = B64::new(res as u64);
+		let high = B64::new((res >> 64) as u64);
 		(high, low)
 	}
 
-	fn is_bit_set_at(a: BinaryField64b, index: usize) -> bool {
+	fn is_bit_set_at(a: B64, index: usize) -> bool {
 		((a.val() >> index) & 1) == 1
 	}
 
@@ -223,16 +222,16 @@ where
 
 			for bit_idx in 0..BIT_LENGTH {
 				if UX::is_bit_set_at(x, bit_idx) {
-					set_packed_slice(&mut x_in_bits[bit_idx], i, BinaryField1b::ONE);
+					set_packed_slice(&mut x_in_bits[bit_idx], i, B1::ONE);
 				}
 				if UX::is_bit_set_at(y, bit_idx) {
-					set_packed_slice(&mut y_in_bits[bit_idx], i, BinaryField1b::ONE);
+					set_packed_slice(&mut y_in_bits[bit_idx], i, B1::ONE);
 				}
 				if UX::is_bit_set_at(res_low, bit_idx) {
-					set_packed_slice(&mut out_low_bits[bit_idx], i, BinaryField1b::ONE);
+					set_packed_slice(&mut out_low_bits[bit_idx], i, B1::ONE);
 				}
 				if UX::is_bit_set_at(res_high, bit_idx) {
-					set_packed_slice(&mut out_high_bits[bit_idx], i, BinaryField1b::ONE);
+					set_packed_slice(&mut out_high_bits[bit_idx], i, B1::ONE);
 				}
 			}
 		}
@@ -243,7 +242,7 @@ where
 
 #[derive(Debug)]
 pub struct MulUU32 {
-	inner: Mul<BinaryField64b, BinaryField32b, u32, 32>,
+	inner: Mul<B64, B32, u32, 32>,
 
 	pub x_in: Col<B32>,
 	pub y_in: Col<B32>,
@@ -267,8 +266,8 @@ impl MulUU32 {
 	pub fn populate_with_inputs<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		x_vals: impl IntoIterator<Item = BinaryField32b>,
-		y_vals: impl IntoIterator<Item = BinaryField32b>,
+		x_vals: impl IntoIterator<Item = B32>,
+		y_vals: impl IntoIterator<Item = B32>,
 	) -> Result<()>
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
@@ -279,7 +278,7 @@ impl MulUU32 {
 
 #[derive(Debug)]
 pub struct MulUU64 {
-	inner: Mul<BinaryField128b, BinaryField64b, u64, 64>,
+	inner: Mul<B128, B64, u64, 64>,
 
 	pub x_in: Col<B64>,
 	pub y_in: Col<B64>,
@@ -303,8 +302,8 @@ impl MulUU64 {
 	pub fn populate_with_inputs<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		x_vals: impl IntoIterator<Item = BinaryField64b>,
-		y_vals: impl IntoIterator<Item = BinaryField64b>,
+		x_vals: impl IntoIterator<Item = B64>,
+		y_vals: impl IntoIterator<Item = B64>,
 	) -> Result<()>
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B64>,
