@@ -2,7 +2,6 @@
 
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::instrument;
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -100,7 +99,6 @@ pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
 /// provided to [`crate::protocols::sumcheck::batch_verify_zerocheck_univariate_round`] during proof
 /// verification.
 #[allow(clippy::type_complexity)]
-#[instrument(skip_all, level = "debug")]
 pub fn batch_prove_zerocheck_univariate_round<'a, F, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,

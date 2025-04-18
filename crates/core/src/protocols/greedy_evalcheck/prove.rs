@@ -5,7 +5,6 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
-use tracing::instrument;
 
 use super::error::Error;
 use crate::{
@@ -26,7 +25,6 @@ pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: Com
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all, name = "greedy_evalcheck::prove")]
 pub fn prove<'a, F, P, DomainField, Challenger_, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &'a mut MultilinearExtensionIndex<P>,

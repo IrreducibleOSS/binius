@@ -205,7 +205,6 @@ where
 /// * `params` - common FRI protocol parameters.
 /// * `merkle_prover` - the Merkle tree prover to use for committing
 /// * `message_writer` - a closure that writes the interleaved message to encode and commit
-#[instrument(skip_all, level = "debug")]
 pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
 	params: &FRIParams<F, FA>,
@@ -341,7 +340,6 @@ where
 	///
 	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
 	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
-	#[instrument(skip_all, name = "fri::FRIFolder::execute_fold_round", level = "debug")]
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,

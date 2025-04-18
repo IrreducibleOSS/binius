@@ -315,7 +315,6 @@ where
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
-#[instrument(skip_all, level = "debug")]
 pub fn zerocheck_univariate_evals<F, FDomain, FBase, P, Composition, M, Backend>(
 	multilinears: &[M],
 	compositions: &[Composition],

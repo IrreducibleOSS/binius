@@ -33,7 +33,6 @@ pub struct ReducedWitness<P: PackedField> {
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
 }
 
-#[tracing::instrument("ring_switch::prove", skip_all)]
 pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
@@ -245,7 +244,6 @@ where
 		.collect()
 }
 
-#[instrument(skip_all)]
 fn make_ring_switch_eq_inds<F, P, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
