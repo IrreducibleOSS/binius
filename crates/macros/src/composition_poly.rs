@@ -60,7 +60,7 @@ impl ToTokens for CompositionPolyItem {
 				}
 
 				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
-					(#expr).convert_field()
+					binius_math::ArithExpr::from(#expr).convert_field()
 				}
 
 				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -121,7 +121,7 @@ impl Parse for CompositionPolyItem {
 		let degree = poly_degree(&poly_packed)?;
 		rewrite_literals(&mut poly_packed, &replace_packed_literals)?;
 
-		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::Var(#i)))?;
+		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExprNode::Var(#i)))?;
 		rewrite_literals(&mut expr, &replace_expr_literals)?;
 
 		let scalar_type = if input.is_empty() {
@@ -179,8 +179,8 @@ fn replace_packed_literals(literal: &syn::LitInt) -> Result<syn::Expr, syn::Erro
 /// Replace literals to Expr::zero() and Expr::one() to be used in `expression` method.
 fn replace_expr_literals(literal: &syn::LitInt) -> Result<syn::Expr, syn::Error> {
 	Ok(match &*literal.to_string() {
-		"0" => parse_quote!(binius_math::ArithExpr::zero()),
-		"1" => parse_quote!(binius_math::ArithExpr::one()),
+		"0" => parse_quote!(binius_math::ArithExprNode::zero()),
+		"1" => parse_quote!(binius_math::ArithExprNode::one()),
 		_ => return Err(syn::Error::new(literal.span(), "Unsupported integer")),
 	})
 }

@@ -46,26 +46,10 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 	}
 
 	fn expression(&self) -> ArithExpr<<P as PackedField>::Scalar> {
-		fn map_variables<F: Field, const M: usize>(
-			index_map: &[usize; M],
-			expr: &ArithExpr<F>,
-		) -> ArithExpr<F> {
-			match expr {
-				ArithExpr::Var(i) => ArithExpr::Var(index_map[*i]),
-				ArithExpr::Const(c) => ArithExpr::Const(*c),
-				ArithExpr::Add(a, b) => ArithExpr::Add(
-					Box::new(map_variables(index_map, a)),
-					Box::new(map_variables(index_map, b)),
-				),
-				ArithExpr::Mul(a, b) => ArithExpr::Mul(
-					Box::new(map_variables(index_map, a)),
-					Box::new(map_variables(index_map, b)),
-				),
-				ArithExpr::Pow(a, n) => ArithExpr::Pow(Box::new(map_variables(index_map, a)), *n),
-			}
-		}
-
-		map_variables(&self.indices, &self.composition.expression())
+		self.composition
+			.expression()
+			.remap_vars(&self.indices)
+			.expect("variables map must be valid")
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -190,20 +174,16 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 #[cfg(test)]
 mod tests {
 	use binius_field::BinaryField1b;
+	use binius_math::ArithExprNode;
 
 	use super::*;
 	use crate::polynomial::ArithCircuitPoly;
 
 	#[test]
 	fn tests_expr() {
-		let expr = ArithExpr::Add(
-			Box::new(ArithExpr::Var(0)),
-			Box::new(ArithExpr::Mul(
-				Box::new(ArithExpr::Var(1)),
-				Box::new(ArithExpr::Const(BinaryField1b::ONE)),
-			)),
-		);
-		let circuit = ArithCircuitPoly::new(expr);
+		let expr = ArithExprNode::Var(0)
+			+ ArithExprNode::Var(1) * ArithExprNode::Const(BinaryField1b::ONE);
+		let circuit = ArithCircuitPoly::new(expr.into());
 
 		let composition = IndexComposition {
 			n_vars: 3,
@@ -212,14 +192,11 @@ mod tests {
 		};
 
 		assert_eq!(
-			(&composition as &dyn CompositionPoly<BinaryField1b>).expression(),
-			ArithExpr::Add(
-				Box::new(ArithExpr::Var(1)),
-				Box::new(ArithExpr::Mul(
-					Box::new(ArithExpr::Var(2)),
-					Box::new(ArithExpr::Const(BinaryField1b::ONE)),
-				)),
-			)
+			&**(&composition as &dyn CompositionPoly<BinaryField1b>)
+				.expression()
+				.root(),
+			&(ArithExprNode::Var(1)
+				+ ArithExprNode::Var(2) * ArithExprNode::Const(BinaryField1b::ONE))
 		);
 	}
 }

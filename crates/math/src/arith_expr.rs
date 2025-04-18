@@ -525,6 +525,13 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
+	pub fn pow(self, exp: u64) -> Self {
+		// No duplicated nodes can be created, so we can just call the method on the root
+		Self {
+			root: Arc::new(ArithExprNode::Pow(self.root, exp)),
+		}
+	}
+
 	/// Return a new arithmetic expression that contains only the terms of highest degree
 	/// (useful for interpolation at Karatsuba infinity point).
 	pub fn leading_term(&self) -> Self {
@@ -660,6 +667,15 @@ impl<F: Field> Add<ArithExprNode<F>> for ArithExpr<F> {
 	}
 }
 
+impl<F: Field> Add for ArithExpr<F> {
+	type Output = Self;
+
+	fn add(self, rhs: ArithExpr<F>) -> Self {
+		let new_expr = (*self.root).clone() + (*rhs.root).clone();
+		new_expr.into()
+	}
+}
+
 impl<F: Field> Sub<ArithExprNode<F>> for ArithExpr<F> {
 	type Output = Self;
 
@@ -669,11 +685,29 @@ impl<F: Field> Sub<ArithExprNode<F>> for ArithExpr<F> {
 	}
 }
 
+impl<F: Field> Sub for ArithExpr<F> {
+	type Output = Self;
+
+	fn sub(self, rhs: ArithExpr<F>) -> Self {
+		let new_expr = (*self.root).clone() - (*rhs.root).clone();
+		new_expr.into()
+	}
+}
+
 impl<F: Field> Mul<ArithExprNode<F>> for ArithExpr<F> {
 	type Output = Self;
 
 	fn mul(self, rhs: ArithExprNode<F>) -> Self {
 		let new_expr = (*self.root).clone() * rhs;
+		new_expr.into()
+	}
+}
+
+impl<F: Field> Mul for ArithExpr<F> {
+	type Output = Self;
+
+	fn mul(self, rhs: ArithExpr<F>) -> Self {
+		let new_expr = (*self.root).clone() * (*rhs.root).clone();
 		new_expr.into()
 	}
 }

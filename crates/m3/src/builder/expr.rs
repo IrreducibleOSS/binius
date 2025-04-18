@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, TowerField};
-use binius_math::ArithExpr;
+use binius_math::{ArithExpr, ArithExprNode};
 use getset::{CopyGetters, Getters};
 
 use super::{column::Col, table::TableId};
@@ -43,7 +43,7 @@ impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
 	fn from(value: Col<F, V>) -> Self {
 		Expr {
 			table_id: value.table_id,
-			expr: ArithExpr::Var(value.partition_index),
+			expr: ArithExprNode::Var(value.partition_index).into(),
 		}
 	}
 }
@@ -54,12 +54,12 @@ impl<F: TowerField, const V: usize> std::ops::Add<Self> for Col<F, V> {
 	fn add(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let lhs_expr = ArithExpr::Var(self.partition_index);
-		let rhs_expr = ArithExpr::Var(rhs.partition_index);
+		let lhs_expr = ArithExprNode::Var(self.partition_index);
+		let rhs_expr = ArithExprNode::Var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
-			expr: lhs_expr + rhs_expr,
+			expr: (lhs_expr + rhs_expr).into(),
 		}
 	}
 }
@@ -70,10 +70,10 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let rhs_expr = ArithExpr::Var(rhs.partition_index);
+		let rhs_expr = ArithExprNode::Var(rhs.partition_index);
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr + rhs_expr,
+			expr: (self.expr + rhs_expr).into(),
 		}
 	}
 }
@@ -96,7 +96,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 	fn add(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr + ArithExpr::Const(rhs),
+			expr: self.expr + ArithExprNode::Const(rhs),
 		}
 	}
 }
@@ -122,12 +122,12 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Self> for Col<F, V> {
 
 	fn sub(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		let lhs_expr = ArithExpr::Var(self.partition_index);
-		let rhs_expr = ArithExpr::Var(rhs.partition_index);
+		let lhs_expr = ArithExprNode::Var(self.partition_index);
+		let rhs_expr = ArithExprNode::Var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
-			expr: lhs_expr - rhs_expr,
+			expr: (lhs_expr - rhs_expr).into(),
 		}
 	}
 }
@@ -147,7 +147,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Expr<F, V>> for Expr<F, V> {
 		assert_eq!(self.table_id, rhs.table_id);
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr - rhs.expr,
+			expr: (self.expr - rhs.expr).into(),
 		}
 	}
 }
@@ -158,7 +158,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	fn sub(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr - ArithExpr::Const(rhs),
+			expr: (self.expr - ArithExprNode::Const(rhs)).into(),
 		}
 	}
 }
@@ -213,7 +213,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 	fn mul(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr * ArithExpr::Const(rhs),
+			expr: self.expr * ArithExprNode::Const(rhs),
 		}
 	}
 }
@@ -248,21 +248,21 @@ where
 }
 
 /// This exists only to implement Display for ArithExpr with named variables.
-pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithExpr<F>, pub &'a [String]);
+pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithExprNode<F>, pub &'a [String]);
 
 impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let Self(expr, names) = self;
 		match expr {
-			ArithExpr::Const(v) => write!(f, "{v}"),
-			ArithExpr::Var(i) => write!(f, "{}", names[*i]),
-			ArithExpr::Add(x, y) => {
+			ArithExprNode::Const(v) => write!(f, "{v}"),
+			ArithExprNode::Var(i) => write!(f, "{}", names[*i]),
+			ArithExprNode::Add(x, y) => {
 				write!(f, "{} + {}", self.expr(x), self.expr(y))
 			}
-			ArithExpr::Mul(x, y) => {
+			ArithExprNode::Mul(x, y) => {
 				write!(f, "({}) * ({})", self.expr(x), self.expr(y))
 			}
-			ArithExpr::Pow(x, p) => {
+			ArithExprNode::Pow(x, p) => {
 				write!(f, "({})^{p}", self.expr(x))
 			}
 		}
@@ -270,7 +270,7 @@ impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
 }
 
 impl<'a, F: TowerField> ArithExprNamedVars<'a, F> {
-	fn expr(&self, expr: &'a ArithExpr<F>) -> Self {
+	fn expr(&self, expr: &'a ArithExprNode<F>) -> Self {
 		Self(expr, self.1)
 	}
 }

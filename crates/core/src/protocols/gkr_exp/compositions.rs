@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use binius_field::{Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithExpr, ArithExprNode, CompositionPoly};
 use binius_utils::bail;
 
 use crate::composition::FixedDimIndexCompositions;
@@ -43,20 +43,21 @@ where
 	fn expression(&self) -> ArithExpr<P::Scalar> {
 		match self {
 			Self::StaticBase { base_power_static } => {
-				ArithExpr::Var(0)
-					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_static))
+				ArithExprNode::Var(0)
+					* ((ArithExprNode::Const(P::Scalar::ONE) - ArithExprNode::Var(1))
+						+ ArithExprNode::Var(1) * ArithExprNode::Const(*base_power_static))
 			}
 			Self::DynamicBase => {
-				ArithExpr::Pow(Box::new(ArithExpr::Var(0)), 2)
-					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-						+ ArithExpr::Var(1) * ArithExpr::Var(2))
+				ArithExprNode::pow(ArithExprNode::Var(0), 2)
+					* ((ArithExprNode::Const(P::Scalar::ONE) - ArithExprNode::Var(1))
+						+ ArithExprNode::Var(1) * ArithExprNode::Var(2))
 			}
 			Self::DynamicBaseLastLayer => {
-				(ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-					+ ArithExpr::Var(1) * ArithExpr::Var(0)
+				(ArithExprNode::Const(P::Scalar::ONE) - ArithExprNode::Var(1))
+					+ ArithExprNode::Var(1) * ArithExprNode::Var(0)
 			}
 		}
+		.into()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
