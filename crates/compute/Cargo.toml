@@ -8,6 +8,7 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+binius_field = { path = "../field", default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]

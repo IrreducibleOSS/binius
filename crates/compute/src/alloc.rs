@@ -21,6 +21,17 @@ where
 		}
 	}
 
+	/// Returns the remaining number of elements that can be allocated.
+	pub fn capacity(&self) -> usize {
+		let buffer = self
+			.buffer
+			.take()
+			.expect("buffer is always Some by invariant");
+		let ret = buffer.len();
+		self.buffer.set(Some(buffer));
+		ret
+	}
+
 	/// Allocates a slice of elements.
 	///
 	/// This method operates on an immutable self reference so that multiple allocator references
