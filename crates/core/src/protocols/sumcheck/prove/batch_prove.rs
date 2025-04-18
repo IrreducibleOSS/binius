@@ -191,6 +191,7 @@ where
 			active_index += 1;
 		}
 
+		let calculate_coeffs_span = tracing::info_span!("[task] (Zerocheck) Calculate Coeffs", phase = "zerocheck", perfetto_category = "task.main").entered();
 		// Process the active provers
 		let mut round_coeffs = RoundCoeffs::default();
 		for (&batch_coeff, prover) in
@@ -201,6 +202,8 @@ where
 		}
 
 		let round_proof = round_coeffs.truncate();
+		drop(calculate_coeffs_span);
+
 		transcript
 			.message()
 			.write_scalar_slice(round_proof.coeffs());
@@ -208,9 +211,11 @@ where
 		let challenge = transcript.sample();
 		challenges.push(challenge);
 
+		let fold_span = tracing::info_span!("[task] Fold", phase = "zerocheck", perfetto_category = "task.main").entered();
 		for prover in &mut provers[..active_index] {
 			prover.fold(challenge)?;
 		}
+		drop(fold_span);
 	}
 
 	// sample next_batch_coeffs for 0-variate (ie. constant) provers to match with verify
