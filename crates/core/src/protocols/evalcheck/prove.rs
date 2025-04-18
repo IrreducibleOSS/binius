@@ -144,7 +144,12 @@ where
 		self.claims_queue.extend(evalcheck_claims.clone());
 
 		// Step 1: Use modified BFS to memoize evaluations.
-		let mle_fold_full_span = tracing::info_span!("[task] MLE Fold Full", phase = "evalcheck", perfetto_category = "task.main").entered();
+		let mle_fold_full_span = tracing::info_span!(
+			"[task] MLE Fold Full",
+			phase = "evalcheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
@@ -205,7 +210,12 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
-		let evalcheck_mle_fold_high_span = tracing::info_span!("[task] MLE Fold High", phase = "evalcheck", perfetto_category = "task.main").entered();
+		let evalcheck_mle_fold_high_span = tracing::info_span!(
+			"[task] MLE Fold High",
+			phase = "evalcheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()

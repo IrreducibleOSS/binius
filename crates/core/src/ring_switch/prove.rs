@@ -59,7 +59,12 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
-	let mle_fold_high_span = tracing::info_span!("[task] MLE Fold High", phase = "ring_switch", perfetto_category = "task.main").entered();
+	let mle_fold_high_span = tracing::info_span!(
+		"[task] MLE Fold High",
+		phase = "ring_switch",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
@@ -89,7 +94,12 @@ where
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
-	let calculate_ring_switch_eq_ind_span = tracing::info_span!("[task] Calculate Ring Switch Eq Ind", phase = "ring_switch", perfetto_category = "task.main").entered();
+	let calculate_ring_switch_eq_ind_span = tracing::info_span!(
+		"[task] Calculate Ring Switch Eq Ind",
+		phase = "ring_switch",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,

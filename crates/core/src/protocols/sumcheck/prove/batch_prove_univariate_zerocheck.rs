@@ -150,7 +150,12 @@ where
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
-	let mle_fold_low_span = tracing::info_span!("[task] Initial MLE Fold Low", phase = "zerocheck", perfetto_category = "task.main").entered();
+	let mle_fold_low_span = tracing::info_span!(
+		"[task] Initial MLE Fold Low",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
 		let regular_prover = Box::new(prover).fold_univariate_round(univariate_challenge)?;

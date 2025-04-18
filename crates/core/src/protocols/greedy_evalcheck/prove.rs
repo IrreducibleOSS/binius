@@ -49,7 +49,12 @@ where
 	let claims: Vec<_> = claims.into_iter().collect();
 
 	// Prove the initial evalcheck claims
-	let initial_evalcheck_round_span = tracing::info_span!("[phase] Initial Evalcheck Round", phase = "evalcheck", perfetto_category = "task.main").entered();
+	let initial_evalcheck_round_span = tracing::info_span!(
+		"[phase] Initial Evalcheck Round",
+		phase = "evalcheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
 	drop(initial_evalcheck_round_span);
 
@@ -59,14 +64,24 @@ where
 	}
 
 	loop {
-		let _span = tracing::info_span!("[phase] Evalcheck Round", phase = "evalcheck", perfetto_category = "phase.sub").entered();
+		let _span = tracing::info_span!(
+			"[phase] Evalcheck Round",
+			phase = "evalcheck",
+			perfetto_category = "phase.sub"
+		)
+		.entered();
 		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints().unwrap();
 		if new_sumchecks.is_empty() {
 			break;
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let evalcheck_round_mle_fold_high_span = tracing::info_span!("[task] (Evalcheck) Regular Sumcheck (Small)", phase = "evalcheck", perfetto_category = "task.main").entered();
+		let evalcheck_round_mle_fold_high_span = tracing::info_span!(
+			"[task] (Evalcheck) Regular Sumcheck (Small)",
+			phase = "evalcheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let new_evalcheck_claims =
 			prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
 				evalcheck_prover.witness_index,
