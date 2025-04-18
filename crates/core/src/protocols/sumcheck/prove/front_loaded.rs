@@ -107,7 +107,12 @@ where
 	/// Finishes an interaction round by reducing the instance with the verifier challenge.
 	pub fn receive_challenge(&mut self, challenge: F) -> Result<(), Error> {
 		for (prover, _) in &mut self.provers {
-			let _span = tracing::info_span!("[task] (PIOP Compiler) Fold", phase = "piop_compiler", round=self.round).entered();
+			let _span = tracing::info_span!(
+				"[task] (PIOP Compiler) Fold",
+				phase = "piop_compiler",
+				round = self.round
+			)
+			.entered();
 			prover.fold(challenge)?;
 		}
 		self.round += 1;

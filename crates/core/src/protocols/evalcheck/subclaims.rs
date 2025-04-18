@@ -301,7 +301,11 @@ where
 /// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
 /// composite oracle -> None
 #[allow(clippy::type_complexity)]
-#[instrument(skip_all, name = "Evalcheck::calculate_projected_mles", level = "debug")]
+#[instrument(
+	skip_all,
+	name = "Evalcheck::calculate_projected_mles",
+	level = "debug"
+)]
 pub fn calculate_projected_mles<F, P, Backend>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedData<P, Backend>,

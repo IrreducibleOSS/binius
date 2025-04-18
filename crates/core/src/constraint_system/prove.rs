@@ -138,7 +138,9 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let commit_span = tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main").entered();
+	let commit_span =
+		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
+			.entered();
 	let CommitOutput {
 		commitment,
 		committed,
@@ -316,7 +318,12 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_span = tracing::info_span!("[phase] Zerocheck", phase = "zerocheck", perfetto_category = "phase.main").entered();
+	let zerocheck_span = tracing::info_span!(
+		"[phase] Zerocheck",
+		phase = "zerocheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
 		.iter()
@@ -397,7 +404,12 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let zerocheck_eq_ind_sumcheck_span = tracing::info_span!("[phase] Eq Ind Sumcheck", phase = "zerocheck", perfetto_category = "phase.sub").entered();
+	let zerocheck_eq_ind_sumcheck_span = tracing::info_span!(
+		"[phase] Eq Ind Sumcheck",
+		phase = "zerocheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
@@ -411,12 +423,22 @@ where
 	)?;
 	drop(zerocheck_eq_ind_sumcheck_span);
 
-	let zerocheck_univariatized_evaluation_span = tracing::info_span!("[phase] Univariatized Evaluation", phase = "zerocheck", perfetto_category = "phase.sub").entered();
+	let zerocheck_univariatized_evaluation_span = tracing::info_span!(
+		"[phase] Univariatized Evaluation",
+		phase = "zerocheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
 
-	let zerocheck_mle_fold_high_span = tracing::info_span!("[task] MLE Fold High", phase = "zerocheck", perfetto_category = "task.main").entered();
+	let zerocheck_mle_fold_high_span = tracing::info_span!(
+		"[task] MLE Fold High",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	for (univariatized_multilinear_evals, multilinears) in
 		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
 	{
@@ -448,7 +470,12 @@ where
 	}
 	drop(zerocheck_mle_fold_high_span);
 
-	let zerocheck_regular_sumcheck_small_span = tracing::info_span!("[task] (Zerocheck) Regular Sumcheck (Small)", phase = "zerocheck", perfetto_category = "task.main").entered();
+	let zerocheck_regular_sumcheck_small_span = tracing::info_span!(
+		"[task] (Zerocheck) Regular Sumcheck (Small)",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
 	drop(zerocheck_regular_sumcheck_small_span);
 
@@ -462,7 +489,12 @@ where
 
 	drop(zerocheck_span);
 
-	let evalcheck_span = tracing::info_span!("[phase] Evalcheck", phase = "evalcheck", perfetto_category = "phase.main").entered();
+	let evalcheck_span = tracing::info_span!(
+		"[phase] Evalcheck",
+		phase = "evalcheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 
 	let zerocheck_eval_claims = sumcheck::make_eval_claims(
 		EvaluationOrder::LowToHigh,
@@ -500,7 +532,12 @@ where
 
 	drop(evalcheck_span);
 
-	let ring_switch_span = tracing::info_span!("[phase] Ring Switch", phase = "ring_switch", perfetto_category = "phase.main").entered();
+	let ring_switch_span = tracing::info_span!(
+		"[phase] Ring Switch",
+		phase = "ring_switch",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
@@ -514,7 +551,12 @@ where
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
-	let piop_compiler_span = tracing::info_span!("[phase] PIOP Compiler", phase = "piop_compiler", perfetto_category = "phase.main").entered();
+	let piop_compiler_span = tracing::info_span!(
+		"[phase] PIOP Compiler",
+		phase = "piop_compiler",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,

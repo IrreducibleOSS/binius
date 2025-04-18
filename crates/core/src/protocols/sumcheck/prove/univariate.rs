@@ -378,7 +378,12 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
-	let expand_span = tracing::info_span!("[task] Expand Query", phase = "zerocheck", perfetto_category = "task.main").entered();
+	let expand_span = tracing::info_span!(
+		"[task] Expand Query",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -393,7 +398,12 @@ where
 		})
 		.collect::<Vec<_>>();
 	drop(expand_span);
-	let coeffs_span = tracing::info_span!("[task] Univariate Skip Calculate coeffs", phase = "zerocheck", perfetto_category = "task.main").entered();
+	let coeffs_span = tracing::info_span!(
+		"[task] Univariate Skip Calculate coeffs",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 
 	let subcube_vars = log_batch + skip_rounds;
 	let log_subcube_count = n_vars - subcube_vars;
