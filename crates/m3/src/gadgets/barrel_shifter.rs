@@ -46,7 +46,7 @@ pub struct BarrelShifter {
 	partial_shift: [Col<B1, 32>; MAX_SHIFT_BITS], // Virtual
 
 	/// The output column representing the result of the shift operation.
-	pub output: Col<B1, 32>, // Virtual or commited, depending on the flags
+	pub output: Col<B1, 32>, // Virtual or committed, depending on the flags
 
 	/// Flags to configure the behavior of the barrel shifter (e.g., rotation,
 	/// right shift).
