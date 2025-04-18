@@ -2,6 +2,8 @@
 
 //! Traits for working with field towers.
 
+use std::marker::PhantomData;
+
 use binius_field::{
 	as_packed_field::PackScalar,
 	linear_transformation::{PackedTransformationFactory, Transformation},
@@ -12,8 +14,10 @@ use binius_field::{
 	underlier::UnderlierType,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
+	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, PackedSubfield,
+	TowerField,
 };
+use getset::Getters;
 use trait_set::trait_set;
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
@@ -143,4 +147,124 @@ trait_set! {
 		+ PackedExtension<Tower::B32>
 		+ PackedExtension<Tower::B64>
 		+ PackedExtension<Tower::B128>;
+}
+
+pub trait TowerFamilyTransform {
+	type FromTower: TowerFamily;
+	type FromTop: PackedTop<Self::FromTower>;
+	type ToTower: TowerFamily;
+	type ToTop: PackedTop<Self::ToTower>;
+
+	// type B1: Transformation<
+	// 	PackedSubfield<Self::FromTop, <Self::FromTower as TowerFamily>::B1>,
+	// 	PackedSubfield<Self::ToTop, <Self::ToTower as TowerFamily>::B1>,
+	// >;
+
+	//type B1: Transformation<Self::FromTop, Self::ToTop>;
+	type B8: Transformation<Self::FromTop, Self::ToTop>;
+	type B16: Transformation<Self::FromTop, Self::ToTop>;
+	// type B16: Transformation<
+	// 	PackedSubfield<Self::FromTop, <Self::FromTower as TowerFamily>::B16>,
+	// 	PackedSubfield<Self::ToTop, <Self::ToTower as TowerFamily>::B16>,
+	// >;
+
+	//fn new_b1_transformation() -> Self::B1;
+
+	// fn new_b1_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, <Self::FromTower as TowerFamily>::B1>,
+	// 	PackedSubfield<Self::ToTop, <Self::ToTower as TowerFamily>::B1>,
+	// >;
+
+	fn new_b8_transformation() -> Self::B8;
+	// fn new_b8_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, <Self::FromTower as TowerFamily>::B8>,
+	// 	PackedSubfield<Self::ToTop, <Self::ToTower as TowerFamily>::B8>,
+	// >;
+
+	fn new_b16_transformation() -> Self::B16;
+	// fn new_b16_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, <Self::FromTower as TowerFamily>::B16>,
+	// 	PackedSubfield<Self::ToTop, <Self::ToTower as TowerFamily>::B16>,
+	// >;
+
+	// fn new_b32_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, Self::FromTower::B32>,
+	// 	PackedSubfield<Self::ToTop, Self::ToTower::B32>,
+	// >;
+	//
+	// fn new_b64_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, Self::FromTower::B64>,
+	// 	PackedSubfield<Self::ToTop, Self::ToTower::B64>,
+	// >;
+	//
+	// fn new_b128_transformation() -> impl Transformation<
+	// 	PackedSubfield<Self::FromTop, Self::FromTower::B128>,
+	// 	PackedSubfield<Self::ToTop, Self::ToTower::B128>,
+	// >;
+}
+
+// #[derive(Getters)]
+// struct TowerFamilyFactoryTransform<TFT: TowerFamilyTransform> {
+// 	// FromTower, ToTower, FromTop, ToTop> {
+// 	#[getset(get = "pub")]
+// 	b1_transformation: TFT::B1,
+// 	#[getset(get = "pub")]
+// 	b8_transformation: TFT::B8,
+// 	#[getset(get = "pub")]
+// 	b16_transformation: TFT::B16,
+// }
+
+#[derive(Getters)]
+#[allow(dead_code)]
+struct CanonicalToAESFamilyTransform<FromTop, ToTop>
+// where
+// 	FromTop: PackedTop<CanonicalTowerFamily>,
+// 	ToTop: PackedTop<AESTowerFamily>,
+{
+	_marker: PhantomData<(FromTop, ToTop)>,
+}
+
+impl<FromTop, ToTop> CanonicalToAESFamilyTransform<FromTop, ToTop>
+where
+	FromTop: PackedTop<CanonicalTowerFamily>,
+	ToTop: PackedTop<AESTowerFamily>,
+{
+	#[allow(dead_code)]
+	pub fn new() -> Self {
+		Self {
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<FromTop, ToTop> CanonicalToAESFamilyTransform<FromTop, ToTop>
+where
+	FromTop: PackedExtension<<CanonicalTowerFamily as TowerFamily>::B8>, //PackedTop<CanonicalTowerFamily>
+	<FromTop as PackedField>::Scalar: ExtensionField<BinaryField8b>,
+	// FromTop: PackedField //PackedTop<CanonicalTowerFamily>
+	// 	+ PackedExtension<<CanonicalTowerFamily as TowerFamily>::B8>,
+	//ToTop: PackedTop<AESTowerFamily>,
+	PackedSubfield<FromTop, <CanonicalTowerFamily as TowerFamily>::B8>: PackedField,
+	//PackedTransformationFactory<PackedSubfield<ToTop, <AESTowerFamily as TowerFamily>::B8>>,
+{
+	// type FromTower = CanonicalTowerFamily;
+	// type FromTop = FromTop;
+	// type ToTower = AESTowerFamily;
+	// type ToTop = ToTop;
+	//
+	// //type B1 = SubfieldTransformer<BinaryField1b, BinaryField1b, IDTransformation>;
+	// type B8 = BinaryToAesTransformation<FromTop, ToTop>;
+	// type B16 = BinaryToAesTransformation<FromTop, ToTop>;
+	//
+	// // fn new_b1_transformation() -> Self::B1 {
+	// // 	SubfieldTransformer::new(IDTransformation)
+	// // }
+	//
+	// fn new_b8_transformation() -> Self::B8 {
+	// 	make_binary_to_aes_packed_transformer()
+	// }
+	//
+	// fn new_b16_transformation() -> Self::B16 {
+	// 	make_binary_to_aes_packed_transformer()
+	// }
 }
