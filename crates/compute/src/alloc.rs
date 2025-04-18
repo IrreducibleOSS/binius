@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use super::memory::{ComputeMemory, DevSlice};
+use super::memory::{ComputeMemory, OpaqueSlice};
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
