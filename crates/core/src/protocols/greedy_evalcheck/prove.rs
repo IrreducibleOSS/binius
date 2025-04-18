@@ -49,7 +49,7 @@ where
 	let claims: Vec<_> = claims.into_iter().collect();
 
 	// Prove the initial evalcheck claims
-	let initial_evalcheck_round_span = tracing::info_span!(
+	let initial_evalcheck_round_span = tracing::debug_span!(
 		"[phase] Initial Evalcheck Round",
 		phase = "evalcheck",
 		perfetto_category = "task.main"
@@ -64,8 +64,8 @@ where
 	}
 
 	loop {
-		let _span = tracing::info_span!(
-			"[phase] Evalcheck Round",
+		let _span = tracing::debug_span!(
+			"[step] Evalcheck Round",
 			phase = "evalcheck",
 			perfetto_category = "phase.sub"
 		)
@@ -76,7 +76,7 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let evalcheck_round_mle_fold_high_span = tracing::info_span!(
+		let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Evalcheck) Regular Sumcheck (Small)",
 			phase = "evalcheck",
 			perfetto_category = "task.main"

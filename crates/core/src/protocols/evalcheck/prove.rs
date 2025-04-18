@@ -144,7 +144,7 @@ where
 		self.claims_queue.extend(evalcheck_claims.clone());
 
 		// Step 1: Use modified BFS to memoize evaluations.
-		let mle_fold_full_span = tracing::info_span!(
+		let mle_fold_full_span = tracing::debug_span!(
 			"[task] MLE Fold Full",
 			phase = "evalcheck",
 			perfetto_category = "task.main"
@@ -210,7 +210,7 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
-		let evalcheck_mle_fold_high_span = tracing::info_span!(
+		let evalcheck_mle_fold_high_span = tracing::debug_span!(
 			"[task] MLE Fold High",
 			phase = "evalcheck",
 			perfetto_category = "task.main"
