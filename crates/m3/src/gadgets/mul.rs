@@ -147,8 +147,7 @@ where
 		let generator_pow_bit_len = UX::get_shifted_generator().into();
 
 		let g_pow_x: Col<FPExt> = table.add_static_exp("g^x", &x_in_bits, generator);
-		let g_pow_xy: Col<FPExt> =
-			table.add_dynamic_exp("(g^x)^y", &y_in_bits, g_pow_x, FPExt::TOWER_LEVEL);
+		let g_pow_xy: Col<FPExt> = table.add_dynamic_exp("(g^x)^y", &y_in_bits, g_pow_x);
 
 		let out_high_bits = array::from_fn(|i| table.add_committed(format!("out_high[{i}]")));
 		let out_low_bits = array::from_fn(|i| table.add_committed(format!("out_low[{i}]")));

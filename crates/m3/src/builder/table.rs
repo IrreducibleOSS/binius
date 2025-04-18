@@ -258,6 +258,15 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Adds field exponentiation column with a fixed base
+	///
+	/// ## Parameters
+	/// - `name`: Name for the column
+	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
+	/// - `base`: The base to exponentiate. The field used in exponentiation will be `FSub`
+	///
+	/// ## Preconditions
+	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
 	pub fn add_static_exp<FSub>(
 		&mut self,
 		name: impl ToString,
@@ -268,7 +277,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(log2_strict_usize(pow_bits.len()) <= FSub::TOWER_LEVEL);
+		assert!(pow_bits.len().is_power_of_two());
+		assert!(pow_bits.len() <= 1 << (FSub::TOWER_LEVEL));
 
 		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
@@ -283,19 +293,27 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Adds field exponentiation column with a base from another column
+	///
+	/// ## Parameters
+	/// - `name`: Name for the column
+	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
+	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be `FSub`
+	///
+	/// ## Preconditions
+	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
 	pub fn add_dynamic_exp<FSub>(
 		&mut self,
 		name: impl ToString,
 		pow_bits: &[Col<B1>],
 		base: Col<FSub>,
-		base_tower_level: usize,
 	) -> Col<FSub>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(log2_strict_usize(pow_bits.len()) <= base_tower_level);
-		assert!(base_tower_level <= FSub::TOWER_LEVEL);
+		assert!(pow_bits.len().is_power_of_two());
+		assert!(pow_bits.len() <= (1 << FSub::TOWER_LEVEL));
 
 		let namespaced_name = self.namespaced_name(name);
 		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
@@ -304,7 +322,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			ColumnDef::DynamicExp {
 				bit_cols,
 				base: base.id().table_index,
-				base_tower_level,
+				base_tower_level: FSub::TOWER_LEVEL,
 			},
 		)
 	}

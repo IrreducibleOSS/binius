@@ -7,7 +7,7 @@ use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{ConstraintSystem, Statement, WitnessIndex, B128, B32, B64},
-	gadgets::u32_mul::{MulUU32, MulUU64},
+	gadgets::mul::{MulUU32, MulUU64},
 };
 use bumpalo::Bump;
 use rand::{prelude::StdRng, Rng, SeedableRng};
