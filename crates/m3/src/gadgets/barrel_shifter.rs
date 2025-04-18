@@ -7,7 +7,7 @@ use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedField
 
 use crate::builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32};
 
-/// Maximum number of bits of the shift amount, i.e. 0 < shift_ammount < 1 <<
+/// Maximum number of bits of the shift amount, i.e. 0 < shift_amount < 1 <<
 /// SHIFT_MAX_BITS - 1 = 31 where dst_val = src_val >> shift_amount or dst_val =
 /// src_val << shift_amount
 const MAX_SHIFT_BITS: usize = 5;
@@ -34,7 +34,7 @@ pub struct BarrelShifter {
 	shift_amount: Col<B1, 16>,
 
 	/// Binary decomposition of the shifted amount.
-	shift_ammount_bits: [Col<B1>; MAX_SHIFT_BITS], // Virtual
+	shift_amount_bits: [Col<B1>; MAX_SHIFT_BITS], // Virtual
 
 	// TODO: Try to replace the Vec with an array.
 	/// partial shift columns containing the partia_shift[i - 1]
@@ -74,8 +74,8 @@ impl BarrelShifter {
 	) -> Self {
 		let partial_shift =
 			core::array::from_fn(|i| table.add_committed(format!("partial_shift_{i}")));
-		let shift_ammount_bits: [_; MAX_SHIFT_BITS] = core::array::from_fn(|i| {
-			table.add_selected(format!("shift_ammount_bits_{i}"), shift_amount, i)
+		let shift_amount_bits: [_; MAX_SHIFT_BITS] = core::array::from_fn(|i| {
+			table.add_selected(format!("shift_amount_bits_{i}"), shift_amount, i)
 		});
 		let mut shifted = Vec::with_capacity(MAX_SHIFT_BITS);
 		let mut current_shift = input;
@@ -91,8 +91,8 @@ impl BarrelShifter {
 			table.assert_zero(
 				format!("correct_partial_shift_{i}"),
 				partial_shift_packed
-					- (shifted_packed * upcast_col(shift_ammount_bits[i])
-						+ current_shift_packed * (upcast_col(shift_ammount_bits[i]) + B32::ONE)),
+					- (shifted_packed * upcast_col(shift_amount_bits[i])
+						+ current_shift_packed * (upcast_col(shift_amount_bits[i]) + B32::ONE)),
 			);
 			current_shift = partial_shift[i];
 		}
@@ -110,7 +110,7 @@ impl BarrelShifter {
 		Self {
 			input,
 			shift_amount,
-			shift_ammount_bits,
+			shift_amount_bits,
 			shifted,
 			partial_shift,
 			output,
@@ -133,20 +133,20 @@ impl BarrelShifter {
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
 		let input: RefMut<'_, [u32]> = index.get_mut_as(self.input).unwrap();
-		let shift_ammount: RefMut<'_, [u16]> = index.get_mut_as(self.shift_amount).unwrap();
+		let shift_amount: RefMut<'_, [u16]> = index.get_mut_as(self.shift_amount).unwrap();
 		// TODO: Propagate the errors
 		let mut partial_shift: [_; MAX_SHIFT_BITS] =
-			core::array::from_fn(|i| index.get_mut_as(self.partial_shift[i]).unwrap());
+			core::array::try_from_fn(|i| index.get_mut_as(self.partial_shift[i]))?;
 		let mut shifted: [_; MAX_SHIFT_BITS] =
-			core::array::from_fn(|i| index.get_mut_as(self.shifted[i]).unwrap());
-		let mut shift_ammount_bits: [_; MAX_SHIFT_BITS] =
-			core::array::from_fn(|i| index.get_mut(self.shift_ammount_bits[i]).unwrap());
+			core::array::try_from_fn(|i| index.get_mut_as(self.shifted[i]))?;
+		let mut shift_amount_bits: [_; MAX_SHIFT_BITS] =
+			core::array::try_from_fn(|i| index.get_mut(self.shift_amount_bits[i]))?;
 
 		for i in 0..index.size() {
 			let mut current_shift = input[i];
 			for j in 0..MAX_SHIFT_BITS {
-				let bit = ((shift_ammount[i] >> j) & 1) == 1;
-				set_packed_slice(&mut shift_ammount_bits[j], i, B1::from(bit));
+				let bit = ((shift_amount[i] >> j) & 1) == 1;
+				set_packed_slice(&mut shift_amount_bits[j], i, B1::from(bit));
 				shifted[j][i] = match self.flags.variant {
 					ShiftVariant::LogicalLeft => current_shift << (1 << j),
 					ShiftVariant::LogicalRight => current_shift >> (1 << j),

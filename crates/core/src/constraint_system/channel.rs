@@ -113,6 +113,13 @@ where
 				got: channel_id,
 			});
 		}
+
+		if channel_id == 2 {
+			println!(
+				"Boundary channel 2: {:?} direction: {:?}, multiplicity {:?}",
+				values, direction, multiplicity
+			);
+		}
 		channels[channel_id].flush(direction, multiplicity, values.clone())?;
 	}
 
@@ -206,6 +213,12 @@ where
 						.evaluate_on_hypercube(i),
 				})
 				.collect::<Result<Vec<_>, _>>()?;
+			if channel_id == 2 {
+				println!(
+					"channel 2: {:?} direction: {:?}, multiplicity {:?}",
+					values, direction, multiplicity
+				);
+			}
 			channel.flush(direction, multiplicity, values)?;
 		}
 	}
