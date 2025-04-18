@@ -14,9 +14,6 @@ const MAX_SHIFT_BITS: usize = 5;
 
 /// Flags to configure the behavior of the barrel shifter.
 pub struct BarrelShifterFlags {
-	/// The variant of the shift operation: logical left, logical right or
-	/// circular left.
-	pub variant: ShiftVariant,
 	/// Whether the output column should be committed or computed.
 	pub commit_output: bool,
 }
@@ -33,20 +30,25 @@ pub struct BarrelShifter {
 	/// ignoring the remaining 11.
 	shift_amount: Col<B1, 16>,
 
-	/// Binary decomposition of the shifted amount.
-	shift_amount_bits: [Col<B1>; MAX_SHIFT_BITS], // Virtual
+	/// Virtual columns containing the binary decomposition of the shifted amount.
+	shift_amount_bits: [Col<B1>; MAX_SHIFT_BITS],
 
 	// TODO: Try to replace the Vec with an array.
-	/// partial shift columns containing the partia_shift[i - 1]
+	/// Partial shift virtual columns containing the partia_shift[i - 1]
 	/// shifted by 2^i.
 	shifted: Vec<Col<B1, 32>>, // Virtual
 
-	/// Partial shift columns containing either shifted[i] or partial_shit[i-1],
+	/// Partial shift virtual columns containing either shifted[i] or partial_shit[i-1],
 	/// depending on the value of `shift_amount_bits`.
-	partial_shift: [Col<B1, 32>; MAX_SHIFT_BITS], // Virtual
+	partial_shift: [Col<B1, 32>; MAX_SHIFT_BITS],
 
-	/// The output column representing the result of the shift operation.
-	pub output: Col<B1, 32>, // Virtual or commited, depending on the flags
+	/// The output column representing the result of the shift operation. This column is
+	/// virtual or commited, depending on the flags
+	pub output: Col<B1, 32>,
+
+	/// The variant of the shift operation: logical left, logical right or
+	/// circular left.
+	pub variant: ShiftVariant,
 
 	/// Flags to configure the behavior of the barrel shifter (e.g., rotation,
 	/// right shift).
@@ -58,10 +60,13 @@ impl BarrelShifter {
 	///
 	/// # Arguments
 	///
-	/// * `table` - A mutable reference to the `TableBuilder` used to define the
-	///   gadget.
-	/// * `flags` - A `BarrelShifterFlags` struct that configures the behavior
-	///   of the gadget.
+	/// * `table` - A mutable reference to the `TableBuilder` used to define the gadget.
+	/// * `input` - The input column of type `Col<B1, 32>`.
+	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant bits
+	/// are ignored.
+	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or
+	/// circular left shift.
+	/// * `flags` - A `BarrelShifterFlags` struct that configures the behavior of the gadget.
 	///
 	/// # Returns
 	///
@@ -70,6 +75,7 @@ impl BarrelShifter {
 		table: &mut TableBuilder,
 		input: Col<B1, 32>,
 		shift_amount: Col<B1, 16>,
+		variant: ShiftVariant,
 		flags: BarrelShifterFlags,
 	) -> Self {
 		let partial_shift =
@@ -80,7 +86,7 @@ impl BarrelShifter {
 		let mut shifted = Vec::with_capacity(MAX_SHIFT_BITS);
 		let mut current_shift = input;
 		for i in 0..MAX_SHIFT_BITS {
-			shifted.push(table.add_shifted("shifted", current_shift, 5, 1 << i, flags.variant));
+			shifted.push(table.add_shifted("shifted", current_shift, 5, 1 << i, variant));
 			let partial_shift_packed: Col<B32> =
 				table.add_packed(format!("partial_shift_packed_{i}"), partial_shift[i]);
 			let shifted_packed: Expr<B32, 1> = table
@@ -114,6 +120,7 @@ impl BarrelShifter {
 			shifted,
 			partial_shift,
 			output,
+			variant,
 			flags,
 		}
 	}
@@ -122,7 +129,7 @@ impl BarrelShifter {
 	///
 	/// # Arguments
 	///
-	/// * `witness` - A mutable reference to the `TableWitness` used to populate
+	/// * `index` - A mutable reference to the `TableWitness` used to populate
 	///   the table.
 	///
 	/// # Returns
@@ -147,7 +154,7 @@ impl BarrelShifter {
 			for j in 0..MAX_SHIFT_BITS {
 				let bit = ((shift_amount[i] >> j) & 1) == 1;
 				set_packed_slice(&mut shift_amount_bits[j], i, B1::from(bit));
-				shifted[j][i] = match self.flags.variant {
+				shifted[j][i] = match self.variant {
 					ShiftVariant::LogicalLeft => current_shift << (1 << j),
 					ShiftVariant::LogicalRight => current_shift >> (1 << j),
 					ShiftVariant::CircularLeft => {
@@ -185,8 +192,8 @@ mod tests {
 			&mut table,
 			input,
 			shift_amount,
+			variant,
 			BarrelShifterFlags {
-				variant,
 				commit_output: false,
 			},
 		);
@@ -218,7 +225,6 @@ mod tests {
 			.enumerate()
 		{
 			let i = i % 32;
-			println!("i: {}, output: {:#x}", i, output);
 			let expected_output = match variant {
 				ShiftVariant::LogicalLeft => input_val << (i % 32),
 				ShiftVariant::LogicalRight => input_val >> (i % 32),
