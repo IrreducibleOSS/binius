@@ -1,18 +1,21 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with};
+use std::{array, fs::File, iter::repeat_with};
 
 use anyhow::Result;
-use binius_circuits::builder::types::U;
 use binius_core::{
 	fiat_shamir::HasherChallenger,
-	tower::{CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily},
+	tower::{
+		AESOptimalPackedTowerFamily, AESTowerFamily, CanonicalOptimalPackedTowerFamily,
+		CanonicalTowerFamily, PackedTowerFamily,
+	},
 };
 use binius_field::{
-	arch::{OptimalUnderlier, OptimalUnderlier128b},
+	arch::{OptimalUnderlier, OptimalUnderlier128b, OptimalUnderlierByteSliced},
 	as_packed_field::PackedType,
 	linear_transformation::PackedTransformationFactory,
-	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
+	AESTowerField128b, ByteSliced16x512x1b, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, PackedSubfield,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
@@ -25,7 +28,7 @@ use binius_m3::{
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use rand::thread_rng;
+use rand::{rngs::StdRng, thread_rng, SeedableRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -103,8 +106,8 @@ fn main() -> Result<()> {
 		table_sizes: vec![n_permutations],
 	};
 
-	let mut rng = thread_rng();
-	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+	let mut rng = StdRng::seed_from_u64(0);
+	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| <B8 as Field>::random(&mut rng)))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
@@ -113,14 +116,24 @@ fn main() -> Result<()> {
 	witness.fill_table_sequential(&table, &events)?;
 	drop(trace_gen_scope);
 
-	let ccs = cs
-		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+	// let ccs = cs
+	// 	.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>()
+	// 	.compile::<AESOptimalPackedTowerFamily>(&statement)
+	// 	.unwrap();
+
+	let prover_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
+
+	let witness = witness
+		.repack::<CanonicalOptimalPackedTowerFamily, AESOptimalPackedTowerFamily>(&prover_cs)
 		.unwrap();
-	let witness = witness.into_multilinear_extension_index();
+
+	let ccs = prover_cs
+		.compile::<AESOptimalPackedTowerFamily>(&statement)
+		.unwrap();
 
 	let proof = binius_core::constraint_system::prove::<
-		U,
-		CanonicalTowerFamily,
+		OptimalUnderlier,
+		AESTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
@@ -130,12 +143,18 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&statement.boundaries,
-		witness,
+		witness.into_multilinear_extension_index::<AESOptimalPackedTowerFamily>(),
 		&binius_hal::make_portable_backend(),
 	)
 	.unwrap();
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
+
+	let statement = statement.convert_field();
+
+	let ccs = cs
+		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+		.unwrap();
 
 	binius_core::constraint_system::verify::<
 		OptimalUnderlier128b,
