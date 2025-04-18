@@ -41,11 +41,10 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<ReducedWitness<P>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	P: PackedFieldIndexable<Scalar = F>,
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
@@ -261,10 +260,9 @@ fn make_ring_switch_eq_inds<F, P, Tower>(
 	mixing_coeffs: &[F],
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	P: PackedFieldIndexable<Scalar = F>,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 {
 	sumcheck_claim_descs
 		.par_iter()
