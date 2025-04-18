@@ -138,11 +138,13 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
+	let commit_span = tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main").entered();
 	let CommitOutput {
 		commitment,
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
+	drop(commit_span);
 
 	// Observe polynomial commitment
 	let mut writer = transcript.message();
@@ -314,6 +316,8 @@ where
 	)?;
 
 	// Zerocheck
+	let zerocheck_span = tracing::info_span!("[phase] Zerocheck", phase = "zerocheck", perfetto_category = "phase.main").entered();
+
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
 		.iter()
 		.cloned()
@@ -447,6 +451,10 @@ where
 		univariatizing_output,
 	)?;
 
+	drop(zerocheck_span);
+
+	let evalcheck_span = tracing::info_span!("[phase] Evalcheck", phase = "evalcheck", perfetto_category = "phase.main").entered();
+
 	let zerocheck_eval_claims = sumcheck::make_eval_claims(
 		EvaluationOrder::LowToHigh,
 		zerocheck_oracle_metas,
@@ -481,6 +489,9 @@ where
 		&eval_claims,
 	)?;
 
+	drop(evalcheck_span);
+
+	let ring_switch_span = tracing::info_span!("[phase] Ring Switch", phase = "ring_switch", perfetto_category = "phase.main").entered();
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
@@ -491,8 +502,10 @@ where
 		memoized_data,
 		backend,
 	)?;
+	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
+	let piop_compiler_span = tracing::info_span!("[phase] PIOP Compiler", phase = "piop_compiler", perfetto_category = "phase.main").entered();
 	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
@@ -506,10 +519,21 @@ where
 		&mut transcript,
 		&backend,
 	)?;
+	drop(piop_compiler_span);
 
-	Ok(Proof {
+	let proof = Proof {
 		transcript: transcript.finalize(),
-	})
+	};
+
+	tracing::event!(
+		name: "proof_size",
+		tracing::Level::INFO,
+		counter = true,
+		value = proof.get_proof_size() as u64,
+		unit = "bytes",
+	);
+
+	Ok(proof)
 }
 
 type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;
