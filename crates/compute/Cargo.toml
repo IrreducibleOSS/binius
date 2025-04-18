@@ -8,7 +8,9 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+binius_field = { path = "../field", default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
+rand = { workspace = true, features = ["std"] }
