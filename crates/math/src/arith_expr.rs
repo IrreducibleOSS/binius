@@ -461,7 +461,7 @@ impl<F: Field> From<Arc<ArithExprNode<F>>> for ArithExpr<F> {
 			}
 
 			let node = match &*node {
-				ArithExprNode::Const(_) | ArithExprNode::Var(_) => Arc::clone(&node),
+				ArithExprNode::Const(_) | ArithExprNode::Var(_) => node,
 				ArithExprNode::Add(left, right) => {
 					let left = convert_node(Arc::clone(left), node_set);
 					let right = convert_node(Arc::clone(right), node_set);
@@ -900,20 +900,54 @@ mod tests {
 
 	use super::*;
 
+	fn ensure_no_duplicate_nodes<F: Field>(expr: &ArithExpr<F>) {
+		let mut nodes = HashSet::new();
+
+		fn visit_node<F: Field>(
+			node: &Arc<ArithExprNode<F>>,
+			nodes: &mut HashSet<Arc<ArithExprNode<F>>>,
+		) {
+			if let Some(existing_node) = nodes.get(node) {
+				assert!(Arc::ptr_eq(existing_node, node));
+			} else {
+				nodes.insert(Arc::clone(node));
+			}
+
+			match &**node {
+				ArithExprNode::Const(_) | ArithExprNode::Var(_) => {}
+				ArithExprNode::Add(lhs, rhs) | ArithExprNode::Mul(lhs, rhs) => {
+					visit_node(lhs, nodes);
+					visit_node(rhs, nodes);
+				}
+				ArithExprNode::Pow(base, _) => {
+					visit_node(base, nodes);
+				}
+			}
+		}
+
+		visit_node(expr.root(), &mut nodes);
+	}
+
 	#[test]
 	fn test_degree_with_pow() {
 		let expr = ArithExprNode::Const(BinaryField8b::new(6)).pow(7);
 		assert_eq!(expr.degree(), 0);
-		assert_eq!(ArithExpr::from(expr).degree(), 0);
+		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
+		assert_eq!(expr.degree(), 0);
 
 		let expr: ArithExprNode<BinaryField8b> = ArithExprNode::Var(0).pow(7);
 		assert_eq!(expr.degree(), 7);
-		assert_eq!(ArithExpr::from(expr).degree(), 7);
+		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
+		assert_eq!(expr.degree(), 7);
 
 		let expr: ArithExprNode<BinaryField8b> =
 			(ArithExprNode::Var(0) * ArithExprNode::Var(1)).pow(7);
 		assert_eq!(expr.degree(), 14);
-		assert_eq!(ArithExpr::from(expr).degree(), 14);
+		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
+		assert_eq!(expr.degree(), 14);
 	}
 
 	#[test]
@@ -932,6 +966,7 @@ mod tests {
 			+ ArithExprNode::Var(5).pow(3);
 
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		assert_eq!(&**expr.leading_term().root(), &expected_expr);
 	}
 
@@ -941,6 +976,7 @@ mod tests {
 		let expr =
 			((ArithExprNode::Var(0) + ArithExprNode::Const(F::ONE)) * ArithExprNode::Var(1)).pow(3);
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		assert_matches!(expr.remap_vars(&[5]), Err(Error::IncorrectArgumentLength { .. }));
 	}
 
@@ -950,6 +986,7 @@ mod tests {
 		let expr =
 			((ArithExprNode::Var(0) + ArithExprNode::Const(F::ONE)) * ArithExprNode::Var(1)).pow(3);
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		let new_expr = expr.remap_vars(&[5, 3]);
 
 		let expected =
@@ -960,6 +997,7 @@ mod tests {
 
 	fn check_optimize<F: Field>(expr: ArithExprNode<F>, expected: &ArithExprNode<F>) {
 		let optimized = ArithExpr::from(expr).optimize();
+		ensure_no_duplicate_nodes(&optimized);
 		assert_eq!(&**optimized.root(), expected);
 	}
 
@@ -988,6 +1026,7 @@ mod tests {
 		let expr = ArithExprNode::Var(0) * ArithExprNode::Var(1) + ArithExprNode::one()
 			- ArithExprNode::Var(1);
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		assert_eq!(expr.const_subst(1, F::ZERO).optimize().constant(), Some(F::ONE));
 	}
 
@@ -1050,16 +1089,19 @@ mod tests {
 		assert_eq!(expr.nodes(), 17);
 
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		assert_eq!(expr.unique_nodes(), 8);
 	}
 
 	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExprNode<F>) {
 		let expr = ArithExpr::from(expr);
+		ensure_no_duplicate_nodes(&expr);
 		let mut buf = Vec::new();
 		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
 			.unwrap();
 		let deserialized =
 			ArithExpr::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
+		ensure_no_duplicate_nodes(&deserialized);
 		assert_eq!(expr, deserialized);
 		assert_eq!(expr.unique_nodes(), deserialized.unique_nodes());
 	}
