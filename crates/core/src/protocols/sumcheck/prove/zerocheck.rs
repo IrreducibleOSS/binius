@@ -215,6 +215,8 @@ where
 		let n_vars = equal_n_vars_check(&multilinears)?;
 		let n_multilinears = multilinears.len();
 
+		println!("zerocheck n_multilinears {}", n_multilinears);
+
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
 		for (_, composition_base, composition) in &compositions {
 			if composition_base.n_vars() != n_multilinears
@@ -350,7 +352,7 @@ where
 				} * scalar
 			})
 			.try_fold(
-				ZerocheckRoundEvals::zeros(max_domain_size),
+				ZerocheckRoundEvals::zeros(max_domain_size - (1 << skip_rounds)),
 				|mut accum, evals| -> Result<_, Error> {
 					accum.add_assign_lagrange(&evals)?;
 					Ok(accum)
@@ -419,6 +421,15 @@ where
 				Ok(folded_multilinear)
 			})
 			.collect::<Result<Vec<_>, _>>()?;
+
+		println!(
+			"compositions {:#?}",
+			compositions
+				.iter()
+				.map(|(_, _, c)| c.degree())
+				.collect::<Vec<_>>()
+		);
+		println!("claimed_sums {:#?}", claimed_sums);
 
 		let composite_claims = izip!(compositions, claimed_sums)
 			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })

@@ -129,6 +129,8 @@ where
 	projected_multilinears
 		.push(lagrange_evals_multilinear_extension(&ntt_domain, univariate_challenge)?.into());
 
+	println!("projected {}", projected_multilinears.len());
+
 	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but this sumcheck
 	//         is very small anyway.
 	let prover = RegularSumcheckProver::<FDomain, P, _, _, _>::new(
@@ -180,6 +182,8 @@ where
 		.max()
 		.unwrap_or(0);
 
+	println!("univariate");
+
 	let mut batch_coeffs = Vec::with_capacity(provers.len());
 	let mut round_evals = ZerocheckRoundEvals::zeros(max_domain_size - (1 << skip_rounds));
 	for prover in &mut provers {
@@ -192,8 +196,14 @@ where
 		round_evals.add_assign_lagrange(&(prover_round_evals * next_batch_coeff))?;
 	}
 
+	println!("batch_coeffs {:#?}", batch_coeffs);
+
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
+
+	println!("univariate_challenge {:?}", univariate_challenge);
+
+	println!("tail");
 
 	let mut tail_sumcheck_provers = Vec::with_capacity(provers.len());
 	for prover in &mut provers {
@@ -207,18 +217,32 @@ where
 
 	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
 	for _round_no in 0..tail_rounds {
-		let mut writer = transcript.message();
-		tail_sumchecks.send_round_proof(&mut writer)?;
+		tail_sumchecks.send_round_proof(&mut transcript.message())?;
 
 		let challenge = transcript.sample();
 		unskipped_challenges.push(challenge);
 
 		tail_sumchecks.receive_challenge(challenge)?;
 	}
-	let mut writer = transcript.message();
-	let univariatized_multilinear_evals = tail_sumchecks.finish(&mut writer)?;
+	let mut univariatized_multilinear_evals = tail_sumchecks.finish(&mut transcript.message())?;
+
+	println!(
+		"univariatized_multilinear_evals {:#?}",
+		univariatized_multilinear_evals
+			.iter()
+			.map(|ev| ev[..5].to_vec())
+			.collect::<Vec<_>>()
+	);
 
 	unskipped_challenges.reverse();
+
+	println!("unskipped_challenges {:#?}", unskipped_challenges);
+
+	for evals in &mut univariatized_multilinear_evals {
+		evals
+			.pop()
+			.expect("equality indicator evaluation at last position");
+	}
 
 	let mut projected_multilinears = Vec::new();
 
@@ -226,8 +250,12 @@ where
 		let claim_projected_multilinears =
 			Box::new(prover).project_to_skipped_variables(&unskipped_challenges)?;
 
+		println!("claimpm {}", claim_projected_multilinears.len());
+
 		projected_multilinears.extend(claim_projected_multilinears);
 	}
+
+	println!("univar");
 
 	let backend = make_portable_backend();
 	let reduction_prover = univariatizing_reduction_prover::<_, FDomain, _>(
@@ -243,9 +271,15 @@ where
 		multilinear_evals: mut concat_multilinear_evals,
 	} = batch_sumcheck::batch_prove(vec![reduction_prover], transcript)?;
 
-	let concat_multilinear_evals = concat_multilinear_evals
+	println!("ok");
+
+	let mut concat_multilinear_evals = concat_multilinear_evals
 		.pop()
 		.expect("multilinear_evals.len() == 1");
+
+	concat_multilinear_evals
+		.pop()
+		.expect("Lagrange coefficients MLE eval at last position");
 
 	let output = BatchZerocheckOutput {
 		skipped_challenges,

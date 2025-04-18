@@ -84,6 +84,8 @@ pub fn univariatizing_reduction_claim<F: Field>(
 		.map(|claim_evals| claim_evals.as_ref().len())
 		.sum();
 
+	println!("n_multilinears {}", n_multilinears);
+
 	let composite_sums = univariatized_multilinear_evals
 		.iter()
 		.flat_map(|claim_evals| claim_evals.as_ref())

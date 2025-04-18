@@ -168,10 +168,12 @@ pub fn make_zerocheck_eval_claims<F: Field>(
 		.sum::<usize>();
 
 	if n_multilinears != concat_multilinear_evals.len() {
+		println!("1");
 		bail!(Error::ClaimProofMismatch);
 	}
 
 	if max_n_vars != skipped_challenges.len() + unskipped_challenges.len() {
+		println!("2");
 		bail!(Error::ClaimProofMismatch);
 	}
 

@@ -568,11 +568,16 @@ where
 
 		let round_evals = self.state.calculate_round_evals(&evaluators)?;
 
+        println!("round_evals {:#?}", round_evals);
+
 		let prime_coeffs = self.state.calculate_round_coeffs_from_evals(
 			&interpolators,
 			batch_coeff,
 			round_evals,
 		)?;
+
+        println!("prime_coeffs {:#?}", prime_coeffs);
+        println!("alpha {:#?}", alpha);
 
 		// Convert v' polynomial into v polynomial
 
@@ -589,6 +594,8 @@ where
 
 		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
 			* self.eq_ind_prefix_eval;
+
+        println!("coeffs {:#?}", coeffs);
 
 		Ok(coeffs)
 	}

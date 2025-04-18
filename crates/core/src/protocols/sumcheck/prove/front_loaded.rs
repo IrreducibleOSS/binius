@@ -105,6 +105,7 @@ where
 			round_coeffs += &(prover_coeffs * *batch_coeff);
 		}
 
+		println!("round_coeffs_prover {:#?}", round_coeffs);
 		let round_proof = round_coeffs.truncate();
 		transcript.write_scalar_slice(round_proof.coeffs());
 		Ok(())

@@ -78,10 +78,13 @@ where
 		batch_coeffs.push(next_batch_coeff);
 	}
 
+	println!("batch_coeffs {:#?}", batch_coeffs);
+
 	let round_evals = transcript
 		.message()
 		.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
+	println!("univariate_challenge {:?}", univariate_challenge);
 
 	// REVIEW: consider using novel basis for the univariate round representation
 	//         (instead of Lagrange)
@@ -108,8 +111,10 @@ where
 	let mut univariatized_multilinear_evals = Vec::with_capacity(claims.len());
 	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
 	for _round_no in 0..tail_rounds {
+		println!("_round {}", _round_no);
 		let mut reader = transcript.message();
 		while let Some(claim_multilinear_evals) = tail_verifier.try_finish_claim(&mut reader)? {
+			println!("mevals {}", claim_multilinear_evals.len());
 			univariatized_multilinear_evals.push(claim_multilinear_evals);
 		}
 		tail_verifier.receive_round_proof(&mut reader)?;
@@ -128,6 +133,8 @@ where
 
 	univariatized_multilinear_evals.reverse();
 	unskipped_challenges.reverse();
+
+	println!("unskipped_challenges {:#?}", unskipped_challenges);
 
 	let sumcheck_output = BatchSumcheckOutput {
 		challenges: unskipped_challenges,

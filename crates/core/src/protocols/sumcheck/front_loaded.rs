@@ -152,13 +152,14 @@ where
 		let Some(SumcheckClaimWithContext { claim, .. }) = self.claims.front() else {
 			return Ok(None);
 		};
+		println!("-- head {} round {}", claim.n_vars(), self.round);
 		let multilinear_evals = match claim.n_vars().cmp(&self.round) {
 			Ordering::Equal => {
 				let SumcheckClaimWithContext {
 					claim, batch_coeff, ..
 				} = self.claims.pop_front().expect("front returned Some");
 				let multilinear_evals = transcript.read_scalar_slice(claim.n_multilinears())?;
-
+				println!("verifier_mevals {:#?}", &multilinear_evals[..5]);
 				match self.last_coeffs_or_sum {
 					CoeffsOrSums::Coeffs(_) => {
 						return Err(Error::ExpectedFinishRound);
@@ -219,6 +220,7 @@ where
 				let proof_vals = transcript.read_scalar_slice(degree)?;
 				let round_proof = RoundProof(RoundCoeffs(proof_vals));
 				self.last_coeffs_or_sum = CoeffsOrSums::Coeffs(round_proof.recover(sum));
+				println!("round_coeffs_verifier {:#?}", self.last_coeffs_or_sum);
 				Ok(())
 			}
 		}
