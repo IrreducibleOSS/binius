@@ -121,7 +121,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::BinaryField32b;
-	use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
+	use binius_utils::checked_arithmetics::{checked_log_2, log2_ceil_usize};
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
@@ -224,7 +224,7 @@ mod tests {
 	) -> Vec<F> {
 		let mut result = Vec::new();
 		for multilinear_coeffs in multilinears {
-			let log_len = log2_strict_usize(multilinear_coeffs.len());
+			let log_len = checked_log_2(multilinear_coeffs.len());
 			let multilinear =
 				MultilinearExtension::<F, Vec<F>>::new(log_len, multilinear_coeffs.clone())
 					.unwrap();

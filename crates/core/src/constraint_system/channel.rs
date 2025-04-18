@@ -82,6 +82,17 @@ pub struct Boundary<F: TowerField> {
 	pub multiplicity: u64,
 }
 
+impl<F: TowerField> Boundary<F> {
+	pub fn convert_field<FTarget: TowerField + From<F>>(self) -> Boundary<FTarget> {
+		Boundary {
+			values: self.values.into_iter().map(FTarget::from).collect(),
+			channel_id: self.channel_id,
+			direction: self.direction,
+			multiplicity: self.multiplicity,
+		}
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub enum FlushDirection {
 	Push,

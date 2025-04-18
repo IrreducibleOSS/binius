@@ -2,8 +2,11 @@
 
 //! Traits for working with field towers.
 
+use std::marker::PhantomData;
+
 use binius_field::{
-	as_packed_field::PackScalar,
+	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
 		AES_TO_POLYVAL_TRANSFORMATION, BINARY_TO_POLYVAL_TRANSFORMATION,
@@ -12,7 +15,8 @@ use binius_field::{
 	underlier::UnderlierType,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
+	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, RepackedExtension,
+	TowerField,
 };
 use trait_set::trait_set;
 
@@ -52,6 +56,40 @@ pub trait ProverTowerFamily: TowerFamily {
 	where
 		FastTop: PackedTransformationFactory<Top>,
 		Top: PackedField<Scalar = Self::B128>;
+}
+
+/// A tower family of packed fields that are repacked extensions of each other.
+pub trait PackedTowerFamily {
+	/// The corresponding tower family of scalars.
+	type Tower: TowerFamily;
+
+	type PackedB1: PackedField<Scalar = <Self::Tower as TowerFamily>::B1>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B1, PackedSubfield = Self::PackedB1>;
+	type PackedB8: PackedField<Scalar = <Self::Tower as TowerFamily>::B8>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B8, PackedSubfield = Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB16: PackedField<Scalar = <Self::Tower as TowerFamily>::B16>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B16, PackedSubfield = Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB32: PackedField<Scalar = <Self::Tower as TowerFamily>::B32>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B32, PackedSubfield = Self::PackedB32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB64: PackedField<Scalar = <Self::Tower as TowerFamily>::B64>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B64, PackedSubfield = Self::PackedB64>
+		+ RepackedExtension<Self::PackedB32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
+	type PackedB128: PackedField<Scalar = <Self::Tower as TowerFamily>::B128>
+		+ PackedExtension<<Self::Tower as TowerFamily>::B128, PackedSubfield = Self::PackedB128>
+		+ RepackedExtension<Self::PackedB64>
+		+ RepackedExtension<Self::PackedB32>
+		+ RepackedExtension<Self::PackedB16>
+		+ RepackedExtension<Self::PackedB8>
+		+ RepackedExtension<Self::PackedB1>;
 }
 
 /// The canonical Fan-Paar tower family.
@@ -144,3 +182,28 @@ trait_set! {
 		+ PackedExtension<Tower::B64>
 		+ PackedExtension<Tower::B128>;
 }
+
+/// A packed family with the specified underlier type.
+/// This is a handy type for creating aliases for arcv optimal underlier types.
+pub struct PackUnderlierFamily<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> {
+	_pd: PhantomData<(Tower, Underlier)>,
+}
+
+impl<Tower: TowerFamily, Underlier: TowerUnderlier<Tower>> PackedTowerFamily
+	for PackUnderlierFamily<Tower, Underlier>
+{
+	type Tower = Tower;
+
+	type PackedB1 = PackedType<Underlier, Tower::B1>;
+	type PackedB8 = PackedType<Underlier, Tower::B8>;
+	type PackedB16 = PackedType<Underlier, Tower::B16>;
+	type PackedB32 = PackedType<Underlier, Tower::B32>;
+	type PackedB64 = PackedType<Underlier, Tower::B64>;
+	type PackedB128 = PackedType<Underlier, Tower::B128>;
+}
+
+pub type CanonicalOptimalPackedTowerFamily =
+	PackUnderlierFamily<CanonicalTowerFamily, OptimalUnderlier>;
+pub type AESOptimalPackedTowerFamily = PackUnderlierFamily<AESTowerFamily, OptimalUnderlier>;
+pub type AESOptimalByteSlicedPackedTowerFamily =
+	PackUnderlierFamily<AESTowerFamily, OptimalUnderlierByteSliced>;

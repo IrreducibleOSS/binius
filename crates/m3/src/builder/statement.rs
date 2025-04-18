@@ -13,3 +13,16 @@ pub struct Statement<F: TowerField = B128> {
 	/// Direct index mapping table IDs to the count of rows per table.
 	pub table_sizes: Vec<usize>,
 }
+
+impl<F: TowerField> Statement<F> {
+	pub fn convert_field<FTarget: TowerField + From<F>>(self) -> Statement<FTarget> {
+		Statement {
+			boundaries: self
+				.boundaries
+				.into_iter()
+				.map(|b| b.convert_field())
+				.collect(),
+			table_sizes: self.table_sizes,
+		}
+	}
+}

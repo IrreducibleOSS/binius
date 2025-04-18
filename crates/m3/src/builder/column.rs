@@ -1,10 +1,21 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+	any::Any,
+	fmt::Debug,
+	marker::PhantomData,
+	sync::{Arc, Mutex},
+};
 
-use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
-use binius_field::{ExtensionField, TowerField};
+use binius_core::{
+	oracle::ShiftVariant,
+	polynomial::MultivariatePoly,
+	tower::{PackedTowerFamily, TowerFamily},
+	transparent::MultilinearExtensionTransparent,
+};
+use binius_field::{packed::pack_slice, ExtensionField, PackedExtension, TowerField};
 use binius_math::ArithExpr;
+use binius_utils::checked_arithmetics::checked_log_2;
 
 use super::{table::TableId, types::B128};
 
@@ -58,6 +69,18 @@ impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 			table_index: self.table_index,
 		}
 	}
+
+	pub fn convert_field<FTarget>(&self) -> Col<FTarget, VALUES_PER_ROW>
+	where
+		FTarget: TowerField + From<F>,
+	{
+		Col {
+			table_id: self.table_id,
+			table_index: self.table_index,
+			partition_index: self.partition_index,
+			_marker: PhantomData,
+		}
+	}
 }
 
 /// Upcast a column from a subfield to an extension field..
@@ -92,6 +115,29 @@ pub struct ColumnInfo<F: TowerField = B128> {
 	pub is_nonzero: bool,
 }
 
+impl<F: TowerField> ColumnInfo<F> {
+	pub(super) fn convert_to_tower<SourceTower, TargetTower>(&self) -> ColumnInfo<TargetTower::B128>
+	where
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
+	{
+		ColumnInfo {
+			id: self.id,
+			col: self.col.convert_to_tower::<SourceTower, TargetTower>(),
+			name: self.name.clone(),
+			shape: self.shape,
+			is_nonzero: self.is_nonzero,
+		}
+	}
+}
+
 /// The shape of each cell in a column.
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnShape {
@@ -116,6 +162,104 @@ impl ColumnShape {
 pub struct ColumnId {
 	pub table_id: TableId,
 	pub table_index: ColumnIndex,
+}
+
+#[derive(Debug)]
+pub struct ConstantColumn<F: TowerField = B128> {
+	pub data: Box<dyn Any + Send + Sync>,
+	pub cached_poly: Mutex<Option<Arc<dyn MultivariatePoly<F>>>>,
+}
+
+impl<F: TowerField> ConstantColumn<F> {
+	pub fn new_subfield<FSub: TowerField>(data: &[FSub]) -> Self
+	where
+		F: ExtensionField<FSub>,
+	{
+		let data = data.to_vec();
+		Self {
+			data: Box::new(data),
+			cached_poly: Mutex::new(None),
+		}
+	}
+
+	pub fn new_isomorphic<FSubSource, FSubTarget>(data: &[FSubSource]) -> Self
+	where
+		FSubSource: TowerField,
+		FSubTarget: TowerField + From<FSubSource>,
+		F: ExtensionField<FSubTarget>,
+	{
+		let data = data
+			.iter()
+			.copied()
+			.map(FSubTarget::from)
+			.collect::<Vec<_>>();
+		Self {
+			data: Box::new(data),
+			cached_poly: Mutex::new(None),
+		}
+	}
+
+	pub fn get_or_init_poly<PackedTower: PackedTowerFamily<Tower: TowerFamily<B128 = F>>>(
+		&self,
+	) -> Arc<dyn MultivariatePoly<F>> {
+		let mut cached_poly = self.cached_poly.lock().unwrap();
+		if let Some(poly) = cached_poly.as_ref() {
+			return poly.clone();
+		}
+
+		let poly = if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B1>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B8>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B16>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B32>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B64>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else if let Some(data) = self
+			.data
+			.downcast_ref::<Vec<<PackedTower::Tower as TowerFamily>::B128>>()
+		{
+			make_poly::<_, PackedTower::PackedB128>(data)
+		} else {
+			panic!("constant column must be a vector of tower field elements");
+		};
+
+		*cached_poly = Some(poly.clone());
+		poly
+	}
+}
+
+fn make_poly<F, PackedExt>(source: &[F]) -> Arc<dyn MultivariatePoly<PackedExt::Scalar>>
+where
+	F: TowerField,
+	PackedExt: PackedExtension<F, Scalar: TowerField>,
+{
+	let packed_data = pack_slice(source);
+	let mle = MultilinearExtensionTransparent::<
+	PackedExt::PackedSubfield,
+		PackedExt,
+		_,
+	>::from_values_and_mu(packed_data, checked_log_2(source.len()))
+	.unwrap();
+
+	Arc::new(mle)
 }
 
 /// A definition of a column in a table.
@@ -149,7 +293,79 @@ pub enum ColumnDef<F: TowerField = B128> {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
 	},
-	Constant {
-		poly: Arc<dyn MultivariatePoly<F>>,
-	},
+	Constant(ConstantColumn<F>),
+}
+
+impl<F: TowerField> ColumnDef<F> {
+	pub(super) fn convert_to_tower<SourceTower, TargetTower>(&self) -> ColumnDef<TargetTower::B128>
+	where
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
+	{
+		match self {
+			&Self::Committed { tower_level } => ColumnDef::Committed { tower_level },
+			&Self::Selected {
+				col,
+				index,
+				index_bits,
+			} => ColumnDef::Selected {
+				col,
+				index,
+				index_bits,
+			},
+			&Self::Shifted {
+				col,
+				offset,
+				log_block_size,
+				variant,
+			} => ColumnDef::Shifted {
+				col,
+				offset,
+				log_block_size,
+				variant,
+			},
+			&Self::Packed { col, log_degree } => ColumnDef::Packed { col, log_degree },
+			&Self::Projected {
+				col,
+				start_index,
+				query_size,
+				query_bits,
+			} => ColumnDef::Projected {
+				col,
+				start_index,
+				query_size,
+				query_bits,
+			},
+			Self::Computed { cols, expr } => ColumnDef::Computed {
+				cols: cols.clone(),
+				expr: expr.convert_field::<TargetTower::B128>(),
+			},
+			Self::Constant(ConstantColumn { data, .. }) => {
+				let data = if let Some(data) = data.downcast_ref::<Vec<SourceTower::B1>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B1, TargetTower::B1>(data)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B8>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B8, TargetTower::B8>(data)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B16>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B16, TargetTower::B16>(data)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B32>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B32, TargetTower::B32>(data)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B64>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B64, TargetTower::B64>(data)
+				} else if let Some(data) = data.downcast_ref::<Vec<SourceTower::B128>>() {
+					ConstantColumn::new_isomorphic::<SourceTower::B128, TargetTower::B128>(data)
+				} else {
+					panic!("constant column must be a vector of tower field elements");
+				};
+
+				ColumnDef::Constant(data)
+			}
+		}
+	}
 }

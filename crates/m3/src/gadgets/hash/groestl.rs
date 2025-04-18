@@ -400,6 +400,7 @@ fn pack_b8<const V: usize>(bits: [Col<B1, V>; 8]) -> Expr<B8, V> {
 mod tests {
 	use std::iter::repeat_with;
 
+	use binius_core::tower::CanonicalOptimalPackedTowerFamily;
 	use binius_field::{
 		arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero, as_packed_field::PackedType,
 	};
@@ -439,7 +440,9 @@ mod tests {
 
 		sbox.populate(&mut segment).unwrap();
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
@@ -492,7 +495,9 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
@@ -545,7 +550,9 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();

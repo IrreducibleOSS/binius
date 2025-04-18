@@ -1,20 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::sync::Arc;
-
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
-	transparent::MultilinearExtensionTransparent,
+	tower::TowerFamily,
 };
 use binius_field::{
-	arch::OptimalUnderlier,
-	as_packed_field::{PackScalar, PackedType},
-	packed::pack_slice,
-	ExtensionField, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackScalar, ExtensionField, TowerField,
 };
 use binius_utils::{
-	checked_arithmetics::{checked_log_2, log2_ceil_usize, log2_strict_usize},
+	checked_arithmetics::{checked_log_2, log2_ceil_usize},
 	sparse_index::SparseIndex,
 };
 
@@ -23,7 +18,7 @@ use super::{
 	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts,
+	upcast_col, ColumnIndex, ConstantColumn, FlushOpts,
 };
 use crate::builder::column::ColumnId;
 
@@ -97,7 +92,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(log_block_size <= log2_strict_usize(VALUES_PER_ROW));
+		assert!(log_block_size <= checked_log_2(VALUES_PER_ROW));
 		assert!(offset <= 1 << log_block_size);
 		self.table.new_column(
 			self.namespaced_name(name),
@@ -123,8 +118,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		assert!(FSubSub::TOWER_LEVEL < FSub::TOWER_LEVEL);
 		assert!(VALUES_PER_ROW_SUB > VALUES_PER_ROW);
 		assert_eq!(
-			FSub::TOWER_LEVEL + log2_strict_usize(VALUES_PER_ROW),
-			FSubSub::TOWER_LEVEL + log2_strict_usize(VALUES_PER_ROW_SUB)
+			FSub::TOWER_LEVEL + checked_log_2(VALUES_PER_ROW),
+			FSubSub::TOWER_LEVEL + checked_log_2(VALUES_PER_ROW_SUB)
 		);
 		self.table.new_column(
 			self.namespaced_name(name),
@@ -195,7 +190,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			ColumnDef::Selected {
 				col: col.id(),
 				index,
-				index_bits: log2_strict_usize(VALUES_PER_ROW),
+				index_bits: checked_log_2(VALUES_PER_ROW),
 			},
 		)
 	}
@@ -214,9 +209,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
 		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
 
-		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let log_values_per_row = checked_log_2(VALUES_PER_ROW);
 		// This is also the value of the start_index.
-		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_new_values_per_row = checked_log_2(NEW_VALUES_PER_ROW);
 		// Get the log size of the query.
 		let log_query_size = log_values_per_row - log_new_values_per_row;
 
@@ -242,20 +237,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
 	{
 		let namespaced_name = self.namespaced_name(name);
-		let n_vars = log2_strict_usize(VALUES_PER_ROW);
-		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
-		let mle = MultilinearExtensionTransparent::<
-			PackedType<OptimalUnderlier, FSub>,
-			PackedType<OptimalUnderlier, F>,
-			_,
-		>::from_values_and_mu(packed_values, n_vars)
-		.unwrap();
-		self.table.new_column(
-			namespaced_name,
-			ColumnDef::Constant {
-				poly: Arc::new(mle),
-			},
-		)
+		let _n_vars = checked_log_2(VALUES_PER_ROW);
+		let constant_column = ConstantColumn::new_subfield(&constants);
+		self.table
+			.new_column(namespaced_name, ColumnDef::Constant(constant_column))
 	}
 
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
@@ -360,6 +345,40 @@ pub struct Table<F: TowerField = B128> {
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
+impl<F: TowerField> Table<F> {
+	pub fn convert_to_tower<SourceTower, TargetTower>(&self) -> Table<TargetTower::B128>
+	where
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
+	{
+		let columns = self
+			.columns
+			.iter()
+			.map(|col| col.convert_to_tower::<SourceTower, TargetTower>())
+			.collect();
+		let partitions = self
+			.partitions
+			.iter()
+			.map(|(key, partition)| (key, partition.convert_to_field()))
+			.collect();
+
+		Table {
+			id: self.id,
+			name: self.name.clone(),
+			columns,
+			partitions,
+			power_of_two_sized: self.power_of_two_sized,
+		}
+	}
+}
+
 /// A table partition describes a part of a table where everything has the same pack factor (as well as height)
 /// Tower level does not need to be the same.
 ///
@@ -425,6 +444,25 @@ impl<F: TowerField> TablePartition<F> {
 			multiplicity: opts.multiplicity,
 			selector,
 		});
+	}
+
+	fn convert_to_field<TargetField: TowerField + From<F>>(&self) -> TablePartition<TargetField> {
+		let zero_constraints = self
+			.zero_constraints
+			.iter()
+			.map(|constraint| ZeroConstraint {
+				name: constraint.name.clone(),
+				expr: constraint.expr.convert_field(),
+			})
+			.collect();
+
+		TablePartition {
+			table_id: self.table_id,
+			values_per_row: self.values_per_row,
+			flushes: self.flushes.clone(),
+			columns: self.columns.clone(),
+			zero_constraints,
+		}
 	}
 }
 
@@ -495,7 +533,7 @@ impl<F: TowerField> Table<F> {
 			name: name.to_string(),
 			shape: ColumnShape {
 				tower_height: FSub::TOWER_LEVEL,
-				log_values_per_row: log2_strict_usize(V),
+				log_values_per_row: checked_log_2(V),
 			},
 			is_nonzero: false,
 		};
@@ -508,7 +546,7 @@ impl<F: TowerField> Table<F> {
 
 	fn partition_mut(&mut self, values_per_row: usize) -> &mut TablePartition<F> {
 		self.partitions
-			.entry(log2_strict_usize(values_per_row))
+			.entry(checked_log_2(values_per_row))
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
 }

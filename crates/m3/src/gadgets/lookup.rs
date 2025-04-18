@@ -80,6 +80,7 @@ impl LookupProducer {
 mod tests {
 	use std::{cmp::Reverse, iter, iter::repeat_with};
 
+	use binius_core::tower::CanonicalOptimalPackedTowerFamily;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -191,7 +192,9 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: witness.table_sizes(),
 		};
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs
+			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+			.unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();

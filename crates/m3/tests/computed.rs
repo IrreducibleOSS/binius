@@ -1,6 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{
+	fiat_shamir::HasherChallenger,
+	tower::{CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily},
+};
 use binius_field::{
 	arch::OptimalUnderlier128b, as_packed_field::PackedType, Field, PackedExtension,
 	PackedFieldIndexable,
@@ -95,7 +98,9 @@ fn test_m3_computed_col() {
 		boundaries: vec![],
 		table_sizes: witness.table_sizes(),
 	};
-	let constraint_system = cs.compile(&statement).unwrap();
+	let constraint_system = cs
+		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+		.unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
 	binius_core::constraint_system::validate::validate_witness(

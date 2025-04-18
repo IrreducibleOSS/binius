@@ -15,14 +15,16 @@ pub mod tests {
 
 	use super::*;
 	use crate::{
-		packed::{get_packed_slice, set_packed_slice},
+		as_packed_field::PackedType,
+		packed::{get_packed_slice, set_packed_slice, TryRepackSliceInplace},
 		underlier::WithUnderlier,
-		PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
+		Error, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
 		PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
 		PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
 		PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
 		PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
 		PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedField,
+		TowerField,
 	};
 
 	fn scalars_vec_strategy<P: PackedField<Scalar: WithUnderlier<Underlier: Arbitrary>>>(
@@ -37,6 +39,8 @@ pub mod tests {
 		($module_name:ident, $name:ident, $scalar_type:ty, $associated_packed:ty) => {
 			mod $module_name {
 				use super::*;
+
+				type CanonicalPacked = PackedType<<$associated_packed as WithUnderlier>::Underlier, <<$associated_packed as PackedField>::Scalar as TowerField>::Canonical>;
 
 				proptest! {
 					#[test]
@@ -203,6 +207,70 @@ pub mod tests {
 							assert_eq!(get_packed_slice(&destination, i), bytesliced.get(i));
 						}
 					}
+
+					#[test]
+					fn test_repack_from_byte_sliced(scalar_elems in scalars_vec_strategy::<$name>()) {
+						let bytesliced = &mut [<$name>::from_scalars(scalar_elems.iter().copied())];
+						let repacked = <$name>::try_repack_slice(bytesliced).unwrap();
+
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], get_packed_slice(&repacked, i));
+						}
+					}
+
+					#[test]
+					fn test_repack_to_byte_sliced(scalar_elems in scalars_vec_strategy::<$name>()) {
+						let mut data = vec![<$associated_packed>::zero(); <$name>::HEIGHT_BYTES];
+						for i in 0..<$name>::WIDTH {
+							set_packed_slice(&mut data, i, scalar_elems[i]);
+						}
+
+						let bytesliced = <$name>::try_repack_slice(&mut data).unwrap();
+
+						assert_eq!(bytesliced.len(), 1);
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], bytesliced[0].get(i));
+						}
+					}
+
+					#[test]
+					fn test_repack_to_byte_sliced_from_canonical(scalar_elems in scalars_vec_strategy::<$name>()) {
+						let mut data = vec![CanonicalPacked::zero(); <$name>::HEIGHT_BYTES];
+						for i in 0..<$name>::WIDTH {
+							set_packed_slice(&mut data, i, scalar_elems[i].into());
+						}
+
+						let bytesliced = <$name>::try_repack_slice(&mut data).unwrap();
+
+						assert_eq!(bytesliced.len(), 1);
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(scalar_elems[i], bytesliced[0].get(i).into());
+						}
+					}
+				}
+
+				#[test]
+				fn test_repack_to_byte_sliced_fails() {
+					// In this case function should not fail
+					if <$name>::HEIGHT_BYTES == 1 {
+						return;
+					}
+
+					let mut data = vec![<$associated_packed>::zero(); <$name>::HEIGHT_BYTES + 1];
+					let result = <$name>::try_repack_slice(&mut data);
+					assert!(matches!(result, Err(Error::MismatchedLengths)));
+				}
+
+				#[test]
+				fn test_repack_to_byte_sliced_from_canonical_fails() {
+					// In this case function should not fail
+					if <$name>::HEIGHT_BYTES == 1 {
+						return;
+					}
+
+					let mut data = vec![CanonicalPacked::zero(); <$name>::HEIGHT_BYTES + 1];
+					let result = <$name>::try_repack_slice(&mut data);
+					assert!(matches!(result, Err(Error::MismatchedLengths)));
 				}
 			}
 		};

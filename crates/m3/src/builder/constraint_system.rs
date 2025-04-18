@@ -9,11 +9,12 @@ use binius_core::{
 		ConstraintSystem as CompiledConstraintSystem,
 	},
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
+	tower::{PackedTowerFamily, TowerFamily},
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
 use binius_math::LinearNormalForm;
-use binius_utils::checked_arithmetics::log2_strict_usize;
+use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
 use itertools::chain;
 
@@ -25,7 +26,7 @@ use super::{
 	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
-	Table, TableBuilder,
+	Table, TableBuilder, TableId,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -147,6 +148,29 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
+	pub fn convert_to_tower<SourceTower, TargetTower>(&self) -> ConstraintSystem<TargetTower::B128>
+	where
+		SourceTower: TowerFamily<B128 = F>,
+		TargetTower: TowerFamily<
+			B1: From<SourceTower::B1>,
+			B8: From<SourceTower::B8>,
+			B16: From<SourceTower::B16>,
+			B32: From<SourceTower::B32>,
+			B64: From<SourceTower::B64>,
+			B128: From<SourceTower::B128>,
+		>,
+	{
+		let channels = self.channels.clone();
+		let tables = self
+			.tables
+			.iter()
+			.map(|table| table.convert_to_tower::<SourceTower, TargetTower>())
+			.collect::<Vec<_>>();
+
+		ConstraintSystem { tables, channels }
+	}
+
+	/// Creates and allocates the witness index for a statement.
 	/// Creates and allocates the witness index.
 	///
 	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
@@ -163,7 +187,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// oracles for all columns. The main difference between column definitions and oracle
 	/// definitions is that multilinear oracle definitions have a number of variables, whereas the
 	/// column definitions contained in a [`ConstraintSystem`] do not have size information.
-	pub fn compile(&self, statement: &Statement<F>) -> Result<CompiledConstraintSystem<F>, Error> {
+	pub fn compile<PackedTower>(
+		&self,
+		statement: &Statement<F>,
+	) -> Result<CompiledConstraintSystem<F>, Error>
+	where
+		PackedTower: PackedTowerFamily<Tower: TowerFamily<B128 = F>>,
+	{
 		if statement.table_sizes.len() != self.tables.len() {
 			return Err(Error::StatementMissingTableSize {
 				expected: self.tables.len(),
@@ -191,10 +221,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Constant { poly } = &info.col {
+				if let ColumnDef::Constant(constant_column) = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
-						.transparent(poly.clone())?;
+						.transparent(constant_column.get_or_init_poly::<PackedTower>())?;
 					transparent_single[table_index] = Some(oracle_id);
 				}
 			}
@@ -225,7 +255,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					..
 				} = partition;
 
-				let n_vars = log_capacity + log2_strict_usize(*values_per_row);
+				let n_vars = log_capacity + checked_log_2(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
@@ -300,6 +330,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 			max_channel_id: self.channels.len().saturating_sub(1),
 			exponents: Vec::new(),
 		})
+	}
+
+	pub(super) fn get_table(&self, table_id: TableId) -> &Table<F> {
+		&self.tables[table_id]
 	}
 }
 
@@ -405,8 +439,14 @@ fn add_oracle_for_column<F: TowerField>(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
+	use binius_core::tower::{
+		AESTowerFamily, CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily,
+	};
+	use binius_field::Field;
+	use binius_macros::arith_expr;
 
 	use super::*;
+	use crate::builder::B32;
 
 	#[test]
 	fn test_unsatisfied_po2_requirement() {
@@ -418,6 +458,43 @@ mod tests {
 			boundaries: vec![],
 			table_sizes: vec![15],
 		};
-		assert_matches!(cs.compile(&statement), Err(Error::TableSizePowerOfTwoRequired { .. }));
+		assert_matches!(
+			cs.compile::<CanonicalOptimalPackedTowerFamily>(&statement),
+			Err(Error::TableSizePowerOfTwoRequired { .. })
+		);
+	}
+
+	#[test]
+	fn test_convert_tower() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let mut table_builder = cs.add_table("fibonacci");
+		let col_1 = table_builder.add_committed::<B32, 2>("col_1");
+		let col_2 = table_builder.add_committed::<B32, 2>("col_2");
+		let col_3 = table_builder.add_constant("col_3", [B32::ONE, B32::ZERO]);
+		table_builder.assert_zero("constraint", col_1 + col_2 - col_3);
+
+		assert_eq!(cs.tables.len(), 1);
+		assert_eq!(cs.tables[0].name, "fibonacci");
+		assert_eq!(cs.tables[0].columns.len(), 3);
+		assert_eq!(cs.tables[0].partitions.len(), 1);
+		assert_eq!(cs.tables[0].partitions[1].zero_constraints.len(), 1);
+		assert_eq!(cs.tables[0].partitions[1].zero_constraints[0].name, "constraint");
+		assert_eq!(
+			cs.tables[0].partitions[1].zero_constraints[0].expr,
+			arith_expr!([x, y, z] = x + y - z).convert_field()
+		);
+
+		let converted_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
+
+		assert_eq!(converted_cs.tables.len(), 1);
+		assert_eq!(converted_cs.tables[0].name, "fibonacci");
+		assert_eq!(converted_cs.tables[0].columns.len(), 3);
+		assert_eq!(converted_cs.tables[0].partitions.len(), 1);
+		assert_eq!(converted_cs.tables[0].partitions[1].zero_constraints.len(), 1);
+		assert_eq!(converted_cs.tables[0].partitions[1].zero_constraints[0].name, "constraint");
+		assert_eq!(
+			converted_cs.tables[0].partitions[1].zero_constraints[0].expr,
+			arith_expr!([x, y, z] = x + y - z).convert_field()
+		);
 	}
 }
