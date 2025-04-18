@@ -58,7 +58,7 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
-	let mle_fold_high_span = tracing::info_span!(
+	let mle_fold_high_span = tracing::debug_span!(
 		"[task] MLE Fold High",
 		phase = "ring_switch",
 		perfetto_category = "task.main"
@@ -93,7 +93,7 @@ where
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
-	let calculate_ring_switch_eq_ind_span = tracing::info_span!(
+	let calculate_ring_switch_eq_ind_span = tracing::debug_span!(
 		"[task] Calculate Ring Switch Eq Ind",
 		phase = "ring_switch",
 		perfetto_category = "task.main"

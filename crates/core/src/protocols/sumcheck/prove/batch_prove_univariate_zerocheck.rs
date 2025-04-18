@@ -150,7 +150,7 @@ where
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
-	let mle_fold_low_span = tracing::info_span!(
+	let mle_fold_low_span = tracing::debug_span!(
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
 		perfetto_category = "task.main"

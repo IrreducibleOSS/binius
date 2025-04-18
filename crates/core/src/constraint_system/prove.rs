@@ -404,7 +404,7 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let zerocheck_mle_check_span = tracing::info_span!(
+	let zerocheck_mle_check_span = tracing::debug_span!(
 		"[step] MLE-check",
 		phase = "zerocheck",
 		perfetto_category = "phase.sub"
@@ -423,7 +423,7 @@ where
 	)?;
 	drop(zerocheck_mle_check_span);
 
-	let zerocheck_univariatized_evaluation_span = tracing::info_span!(
+	let zerocheck_univariatized_evaluation_span = tracing::debug_span!(
 		"[step] Univariatized Evaluation",
 		phase = "zerocheck",
 		perfetto_category = "phase.sub"
@@ -433,7 +433,7 @@ where
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
 
-	let zerocheck_mle_fold_high_span = tracing::info_span!(
+	let zerocheck_mle_fold_high_span = tracing::debug_span!(
 		"[task] MLE Fold High",
 		phase = "zerocheck",
 		perfetto_category = "task.main"
@@ -470,7 +470,7 @@ where
 	}
 	drop(zerocheck_mle_fold_high_span);
 
-	let zerocheck_regular_sumcheck_small_span = tracing::info_span!(
+	let zerocheck_regular_sumcheck_small_span = tracing::debug_span!(
 		"[task] (Zerocheck) Regular Sumcheck (Small)",
 		phase = "zerocheck",
 		perfetto_category = "task.main"

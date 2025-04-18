@@ -190,7 +190,7 @@ where
 			active_index += 1;
 		}
 
-		let calculate_coeffs_span = tracing::info_span!(
+		let calculate_coeffs_span = tracing::debug_span!(
 			"[task] (Zerocheck) Calculate Coeffs",
 			phase = "zerocheck",
 			perfetto_category = "task.main"
@@ -215,7 +215,7 @@ where
 		let challenge = transcript.sample();
 		challenges.push(challenge);
 
-		let fold_span = tracing::info_span!(
+		let fold_span = tracing::debug_span!(
 			"[task] Fold",
 			phase = "zerocheck",
 			perfetto_category = "task.main"

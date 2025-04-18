@@ -227,12 +227,12 @@ where
 
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
-	tracing::info_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
+	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
 		.in_scope(|| {
 			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 		});
 
-	tracing::info_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
+	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
 		.in_scope(|| rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
@@ -240,7 +240,7 @@ where
 
 	let log_len = params.log_len() - coset_log_len;
 
-	let merkle_tree_span = tracing::info_span!(
+	let merkle_tree_span = tracing::debug_span!(
 		"[task] Merkle Tree",
 		phase = "commit",
 		perfetto_category = "task.main"
@@ -356,7 +356,7 @@ where
 			return Ok(FoldRoundOutput::NoCommitment);
 		}
 
-		let fri_fold_span = tracing::info_span!(
+		let fri_fold_span = tracing::debug_span!(
 			"[task] FRI Fold",
 			phase = "piop_compiler",
 			perfetto_category = "task.main"
@@ -397,7 +397,7 @@ where
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
 
-		let merkle_tree_span = tracing::info_span!(
+		let merkle_tree_span = tracing::debug_span!(
 			"[task] Merkle Tree",
 			phase = "piop_compiler",
 			perfetto_category = "task.main"

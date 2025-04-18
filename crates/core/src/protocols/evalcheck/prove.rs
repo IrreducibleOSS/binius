@@ -158,7 +158,7 @@ where
 
 		// Step 1: Use modified BFS to memoize evaluations. For each claim, if there is a subclaim and we know the evaluation of the subclaim, we add the subclaim to the claims_queue
 		// Otherwise, we find the evaluation of the claim by querying the witness data from the oracle id and evaluation point
-		let mle_fold_full_span = tracing::info_span!(
+		let mle_fold_full_span = tracing::debug_span!(
 			"[task] MLE Fold Full",
 			phase = "evalcheck",
 			perfetto_category = "task.main"
@@ -226,7 +226,7 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
-		let evalcheck_mle_fold_high_span = tracing::info_span!(
+		let evalcheck_mle_fold_high_span = tracing::debug_span!(
 			"[task] MLE Fold High",
 			phase = "evalcheck",
 			perfetto_category = "task.main"

@@ -378,7 +378,7 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
-	let expand_span = tracing::info_span!(
+	let expand_span = tracing::debug_span!(
 		"[task] Expand Query",
 		phase = "zerocheck",
 		perfetto_category = "task.main"
@@ -398,7 +398,7 @@ where
 		})
 		.collect::<Vec<_>>();
 	drop(expand_span);
-	let coeffs_span = tracing::info_span!(
+	let coeffs_span = tracing::debug_span!(
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
 		perfetto_category = "task.main"
