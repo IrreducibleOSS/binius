@@ -45,7 +45,7 @@ impl<F: Field> EqIndPartialEval<F> {
 		backend: &Backend,
 	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error> {
 		let multilin_query = backend.tensor_product_full_query(&self.r)?;
-		Ok(MultilinearExtension::from_values_generic(multilin_query)?)
+		Ok(MultilinearExtension::new(self.n_vars(), multilin_query)?)
 	}
 }
 
