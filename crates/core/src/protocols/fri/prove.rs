@@ -460,7 +460,7 @@ where
 		let params = query_prover.params;
 
 		for _ in 0..params.n_test_queries() {
-			let index = transcript.sample_bits(params.index_bits());
+			let index = transcript.sample_bits(params.index_bits()) as usize;
 			query_prover.prove_query(index, transcript.decommitment())?;
 		}
 
