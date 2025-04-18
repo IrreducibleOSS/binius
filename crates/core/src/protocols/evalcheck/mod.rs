@@ -2,7 +2,7 @@
 
 //! The multivariate evalcheck polynomial protocol.
 //!
-//! This protocol can be used to verify a list of multilinear composite claims in the [`crate::oracle::MultilinearOracleSet`].
+//! This protocol can be used to verify a list of evaluation claims on the multilinears in the [`crate::oracle::MultilinearOracleSet`].
 //! For each claim, if they contain a subclaim, we recursively prove the subclaim. Otherwise,
 //! we evaluate the claim if they are virtual, further reduced to sumcheck constraints for
 //! [`crate::oracle::MultilinearPolyVariant::Shifted`], [`crate::oracle::MultilinearPolyVariant::Packed`],
