@@ -267,6 +267,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	///
 	/// ## Preconditions
 	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
+	///
+	/// ## NOTE
+	/// * The witness generation for the return column will be done inside gkr_gpa *
 	pub fn add_static_exp<FSub>(
 		&mut self,
 		name: impl ToString,
@@ -302,6 +305,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	///
 	/// ## Preconditions
 	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
+	///
+	/// ## NOTE
+	/// * The witness generation for the return column will be done inside gkr_gpa *
 	pub fn add_dynamic_exp<FSub>(
 		&mut self,
 		name: impl ToString,
