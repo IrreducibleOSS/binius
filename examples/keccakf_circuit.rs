@@ -39,15 +39,17 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 
+	let witness_generation_span =
+		tracing::info_span!("witness_generation", phase = "witness_generation").entered();
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let log_size = log_n_permutations;
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let input_witness = vec![];
 	let _state_out =
 		binius_circuits::keccakf::keccakf(&mut builder, &Some(input_witness), log_size)?;
-	drop(trace_gen_scope);
+
+	drop(witness_generation_span);
 
 	let witness = builder
 		.take_witness()

@@ -245,6 +245,7 @@ where
 	///
 	/// This both performs the polynomial interpolation over the evaluations and the mixing with
 	/// the batching coefficient.
+	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_round_coeffs_from_evals<Interpolator: SumcheckInterpolator<F>>(
 		&mut self,
 		interpolators: &[Interpolator],

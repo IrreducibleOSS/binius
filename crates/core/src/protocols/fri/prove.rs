@@ -205,7 +205,6 @@ where
 /// * `params` - common FRI protocol parameters.
 /// * `merkle_prover` - the Merkle tree prover to use for committing
 /// * `message_writer` - a closure that writes the interleaved message to encode and commit
-#[instrument(skip_all, level = "debug")]
 pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
 	params: &FRIParams<F, FA>,
@@ -226,16 +225,27 @@ where
 		todo!("can't handle this case well");
 	}
 
-	let mut encoded = tracing::debug_span!("allocate codeword")
-		.in_scope(|| zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate())));
-	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
-	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
+	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
+
+	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
+		.in_scope(|| {
+			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
+		});
+
+	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
+		.in_scope(|| rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
 
+	let merkle_tree_span = tracing::debug_span!(
+		"[task] Merkle Tree",
+		phase = "commit",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
 		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, 1 << coset_log_len);
 
@@ -249,6 +259,7 @@ where
 			.commit_iterated(iterated_small_chunks, log_len)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?
 	};
+	drop(merkle_tree_span);
 
 	Ok(CommitOutput {
 		commitment: commitment.root,
@@ -334,7 +345,6 @@ where
 	///
 	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
 	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
-	#[instrument(skip_all, name = "fri::FRIFolder::execute_fold_round", level = "debug")]
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -346,6 +356,12 @@ where
 			return Ok(FoldRoundOutput::NoCommitment);
 		}
 
+		let fri_fold_span = tracing::debug_span!(
+			"[task] FRI Fold",
+			phase = "piop_compiler",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
 		let folded_codeword = match self.round_committed.last() {
 			Some((prev_codeword, _)) => {
@@ -370,6 +386,7 @@ where
 				)
 			}
 		};
+		drop(fri_fold_span);
 		self.unprocessed_challenges.clear();
 
 		// take the first arity as coset_log_len, or use inv_rate if arities are empty
@@ -380,10 +397,17 @@ where
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
 
+		let merkle_tree_span = tracing::debug_span!(
+			"[task] Merkle Tree",
+			phase = "piop_compiler",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let (commitment, committed) = self
 			.merkle_prover
 			.commit(&folded_codeword, coset_size)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+		drop(merkle_tree_span);
 
 		self.round_committed.push((folded_codeword, committed));
 
