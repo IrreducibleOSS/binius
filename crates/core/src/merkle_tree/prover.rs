@@ -6,7 +6,6 @@ use binius_maybe_rayon::iter::IndexedParallelIterator;
 use bytes::BufMut;
 use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
 use getset::Getters;
-use tracing::instrument;
 
 use super::{
 	binary_merkle_tree::{self, BinaryMerkleTree},
@@ -79,7 +78,6 @@ where
 		Ok(())
 	}
 
-	#[instrument(skip_all, level = "debug")]
 	#[allow(clippy::type_complexity)]
 	fn commit_iterated<ParIter>(
 		&self,

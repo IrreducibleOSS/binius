@@ -125,7 +125,6 @@ pub struct BatchProveStart<F: Field, Prover> {
 }
 
 /// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
-#[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove_with_start<F, Prover, Challenger_>(
 	start: BatchProveStart<F, Prover>,
 	mut provers: Vec<Prover>,

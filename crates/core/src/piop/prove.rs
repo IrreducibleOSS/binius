@@ -132,7 +132,6 @@ fn merge_multilins<F, P, Data>(
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
 ///     defined over subfields of `F`. They must be in ascending order by the number of variables
 ///     in the packed multilinear (ie. number of variables minus log extension degree).
-#[tracing::instrument("piop::commit", skip_all)]
 pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
@@ -177,7 +176,6 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument("piop::prove", skip_all)]
 pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
