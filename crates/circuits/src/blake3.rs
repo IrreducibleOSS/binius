@@ -471,7 +471,7 @@ pub fn blake3_compress(
 	/* Constraints */
 
 	// TODO: remove this technical constraint (figure out how to properly constrain the 'state_i_8')
-	builder.assert_zero("state_i_8", [state_i_8], arith_expr!([x] = x - x).convert_field());
+	//builder.assert_zero("state_i_8", [state_i_8], arith_expr!([x] = x - x).convert_field());
 
 	let xins = [a_in, a_0_tmp, c_in, a_0, a_1_tmp, c_0];
 	let yins = [b_in, mx_in, d_0, b_0, my_in, d_1];
