@@ -304,14 +304,18 @@ impl<F: Field> ArithExpr<F> {
 		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
 		// Evaluating with all variables set to 0, should give the constant term
 		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
+		let mut unit_vector = vec![F::ZERO; n_vars];
 
 		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
 		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
 		let var_coeffs = (0..n_vars)
 			.map(|i| {
-				let mut vars = vec![F::ZERO; n_vars];
-				vars[i] = F::ONE;
-				self.evaluate(&vars) - constant
+				if i == 0 {
+					unit_vector[i] = F::ONE;
+				} else {
+					unit_vector.swap(i - 1, i);
+				}
+				self.evaluate(&unit_vector) - constant
 			})
 			.collect();
 		Ok(LinearNormalForm {
