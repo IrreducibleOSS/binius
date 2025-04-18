@@ -404,8 +404,8 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let zerocheck_eq_ind_sumcheck_span = tracing::info_span!(
-		"[phase] Eq Ind Sumcheck",
+	let zerocheck_mle_check_span = tracing::info_span!(
+		"[step] MLE-check",
 		phase = "zerocheck",
 		perfetto_category = "phase.sub"
 	)
@@ -421,10 +421,10 @@ where
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
-	drop(zerocheck_eq_ind_sumcheck_span);
+	drop(zerocheck_mle_check_span);
 
 	let zerocheck_univariatized_evaluation_span = tracing::info_span!(
-		"[phase] Univariatized Evaluation",
+		"[step] Univariatized Evaluation",
 		phase = "zerocheck",
 		perfetto_category = "phase.sub"
 	)
