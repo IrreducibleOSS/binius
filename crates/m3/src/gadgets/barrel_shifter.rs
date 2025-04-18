@@ -16,9 +16,9 @@ const MAX_SHIFT_BITS: usize = 5;
 pub struct BarrelShifterFlags {
 	/// The variant of the shift operation: logical left, logical right or
 	/// circular left.
-	pub(crate) variant: ShiftVariant,
+	pub variant: ShiftVariant,
 	/// Whether the output column should be committed or computed.
-	pub(crate) commit_output: bool,
+	pub commit_output: bool,
 }
 
 /// A gadget for performing a barrel shift circuit (<https://en.wikipedia.org/wiki/Barrel_shifter>).
