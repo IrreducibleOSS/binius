@@ -397,6 +397,7 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
+	let zerocheck_eq_ind_sumcheck_span = tracing::info_span!("[phase] Eq Ind Sumcheck", phase = "zerocheck", perfetto_category = "phase.sub").entered();
 	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
@@ -408,10 +409,14 @@ where
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
+	drop(zerocheck_eq_ind_sumcheck_span);
+
+	let zerocheck_univariatized_evaluation_span = tracing::info_span!("[phase] Univariatized Evaluation", phase = "zerocheck", perfetto_category = "phase.sub").entered();
 
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
 
+	let zerocheck_mle_fold_high_span = tracing::info_span!("[task] MLE Fold High", phase = "zerocheck", perfetto_category = "task.main").entered();
 	for (univariatized_multilinear_evals, multilinears) in
 		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
 	{
@@ -441,8 +446,11 @@ where
 		reduction_claims.push(reduction_claim);
 		reduction_provers.push(reduction_prover);
 	}
+	drop(zerocheck_mle_fold_high_span);
 
+	let zerocheck_regular_sumcheck_small_span = tracing::info_span!("[task] (Zerocheck) Regular Sumcheck (Small)", phase = "zerocheck", perfetto_category = "task.main").entered();
 	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
+	drop(zerocheck_regular_sumcheck_small_span);
 
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
@@ -450,6 +458,7 @@ where
 		&zerocheck_output.challenges,
 		univariatizing_output,
 	)?;
+	drop(zerocheck_univariatized_evaluation_span);
 
 	drop(zerocheck_span);
 
