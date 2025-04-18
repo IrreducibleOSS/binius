@@ -353,6 +353,8 @@ where
 			return Ok(FoldRoundOutput::NoCommitment);
 		}
 
+
+		let fri_fold_span = tracing::info_span!("[task] FRI Fold", phase = "piop_compiler", perfetto_category = "task.main").entered();
 		// Fold the last codeword with the accumulated folding challenges.
 		let folded_codeword = match self.round_committed.last() {
 			Some((prev_codeword, _)) => {
@@ -377,6 +379,7 @@ where
 				)
 			}
 		};
+		drop(fri_fold_span);
 		self.unprocessed_challenges.clear();
 
 		// take the first arity as coset_log_len, or use inv_rate if arities are empty
@@ -387,10 +390,12 @@ where
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
 
+		let merkle_tree_span = tracing::info_span!("[task] Merkle Tree", phase = "piop_compiler", perfetto_category = "task.main").entered();
 		let (commitment, committed) = self
 			.merkle_prover
 			.commit(&folded_codeword, coset_size)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+		drop(merkle_tree_span);
 
 		self.round_committed.push((folded_codeword, committed));
 
