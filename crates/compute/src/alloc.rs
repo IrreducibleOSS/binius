@@ -21,6 +21,13 @@ where
 		}
 	}
 
+	pub fn from_ref<'b>(buffer: &'b mut Mem::FSliceMut<'a>) -> BumpAllocator<'b, F, Mem> {
+		let buffer = Mem::slice_mut(buffer, ..);
+		BumpAllocator {
+			buffer: Cell::new(Some(buffer)),
+		}
+	}
+
 	/// Returns the remaining number of elements that can be allocated.
 	pub fn capacity(&self) -> usize {
 		let buffer = self
