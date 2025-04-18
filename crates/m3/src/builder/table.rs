@@ -443,25 +443,6 @@ impl<F: TowerField> Table<F> {
 		self.id
 	}
 
-	/// Returns the binary logarithm of the minimum capacity.
-	///
-	/// This value is chosen so that every committed column fills at least one large field element
-	/// in packed representation. This is because the polynomial commitment scheme requires full
-	/// packed field elements.
-	pub fn min_log_capacity(&self) -> usize {
-		let min_cell_size = self
-			.columns
-			.iter()
-			.filter_map(|col| match col.col {
-				ColumnDef::Committed { .. } => Some(col.shape.log_cell_size()),
-				_ => None,
-			})
-			.min()
-			// return 0 if table has no columns
-			.unwrap_or(F::TOWER_LEVEL);
-		F::TOWER_LEVEL.saturating_sub(min_cell_size)
-	}
-
 	/// Returns the binary logarithm of the table capacity required to accommodate the given number
 	/// of rows.
 	///
@@ -470,7 +451,7 @@ impl<F: TowerField> Table<F> {
 	/// This will normally be the next power of two greater than the table size, but could require
 	/// more padding to get a minimum capacity.
 	pub fn log_capacity(&self, table_size: usize) -> usize {
-		log2_ceil_usize(table_size).max(self.min_log_capacity())
+		log2_ceil_usize(table_size)
 	}
 
 	fn new_column<FSub, const V: usize>(
