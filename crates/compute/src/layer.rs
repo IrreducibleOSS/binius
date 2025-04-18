@@ -103,7 +103,7 @@ mod tests {
 			*elem = F::random(&mut rng);
 		}
 
-		hal.copy_h2d(&host_buf_1, &mut dev_buf_1).unwrap();
+		hal.copy_h2d(host_buf_1, &mut dev_buf_1).unwrap();
 		hal.copy_d2d(HAL::DevMem::as_const(&dev_buf_1), &mut dev_buf_2)
 			.unwrap();
 		hal.copy_d2h(HAL::DevMem::as_const(&dev_buf_2), host_buf_2)
