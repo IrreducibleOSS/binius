@@ -130,8 +130,8 @@ fn merge_multilins<F, P, Data>(
 /// * `fri_params` - the FRI parameters for the commitment opening protocol
 /// * `merkle_prover` - the Merkle tree prover used in FRI
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
-///     defined over subfields of `F`. They must be in ascending order by the number of variables
-///     in the packed multilinear (ie. number of variables minus log extension degree).
+///   defined over subfields of `F`. They must be in ascending order by the number of variables
+///   in the packed multilinear (ie. number of variables minus log extension degree).
 pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
