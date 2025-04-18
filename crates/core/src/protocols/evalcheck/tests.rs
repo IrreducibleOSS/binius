@@ -404,7 +404,7 @@ where
 				select_row2_oracle_id,
 				select_row3_oracle_id,
 			],
-			comp.clone().into(),
+			comp.clone(),
 		)
 		.unwrap();
 
@@ -412,7 +412,7 @@ where
 		.take(n_vars)
 		.collect::<Vec<_>>();
 
-	let eval = ArithCircuitPoly::new(comp.into())
+	let eval = ArithCircuitPoly::new(comp)
 		.evaluate(&[
 			select_row1.evaluate(&eval_point).unwrap(),
 			select_row2.evaluate(&eval_point).unwrap(),

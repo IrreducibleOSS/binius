@@ -489,7 +489,7 @@ impl<F: Field> From<Arc<ArithExprNode<F>>> for ArithExpr<F> {
 
 impl<F: Field> From<ArithExprNode<F>> for ArithExpr<F> {
 	fn from(node: ArithExprNode<F>) -> Self {
-		ArithExpr::from(Arc::new(node))
+		Self::from(Arc::new(node))
 	}
 }
 /// Arithmetic expressions that can be evaluated symbolically.
@@ -670,7 +670,7 @@ impl<F: Field> Add<ArithExprNode<F>> for ArithExpr<F> {
 impl<F: Field> Add for ArithExpr<F> {
 	type Output = Self;
 
-	fn add(self, rhs: ArithExpr<F>) -> Self {
+	fn add(self, rhs: Self) -> Self {
 		let new_expr = (*self.root).clone() + (*rhs.root).clone();
 		new_expr.into()
 	}
@@ -688,7 +688,7 @@ impl<F: Field> Sub<ArithExprNode<F>> for ArithExpr<F> {
 impl<F: Field> Sub for ArithExpr<F> {
 	type Output = Self;
 
-	fn sub(self, rhs: ArithExpr<F>) -> Self {
+	fn sub(self, rhs: Self) -> Self {
 		let new_expr = (*self.root).clone() - (*rhs.root).clone();
 		new_expr.into()
 	}
@@ -706,7 +706,7 @@ impl<F: Field> Mul<ArithExprNode<F>> for ArithExpr<F> {
 impl<F: Field> Mul for ArithExpr<F> {
 	type Output = Self;
 
-	fn mul(self, rhs: ArithExpr<F>) -> Self {
+	fn mul(self, rhs: Self) -> Self {
 		let new_expr = (*self.root).clone() * (*rhs.root).clone();
 		new_expr.into()
 	}
@@ -831,7 +831,7 @@ impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
 		}
 
 		let mut current_len = 0;
-		visit_node(&expr.root(), &mut node_to_index, data.as_mut(), &mut current_len);
+		visit_node(expr.root(), &mut node_to_index, data.as_mut(), &mut current_len);
 
 		ArithCircuit {
 			steps: &data.as_mut()[..current_len],
@@ -866,17 +866,17 @@ impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
 					let node = match &steps[step] {
 						ArithCircuitStep::Const(value) => Arc::new(ArithExprNode::Const(*value)),
 						ArithCircuitStep::Add(left, right) => {
-							let left = visit_arg(&left, cached_exrs, steps);
-							let right = visit_arg(&right, cached_exrs, steps);
+							let left = visit_arg(left, cached_exrs, steps);
+							let right = visit_arg(right, cached_exrs, steps);
 							Arc::new(ArithExprNode::Add(left, right))
 						}
 						ArithCircuitStep::Mul(left, right) => {
-							let left = visit_arg(&left, cached_exrs, steps);
-							let right = visit_arg(&right, cached_exrs, steps);
+							let left = visit_arg(left, cached_exrs, steps);
+							let right = visit_arg(right, cached_exrs, steps);
 							Arc::new(ArithExprNode::Mul(left, right))
 						}
 						ArithCircuitStep::Pow(base, exp) => {
-							let base = visit_arg(&base, cached_exrs, steps);
+							let base = visit_arg(base, cached_exrs, steps);
 							Arc::new(ArithExprNode::Pow(base, *exp))
 						}
 					};
@@ -973,7 +973,7 @@ mod tests {
 		check_optimize(ArithExprNode::<F>::Var(0) * zero.clone(), &zero);
 
 		check_optimize(one.clone() * ArithExprNode::<F>::Var(0), &ArithExprNode::Var(0));
-		check_optimize(ArithExprNode::<F>::Var(0) * one.clone(), &ArithExprNode::Var(0));
+		check_optimize(ArithExprNode::<F>::Var(0) * one, &ArithExprNode::Var(0));
 
 		check_optimize(zero.clone() + ArithExprNode::<F>::Var(0), &ArithExprNode::Var(0));
 		check_optimize(ArithExprNode::<F>::Var(0) + zero.clone(), &ArithExprNode::Var(0));

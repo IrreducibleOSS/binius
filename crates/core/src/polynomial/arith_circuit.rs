@@ -190,7 +190,7 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 		let degree = expr.degree();
 		let n_vars = expr.n_vars();
 		let tower_level = expr.binary_tower_level();
-		let (exprs, retval) = circuit_steps_for_expr(&expr.clone().into());
+		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Self {
 			expr,
@@ -215,7 +215,7 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 				actual: n_vars,
 			});
 		}
-		let (exprs, retval) = circuit_steps_for_expr(&expr.clone().into());
+		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Ok(Self {
 			expr,

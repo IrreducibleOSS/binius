@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use binius_field::{Field, PackedField};
+use binius_field::PackedField;
 use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef};
 use binius_utils::bail;
 
@@ -173,7 +173,7 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 
 #[cfg(test)]
 mod tests {
-	use binius_field::BinaryField1b;
+	use binius_field::{BinaryField1b, Field};
 	use binius_math::ArithExprNode;
 
 	use super::*;

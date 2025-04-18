@@ -73,7 +73,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 		let rhs_expr = ArithExprNode::Var(rhs.partition_index);
 		Expr {
 			table_id: self.table_id,
-			expr: (self.expr + rhs_expr).into(),
+			expr: (self.expr + rhs_expr),
 		}
 	}
 }
@@ -147,7 +147,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Expr<F, V>> for Expr<F, V> {
 		assert_eq!(self.table_id, rhs.table_id);
 		Expr {
 			table_id: self.table_id,
-			expr: (self.expr - rhs.expr).into(),
+			expr: (self.expr - rhs.expr),
 		}
 	}
 }
@@ -158,7 +158,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	fn sub(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: (self.expr - ArithExprNode::Const(rhs)).into(),
+			expr: (self.expr - ArithExprNode::Const(rhs)),
 		}
 	}
 }
