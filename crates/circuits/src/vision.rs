@@ -18,7 +18,7 @@ use binius_field::{
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
-use binius_math::ArithExpr;
+use binius_math::{ArithExpr, ArithExprNode};
 use bytemuck::must_cast_slice;
 
 use crate::builder::{types::F, ConstraintSystemBuilder};
@@ -197,38 +197,38 @@ const MDS_TRANS: [[u8; STATE_SIZE]; STATE_SIZE] = [
 
 fn vision_round_begin_expr(state_idx: usize) -> ArithExpr<BinaryField32b> {
 	assert!(state_idx < STATE_SIZE);
-	arith_expr!(BinaryField32b[x, y] = x + y + ArithExpr::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])))
+	arith_expr!(BinaryField32b[x, y] = x + y + ArithExprNode::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])))
 }
 
 fn s_box_linearized_eval_expr() -> ArithExpr<BinaryField32b> {
-	let input = ArithExpr::Var(0);
-	let output = ArithExpr::Var(1);
+	let input = ArithExprNode::Var(0);
+	let output = ArithExprNode::Var(1);
 	// TODO: Square for ArithExpr
 	let input_pow2 = input.clone().pow(2);
 	let input_pow4 = input_pow2.clone().pow(2);
 
-	let result = ArithExpr::Const(SBOX_FWD_CONST)
-		+ input * ArithExpr::Const(SBOX_FWD_TRANS[0])
-		+ input_pow2 * ArithExpr::Const(SBOX_FWD_TRANS[1])
-		+ input_pow4 * ArithExpr::Const(SBOX_FWD_TRANS[2]);
+	let result: ArithExprNode<BinaryField32b> = ArithExprNode::Const(SBOX_FWD_CONST)
+		+ input * ArithExprNode::Const(SBOX_FWD_TRANS[0])
+		+ input_pow2 * ArithExprNode::Const(SBOX_FWD_TRANS[1])
+		+ input_pow4 * ArithExprNode::Const(SBOX_FWD_TRANS[2]);
 
-	result - output
+	(result - output).into()
 }
 
 fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
-	let x = ArithExpr::Var(0);
-	let inv = ArithExpr::Var(1);
+	let x = ArithExprNode::Var(0);
+	let inv = ArithExprNode::Var(1);
 
 	// x * inv == 1
-	let non_zero_case = x.clone() * inv.clone() - ArithExpr::one();
+	let non_zero_case = x.clone() * inv.clone() - ArithExprNode::one();
 
 	// x == 0 AND inv == 0
 	// TODO: Implement `mul_primitive` expression for ArithExpr
 	let beta = <F as ExtensionField<BinaryField1b>>::basis_checked(1 << 5)?;
-	let zero_case = x + inv * ArithExpr::Const(beta);
+	let zero_case = x + inv * ArithExprNode::Const(beta);
 
 	// (x * inv == 1) OR (x == 0 AND inv == 0)
-	Ok(non_zero_case * zero_case)
+	Ok((non_zero_case * zero_case).into())
 }
 
 fn vision_round(

@@ -76,7 +76,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 
 				for constraint in partition.zero_constraints.iter() {
 					let name = constraint.name.clone();
-					let expr = ArithExprNamedVars(&constraint.expr, &names);
+					let expr = ArithExprNamedVars(&**constraint.expr.root(), &names);
 					writeln!(f, "        ZERO {name}: {expr}")?;
 				}
 			}

@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::PackedField;
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithExpr, ArithExprNode, CompositionPoly};
 use binius_utils::bail;
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -27,7 +27,10 @@ impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		(0..N).map(ArithExpr::Var).product()
+		(0..N)
+			.map(ArithExprNode::Var)
+			.product::<ArithExprNode<P::Scalar>>()
+			.into()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

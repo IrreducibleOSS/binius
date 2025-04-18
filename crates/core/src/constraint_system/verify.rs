@@ -4,7 +4,7 @@ use std::{cmp::Reverse, iter};
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
-use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
+use binius_math::{ArithExpr, ArithExprNode, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{chain, izip, multiunzip, Itertools};
@@ -666,7 +666,9 @@ impl<P: PackedField> CompositionPoly<P> for FlushSumcheckComposition {
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0) * ArithExpr::Var(1) + ArithExpr::one() - ArithExpr::Var(1)
+		(ArithExprNode::Var(0) * ArithExprNode::Var(1) + ArithExprNode::one()
+			- ArithExprNode::Var(1))
+		.into()
 	}
 
 	fn binary_tower_level(&self) -> usize {

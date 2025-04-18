@@ -75,7 +75,7 @@ impl<F: TowerField> CompositePolyOracle<F> {
 #[cfg(test)]
 mod tests {
 	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
-	use binius_math::ArithExpr;
+	use binius_math::{ArithExpr, ArithExprNode};
 
 	use super::*;
 	use crate::oracle::MultilinearOracleSet;
@@ -92,13 +92,9 @@ mod tests {
 		}
 
 		fn expression(&self) -> ArithExpr<BinaryField128b> {
-			ArithExpr::Add(
-				Box::new(ArithExpr::Mul(Box::new(ArithExpr::Var(0)), Box::new(ArithExpr::Var(1)))),
-				Box::new(ArithExpr::Mul(
-					Box::new(ArithExpr::Var(2)),
-					Box::new(ArithExpr::Const(BinaryField128b::new(125))),
-				)),
-			)
+			(ArithExprNode::Var(0) * ArithExprNode::Var(1)
+				+ ArithExprNode::Var(2) * ArithExprNode::Const(BinaryField128b::new(125)))
+			.into()
 		}
 
 		fn evaluate(

@@ -16,9 +16,9 @@ impl ToTokens for ArithCircuitPolyItem {
 		tokens.extend(quote! {
 			{
 				use binius_field::Field;
-				use binius_math::ArithExpr as Expr;
+				use binius_math::ArithExprNode as Expr;
 
-				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new(#poly)
+				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new((#poly).into())
 			}
 		});
 	}
