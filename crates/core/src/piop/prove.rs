@@ -294,7 +294,7 @@ where
 		.entered();
 
 		let bivariate_sumcheck_span = tracing::info_span!(
-			"[phase] Bivariate Sumcheck",
+			"[step] Bivariate Sumcheck",
 			phase = "piop_compiler",
 			round = round,
 			perfetto_category = "phase.sub"
@@ -322,7 +322,7 @@ where
 		drop(bivariate_sumcheck_span);
 
 		let fri_fold_rounds_span = tracing::info_span!(
-			"[phase] FRI Fold Rounds",
+			"[step] FRI Fold Rounds",
 			phase = "piop_compiler",
 			round = round,
 			perfetto_category = "phase.sub"
