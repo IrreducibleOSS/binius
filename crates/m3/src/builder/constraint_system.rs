@@ -55,7 +55,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| table.columns[partition.columns[*i]].name.clone())
+						.map(|i| table.columns[*i].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
