@@ -12,12 +12,6 @@ use crate::builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B
 /// src_val << shift_amount
 const MAX_SHIFT_BITS: usize = 5;
 
-/// Flags to configure the behavior of the barrel shifter.
-pub struct BarrelShifterFlags {
-	/// Whether the output column should be committed or computed.
-	pub commit_output: bool,
-}
-
 /// A gadget for performing a barrel shift circuit (<https://en.wikipedia.org/wiki/Barrel_shifter>).
 ///
 /// The `BarrelShifter` gadget allows for left shifts, right shifts, and
@@ -49,10 +43,6 @@ pub struct BarrelShifter {
 	/// The variant of the shift operation: logical left, logical right or
 	/// circular left.
 	pub variant: ShiftVariant,
-
-	/// Flags to configure the behavior of the barrel shifter (e.g., rotation,
-	/// right shift).
-	flags: BarrelShifterFlags,
 }
 
 impl BarrelShifter {
@@ -62,10 +52,8 @@ impl BarrelShifter {
 	///
 	/// * `table` - A mutable reference to the `TableBuilder` used to define the gadget.
 	/// * `input` - The input column of type `Col<B1, 32>`.
-	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant bits
-	/// are ignored.
-	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or
-	/// circular left shift.
+	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant bits are ignored.
+	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or circular left shift.
 	/// * `flags` - A `BarrelShifterFlags` struct that configures the behavior of the gadget.
 	///
 	/// # Returns
@@ -76,7 +64,6 @@ impl BarrelShifter {
 		input: Col<B1, 32>,
 		shift_amount: Col<B1, 16>,
 		variant: ShiftVariant,
-		flags: BarrelShifterFlags,
 	) -> Self {
 		let partial_shift =
 			core::array::from_fn(|i| table.add_committed(format!("partial_shift_{i}")));
@@ -103,25 +90,14 @@ impl BarrelShifter {
 			current_shift = partial_shift[i];
 		}
 
-		// Define the output column (32 bits).
-		let output = if flags.commit_output {
-			// If the output is committed, add a committed column and enforce constraints.
-			let output = table.add_committed::<B1, 32>("output");
-			table.assert_zero("output_constraint", current_shift - output);
-			output
-		} else {
-			current_shift
-		};
-
 		Self {
 			input,
 			shift_amount,
 			shift_amount_bits,
 			shifted,
 			partial_shift,
-			output,
+			output: current_shift,
 			variant,
-			flags,
 		}
 	}
 
@@ -188,15 +164,7 @@ mod tests {
 		let input = table.add_committed::<B1, 32>("input");
 		let shift_amount = table.add_committed::<B1, 16>("shift_amount");
 
-		let shifter = BarrelShifter::new(
-			&mut table,
-			input,
-			shift_amount,
-			variant,
-			BarrelShifterFlags {
-				commit_output: false,
-			},
-		);
+		let shifter = BarrelShifter::new(&mut table, input, shift_amount, variant);
 
 		let statement = Statement {
 			boundaries: vec![],
