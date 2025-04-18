@@ -67,15 +67,15 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		alloc::{BumpAllocator, Error as AllocError},
-		cpu::{CpuLayer, CpuMemory},
+		alloc::{BumpAllocator, Error as AllocError, HostBumpAllocator},
+		cpu::CpuLayer,
 	};
 
 	/// Test showing how to allocate host memory and create a sub-allocator over it.
 	fn test_host_alloc<F: TowerField, HAL: ComputeLayer<F>>(hal: HAL) {
 		let mut host_slice = hal.host_alloc(256);
 
-		let bump = BumpAllocator::<F, CpuMemory>::new(host_slice.as_mut());
+		let bump = HostBumpAllocator::new(host_slice.as_mut());
 		assert_eq!(bump.alloc(100).unwrap().len(), 100);
 		assert_eq!(bump.alloc(100).unwrap().len(), 100);
 		assert_matches!(bump.alloc(100), Err(AllocError::OutOfMemory));
@@ -91,7 +91,7 @@ mod tests {
 
 		let mut host_slice = hal.host_alloc(256);
 
-		let host_alloc = BumpAllocator::<F, CpuMemory>::new(host_slice.as_mut());
+		let host_alloc = HostBumpAllocator::new(host_slice.as_mut());
 		let dev_alloc = BumpAllocator::<F, HAL::DevMem>::from_ref(&mut dev_mem);
 
 		let host_buf_1 = host_alloc.alloc(128).unwrap();

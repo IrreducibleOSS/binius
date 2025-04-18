@@ -3,6 +3,7 @@
 use std::cell::Cell;
 
 use super::memory::{ComputeMemory, DevSlice};
+use crate::cpu::CpuMemory;
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
@@ -66,6 +67,9 @@ where
 		}
 	}
 }
+
+/// Alias for a bump allocator over CPU host memory.
+pub type HostBumpAllocator<'a, F> = BumpAllocator<'a, F, CpuMemory>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
