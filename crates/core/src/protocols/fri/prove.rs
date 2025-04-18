@@ -226,16 +226,22 @@ where
 		todo!("can't handle this case well");
 	}
 
-	let mut encoded = tracing::debug_span!("allocate codeword")
-		.in_scope(|| zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate())));
-	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
-	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
+	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
+
+	tracing::info_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main").in_scope(|| {
+		message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
+	});
+
+	tracing::info_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main").in_scope(|| {
+		rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)
+	})?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
 
+	let merkle_tree_span = tracing::info_span!("[task] Merkle Tree", phase = "commit", perfetto_category = "task.main").entered();
 	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
 		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, 1 << coset_log_len);
 
@@ -249,6 +255,7 @@ where
 			.commit_iterated(iterated_small_chunks, log_len)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?
 	};
+	drop(merkle_tree_span);
 
 	Ok(CommitOutput {
 		commitment: commitment.root,
