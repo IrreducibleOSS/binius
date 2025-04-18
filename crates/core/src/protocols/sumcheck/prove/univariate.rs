@@ -357,11 +357,9 @@ where
 
 	// Batching factors for strided NTTs.
 	let log_extension_degree_base_domain = <FBase as ExtensionField<FDomain>>::LOG_DEGREE;
-	let pdomain_log_width = <P as PackedExtension<FDomain>>::PackedSubfield::LOG_WIDTH;
 
-	// The lower bound is due to SingleThreadedNTT implementation quirk, which requires
-	// at least two packed field elements to be able to use PackedField::interleave.
-	let min_domain_bits = log2_ceil_usize(max_domain_size).max(pdomain_log_width + 1);
+	// Check that domain field contains the required NTT cosets.
+	let min_domain_bits = log2_ceil_usize(max_domain_size);
 	if min_domain_bits > FDomain::N_BITS {
 		bail!(MathError::DomainSizeTooLarge);
 	}

@@ -10,9 +10,9 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES8x16x16b, PackedBinaryField16x32b,
-	PackedBinaryField32x16b, PackedBinaryField8x32b, PackedExtension, PackedField,
-	RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES16x32x8b, ByteSlicedAES8x16x16b,
+	PackedBinaryField16x32b, PackedBinaryField32x16b, PackedBinaryField8x32b, PackedExtension,
+	PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -104,7 +104,7 @@ fn check_roundtrip_all_ntts<P>(
 		.collect::<Vec<_>>();
 
 	let cosets = 0..1 << max_log_coset;
-	for log_stride_batch in 0..max_log_stride_batch {
+	for log_stride_batch in 0..=max_log_stride_batch {
 		let log_n_b_range = if data.len() > 1 {
 			let single_log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_stride_batch;
 			single_log_n..single_log_n + 1
@@ -207,6 +207,11 @@ fn test_sub_packing_width() {
 #[test]
 fn test_3d_bytesliced_sub_packing_width() {
 	check_roundtrip_all_ntts::<ByteSlicedAES8x16x16b>(12, 0, 2, 1);
+}
+
+#[test]
+fn test_3d_bytesliced_larger_than_domain() {
+	check_roundtrip_all_ntts::<ByteSlicedAES16x32x8b>(8, 0, 0, 0);
 }
 
 fn check_packed_extension_roundtrip_with_reference<F, PE>(
