@@ -19,6 +19,9 @@ use stackalloc::stackalloc_with_default;
 
 use super::error::Error;
 
+/// Expression tree node.
+/// Although it has `Arc` as pointers to other nodes it doesn't provide any guarantees about
+/// nodes being unique.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArithExprNode<F: Field> {
 	Const(F),
@@ -497,6 +500,10 @@ impl<F: Field> From<ArithExprNode<F>> for ArithExpr<F> {
 /// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
 /// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
 /// specific representations of multivariate polynomials.
+///
+/// The expression is represented as a tree of `ArithExprNode`s, where all the nodes are unique.
+/// This means that the same node can be shared between different expressions, and the expression
+/// can be optimized by reusing the same nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
 pub struct ArithExpr<F: Field> {
 	root: Arc<ArithExprNode<F>>,
