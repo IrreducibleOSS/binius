@@ -95,7 +95,7 @@ mod tests {
 	}
 
 	// Test utility function
-	fn run_lookup_test(looker_first: bool, multiplicity: MultiplicityConfig, seed: u64) {
+	fn run_lookup_test(looker_first: bool, multiplicity: MultiplicityConfig, lookup_table_size: usize, seed: u64) {
 		let mut cs = ConstraintSystem::new();
 		let chan = cs.add_channel("values");
 
@@ -152,7 +152,6 @@ mod tests {
 		}
 
 		// Use consistent table sizes across test cases
-		let lookup_table_size = 16;
 		let looker_1_size = match multiplicity {
 			MultiplicityConfig::None => 0,
 			_ => 20,
@@ -294,41 +293,53 @@ mod tests {
 
 	#[test]
 	fn test_lookup_producer_some_zero() {
+		for lookup_table_size in [16, 32, 128] {
 		// Some values have zero multiplicity
 		run_lookup_test(
-			false, // lookup table first (normal order)
-			MultiplicityConfig::Partial,
-			0,
-		);
+				false, // lookup table first (normal order)
+				MultiplicityConfig::Partial,
+				lookup_table_size,
+				0,
+			);
+		}
 	}
 
 	#[test]
 	fn test_lookup_producer_all_nonzero() {
+		for lookup_table_size in [16, 32, 128] {
 		// All values have non-zero multiplicity
 		run_lookup_test(
 			false, // lookup table first (normal order)
-			MultiplicityConfig::Complete,
-			1,
-		);
+				MultiplicityConfig::Complete,
+				lookup_table_size,
+				1,
+			);
+		}
 	}
 
 	#[test]
 	fn test_lookup_producer_all_zero() {
+		for lookup_table_size in [16, 32, 128] {
 		// All values have zero multiplicity - extreme corner case
 		run_lookup_test(
-			false, // lookup table first (normal order)
-			MultiplicityConfig::None,
-			3,
-		);
+				false, // lookup table first (normal order)
+				MultiplicityConfig::None,
+				lookup_table_size,
+				2,
+			);
+		}
 	}
 
 	#[test]
 	fn test_lookup_producer_different_ordering() {
+		for lookup_table_size in [16, 32, 128] {
 		// Different table creation order - looker first
-		run_lookup_test(
-			true, // looker first
-			MultiplicityConfig::Partial,
-			2,
-		);
+		run_lookup_test(	
+				true, // looker first
+				MultiplicityConfig::Partial,
+				lookup_table_size,
+				3,
+			);
+		}
 	}
 }
