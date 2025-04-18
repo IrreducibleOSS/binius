@@ -152,4 +152,14 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
+	StaticExp {
+		bit_cols: Vec<ColumnIndex>,
+		base: F,
+		base_tower_level: usize,
+	},
+	DynamicExp {
+		bit_cols: Vec<ColumnIndex>,
+		base: ColumnIndex,
+		base_tower_level: usize,
+	},
 }

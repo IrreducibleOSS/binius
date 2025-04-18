@@ -23,7 +23,7 @@ use super::{
 	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts,
+	upcast_col, ColumnIndex, FlushOpts, B1,
 };
 use crate::builder::column::ColumnId;
 
@@ -254,6 +254,57 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::Constant {
 				poly: Arc::new(mle),
+			},
+		)
+	}
+
+	pub fn add_static_exp<FSub>(
+		&mut self,
+		name: impl ToString,
+		pow_bits: &[Col<B1>],
+		base: F,
+	) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(log2_strict_usize(pow_bits.len()) <= FSub::TOWER_LEVEL);
+
+		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
+		let namespaced_name = self.namespaced_name(name);
+		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		self.table.new_column(
+			namespaced_name,
+			ColumnDef::StaticExp {
+				bit_cols,
+				base,
+				base_tower_level: FSub::TOWER_LEVEL,
+			},
+		)
+	}
+
+	pub fn add_dynamic_exp<FSub>(
+		&mut self,
+		name: impl ToString,
+		pow_bits: &[Col<B1>],
+		base: Col<FSub>,
+		base_tower_level: usize,
+	) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(log2_strict_usize(pow_bits.len()) <= base_tower_level);
+		assert!(base_tower_level <= FSub::TOWER_LEVEL);
+
+		let namespaced_name = self.namespaced_name(name);
+		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		self.table.new_column(
+			namespaced_name,
+			ColumnDef::DynamicExp {
+				bit_cols,
+				base: base.id().table_index,
+				base_tower_level,
 			},
 		)
 	}
