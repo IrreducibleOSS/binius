@@ -51,7 +51,7 @@ where
 	FExt: ExtensionField<F>,
 {
 	let data = repeat_with(|| <PackedType<U, F>>::random(&mut rng))
-		.take(1 << (n_vars - <PackedType<U, F>>::LOG_WIDTH))
+		.take(1 << n_vars.saturating_sub(<PackedType<U, F>>::LOG_WIDTH))
 		.collect::<Vec<_>>();
 	let mle = MultilinearExtension::new(n_vars, data).unwrap();
 	MLEEmbeddingAdapter::from(mle).upcast_arc_dyn()
@@ -117,13 +117,16 @@ fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
 		let prefix_desc = &system.prefix_descs[prefix_desc_idx];
 		let suffix_desc = &system.suffix_descs[claim_desc.suffix_desc_idx];
 		assert_eq!(prefix_desc.kappa(), suffix_desc.kappa);
-		assert_eq!(
-			[prefix_desc.prefix.clone(), suffix_desc.suffix.to_vec()].concat(),
-			system.sumcheck_claim_descs[i]
-				.eval_claim
-				.eval_point
-				.to_vec()
-		);
+
+		let eval_point = &*system.sumcheck_claim_descs[i].eval_claim.eval_point;
+		if suffix_desc.suffix.is_empty() {
+			assert_eq!(&prefix_desc.prefix[..eval_point.len()], eval_point);
+		} else {
+			assert_eq!(
+				&[prefix_desc.prefix.clone(), suffix_desc.suffix.to_vec()].concat(),
+				eval_point
+			);
+		}
 	}
 }
 
@@ -224,6 +227,8 @@ fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
 	oracles.add_committed(10, 3);
 	oracles.add_committed(8, 3);
 	oracles.add_committed(8, 5);
+	oracles.add_committed(4, 3); // data is exactly one packed field element
+	oracles.add_committed(2, 3); // data is less than one packed field element
 	oracles.add_committed(10, 5);
 	oracles
 }

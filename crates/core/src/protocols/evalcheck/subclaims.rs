@@ -369,7 +369,8 @@ where
 	let eq_indicators = dedup_eval_points
 		.into_iter()
 		.map(|eval_point| {
-			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
+			let mle = MLEDirectAdapter::from(MultilinearExtension::new(
+				eval_point.len(),
 				memoized_queries
 					.full_query_readonly(eval_point)
 					.expect("computed above")

@@ -146,14 +146,14 @@ where
 			 }| {
 				let suffix_desc = &system.suffix_descs[*suffix_desc_idx];
 
-				let elems = if let Some(partial_eval) =
+				let mut elems = if let Some(partial_eval) =
 					memoized_data.partial_eval(eval_claim.id, Arc::as_ref(&suffix_desc.suffix))
 				{
 					PackedField::iter_slice(
 						partial_eval.packed_evals().expect("packed_evals exist"),
 					)
 					.take(1 << suffix_desc.kappa)
-					.collect()
+					.collect::<Vec<_>>()
 				} else {
 					let suffix_query = memoized_data
 						.full_query_readonly(&suffix_desc.suffix)
@@ -162,9 +162,16 @@ where
 						witnesses[*committed_idx].evaluate_partial_high(suffix_query.into())?;
 					PackedField::iter_slice(partial_eval.evals())
 						.take(1 << suffix_desc.kappa)
-						.collect()
+						.collect::<Vec<_>>()
 				};
 
+				if elems.len() < (1 << suffix_desc.kappa) {
+					elems = elems
+						.into_iter()
+						.cycle()
+						.take(1 << suffix_desc.kappa)
+						.collect();
+				}
 				TowerTensorAlgebra::new(suffix_desc.kappa, elems)
 			},
 		)

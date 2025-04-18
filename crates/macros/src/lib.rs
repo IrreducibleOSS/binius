@@ -4,7 +4,9 @@ extern crate proc_macro;
 mod arith_circuit_poly;
 mod arith_expr;
 mod composition_poly;
+mod deserialize_bytes;
 
+use deserialize_bytes::{parse_container_attributes, split_for_impl, GenericsSplit};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
@@ -186,10 +188,52 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 ///     value
 /// );
 /// ```
-#[proc_macro_derive(DeserializeBytes)]
+///
+/// ## Eval generics
+///
+/// Sometimes it is convenient to limit the implementation of `DeserializeBytes` only to
+/// specific types. For example:
+///
+/// ```ignore
+/// impl DeserializeBytes for MultilinearOracleSet<BinaryField128b> {...}
+/// ```
+///
+/// To do that use `eval_generics` attribute:
+///
+/// ```
+/// use binius_field::BinaryField128b;
+/// use binius_utils::{SerializeBytes, DeserializeBytes, SerializationMode};
+/// use binius_macros::{SerializeBytes, DeserializeBytes};
+///
+///
+/// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
+/// #[deserialize_bytes(eval_generics(F = BinaryField128b))]
+/// struct MyStruct<F> {
+///     data: Vec<F>
+/// }
+///
+/// let mut buf = vec![];
+/// let value = MyStruct {
+///    data: vec![BinaryField128b::new(1234), BinaryField128b::new(5678)]
+/// };
+/// MyStruct::serialize(&value, &mut buf, SerializationMode::CanonicalTower).unwrap();
+/// assert_eq!(
+///     MyStruct::<BinaryField128b>::deserialize(buf.as_slice(), SerializationMode::CanonicalTower).unwrap(),
+///     value
+/// );
+/// ```
+///
+/// Additionally, `eval_generics` can be used to fix multiple params:
+/// `eval_generics(F = BinaryField128b, G = binius_field::BinaryField64b)`
+///
+#[proc_macro_derive(DeserializeBytes, attributes(deserialize_bytes))]
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
+	let container_attributes = match parse_container_attributes(&input) {
+		Ok(x) => x,
+		Err(e) => return e.into_compile_error().into(),
+	};
 	let name = input.ident;
 	let mut generics = input.generics.clone();
 	generics.type_params_mut().for_each(|type_param| {
@@ -197,7 +241,11 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			.bounds
 			.push(parse_quote!(binius_utils::DeserializeBytes))
 	});
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+	let GenericsSplit {
+		impl_generics,
+		type_generics: ty_generics,
+		where_clause,
+	} = split_for_impl(&generics, &container_attributes);
 	let deserialize_value = quote! {
 		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
@@ -265,6 +313,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 			}
 		}
 	};
+
 	quote! {
 		impl #impl_generics binius_utils::DeserializeBytes for #name #ty_generics #where_clause {
 			fn deserialize(mut read_buf: impl binius_utils::bytes::Buf, mode: binius_utils::SerializationMode) -> Result<Self, binius_utils::SerializationError>
