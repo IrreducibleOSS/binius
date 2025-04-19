@@ -29,7 +29,7 @@ pub trait Broadcast<Scalar> {
 	fn broadcast(scalar: Scalar) -> Self;
 }
 
-/// Multiplication that is parameterized with some some strategy.
+/// Multiplication that is parameterized with some strategy.
 pub trait TaggedMul<Strategy> {
 	fn mul(self, rhs: Self) -> Self;
 }
@@ -61,7 +61,7 @@ macro_rules! impl_mul_with {
 
 pub(crate) use impl_mul_with;
 
-/// Square operation that is parameterized with some some strategy.
+/// Square operation that is parameterized with some strategy.
 pub trait TaggedSquare<Strategy> {
 	fn square(self) -> Self;
 }
@@ -87,7 +87,7 @@ macro_rules! impl_square_with {
 
 pub(crate) use impl_square_with;
 
-/// Invert or zero operation that is parameterized with some some strategy.
+/// Invert or zero operation that is parameterized with some strategy.
 pub trait TaggedInvertOrZero<Strategy> {
 	fn invert_or_zero(self) -> Self;
 }
@@ -113,7 +113,7 @@ macro_rules! impl_invert_with {
 
 pub(crate) use impl_invert_with;
 
-/// Multiply by alpha operation that is parameterized with some some strategy.
+/// Multiply by alpha operation that is parameterized with some strategy.
 pub trait TaggedMulAlpha<Strategy> {
 	fn mul_alpha(self) -> Self;
 }
