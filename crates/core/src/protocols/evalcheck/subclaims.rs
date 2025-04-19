@@ -397,6 +397,7 @@ where
 	Ok(())
 }
 
+/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of multilinears
 #[allow(clippy::type_complexity)]
 pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
 	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,

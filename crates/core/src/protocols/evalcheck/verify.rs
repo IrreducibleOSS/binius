@@ -30,13 +30,17 @@ pub struct EvalcheckVerifier<'a, F>
 where
 	F: TowerField,
 {
+	/// Mutable reference to the oracle set which is modified to create new claims arising from sumchecks
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
+	/// The committed evaluation claims in this round
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
+	/// The new sumcheck constraints in this round
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
 
+	/// The list of claims that have been verified in this round
 	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
 }
 
@@ -65,7 +69,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 	/// Verify an evalcheck claim.
 	///
-	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for comments.
+	/// For each claim, we verify the proof by recursively verifying the subclaims in a DFS manner deduplicating previously verified claims
+	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for more details.
 	#[instrument(skip_all, name = "EvalcheckVerifierState::verify", level = "debug")]
 	pub fn verify(
 		&mut self,
@@ -89,6 +94,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		evalcheck_proof: EvalcheckProof<F>,
 	) -> Result<(), Error> {
+		// If the proof is a duplicate claim, we need to check if the claim is already in the round claims which has been verified
 		if let EvalcheckProof::DuplicateClaim(index) = evalcheck_proof {
 			if let Some(expected_claim) = self.round_claims.get(index) {
 				if *expected_claim == evalcheck_claim {
@@ -98,6 +104,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 		}
 
+		// If the proof is not a duplicate claim, we need to add the claim to the round claims
 		self.round_claims.push(evalcheck_claim.clone());
 
 		let EvalcheckMultilinearClaim {
@@ -218,6 +225,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let mut evals = Vec::new();
 
 				for (subproof, sub_oracle_id) in subproofs.iter().zip(linear_combination.polys()) {
+					// If the subproof is a duplicate claim, we need to check if the claim is already in the round claims which has been verified
+					// otherwise, we verify the subclaim by DFS
 					match subproof {
 						(None, EvalcheckProof::DuplicateClaim(index)) => {
 							if self.round_claims[*index].id != sub_oracle_id

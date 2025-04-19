@@ -16,6 +16,7 @@ use crate::{
 	transcript::{TranscriptReader, TranscriptWriter},
 };
 
+/// This struct represents a claim to be verified through the evalcheck protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
@@ -41,6 +42,7 @@ enum EvalcheckNumerics {
 	DuplicateClaim,
 }
 
+/// The proof output of a given claim which may recursively contain proofs of subclaims arising from a given claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalcheckProof<F: Field> {
 	Transparent,
@@ -55,30 +57,6 @@ pub enum EvalcheckProof<F: Field> {
 	CompositeMLE,
 	Projected(Box<EvalcheckProof<F>>),
 	DuplicateClaim(usize),
-}
-
-impl<F: Field> EvalcheckProof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
-		match self {
-			Self::Transparent => EvalcheckProof::Transparent,
-			Self::Committed => EvalcheckProof::Committed,
-			Self::Shifted => EvalcheckProof::Shifted,
-			Self::Packed => EvalcheckProof::Packed,
-			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
-			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
-				subproofs: subproofs
-					.into_iter()
-					.map(|(eval, proof)| (eval.map(|eval| eval.into()), proof.isomorphic()))
-					.collect(),
-			},
-			Self::ZeroPadded(eval, proof) => {
-				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
-			}
-			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
-			Self::Projected(proof) => EvalcheckProof::Projected(Box::new(proof.isomorphic())),
-			Self::DuplicateClaim(index) => EvalcheckProof::DuplicateClaim(index),
-		}
-	}
 }
 
 impl EvalcheckNumerics {
@@ -203,6 +181,11 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	}
 }
 
+/// Data structure for efficiently querying and inserting evaluations of claims.
+///
+/// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the data.
+/// This data structure is more memory efficient for small number of evaluation points and OracleIds which
+/// are grouped together.
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -214,6 +197,9 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		}
 	}
 
+	/// Query the first value found for an evaluation point for a given oracle id.
+	///
+	/// Returns `None` if no value is found.
 	pub fn get(&self, id: OracleId, eval_point: &[F]) -> Option<&T> {
 		self.data
 			.get(id)?
@@ -222,6 +208,9 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
+	/// Insert a new evaluation point for a given oracle id.
+	///
+	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
@@ -230,6 +219,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		self.data[id].push((eval_point, val))
 	}
 
+	/// Flatten the data structure into a vector of values.
 	pub fn flatten(mut self) -> Vec<T> {
 		self.data.reverse();
 
@@ -253,6 +243,7 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 	}
 }
 
+/// A wrapper struct for evaluation points.
 #[derive(Debug, Clone, Eq)]
 pub struct EvalPoint<F: Field> {
 	data: Arc<[F]>,
