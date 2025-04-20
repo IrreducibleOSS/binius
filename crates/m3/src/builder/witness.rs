@@ -9,13 +9,13 @@ use std::{
 use binius_core::{
 	oracle::OracleId,
 	polynomial::ArithCircuitPoly,
-	tower::{CanonicalTowerFamily, PackedTop, TowerFamily},
+	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerTransform, TowerTransformFactory},
 	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackedType, linear_transformation::Transformation,
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
@@ -163,6 +163,80 @@ where
 	P: PackedField,
 	P::Scalar: TowerField,
 {
+	// pub fn convert_to_multilinear_extension_index<ToP>(
+	// 	self,
+	// 	convert: impl for<'a> Fn(),
+	// ) -> MultilinearExtensionIndex<'alloc, TTF::ToTop>
+	// where
+	// 	TTF: TowerTransformFactory<FromTop = P>,
+	// 	P: PackedTop<TTF::ToTower>,
+	// {
+	//
+	// }
+
+	pub fn transform_to_multilinear_extension_index<TTF>(
+		self,
+		transform: &TowerTransform<TTF>,
+	) -> MultilinearExtensionIndex<'alloc, TTF::ToTop>
+	where
+		TTF: TowerTransformFactory<FromTop = P>,
+		P: PackedTop<TTF::ToTower>,
+	{
+		let mut index = MultilinearExtensionIndex::new();
+		let mut first_oracle_id_in_table = 0;
+		for table_witness in self.tables {
+			let Either::Right(table_witness) = table_witness else {
+				continue;
+			};
+			let table = table_witness.table();
+			let cols = immutable_witness_index_columns(table_witness.cols);
+
+			// Append oracles for constant columns that are repeated.
+			let mut count = 0;
+			for (oracle_id_offset, col) in cols.into_iter().enumerate() {
+				let oracle_id = first_oracle_id_in_table + oracle_id_offset;
+				let log_capacity = if col.is_single_row {
+					0
+				} else {
+					table_witness.log_capacity
+				};
+				let n_vars = log_capacity + col.shape.log_values_per_row;
+				let underlier_count = 1
+					<< (n_vars + col.shape.tower_height)
+						.saturating_sub(P::LOG_WIDTH + P::Scalar::TOWER_LEVEL);
+				let witness = convert_multilin_poly_from_underlier_data(
+					&col.data[..underlier_count],
+					n_vars,
+					col.shape.tower_height,
+					transform,
+				);
+				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+				count += 1;
+			}
+
+			if !table.power_of_two_sized {
+				// Every table partition has a step_down appended to the end of the table to support
+				// non-power of two height tables.
+				for log_values_per_row in table.partitions.keys() {
+					let oracle_id = first_oracle_id_in_table + count;
+					let size = table_witness.size << log_values_per_row;
+					let log_size = table_witness.log_capacity + log_values_per_row;
+					let witness = StepDown::new(log_size, size)
+						.unwrap()
+						.multilinear_extension::<PackedSubfield<TTF::ToTop, <TTF::ToTower as TowerFamily>::B1>>(
+						)
+						.unwrap()
+						.specialize_arc_dyn();
+					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+					count += 1;
+				}
+			}
+
+			first_oracle_id_in_table += count;
+		}
+		index
+	}
+
 	pub fn into_multilinear_extension_index_over_tower<Tower>(
 		self,
 	) -> MultilinearExtensionIndex<'alloc, P>
@@ -230,6 +304,74 @@ where
 {
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P> {
 		self.into_multilinear_extension_index_over_tower()
+	}
+}
+
+fn convert_multilin_poly_from_underlier_data<TTF>(
+	data: &[TTF::FromTop],
+	n_vars: usize,
+	tower_height: usize,
+	tower_transform: &TowerTransform<TTF>,
+) -> Arc<dyn MultilinearPoly<TTF::ToTop> + Send + Sync>
+where
+	TTF: TowerTransformFactory,
+{
+	assert_eq!(data.len(), 1 << n_vars.saturating_sub(TTF::FromTop::LOG_WIDTH));
+	match tower_height {
+		0 => {
+			let transform = tower_transform.b1_transformation();
+			let converted_data = data
+				.par_iter()
+				.map(|data_i| {
+					PackedExtension::<<TTF::ToTower as TowerFamily>::B1>::cast_base(
+						transform.transform(data_i),
+					)
+				})
+				.collect::<Vec<_>>();
+			MultilinearExtension::new(n_vars, converted_data)
+				.expect("data length is asserted consistent with n_vars above")
+				.specialize_arc_dyn()
+		}
+		3 => {
+			let transform = tower_transform.b8_transformation();
+			let converted_data = data
+				.par_iter()
+				.map(|data_i| {
+					PackedExtension::<<TTF::ToTower as TowerFamily>::B8>::cast_base(
+						transform.transform(data_i),
+					)
+				})
+				.collect::<Vec<_>>();
+			MultilinearExtension::new(n_vars, converted_data)
+				.expect("data length is asserted consistent with n_vars above")
+				.specialize_arc_dyn()
+		}
+		4 => {
+			let transform = tower_transform.b16_transformation();
+			let converted_data = data
+				.par_iter()
+				.map(|data_i| {
+					PackedExtension::<<TTF::ToTower as TowerFamily>::B16>::cast_base(
+						transform.transform(data_i),
+					)
+				})
+				.collect::<Vec<_>>();
+			MultilinearExtension::new(n_vars, converted_data)
+				.expect("data length is asserted consistent with n_vars above")
+				.specialize_arc_dyn()
+		}
+		// 5 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B32>::cast_bases(data))
+		// 	.unwrap()
+		// 	.specialize_arc_dyn(),
+		// 6 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B64>::cast_bases(data))
+		// 	.unwrap()
+		// 	.specialize_arc_dyn(),
+		// 7 => MultilinearExtension::new(n_vars, PackedExtension::<Tower::B128>::cast_bases(data))
+		// 	.unwrap()
+		// 	.specialize_arc_dyn(),
+		_ => {
+			panic!("Unsupported tower height: {tower_height}");
+		}
 	}
 }
 

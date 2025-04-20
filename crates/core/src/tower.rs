@@ -150,7 +150,7 @@ trait_set! {
 		+ PackedExtension<Tower::B128>;
 }
 
-pub trait TowerFamilyTransform {
+pub trait TowerTransformFactory {
 	type FromTower: TowerFamily;
 	type FromTop: PackedTop<Self::FromTower>;
 	type ToTower: TowerFamily;
@@ -204,24 +204,13 @@ pub trait TowerFamilyTransform {
 	// >;
 }
 
-// #[derive(Getters)]
-// struct TowerFamilyFactoryTransform<TFT: TowerFamilyTransform> {
-// 	// FromTower, ToTower, FromTop, ToTop> {
-// 	#[getset(get = "pub")]
-// 	b1_transformation: TFT::B1,
-// 	#[getset(get = "pub")]
-// 	b8_transformation: TFT::B8,
-// 	#[getset(get = "pub")]
-// 	b16_transformation: TFT::B16,
-// }
-
 #[derive(Getters, Default)]
 #[allow(dead_code)]
 struct DenseCanonicalToAESFamilyTransform<U> {
 	_marker: PhantomData<U>,
 }
 
-impl<U> TowerFamilyTransform for DenseCanonicalToAESFamilyTransform<U>
+impl<U> TowerTransformFactory for DenseCanonicalToAESFamilyTransform<U>
 where
 	U: TowerUnderlier<CanonicalTowerFamily>
 		+ TowerUnderlier<AESTowerFamily>
@@ -257,7 +246,7 @@ struct CanonicalToAESFamilyTransform<FromTop, ToTop> {
 	_marker: PhantomData<(FromTop, ToTop)>,
 }
 
-impl<FromTop, ToTop, Packed1b> TowerFamilyTransform
+impl<FromTop, ToTop, Packed1b> TowerTransformFactory
 	for CanonicalToAESFamilyTransform<FromTop, ToTop>
 where
 	Packed1b: PackedField<Scalar = BinaryField1b>,
@@ -292,5 +281,25 @@ where
 
 	fn new_b16_transformation() -> Self::B16 {
 		make_binary_to_aes_packed_transformer::<Self::FromTop, Self::ToTop>()
+	}
+}
+
+#[derive(Getters)]
+pub struct TowerTransform<TFT: TowerTransformFactory> {
+	#[getset(get = "pub")]
+	b1_transformation: TFT::B1,
+	#[getset(get = "pub")]
+	b8_transformation: TFT::B8,
+	#[getset(get = "pub")]
+	b16_transformation: TFT::B16,
+}
+
+impl<TFT: TowerTransformFactory> Default for TowerTransform<TFT> {
+	fn default() -> Self {
+		Self {
+			b1_transformation: TFT::new_b1_transformation(),
+			b8_transformation: TFT::new_b8_transformation(),
+			b16_transformation: TFT::new_b16_transformation(),
+		}
 	}
 }
