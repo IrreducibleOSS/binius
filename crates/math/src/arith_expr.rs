@@ -2,6 +2,7 @@
 
 use std::{
 	cmp::Ordering,
+	collections::HashMap,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -295,38 +296,31 @@ impl<F: Field> ArithExpr<F> {
 	///
 	/// - [`Error::NonLinearExpression`] if the expression is not linear.
 	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
-		if self.degree() > 1 {
-			return Err(Error::NonLinearExpression);
-		}
-
-		let n_vars = self.n_vars();
-
-		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
-		// Evaluating with all variables set to 0, should give the constant term
-		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
-
-		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
-		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
-		let var_coeffs = (0..n_vars)
-			.map(|i| {
-				let mut vars = vec![F::ZERO; n_vars];
-				vars[i] = F::ONE;
-				self.evaluate(&vars) - constant
-			})
-			.collect();
-		Ok(LinearNormalForm {
-			constant,
-			var_coeffs,
-		})
+		self.sparse_linear_normal_form().map(Into::into)
 	}
 
-	fn evaluate(&self, vars: &[F]) -> F {
+	fn sparse_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
 		match self {
-			Self::Const(val) => *val,
-			Self::Var(index) => vars[*index],
-			Self::Add(left, right) => left.evaluate(vars) + right.evaluate(vars),
-			Self::Mul(left, right) => left.evaluate(vars) * right.evaluate(vars),
-			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
+			Self::Const(val) => Ok((*val).into()),
+			Self::Var(index) => Ok(SparseLinearNormalForm {
+				constant: F::ZERO,
+				dense_linear_form_len: *index + 1,
+				var_coeffs: [(*index, F::ONE)].into(),
+			}),
+			Self::Add(left, right) => {
+				Ok(left.sparse_linear_normal_form()? + right.sparse_linear_normal_form()?)
+			}
+			Self::Mul(left, right) => {
+				left.sparse_linear_normal_form()? * right.sparse_linear_normal_form()?
+			}
+			Self::Pow(_, 0) => Ok(F::ONE.into()),
+			Self::Pow(expr, 1) => expr.sparse_linear_normal_form(),
+			Self::Pow(expr, pow) => expr.sparse_linear_normal_form().and_then(|linear_form| {
+				if linear_form.dense_linear_form_len != 0 {
+					return Err(Error::NonLinearExpression);
+				}
+				Ok(linear_form.constant.pow(*pow).into())
+			}),
 		}
 	}
 
@@ -456,6 +450,84 @@ pub struct LinearNormalForm<F: Field> {
 	pub var_coeffs: Vec<F>,
 }
 
+struct SparseLinearNormalForm<F: Field> {
+	/// The constant offset of the expression.
+	pub constant: F,
+	/// A map of variable indices to their coefficients.
+	pub var_coeffs: HashMap<usize, F>,
+	/// The `var_coeffs` vector len if converted to [`LinearNormalForm`].
+	/// It is used for optimization of conversion to [`LinearNormalForm`].
+	pub dense_linear_form_len: usize,
+}
+
+impl<F: Field> From<F> for SparseLinearNormalForm<F> {
+	fn from(value: F) -> Self {
+		Self {
+			constant: value,
+			dense_linear_form_len: 0,
+			var_coeffs: HashMap::new(),
+		}
+	}
+}
+
+impl<F: Field> Add for SparseLinearNormalForm<F> {
+	type Output = Self;
+	fn add(self, rhs: Self) -> Self::Output {
+		let (mut result, consumable) = if self.var_coeffs.len() < rhs.var_coeffs.len() {
+			(rhs, self)
+		} else {
+			(self, rhs)
+		};
+		result.constant += consumable.constant;
+		if consumable.dense_linear_form_len > result.dense_linear_form_len {
+			result.dense_linear_form_len = consumable.dense_linear_form_len;
+		}
+
+		for (index, coeff) in consumable.var_coeffs {
+			result
+				.var_coeffs
+				.entry(index)
+				.and_modify(|res_coeff| {
+					*res_coeff += coeff;
+				})
+				.or_insert(coeff);
+		}
+		result
+	}
+}
+
+impl<F: Field> Mul for SparseLinearNormalForm<F> {
+	type Output = Result<Self, Error>;
+	fn mul(self, rhs: Self) -> Result<Self, Error> {
+		if !self.var_coeffs.is_empty() && !rhs.var_coeffs.is_empty() {
+			return Err(Error::NonLinearExpression);
+		}
+		let (mut result, consumable) = if self.var_coeffs.is_empty() {
+			(rhs, self)
+		} else {
+			(self, rhs)
+		};
+		result.constant *= consumable.constant;
+		for coeff in result.var_coeffs.values_mut() {
+			*coeff *= consumable.constant;
+		}
+		Ok(result)
+	}
+}
+
+impl<F: Field> From<SparseLinearNormalForm<F>> for LinearNormalForm<F> {
+	fn from(value: SparseLinearNormalForm<F>) -> Self {
+		let mut var_coeffs = vec![F::ZERO; value.dense_linear_form_len];
+		for (i, coeff) in value.var_coeffs {
+			var_coeffs[i] = coeff;
+		}
+		Self {
+			constant: value.constant,
+			var_coeffs,
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
@@ -570,14 +642,40 @@ mod tests {
 	fn test_linear_normal_form() {
 		type F = BinaryField128b;
 		use ArithExpr::{Const, Var};
-		let expr = Const(F::new(133))
-			+ Const(F::new(42)) * Var(0)
-			+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
-		let normal_form = expr.linear_normal_form().unwrap();
-		assert_eq!(normal_form.constant, F::new(133));
-		assert_eq!(
-			normal_form.var_coeffs,
-			vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]
-		);
+		struct Case {
+			expr: ArithExpr<F>,
+			expected: LinearNormalForm<F>,
+		}
+		let cases = vec![
+			Case {
+				expr: Const(F::ONE),
+				expected: LinearNormalForm {
+					constant: F::ONE,
+					var_coeffs: vec![],
+				},
+			},
+			Case {
+				expr: (Const(F::new(2)) * Const(F::new(3))).pow(2)
+					+ Const(F::new(3)) * (Const(F::new(4)) + Var(0)),
+				expected: LinearNormalForm {
+					constant: (F::new(2) * F::new(3)).pow(2) + F::new(3) * F::new(4),
+					var_coeffs: vec![F::new(3)],
+				},
+			},
+			Case {
+				expr: Const(F::new(133))
+					+ Const(F::new(42)) * Var(0)
+					+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3),
+				expected: LinearNormalForm {
+					constant: F::new(133),
+					var_coeffs: vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)],
+				},
+			},
+		];
+		for Case { expr, expected } in cases {
+			let normal_form = expr.linear_normal_form().unwrap();
+			assert_eq!(normal_form.constant, expected.constant);
+			assert_eq!(normal_form.var_coeffs, expected.var_coeffs);
+		}
 	}
 }
