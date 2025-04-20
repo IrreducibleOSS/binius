@@ -155,7 +155,7 @@ pub struct SubfieldTransformer<IF, OF, T> {
 }
 
 impl<IF, OF, T> SubfieldTransformer<IF, OF, T> {
-	const fn new(inner_transform: T) -> Self {
+	pub const fn new(inner_transform: T) -> Self {
 		Self {
 			inner_transform,
 			_ip_pd: PhantomData,
