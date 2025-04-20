@@ -11,7 +11,7 @@ use binius_core::{
 	polynomial::ArithCircuitPoly,
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerTransform, TowerTransformFactory},
 	transparent::step_down::StepDown,
-	witness::MultilinearExtensionIndex,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, linear_transformation::Transformation,
@@ -31,7 +31,7 @@ use super::{
 	error::Error,
 	table::{Table, TableId},
 	types::B128,
-	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr, B1,
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -163,24 +163,12 @@ where
 	P: PackedField,
 	P::Scalar: TowerField,
 {
-	// pub fn convert_to_multilinear_extension_index<ToP>(
-	// 	self,
-	// 	convert: impl for<'a> Fn(),
-	// ) -> MultilinearExtensionIndex<'alloc, TTF::ToTop>
-	// where
-	// 	TTF: TowerTransformFactory<FromTop = P>,
-	// 	P: PackedTop<TTF::ToTower>,
-	// {
-	//
-	// }
-
-	pub fn transform_to_multilinear_extension_index<TTF>(
+	fn convert_to_multilinear_extension_index<ToP>(
 		self,
-		transform: &TowerTransform<TTF>,
-	) -> MultilinearExtensionIndex<'alloc, TTF::ToTop>
+		convert: impl for<'a> Fn(&'a [P], usize, usize) -> MultilinearWitness<'a, ToP>,
+	) -> MultilinearExtensionIndex<'alloc, ToP>
 	where
-		TTF: TowerTransformFactory<FromTop = P>,
-		P: PackedTop<TTF::ToTower>,
+		ToP: PackedField<Scalar: TowerField> + PackedExtension<B1>,
 	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
@@ -204,12 +192,7 @@ where
 				let underlier_count = 1
 					<< (n_vars + col.shape.tower_height)
 						.saturating_sub(P::LOG_WIDTH + P::Scalar::TOWER_LEVEL);
-				let witness = convert_multilin_poly_from_underlier_data(
-					&col.data[..underlier_count],
-					n_vars,
-					col.shape.tower_height,
-					transform,
-				);
+				let witness = convert(&col.data[..underlier_count], n_vars, col.shape.tower_height);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -223,8 +206,7 @@ where
 					let log_size = table_witness.log_capacity + log_values_per_row;
 					let witness = StepDown::new(log_size, size)
 						.unwrap()
-						.multilinear_extension::<PackedSubfield<TTF::ToTop, <TTF::ToTower as TowerFamily>::B1>>(
-						)
+						.multilinear_extension::<PackedSubfield<ToP, B1>>()
 						.unwrap()
 						.specialize_arc_dyn();
 					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -237,64 +219,33 @@ where
 		index
 	}
 
+	/// Converts a witness index into a multilinear extension index, transforming the witness data
+	/// using the given tower transform.
+	///
+	/// This allocates new memory for the transformed witness data.
+	pub fn transform_to_multilinear_extension_index<TTF>(
+		self,
+		transform: &TowerTransform<TTF>,
+	) -> MultilinearExtensionIndex<'alloc, TTF::ToTop>
+	where
+		TTF: TowerTransformFactory<FromTop = P>,
+		TTF::ToTower: TowerFamily<B1 = B1>,
+		P: PackedTop<TTF::ToTower>,
+	{
+		self.convert_to_multilinear_extension_index(|data, n_vars, tower_height| {
+			transform_witness_col_to_multilinear_poly(data, n_vars, tower_height, transform)
+		})
+	}
+
+	/// Converts a witness index over any tower family into a multilinear extension index.
 	pub fn into_multilinear_extension_index_over_tower<Tower>(
 		self,
 	) -> MultilinearExtensionIndex<'alloc, P>
 	where
-		Tower: TowerFamily,
+		Tower: TowerFamily<B1 = B1>,
 		P: PackedTop<Tower>,
 	{
-		let mut index = MultilinearExtensionIndex::new();
-		let mut first_oracle_id_in_table = 0;
-		for table_witness in self.tables {
-			let Either::Right(table_witness) = table_witness else {
-				continue;
-			};
-			let table = table_witness.table();
-			let cols = immutable_witness_index_columns(table_witness.cols);
-
-			// Append oracles for constant columns that are repeated.
-			let mut count = 0;
-			for (oracle_id_offset, col) in cols.into_iter().enumerate() {
-				let oracle_id = first_oracle_id_in_table + oracle_id_offset;
-				let log_capacity = if col.is_single_row {
-					0
-				} else {
-					table_witness.log_capacity
-				};
-				let n_vars = log_capacity + col.shape.log_values_per_row;
-				let underlier_count = 1
-					<< (n_vars + col.shape.tower_height)
-						.saturating_sub(P::LOG_WIDTH + Tower::B128::TOWER_LEVEL);
-				let witness = multilin_poly_from_underlier_data(
-					&col.data[..underlier_count],
-					n_vars,
-					col.shape.tower_height,
-				);
-				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
-				count += 1;
-			}
-
-			if !table.power_of_two_sized {
-				// Every table partition has a step_down appended to the end of the table to support
-				// non-power of two height tables.
-				for log_values_per_row in table.partitions.keys() {
-					let oracle_id = first_oracle_id_in_table + count;
-					let size = table_witness.size << log_values_per_row;
-					let log_size = table_witness.log_capacity + log_values_per_row;
-					let witness = StepDown::new(log_size, size)
-						.unwrap()
-						.multilinear_extension::<PackedSubfield<P, Tower::B1>>()
-						.unwrap()
-						.specialize_arc_dyn();
-					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
-					count += 1;
-				}
-			}
-
-			first_oracle_id_in_table += count;
-		}
-		index
+		self.convert_to_multilinear_extension_index(multilin_poly_from_underlier_data)
 	}
 }
 
@@ -302,12 +253,13 @@ impl<'alloc, P> WitnessIndex<'_, 'alloc, P>
 where
 	P: PackedTop<CanonicalTowerFamily>,
 {
+	/// Converts a witness index over the canonical tower family into a multilinear extension index.
 	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P> {
 		self.into_multilinear_extension_index_over_tower()
 	}
 }
 
-fn convert_multilin_poly_from_underlier_data<TTF>(
+fn transform_witness_col_to_multilinear_poly<TTF>(
 	data: &[TTF::FromTop],
 	n_vars: usize,
 	tower_height: usize,
