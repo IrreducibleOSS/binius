@@ -204,6 +204,7 @@ pub trait TowerTransformFactory {
 	// >;
 }
 
+/*
 #[derive(Getters, Default)]
 #[allow(dead_code)]
 struct DenseCanonicalToAESFamilyTransform<U> {
@@ -239,6 +240,7 @@ where
 		make_binary_to_aes_packed_transformer::<Self::FromTop, Self::ToTop>()
 	}
 }
+ */
 
 #[derive(Default)]
 #[allow(dead_code)]
