@@ -15,11 +15,12 @@ use stackalloc::{
 fn circuit_steps_for_expr<F: Field>(
 	expr: &ArithExpr<F>,
 ) -> (Vec<CircuitStep<F>>, CircuitStepArgument<F>) {
-	let mut steps = Vec::new();
-
+	/// This struct is used to map nodes in the expressions to the steps in the circuit and back.
+	/// We use it to avoid recomputing the same expression multiple times.
 	#[derive(Default)]
 	struct NodeToStepMapping<F: Field> {
 		node_to_step: HashMap<Arc<ArithExpr<F>>, usize>,
+		// step index to node mapping
 		step_to_node: Vec<Option<Arc<ArithExpr<F>>>>,
 	}
 
@@ -120,6 +121,7 @@ fn circuit_steps_for_expr<F: Field>(
 		}
 	}
 
+	let mut steps = Vec::new();
 	let ret =
 		to_circuit_inner(&Arc::new(expr.optimize()), &mut steps, &mut NodeToStepMapping::default());
 	(steps, ret)
