@@ -93,10 +93,10 @@ mod tests {
 
 		fn expression(&self) -> ArithExpr<BinaryField128b> {
 			ArithExpr::Add(
-				Box::new(ArithExpr::Mul(Box::new(ArithExpr::Var(0)), Box::new(ArithExpr::Var(1)))),
-				Box::new(ArithExpr::Mul(
-					Box::new(ArithExpr::Var(2)),
-					Box::new(ArithExpr::Const(BinaryField128b::new(125))),
+				Arc::new(ArithExpr::Mul(Arc::new(ArithExpr::Var(0)), Arc::new(ArithExpr::Var(1)))),
+				Arc::new(ArithExpr::Mul(
+					Arc::new(ArithExpr::Var(2)),
+					Arc::new(ArithExpr::Const(BinaryField128b::new(125))),
 				)),
 			)
 		}

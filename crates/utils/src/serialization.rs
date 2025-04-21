@@ -290,7 +290,7 @@ impl DeserializeBytes for String {
 	}
 }
 
-impl<T: SerializeBytes> SerializeBytes for Vec<T> {
+impl<T: SerializeBytes> SerializeBytes for [T] {
 	fn serialize(
 		&self,
 		mut write_buf: impl BufMut,
@@ -299,6 +299,16 @@ impl<T: SerializeBytes> SerializeBytes for Vec<T> {
 		SerializeBytes::serialize(&self.len(), &mut write_buf, mode)?;
 		self.iter()
 			.try_for_each(|item| SerializeBytes::serialize(item, &mut write_buf, mode))
+	}
+}
+
+impl<T: SerializeBytes> SerializeBytes for Vec<T> {
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		SerializeBytes::serialize(self.as_slice(), &mut write_buf, mode)
 	}
 }
 

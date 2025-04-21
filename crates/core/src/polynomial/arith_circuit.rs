@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPoly, Error, RowsBatchRef};
@@ -11,50 +11,101 @@ use stackalloc::{
 };
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
+/// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
 	expr: &ArithExpr<F>,
 ) -> (Vec<CircuitStep<F>>, CircuitStepArgument<F>) {
 	let mut steps = Vec::new();
 
+	#[derive(Default)]
+	struct NodeToStepMapping<F: Field> {
+		node_to_step: HashMap<Arc<ArithExpr<F>>, usize>,
+		step_to_node: Vec<Option<Arc<ArithExpr<F>>>>,
+	}
+
+	impl<F: Field> NodeToStepMapping<F> {
+		fn register(&mut self, node: &Arc<ArithExpr<F>>, step: usize) {
+			self.node_to_step.insert(Arc::clone(node), step);
+
+			if step >= self.step_to_node.len() {
+				self.step_to_node.resize(step + 1, None);
+			}
+			self.step_to_node[step] = Some(Arc::clone(node));
+		}
+
+		fn clear_step(&mut self, step: usize) {
+			if self.step_to_node.len() <= step {
+				return;
+			}
+
+			if let Some(node_ptr) = self.step_to_node[step].take() {
+				self.node_to_step.remove(&node_ptr);
+			}
+		}
+
+		fn get_step(&self, node: &Arc<ArithExpr<F>>) -> Option<usize> {
+			self.node_to_step.get(node).copied()
+		}
+	}
+
 	fn to_circuit_inner<F: Field>(
-		expr: &ArithExpr<F>,
+		expr: &Arc<ArithExpr<F>>,
 		result: &mut Vec<CircuitStep<F>>,
+		node_to_step: &mut NodeToStepMapping<F>,
 	) -> CircuitStepArgument<F> {
-		match expr {
+		// Check if the expression is already registered, if so we can reuse the result
+		if let Some(step) = node_to_step.get_step(expr) {
+			return CircuitStepArgument::Expr(CircuitNode::Slot(step));
+		}
+
+		match &**expr {
 			ArithExpr::Const(value) => CircuitStepArgument::Const(*value),
 			ArithExpr::Var(index) => CircuitStepArgument::Expr(CircuitNode::Var(*index)),
 			ArithExpr::Add(left, right) => match &**right {
 				ArithExpr::Mul(mleft, mright) if left.is_composite() => {
 					// Only handling e1 + (e2 * e3), not (e1 * e2) + e3, as latter was not observed in practice
 					// (the former can be enforced by rewriting expression).
-					let left = to_circuit_inner(left, result);
+					let left = to_circuit_inner(left, result, node_to_step);
 					let CircuitStepArgument::Expr(CircuitNode::Slot(left)) = left else {
 						unreachable!("guaranteed by `is_composite` check above")
 					};
-					let mleft = to_circuit_inner(mleft, result);
-					let mright = to_circuit_inner(mright, result);
+					let mleft = to_circuit_inner(mleft, result, node_to_step);
+					let mright = to_circuit_inner(mright, result, node_to_step);
 					result.push(CircuitStep::AddMul(left, mleft, mright));
+
+					// Since we'we changed the value of `left` to a new value, we need to clear the cache for it
+					node_to_step.clear_step(left);
+
 					CircuitStepArgument::Expr(CircuitNode::Slot(left))
 				}
 				_ => {
-					let left = to_circuit_inner(left, result);
-					let right = to_circuit_inner(right, result);
+					let left = to_circuit_inner(left, result, node_to_step);
+					let right = to_circuit_inner(right, result, node_to_step);
+
+					node_to_step.register(expr, result.len());
+
 					result.push(CircuitStep::Add(left, right));
 					CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 				}
 			},
 			ArithExpr::Mul(left, right) => {
-				let left = to_circuit_inner(left, result);
-				let right = to_circuit_inner(right, result);
+				let left = to_circuit_inner(left, result, node_to_step);
+				let right = to_circuit_inner(right, result, node_to_step);
+
+				node_to_step.register(expr, result.len());
+
 				result.push(CircuitStep::Mul(left, right));
 				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 			}
 			ArithExpr::Pow(base, exp) => {
-				let mut acc = to_circuit_inner(base, result);
+				let mut acc = to_circuit_inner(base, result, node_to_step);
 				let base_expr = acc;
 				let highest_bit = exp.ilog2();
 
 				for i in (0..highest_bit).rev() {
+					if i == 0 {
+						node_to_step.register(expr, result.len());
+					}
 					result.push(CircuitStep::Square(acc));
 					acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
 
@@ -69,10 +120,10 @@ fn circuit_steps_for_expr<F: Field>(
 		}
 	}
 
-	let ret = to_circuit_inner(&expr.optimize(), &mut steps);
+	let ret =
+		to_circuit_inner(&Arc::new(expr.optimize()), &mut steps, &mut NodeToStepMapping::default());
 	(steps, ret)
 }
-
 /// Input of the circuit calculation step
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CircuitNode {
@@ -1123,6 +1174,58 @@ mod tests {
 		assert!(
 			matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))),
 			"Final result should be stored in Slot(3)"
+		);
+	}
+
+	#[test]
+	fn check_deduplication_in_steps() {
+		type F = BinaryField8b;
+
+		let expr = (ArithExpr::<F>::Var(0) * ArithExpr::Var(1))
+			+ (ArithExpr::<F>::Var(0) * ArithExpr::Var(1)) * ArithExpr::Var(2)
+			- ArithExpr::Var(3);
+
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 3, "Expression should generate 4 computation steps");
+
+		assert!(
+			matches!(
+				steps[0],
+				CircuitStep::Mul(
+					CircuitStepArgument::Expr(CircuitNode::Var(0)),
+					CircuitStepArgument::Expr(CircuitNode::Var(1))
+				)
+			),
+			"First step should be multiplication x0 * x1"
+		);
+
+		assert!(
+			matches!(
+				steps[1],
+				CircuitStep::AddMul(
+					0,
+					CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+					CircuitStepArgument::Expr(CircuitNode::Var(2))
+				)
+			),
+			"Second step should be (x0 * x1) * x2"
+		);
+
+		assert!(
+			matches!(
+				steps[2],
+				CircuitStep::Add(
+					CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+					CircuitStepArgument::Expr(CircuitNode::Var(3))
+				)
+			),
+			"Third step should be x0 * x1 + (x0 * x1) * x2 + x3"
+		);
+
+		assert!(
+			matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))),
+			"Final result should be stored in Slot(2)"
 		);
 	}
 }

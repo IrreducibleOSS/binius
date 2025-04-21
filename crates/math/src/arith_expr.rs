@@ -2,14 +2,19 @@
 
 use std::{
 	cmp::Ordering,
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	fmt::{self, Display},
 	iter::{Product, Sum},
+	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	sync::Arc,
 };
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
+use bytes::{Buf, BufMut};
+use stackalloc::stackalloc_with_default;
 
 use super::error::Error;
 
@@ -18,13 +23,13 @@ use super::error::Error;
 /// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
 /// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
 /// specific representations of multivariate polynomials.
-#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
 	Var(usize),
-	Add(Box<ArithExpr<F>>, Box<ArithExpr<F>>),
-	Mul(Box<ArithExpr<F>>, Box<ArithExpr<F>>),
-	Pow(Box<ArithExpr<F>>, u64),
+	Add(Arc<ArithExpr<F>>, Arc<ArithExpr<F>>),
+	Mul(Arc<ArithExpr<F>>, Arc<ArithExpr<F>>),
+	Pow(Arc<ArithExpr<F>>, u64),
 }
 
 impl<F: Field + Display> Display for ArithExpr<F> {
@@ -78,24 +83,24 @@ impl<F: Field> ArithExpr<F> {
 				let (rhs_degree, rhs) = right.leading_term_with_degree();
 				match lhs_degree.cmp(&rhs_degree) {
 					Ordering::Less => (rhs_degree, rhs),
-					Ordering::Equal => (lhs_degree, Self::Add(Box::new(lhs), Box::new(rhs))),
+					Ordering::Equal => (lhs_degree, Self::Add(Arc::new(lhs), Arc::new(rhs))),
 					Ordering::Greater => (lhs_degree, lhs),
 				}
 			}
 			Self::Mul(left, right) => {
 				let (lhs_degree, lhs) = left.leading_term_with_degree();
 				let (rhs_degree, rhs) = right.leading_term_with_degree();
-				(lhs_degree + rhs_degree, Self::Mul(Box::new(lhs), Box::new(rhs)))
+				(lhs_degree + rhs_degree, Self::Mul(Arc::new(lhs), Arc::new(rhs)))
 			}
 			Self::Pow(base, exp) => {
 				let (base_degree, base) = base.leading_term_with_degree();
-				(base_degree * *exp as usize, Self::Pow(Box::new(base), *exp))
+				(base_degree * *exp as usize, Self::Pow(Arc::new(base), *exp))
 			}
 		}
 	}
 
 	pub fn pow(self, exp: u64) -> Self {
-		Self::Pow(Box::new(self), exp)
+		Self::Pow(Arc::new(self), exp)
 	}
 
 	pub const fn zero() -> Self {
@@ -116,31 +121,56 @@ impl<F: Field> ArithExpr<F> {
 	/// * [`Error::IncorrectArgumentLength`] if indices has length less than the current number of
 	///   variables
 	pub fn remap_vars(self, indices: &[usize]) -> Result<Self, Error> {
+		fn map_var(var: usize, indices: &[usize]) -> Result<usize, Error> {
+			indices
+				.get(var)
+				.copied()
+				.ok_or_else(|| Error::IncorrectArgumentLength {
+					arg: "subset".to_string(),
+					expected: var,
+				})
+		}
+
+		fn remap_vars_inner<F: Field>(
+			expr: &Arc<ArithExpr<F>>,
+			indices: &[usize],
+		) -> Result<Arc<ArithExpr<F>>, Error> {
+			match &**expr {
+				ArithExpr::Const(_) => Ok(expr.clone()),
+				ArithExpr::Var(index) => Ok(Arc::new(ArithExpr::Var(map_var(*index, indices)?))),
+				ArithExpr::Add(left, right) => {
+					let new_left = remap_vars_inner(left, indices)?;
+					let new_right = remap_vars_inner(right, indices)?;
+					Ok(Arc::new(ArithExpr::Add(new_left, new_right)))
+				}
+				ArithExpr::Mul(left, right) => {
+					let new_left = remap_vars_inner(left, indices)?;
+					let new_right = remap_vars_inner(right, indices)?;
+					Ok(Arc::new(ArithExpr::Mul(new_left, new_right)))
+				}
+				ArithExpr::Pow(base, exp) => {
+					let new_base = remap_vars_inner(base, indices)?;
+					Ok(Arc::new(ArithExpr::Pow(new_base, *exp)))
+				}
+			}
+		}
+
 		let expr = match self {
 			Self::Const(_) => self,
-			Self::Var(index) => {
-				let new_index =
-					indices
-						.get(index)
-						.ok_or_else(|| Error::IncorrectArgumentLength {
-							arg: "subset".to_string(),
-							expected: index,
-						})?;
-				Self::Var(*new_index)
-			}
+			Self::Var(index) => Self::Var(map_var(index, indices)?),
 			Self::Add(left, right) => {
-				let new_left = left.remap_vars(indices)?;
-				let new_right = right.remap_vars(indices)?;
-				Self::Add(Box::new(new_left), Box::new(new_right))
+				let new_left = remap_vars_inner(&left, indices)?;
+				let new_right = remap_vars_inner(&right, indices)?;
+				Self::Add(new_left, new_right)
 			}
 			Self::Mul(left, right) => {
-				let new_left = left.remap_vars(indices)?;
-				let new_right = right.remap_vars(indices)?;
-				Self::Mul(Box::new(new_left), Box::new(new_right))
+				let new_left = remap_vars_inner(&left, indices)?;
+				let new_right = remap_vars_inner(&right, indices)?;
+				Self::Mul(new_left, new_right)
 			}
 			Self::Pow(base, exp) => {
-				let new_base = base.remap_vars(indices)?;
-				Self::Pow(Box::new(new_base), exp)
+				let new_base = remap_vars_inner(&base, indices)?;
+				Self::Pow(new_base, exp)
 			}
 		};
 		Ok(expr)
@@ -148,28 +178,55 @@ impl<F: Field> ArithExpr<F> {
 
 	/// Substitute variable with index `var` with a constant `value`
 	pub fn const_subst(self, var: usize, value: F) -> Self {
-		match self {
-			Self::Const(_) => self,
-			Self::Var(index) => {
-				if index == var {
-					Self::Const(value)
-				} else {
-					self
+		fn subst_var<F: Field>(index: usize, var: usize, value: F) -> ArithExpr<F> {
+			if index == var {
+				ArithExpr::Const(value)
+			} else {
+				ArithExpr::Var(index)
+			}
+		}
+
+		fn const_subst_inner<F: Field>(
+			expr: &Arc<ArithExpr<F>>,
+			var: usize,
+			value: F,
+		) -> Arc<ArithExpr<F>> {
+			match &**expr {
+				ArithExpr::Const(_) => expr.clone(),
+				ArithExpr::Var(index) => subst_var(*index, var, value).into(),
+				ArithExpr::Add(left, right) => {
+					let new_left = const_subst_inner(left, var, value);
+					let new_right = const_subst_inner(right, var, value);
+					Arc::new(ArithExpr::Add(new_left, new_right))
+				}
+				ArithExpr::Mul(left, right) => {
+					let new_left = const_subst_inner(left, var, value);
+					let new_right = const_subst_inner(right, var, value);
+					Arc::new(ArithExpr::Mul(new_left, new_right))
+				}
+				ArithExpr::Pow(base, exp) => {
+					let new_base = const_subst_inner(base, var, value);
+					Arc::new(ArithExpr::Pow(new_base, *exp))
 				}
 			}
+		}
+
+		match self {
+			Self::Const(_) => self,
+			Self::Var(index) => subst_var(index, var, value),
 			Self::Add(left, right) => {
-				let new_left = left.const_subst(var, value);
-				let new_right = right.const_subst(var, value);
-				Self::Add(Box::new(new_left), Box::new(new_right))
+				let new_left = const_subst_inner(&left, var, value);
+				let new_right = const_subst_inner(&right, var, value);
+				Self::Add(new_left, new_right)
 			}
 			Self::Mul(left, right) => {
-				let new_left = left.const_subst(var, value);
-				let new_right = right.const_subst(var, value);
-				Self::Mul(Box::new(new_left), Box::new(new_right))
+				let new_left = const_subst_inner(&left, var, value);
+				let new_right = const_subst_inner(&right, var, value);
+				Self::Mul(new_left, new_right)
 			}
 			Self::Pow(base, exp) => {
-				let new_base = base.const_subst(var, value);
-				Self::Pow(Box::new(new_base), exp)
+				let new_base = const_subst_inner(&base, var, value);
+				Self::Pow(new_base, exp)
 			}
 		}
 	}
@@ -181,16 +238,16 @@ impl<F: Field> ArithExpr<F> {
 			Self::Add(left, right) => {
 				let new_left = left.convert_field();
 				let new_right = right.convert_field();
-				ArithExpr::Add(Box::new(new_left), Box::new(new_right))
+				ArithExpr::Add(Arc::new(new_left), Arc::new(new_right))
 			}
 			Self::Mul(left, right) => {
 				let new_left = left.convert_field();
 				let new_right = right.convert_field();
-				ArithExpr::Mul(Box::new(new_left), Box::new(new_right))
+				ArithExpr::Mul(Arc::new(new_left), Arc::new(new_right))
 			}
 			Self::Pow(base, exp) => {
 				let new_base = base.convert_field();
-				ArithExpr::Pow(Box::new(new_base), *exp)
+				ArithExpr::Pow(Arc::new(new_base), *exp)
 			}
 		}
 	}
@@ -204,16 +261,16 @@ impl<F: Field> ArithExpr<F> {
 			Self::Add(left, right) => {
 				let new_left = left.try_convert_field()?;
 				let new_right = right.try_convert_field()?;
-				ArithExpr::Add(Box::new(new_left), Box::new(new_right))
+				ArithExpr::Add(Arc::new(new_left), Arc::new(new_right))
 			}
 			Self::Mul(left, right) => {
 				let new_left = left.try_convert_field()?;
 				let new_right = right.try_convert_field()?;
-				ArithExpr::Mul(Box::new(new_left), Box::new(new_right))
+				ArithExpr::Mul(Arc::new(new_left), Arc::new(new_right))
 			}
 			Self::Pow(base, exp) => {
 				let new_base = base.try_convert_field()?;
-				ArithExpr::Pow(Box::new(new_base), *exp)
+				ArithExpr::Pow(Arc::new(new_base), *exp)
 			}
 		})
 	}
@@ -257,7 +314,7 @@ impl<F: Field> ArithExpr<F> {
 						Self::Const(F::ZERO)
 					}
 					// fallback
-					(left, right) => Self::Add(Box::new(left), Box::new(right)),
+					(left, right) => Self::Add(Arc::new(left), Arc::new(right)),
 				}
 			}
 			Self::Mul(left, right) => {
@@ -276,7 +333,7 @@ impl<F: Field> ArithExpr<F> {
 					(Self::Const(left), right) if left == F::ONE => right,
 					(left, Self::Const(right)) if right == F::ONE => left,
 					// fallback
-					(left, right) => Self::Mul(Box::new(left), Box::new(right)),
+					(left, right) => Self::Mul(Arc::new(left), Arc::new(right)),
 				}
 			}
 			Self::Pow(id, exp) => {
@@ -284,7 +341,7 @@ impl<F: Field> ArithExpr<F> {
 				match id {
 					Self::Const(value) => Self::Const(PackedField::pow(value, *exp)),
 					Self::Pow(id_inner, exp_inner) => Self::Pow(id_inner, *exp * exp_inner),
-					id => Self::Pow(Box::new(id), *exp),
+					id => Self::Pow(Arc::new(id), *exp),
 				}
 			}
 		}
@@ -345,10 +402,64 @@ impl<F: Field> ArithExpr<F> {
 			Self::Pow(base, _) => base.mark_vars_usage(usage),
 		}
 	}
-}
 
-impl<F: TowerField> ArithExpr<F> {
-	pub fn binary_tower_level(&self) -> usize {
+	/// Find duplicate nodes in the expression tree and replace them with a single instance.
+	pub fn deduplicate_nodes(self) -> Self {
+		let mut node_set = HashSet::new();
+
+		fn deduplicate_nodes_inner<F: Field>(
+			node: Arc<ArithExpr<F>>,
+			node_set: &mut HashSet<Arc<ArithExpr<F>>>,
+		) -> Arc<ArithExpr<F>> {
+			if let Some(node) = node_set.get(&node) {
+				return Arc::clone(node);
+			}
+
+			let node = match &*node {
+				ArithExpr::Const(_) | ArithExpr::Var(_) => node,
+				ArithExpr::Add(left, right) => {
+					let left = deduplicate_nodes_inner(Arc::clone(left), node_set);
+					let right = deduplicate_nodes_inner(Arc::clone(right), node_set);
+					Arc::new(ArithExpr::Add(left, right))
+				}
+				ArithExpr::Mul(left, right) => {
+					let left = deduplicate_nodes_inner(Arc::clone(left), node_set);
+					let right = deduplicate_nodes_inner(Arc::clone(right), node_set);
+					Arc::new(ArithExpr::Mul(left, right))
+				}
+				ArithExpr::Pow(base, exp) => {
+					let base = deduplicate_nodes_inner(Arc::clone(base), node_set);
+					Arc::new(ArithExpr::Pow(base, *exp))
+				}
+			};
+
+			node_set.insert(Arc::clone(&node));
+			node
+		}
+
+		match self {
+			Self::Const(_) | Self::Var(_) => self,
+			Self::Add(left, right) => {
+				let left = deduplicate_nodes_inner(left, &mut node_set);
+				let right = deduplicate_nodes_inner(right, &mut node_set);
+				Self::Add(left, right)
+			}
+			Self::Mul(left, right) => {
+				let left = deduplicate_nodes_inner(left, &mut node_set);
+				let right = deduplicate_nodes_inner(right, &mut node_set);
+				Self::Mul(left, right)
+			}
+			Self::Pow(base, exp) => {
+				let base = deduplicate_nodes_inner(base, &mut node_set);
+				Self::Pow(base, exp)
+			}
+		}
+	}
+
+	pub fn binary_tower_level(&self) -> usize
+	where
+		F: TowerField,
+	{
 		match self {
 			Self::Const(value) => value.min_tower_level(),
 			Self::Var(_) => 0,
@@ -376,7 +487,18 @@ where
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
-		Self::Add(Box::new(self), Box::new(rhs))
+		Self::Add(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Add<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn add(self, rhs: Arc<Self>) -> Self {
+		Self::Add(Arc::new(self), rhs)
 	}
 }
 
@@ -389,6 +511,15 @@ where
 	}
 }
 
+impl<F> AddAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn add_assign(&mut self, rhs: Arc<Self>) {
+		*self = std::mem::take(self) + rhs;
+	}
+}
+
 impl<F> Sub for ArithExpr<F>
 where
 	F: Field,
@@ -396,7 +527,18 @@ where
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
-		Self::Add(Box::new(self), Box::new(rhs))
+		Self::Add(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Sub<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn sub(self, rhs: Arc<Self>) -> Self {
+		Self::Add(Arc::new(self), rhs)
 	}
 }
 
@@ -409,6 +551,15 @@ where
 	}
 }
 
+impl<F> SubAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn sub_assign(&mut self, rhs: Arc<Self>) {
+		*self = std::mem::take(self) - rhs;
+	}
+}
+
 impl<F> Mul for ArithExpr<F>
 where
 	F: Field,
@@ -416,7 +567,18 @@ where
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
-		Self::Mul(Box::new(self), Box::new(rhs))
+		Self::Mul(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Mul<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn mul(self, rhs: Arc<Self>) -> Self {
+		Self::Mul(Arc::new(self), rhs)
 	}
 }
 
@@ -425,6 +587,15 @@ where
 	F: Field,
 {
 	fn mul_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) * rhs;
+	}
+}
+
+impl<F> MulAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn mul_assign(&mut self, rhs: Arc<Self>) {
 		*self = std::mem::take(self) * rhs;
 	}
 }
@@ -438,6 +609,222 @@ impl<F: Field> Sum for ArithExpr<F> {
 impl<F: Field> Product for ArithExpr<F> {
 	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.reduce(|acc, item| acc * item).unwrap_or(Self::one())
+	}
+}
+
+impl<F: Field> SerializeBytes for ArithExpr<F> {
+	fn serialize(
+		&self,
+		write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		/// Return the upper bound on the number of steps needed to serialize the expression.
+		fn estimate_steps<F: Field>(expr: &ArithExpr<F>) -> usize {
+			match expr {
+				ArithExpr::Const(_) => 1,
+				ArithExpr::Var(_) => 0, // variables do not represent a separate step
+				ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
+					1 + estimate_steps(left) + estimate_steps(right)
+				}
+				ArithExpr::Pow(base, _) => 1 + estimate_steps(base),
+			}
+		}
+
+		let steps_bound = estimate_steps(self);
+		stackalloc_with_default::<ArithCircuitStep<F>, _, _>(steps_bound, |mut steps_buf| {
+			let circuit = ArithCircuit::from_expr(self, &mut steps_buf);
+			circuit.serialize(write_buf, mode)
+		})
+	}
+}
+
+impl<F: Field> DeserializeBytes for ArithExpr<F> {
+	fn deserialize(
+		read_buf: impl Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError> {
+		let circuit = ArithCircuit::<F, Vec<ArithCircuitStep<F>>>::deserialize(read_buf, mode)?;
+		let expr = circuit.to_expr();
+		Ok(expr)
+	}
+}
+
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
+enum CircuitArg {
+	Var(usize),
+	Step(usize),
+}
+
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
+enum ArithCircuitStep<F: Field> {
+	Add(CircuitArg, CircuitArg),
+	Mul(CircuitArg, CircuitArg),
+	Pow(CircuitArg, u64),
+	Const(F),
+}
+
+impl<F: Field> Default for ArithCircuitStep<F> {
+	fn default() -> Self {
+		Self::Const(F::ZERO)
+	}
+}
+
+/// A simple circuit representation of an arithmetic expression.
+/// We use this representation as temporary object for serialization/deserialization.
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
+struct ArithCircuit<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> {
+	steps: Data,
+	_pd: PhantomData<F>,
+}
+
+impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
+	fn from_expr<'a>(
+		expr: &ArithExpr<F>,
+		data: &'a mut Data,
+	) -> ArithCircuit<F, &'a [ArithCircuitStep<F>]>
+	where
+		Data: AsMut<[ArithCircuitStep<F>]>,
+	{
+		let mut node_to_index = HashMap::new();
+
+		fn visit_node<F: Field>(
+			node: &Arc<ArithExpr<F>>,
+			node_to_index: &mut HashMap<*const ArithExpr<F>, usize>,
+			steps: &mut [ArithCircuitStep<F>],
+			current_len: &mut usize,
+		) -> CircuitArg {
+			if let Some(index) = node_to_index.get(&Arc::as_ptr(node)) {
+				return CircuitArg::Step(*index);
+			}
+
+			match &**node {
+				ArithExpr::Const(value) => {
+					let step = ArithCircuitStep::Const(*value);
+					steps[*current_len] = step;
+					node_to_index.insert(Arc::as_ptr(node), *current_len);
+					*current_len += 1;
+
+					CircuitArg::Step(*current_len - 1)
+				}
+				ArithExpr::Var(index) => CircuitArg::Var(*index),
+				ArithExpr::Add(left, right) => {
+					let left = visit_node(left, node_to_index, steps, current_len);
+					let right = visit_node(right, node_to_index, steps, current_len);
+					let step = ArithCircuitStep::Add(left, right);
+					steps[*current_len] = step;
+					node_to_index.insert(Arc::as_ptr(node), *current_len);
+					*current_len += 1;
+
+					CircuitArg::Step(*current_len - 1)
+				}
+				ArithExpr::Mul(left, right) => {
+					let left = visit_node(left, node_to_index, steps, current_len);
+					let right = visit_node(right, node_to_index, steps, current_len);
+					let step = ArithCircuitStep::Mul(left, right);
+					steps[*current_len] = step;
+					node_to_index.insert(Arc::as_ptr(node), *current_len);
+					*current_len += 1;
+
+					CircuitArg::Step(*current_len - 1)
+				}
+				ArithExpr::Pow(base, exp) => {
+					let base = visit_node(base, node_to_index, steps, current_len);
+					let step = ArithCircuitStep::Pow(base, *exp);
+					steps[*current_len] = step;
+					node_to_index.insert(Arc::as_ptr(node), *current_len);
+					*current_len += 1;
+
+					CircuitArg::Step(*current_len - 1)
+				}
+			}
+		}
+
+		let mut current_len = 0;
+		match expr {
+			ArithExpr::Const(c) => {
+				data.as_mut()[0] = ArithCircuitStep::Const(*c);
+				current_len = 1;
+			}
+			ArithExpr::Var(_) => {
+				data.as_mut()[0] = ArithCircuitStep::Const(F::ZERO);
+				current_len = 1;
+			}
+			ArithExpr::Add(left, right) => {
+				let left = visit_node(left, &mut node_to_index, data.as_mut(), &mut current_len);
+				let right = visit_node(right, &mut node_to_index, data.as_mut(), &mut current_len);
+				data.as_mut()[current_len] = ArithCircuitStep::Add(left, right);
+				current_len += 1;
+			}
+			ArithExpr::Mul(left, right) => {
+				let left = visit_node(left, &mut node_to_index, data.as_mut(), &mut current_len);
+				let right = visit_node(right, &mut node_to_index, data.as_mut(), &mut current_len);
+				data.as_mut()[current_len] = ArithCircuitStep::Mul(left, right);
+				current_len += 1;
+			}
+			ArithExpr::Pow(base, exp) => {
+				let base = visit_node(base, &mut node_to_index, data.as_mut(), &mut current_len);
+				data.as_mut()[current_len] = ArithCircuitStep::Pow(base, *exp);
+				current_len += 1;
+			}
+		}
+
+		ArithCircuit {
+			steps: &data.as_mut()[..current_len],
+			_pd: PhantomData,
+		}
+	}
+
+	fn to_expr(&self) -> ArithExpr<F> {
+		let root = stackalloc_with_default::<Option<Arc<ArithExpr<F>>>, _, _>(
+			self.steps.as_ref().len(),
+			|cached_exrs| {
+				fn visit_arg<F: Field>(
+					arg: &CircuitArg,
+					cached_exrs: &mut [Option<Arc<ArithExpr<F>>>],
+					steps: &[ArithCircuitStep<F>],
+				) -> Arc<ArithExpr<F>> {
+					match arg {
+						CircuitArg::Var(index) => Arc::new(ArithExpr::Var(*index)),
+						CircuitArg::Step(index) => visit_step(*index, cached_exrs, steps),
+					}
+				}
+
+				fn visit_step<F: Field>(
+					step: usize,
+					cached_exrs: &mut [Option<Arc<ArithExpr<F>>>],
+					steps: &[ArithCircuitStep<F>],
+				) -> Arc<ArithExpr<F>> {
+					if let Some(node) = cached_exrs[step].as_ref() {
+						return Arc::clone(node);
+					}
+
+					let node = match &steps[step] {
+						ArithCircuitStep::Const(value) => Arc::new(ArithExpr::Const(*value)),
+						ArithCircuitStep::Add(left, right) => {
+							let left = visit_arg(left, cached_exrs, steps);
+							let right = visit_arg(right, cached_exrs, steps);
+							Arc::new(ArithExpr::Add(left, right))
+						}
+						ArithCircuitStep::Mul(left, right) => {
+							let left = visit_arg(left, cached_exrs, steps);
+							let right = visit_arg(right, cached_exrs, steps);
+							Arc::new(ArithExpr::Mul(left, right))
+						}
+						ArithCircuitStep::Pow(base, exp) => {
+							let base = visit_arg(base, cached_exrs, steps);
+							Arc::new(ArithExpr::Pow(base, *exp))
+						}
+					};
+
+					cached_exrs[step] = Some(Arc::clone(&node));
+					node
+				}
+
+				visit_step(self.steps.as_ref().len() - 1, cached_exrs, self.steps.as_ref())
+			},
+		);
+
+		Arc::into_inner(root).expect("root must have only one reference")
 	}
 }
 
@@ -677,5 +1064,86 @@ mod tests {
 			assert_eq!(normal_form.constant, expected.constant);
 			assert_eq!(normal_form.var_coeffs, expected.var_coeffs);
 		}
+	}
+
+	fn unique_nodes_count<F: Field>(expr: &ArithExpr<F>) -> usize {
+		let mut unique_nodes = HashSet::new();
+
+		fn visit_node<F: Field>(
+			node: &Arc<ArithExpr<F>>,
+			unique_nodes: &mut HashSet<*const ArithExpr<F>>,
+		) {
+			if unique_nodes.insert(Arc::as_ptr(node)) {
+				match &**node {
+					ArithExpr::Const(_) | ArithExpr::Var(_) => (),
+					ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
+						visit_node(left, unique_nodes);
+						visit_node(right, unique_nodes);
+					}
+					ArithExpr::Pow(base, _) => visit_node(base, unique_nodes),
+				}
+			}
+		}
+
+		match expr {
+			ArithExpr::Const(_) | ArithExpr::Var(_) => 1,
+			ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
+				visit_node(left, &mut unique_nodes);
+				visit_node(right, &mut unique_nodes);
+				unique_nodes.len() + 1
+			}
+			ArithExpr::Pow(base, _) => {
+				visit_node(base, &mut unique_nodes);
+				unique_nodes.len() + 1
+			}
+		}
+	}
+
+	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExpr<F>) {
+		let mut buf = Vec::new();
+		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
+			.unwrap();
+		let deserialized =
+			ArithExpr::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
+		assert_eq!(expr, deserialized);
+		assert_eq!(unique_nodes_count(&expr), unique_nodes_count(&deserialized));
+	}
+
+	#[test]
+	fn test_serialize_bytes_roundtrip() {
+		type F = BinaryField128b;
+		let expr = ArithExpr::Var(0)
+			* (ArithExpr::Var(1)
+				* ArithExpr::Var(2)
+				* ArithExpr::Const(F::MULTIPLICATIVE_GENERATOR)
+				+ ArithExpr::Var(4))
+			+ ArithExpr::Var(5).pow(3)
+			+ ArithExpr::Const(F::ONE);
+
+		check_serialize_bytes_roundtrip(expr);
+	}
+
+	#[test]
+	fn test_serialize_bytes_rountrip_with_duplicates() {
+		type F = BinaryField128b;
+		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
+			* (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
+			+ (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
+			+ ArithExpr::Var(1);
+
+		check_serialize_bytes_roundtrip(expr);
+	}
+
+	#[test]
+	fn test_deduplication() {
+		type F = BinaryField128b;
+		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
+			* (ArithExpr::Var(1) + ArithExpr::Const(F::ONE))
+			+ (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
+				* (ArithExpr::Var(1) + ArithExpr::Const(F::ONE))
+			+ ArithExpr::Var(1);
+
+		let expr = expr.deduplicate_nodes();
+		assert_eq!(unique_nodes_count(&expr), 8);
 	}
 }
