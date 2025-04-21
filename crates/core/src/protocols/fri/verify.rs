@@ -126,7 +126,7 @@ where
 
 		let mut scratch_buffer = self.create_scratch_buffer();
 		for _ in 0..self.params.n_test_queries() {
-			let index = transcript.sample_bits(self.params.index_bits());
+			let index = transcript.sample_bits(self.params.index_bits()) as usize;
 			self.verify_query_internal(
 				index,
 				&terminate_codeword,
