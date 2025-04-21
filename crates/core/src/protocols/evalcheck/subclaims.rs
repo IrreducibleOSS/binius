@@ -369,7 +369,8 @@ where
 	let eq_indicators = dedup_eval_points
 		.into_iter()
 		.map(|eval_point| {
-			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
+			let mle = MLEDirectAdapter::from(MultilinearExtension::new(
+				eval_point.len(),
 				memoized_queries
 					.full_query_readonly(eval_point)
 					.expect("computed above")
@@ -396,6 +397,7 @@ where
 	Ok(())
 }
 
+/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of multilinears
 #[allow(clippy::type_complexity)]
 pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
 	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,

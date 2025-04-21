@@ -101,7 +101,7 @@ where
 					.map(|v| inner_product_subfield(v, &self.row_batch_coeffs)),
 			);
 		});
-		Ok(MultilinearExtension::from_values(evals)?)
+		Ok(MultilinearExtension::new(self.z_vals.len(), evals)?)
 	}
 }
 

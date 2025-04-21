@@ -223,6 +223,21 @@ fn test_with_one_poly() {
 }
 
 #[test]
+fn test_without_opening_claims() {
+	let commit_meta = CommitMeta::with_vars([4, 4, 6, 7]);
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+	let n_transparents = 0;
+	let log_inv_rate = 1;
+
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
+}
+
+#[test]
 fn test_with_one_n_vars() {
 	let commit_meta = CommitMeta::with_vars([4, 4]);
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);

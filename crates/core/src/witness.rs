@@ -2,9 +2,8 @@
 
 use std::{fmt::Debug, sync::Arc};
 
-use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
-use binius_math::{MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly};
-use binius_utils::bail;
+use binius_field::PackedField;
+use binius_math::MultilinearPoly;
 
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 
@@ -19,9 +18,7 @@ pub struct IndexEntry<'a, P: PackedField> {
 /// Data structure that indexes multilinear extensions by oracle ID.
 ///
 /// A [`crate::oracle::MultilinearOracleSet`] indexes multilinear polynomial oracles by assigning
-/// unique, sequential oracle IDs. The caller can get the [`MultilinearExtension`] defined natively
-/// over a subfield. This is possible because the [`MultilinearExtensionIndex::get`] method is
-/// generic over the subfield type and the struct itself only stores the underlying data.
+/// unique, sequential oracle IDs.
 #[derive(Default, Debug)]
 pub struct MultilinearExtensionIndex<'a, P>
 where
@@ -104,38 +101,5 @@ where
 			});
 		}
 		Ok(())
-	}
-
-	/// TODO: Remove once PCS no longer needs this
-	pub fn get<PS>(&self, id: OracleId) -> Result<MultilinearExtensionBorrowed<PS>, Error>
-	where
-		PS: PackedField,
-		P: PackedExtension<PS::Scalar, PackedSubfield = PS>,
-		PS::Scalar: TowerField,
-		P::Scalar: ExtensionField<PS::Scalar>,
-	{
-		let entry = self
-			.entries
-			.get(id)
-			.ok_or(Error::MissingWitness { id })?
-			.as_ref()
-			.ok_or(Error::MissingWitness { id })?;
-
-		let log_extension_degree = entry.multilin_poly.log_extension_degree();
-		if log_extension_degree != PS::Scalar::LOG_DEGREE {
-			bail!(Error::OracleExtensionDegreeMismatch {
-				oracle_id: id,
-				field_log_extension_degree: PS::Scalar::LOG_DEGREE,
-				entry_log_extension_degree: log_extension_degree
-			})
-		}
-
-		let evals = entry
-			.multilin_poly
-			.packed_evals()
-			.map(P::cast_bases)
-			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
-
-		Ok(MultilinearExtension::from_values_slice(evals)?)
 	}
 }

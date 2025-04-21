@@ -55,7 +55,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| table.columns[partition.columns[*i]].name.clone())
+						.map(|i| table.columns[*i].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -180,11 +180,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized && !count.is_power_of_two() {
-				return Err(Error::TableSizePowerOfTwoRequired {
-					table_id: table.id,
-					size: count,
-				});
+			if table.power_of_two_sized {
+				if !count.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id: table.id,
+						size: count,
+					});
+				}
+				if count != 1 << table.log_capacity(count) {
+					panic!(
+						"Tables with required power-of-two size currently cannot have capacity \
+						exceeding their count. This is because the flushes do not have automatic \
+						selectors applied, and so the table would flush invalid events"
+					);
+				}
 			}
 
 			let mut oracle_lookup = Vec::new();

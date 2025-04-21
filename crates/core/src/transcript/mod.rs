@@ -38,13 +38,13 @@ pub struct ProverTranscript<Challenger> {
 ///
 /// You must manually call the destructor with `finalize()` to check anything that's written is
 /// fully read out
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VerifierTranscript<Challenger> {
 	combined: FiatShamirBuf<Bytes, Challenger>,
 	debug_assertions: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct FiatShamirBuf<Inner, Challenger> {
 	buffer: Inner,
 	challenger: Challenger,
