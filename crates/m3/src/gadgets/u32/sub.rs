@@ -288,8 +288,6 @@ mod tests {
 					.final_borrow
 					.map(|final_borrow| segment.get(final_borrow).unwrap());
 				for (i, (_, _, _, zout, expected_borrow)) in self.test_vector.iter().enumerate() {
-					dbg!(i);
-					dbg!(self.test_vector[i]);
 					assert_eq!(zout_bits[i], *zout);
 
 					if let Some(ref final_borrow) = final_borrow {

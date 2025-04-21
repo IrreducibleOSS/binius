@@ -146,141 +146,153 @@ mod tests {
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
 
 	#[test]
-	fn test_basic() {
-		const TABLE_SZ: usize = 1 << 14;
-
-		let mut cs = ConstraintSystem::new();
-		let mut table = cs.add_table("u32_add test");
-
-		let xin = table.add_committed::<B1, 32>("xin");
-		let yin = table.add_committed::<B1, 32>("yin");
-
-		let adder = U32Add::new(&mut table, xin, yin, U32AddFlags::default());
-		let table_id = table.id();
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![TABLE_SZ],
-		};
-		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
-
-		let table_witness = witness.init_table(table_id, TABLE_SZ).unwrap();
-		let mut segment = table_witness.full_segment();
+	fn prop_test_no_carry() {
+		const N_ITER: usize = 1 << 14;
 
 		let mut rng = StdRng::seed_from_u64(0);
-
-		// Generate random u32 operands and expected results.
-		//
-		// (x, y, z)
-		let test_vector: Vec<(u32, u32, u32)> = (0..segment.size())
+		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x = rng.gen::<u32>();
-				let y = rng.gen::<u32>();
-				let z = x.wrapping_add(y);
-				(x, y, z)
+				let x: u32 = rng.gen();
+				let y: u32 = rng.gen();
+				let (z, carry) = x.overflowing_add(y);
+				// (x, y, carry_in, zout, final_carry)
+				(x, y, 0x00000000, z, carry)
 			})
 			.collect();
 
-		{
-			let mut xin_bits = segment.get_mut_as::<u32, _, 32>(adder.xin).unwrap();
-			let mut yin_bits = segment.get_mut_as::<u32, _, 32>(adder.yin).unwrap();
-			for (i, (x, y, _)) in test_vector.iter().enumerate() {
-				xin_bits[i] = *x;
-				yin_bits[i] = *y;
-			}
+		TestPlan {
+			dyn_carry_in: false,
+			expose_final_carry: true,
+			commit_zout: false,
+			test_vector,
 		}
+		.execute();
+	}
 
-		// Populate the gadget
-		adder.populate(&mut segment).unwrap();
+	#[test]
+	fn prop_test_with_carry() {
+		const N_ITER: usize = 1 << 14;
 
-		{
-			// Verify results
-			let zout_bits = segment.get_as::<u32, _, 32>(adder.zout).unwrap();
-			for (i, (_, _, z)) in test_vector.iter().enumerate() {
-				assert_eq!(zout_bits[i], *z);
-			}
+		let mut rng = StdRng::seed_from_u64(0);
+		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
+			.map(|_| {
+				let x: u32 = rng.gen();
+				let y: u32 = rng.gen();
+				let carry_in = rng.gen::<bool>() as u32;
+				let (x_plus_y, carry1) = x.overflowing_add(y);
+				let (z, carry2) = x_plus_y.overflowing_add(carry_in);
+				let final_carry = carry1 | carry2;
+				(x, y, carry_in, z, final_carry)
+			})
+			.collect();
+
+		TestPlan {
+			dyn_carry_in: true,
+			expose_final_carry: true,
+			commit_zout: true,
+			test_vector,
 		}
-
-		// Validate constraint system
-		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+		.execute();
 	}
 
 	#[test]
 	fn test_add_with_carry() {
-		const TABLE_SZ: usize = 1 << 2;
-
-		let mut cs = ConstraintSystem::new();
-		let mut table = cs.add_table("u32_add_with_carry test");
-
-		let xin = table.add_committed::<B1, 32>("xin");
-		let yin = table.add_committed::<B1, 32>("yin");
-		let carry_in = table.add_committed::<B1, 32>("carry_in");
-
-		let flags = U32AddFlags {
-			carry_in_bit: Some(carry_in),
-			expose_final_carry: true,
-			commit_zout: false,
-		};
-		let adder = U32Add::new(&mut table, xin, yin, flags);
-		let table_id = table.id();
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![TABLE_SZ],
-		};
-		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
-
-		let table_witness = witness.init_table(table_id, TABLE_SZ).unwrap();
-		let mut segment = table_witness.full_segment();
-
-		// The test vector that contains interesting cases.
-		//
 		// (x, y, carry_in, zout, final_carry)
 		let test_vector = [
-			(0xFFFFFFFF, 0x00000001, 0x00000000, 0x00000000, true),
-			(0xFFFFFFFF, 0x00000000, 0x00000000, 0xFFFFFFFF, false),
-			(0x7FFFFFFF, 0x00000001, 0x00000000, 0x80000000, false),
-			(0xFFFF0000, 0x0000FFFF, 0x00000001, 0x00000000, true),
+			(0xFFFFFFFF, 0x00000001, 0x00000000, 0x00000000, true), // max + 1 = 0 (overflow)
+			(0xFFFFFFFF, 0x00000000, 0x00000000, 0xFFFFFFFF, false), // max + 0 = max (no overflow)
+			(0x7FFFFFFF, 0x00000001, 0x00000000, 0x80000000, false), // Sign bit transition
+			(0xFFFF0000, 0x0000FFFF, 0x00000001, 0x00000000, true), // overflow with carry_in
 		];
-		assert_eq!(test_vector.len(), segment.size());
-
-		{
-			// Populate the columns with the inputs from the test vector.
-			let mut xin_bits = segment.get_mut_as::<u32, _, 32>(adder.xin).unwrap();
-			let mut yin_bits = segment.get_mut_as::<u32, _, 32>(adder.yin).unwrap();
-			let mut carry_in_bits = segment.get_mut_as::<u32, _, 32>(carry_in).unwrap();
-			for (i, (x, y, carry, _, _)) in test_vector.iter().enumerate() {
-				xin_bits[i] = *x;
-				yin_bits[i] = *y;
-				carry_in_bits[i] = *carry;
-			}
+		TestPlan {
+			dyn_carry_in: true,
+			expose_final_carry: true,
+			commit_zout: false,
+			test_vector: test_vector.to_vec(),
 		}
+		.execute();
+	}
 
-		// Populate the gadget
-		adder.populate(&mut segment).unwrap();
+	struct TestPlan {
+		dyn_carry_in: bool,
+		expose_final_carry: bool,
+		commit_zout: bool,
+		/// (x, y, carry_in, zout, final_carry)
+		test_vector: Vec<(u32, u32, u32, u32, bool)>,
+	}
 
-		{
-			// Verify results
-			let zout_bits = segment.get_as::<u32, _, 32>(adder.zout).unwrap();
-			let final_carry = segment.get(adder.final_carry.unwrap()).unwrap();
+	impl TestPlan {
+		fn execute(self) {
+			let mut cs = ConstraintSystem::new();
+			let mut table = cs.add_table("u32_add");
 
-			for (i, (_, _, _, zout, expected_carry)) in test_vector.iter().enumerate() {
-				assert_eq!(zout_bits[i], *zout);
+			let xin = table.add_committed::<B1, 32>("xin");
+			let yin = table.add_committed::<B1, 32>("yin");
 
-				// Check final carry bit
-				assert_eq!(get_packed_slice(&final_carry, i), B1::from(*expected_carry));
+			let carry_in = self
+				.dyn_carry_in
+				.then_some(table.add_committed::<B1, 32>("carry_in"));
+
+			let flags = U32AddFlags {
+				carry_in_bit: carry_in,
+				expose_final_carry: self.expose_final_carry,
+				commit_zout: self.commit_zout,
+			};
+			let adder = U32Add::new(&mut table, xin, yin, flags);
+			assert!(adder.final_carry.is_some() == self.expose_final_carry);
+
+			let table_id = table.id();
+			let statement = Statement {
+				boundaries: vec![],
+				table_sizes: vec![self.test_vector.len()],
+			};
+			let allocator = Bump::new();
+			let mut witness =
+				WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+			let table_witness = witness
+				.init_table(table_id, self.test_vector.len())
+				.unwrap();
+			let mut segment = table_witness.full_segment();
+
+			{
+				let mut xin_bits = segment.get_mut_as::<u32, _, 32>(adder.xin).unwrap();
+				let mut yin_bits = segment.get_mut_as::<u32, _, 32>(adder.yin).unwrap();
+				let mut carry_in_bits =
+					carry_in.map(|carry_in| segment.get_mut_as::<u32, _, 32>(carry_in).unwrap());
+				for (i, (x, y, carry_in, _, _)) in self.test_vector.iter().enumerate() {
+					xin_bits[i] = *x;
+					yin_bits[i] = *y;
+					if let Some(ref mut carry_in_bits) = carry_in_bits {
+						carry_in_bits[i] = *carry_in;
+					}
+				}
 			}
+
+			// Populate the gadget
+			adder.populate(&mut segment).unwrap();
+
+			{
+				// Verify results
+				let zout_bits = segment.get_as::<u32, _, 32>(adder.zout).unwrap();
+				let final_carry = adder
+					.final_carry
+					.map(|final_carry| segment.get(final_carry).unwrap());
+				for (i, (_, _, _, zout, expected_carry)) in self.test_vector.iter().enumerate() {
+					assert_eq!(zout_bits[i], *zout);
+
+					if let Some(ref final_carry) = final_carry {
+						assert_eq!(get_packed_slice(final_carry, i), B1::from(*expected_carry));
+					}
+				}
+			}
+
+			// Validate constraint system
+			let ccs = cs.compile(&statement).unwrap();
+			let witness = witness.into_multilinear_extension_index();
+
+			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
+				.unwrap();
 		}
-
-		// Validate constraint system
-		let ccs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}
 }
