@@ -23,6 +23,9 @@ use super::error::Error;
 /// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
 /// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
 /// specific representations of multivariate polynomials.
+///
+/// The `Arc`'s are not guaranteed to be unique, so the expression tree may contain duplicate nodes.
+/// Use `deduplicate_nodes` to remove duplicate nodes from the expression tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
@@ -403,7 +406,7 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
-	/// Find duplicate nodes in the expression tree and replace them with a single instance.
+	/// Find duplicate nodes in the expression tree and replace them with a single `Arc` instance.
 	pub fn deduplicate_nodes(self) -> Self {
 		let mut node_set = HashSet::new();
 
@@ -670,7 +673,8 @@ impl<F: Field> Default for ArithCircuitStep<F> {
 }
 
 /// A simple circuit representation of an arithmetic expression.
-/// We use this representation as temporary object for serialization/deserialization.
+/// We use this representation as a temporary object for serialization/deserialization to
+/// ensure that common sub-expressions are correctly desewrialized into the same `Arc` instance.
 #[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
 struct ArithCircuit<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> {
 	steps: Data,
@@ -678,6 +682,8 @@ struct ArithCircuit<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> {
 }
 
 impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
+	/// Constructs a new `ArithCircuit` from the given expression and a buffer for the steps.
+	/// `data` must be large enough to hold all the steps of the expression.
 	fn from_expr<'a>(
 		expr: &ArithExpr<F>,
 		data: &'a mut Data,
@@ -774,6 +780,7 @@ impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
 		}
 	}
 
+	/// Converts the circuit back to an expression.
 	fn to_expr(&self) -> ArithExpr<F> {
 		let root = stackalloc_with_default::<Option<Arc<ArithExpr<F>>>, _, _>(
 			self.steps.as_ref().len(),
