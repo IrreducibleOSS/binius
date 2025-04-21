@@ -119,11 +119,11 @@ impl BarrelShifter {
 		let shift_amount: RefMut<'_, [u16]> = index.get_mut_as(self.shift_amount).unwrap();
 		// TODO: Propagate the errors
 		let mut partial_shift: [_; MAX_SHIFT_BITS] =
-			core::array::try_from_fn(|i| index.get_mut_as(self.partial_shift[i]))?;
+			array_util::try_from_fn(|i| index.get_mut_as(self.partial_shift[i]))?;
 		let mut shifted: [_; MAX_SHIFT_BITS] =
-			core::array::try_from_fn(|i| index.get_mut_as(self.shifted[i]))?;
+			array_util::try_from_fn(|i| index.get_mut_as(self.shifted[i]))?;
 		let mut shift_amount_bits: [_; MAX_SHIFT_BITS] =
-			core::array::try_from_fn(|i| index.get_mut(self.shift_amount_bits[i]))?;
+			array_util::try_from_fn(|i| index.get_mut(self.shift_amount_bits[i]))?;
 
 		for i in 0..index.size() {
 			let mut current_shift = input[i];
