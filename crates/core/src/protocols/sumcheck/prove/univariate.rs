@@ -385,6 +385,7 @@ where
 	)
 	.entered();
 	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
+	drop(expand_span);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
 	let pbase_prefix_lens = composition_degrees
@@ -397,7 +398,6 @@ where
 			)
 		})
 		.collect::<Vec<_>>();
-	drop(expand_span);
 	let coeffs_span = tracing::debug_span!(
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
@@ -563,12 +563,12 @@ where
 				Ok(round_evals_sum)
 			},
 		)?;
-	drop(coeffs_span);
 
 	// So far evals of each composition are "staggered" in a sense that they are evaluated on the smallest
 	// domain which guarantees uniqueness of the round polynomial. We extrapolate them to max_domain_size to
 	// aid in Gruen section 3.2 optimization below and batch mixing.
 	let round_evals = extrapolate_round_evals(staggered_round_evals, skip_rounds, max_domain_size)?;
+	drop(coeffs_span);
 
 	Ok(ZerocheckUnivariateEvalsOutput {
 		round_evals,

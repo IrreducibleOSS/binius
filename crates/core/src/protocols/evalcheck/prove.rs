@@ -227,7 +227,7 @@ where
 
 		// Step 3: Process projected_bivariate_claims
 		let evalcheck_mle_fold_high_span = tracing::debug_span!(
-			"[task] MLE Fold High",
+			"[task] (Evalcheck) MLE Fold High",
 			phase = "evalcheck",
 			perfetto_category = "task.main"
 		)

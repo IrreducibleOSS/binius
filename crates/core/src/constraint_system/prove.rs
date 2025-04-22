@@ -433,12 +433,6 @@ where
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
 
-	let zerocheck_mle_fold_high_span = tracing::debug_span!(
-		"[task] MLE Fold High",
-		phase = "zerocheck",
-		perfetto_category = "task.main"
-	)
-	.entered();
 	for (univariatized_multilinear_evals, multilinears) in
 		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
 	{
@@ -448,8 +442,16 @@ where
 
 		let skip_challenges = (max_n_vars - claim_n_vars).saturating_sub(skip_rounds);
 		let challenges = &zerocheck_output.challenges[skip_challenges..];
+
+		let zerocheck_mle_fold_high_span = tracing::debug_span!(
+			"[task] (Zerocheck) MLE Fold High",
+			phase = "zerocheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let reduced_multilinears =
 			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
+		drop(zerocheck_mle_fold_high_span);
 
 		let claim_skip_rounds = claim_n_vars - challenges.len();
 		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
@@ -468,7 +470,6 @@ where
 		reduction_claims.push(reduction_claim);
 		reduction_provers.push(reduction_prover);
 	}
-	drop(zerocheck_mle_fold_high_span);
 
 	let zerocheck_regular_sumcheck_small_span = tracing::debug_span!(
 		"[task] (Zerocheck) Regular Sumcheck (Small)",

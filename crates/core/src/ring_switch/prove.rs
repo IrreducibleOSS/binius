@@ -59,7 +59,7 @@ where
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
 	let mle_fold_high_span = tracing::debug_span!(
-		"[task] MLE Fold High",
+		"[task] (Ring Switch) MLE Fold High",
 		phase = "ring_switch",
 		perfetto_category = "task.main"
 	)
