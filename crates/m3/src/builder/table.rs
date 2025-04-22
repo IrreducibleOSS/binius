@@ -200,6 +200,37 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_selected_block<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
+
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		// This is also the value of the start_index.
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		// Get the log size of the query.
+		let log_query_size = log_values_per_row - log_new_values_per_row;
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Projected {
+				col: col.id(),
+				start_index: log_new_values_per_row,
+				query_size: log_query_size,
+				query_bits: index,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -412,25 +443,6 @@ impl<F: TowerField> Table<F> {
 		self.id
 	}
 
-	/// Returns the binary logarithm of the minimum capacity.
-	///
-	/// This value is chosen so that every committed column fills at least one large field element
-	/// in packed representation. This is because the polynomial commitment scheme requires full
-	/// packed field elements.
-	pub fn min_log_capacity(&self) -> usize {
-		let min_cell_size = self
-			.columns
-			.iter()
-			.filter_map(|col| match col.col {
-				ColumnDef::Committed { .. } => Some(col.shape.log_cell_size()),
-				_ => None,
-			})
-			.min()
-			// return 0 if table has no columns
-			.unwrap_or(F::TOWER_LEVEL);
-		F::TOWER_LEVEL.saturating_sub(min_cell_size)
-	}
-
 	/// Returns the binary logarithm of the table capacity required to accommodate the given number
 	/// of rows.
 	///
@@ -439,7 +451,7 @@ impl<F: TowerField> Table<F> {
 	/// This will normally be the next power of two greater than the table size, but could require
 	/// more padding to get a minimum capacity.
 	pub fn log_capacity(&self, table_size: usize) -> usize {
-		log2_ceil_usize(table_size).max(self.min_log_capacity())
+		log2_ceil_usize(table_size)
 	}
 
 	fn new_column<FSub, const V: usize>(

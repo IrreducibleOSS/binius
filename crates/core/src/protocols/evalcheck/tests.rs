@@ -4,11 +4,10 @@ use std::{array, iter::repeat_with, slice};
 
 use assert_matches::assert_matches;
 use binius_field::{
-	as_packed_field::PackedType,
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
-	underlier::WithUnderlier,
-	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedField, TowerField,
+	AESTowerField128b, BinaryField128b, BinaryField1b, ByteSliced16x128x1b, ByteSlicedAES16x128b,
+	ByteSlicedAES16x16x8b, ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
+	PackedBinaryField1x128b, PackedField, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::groestl::Groestl256;
@@ -16,7 +15,7 @@ use binius_macros::arith_expr;
 use binius_math::{
 	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
-use bytemuck::cast_slice_mut;
+use bytemuck::{cast_slice_mut, Pod};
 use itertools::Either;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
@@ -33,7 +32,6 @@ use crate::{
 
 type FExtension = BinaryField128b;
 type PExtension = PackedBinaryField1x128b;
-type U = <PExtension as WithUnderlier>::Underlier;
 
 fn shift_one<P: PackedField>(evals: &mut [P], bits: usize, variant: ShiftVariant) {
 	let len = len_packed_slice(evals);
@@ -58,12 +56,13 @@ fn shift_one<P: PackedField>(evals: &mut [P], bits: usize, variant: ShiftVariant
 	}
 }
 
-#[test]
-fn test_shifted_evaluation_whole_cube() {
-	type P = PackedBinaryField16x8b;
-
-	let n_vars = 8;
-
+fn run_test_shifted_evaluation_whole_cube<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<P::Scalar>,
+	PExtension: PackedField<Scalar = FExtension> + RepackedExtension<P>,
+{
 	let mut oracles = MultilinearOracleSet::<FExtension>::new();
 	let poly_id = oracles.add_committed(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
 
@@ -88,8 +87,7 @@ fn test_shifted_evaluation_whole_cube() {
 	let shifted_witness = MultilinearExtension::from_values(shifted_evals).unwrap();
 
 	let backend = make_portable_backend();
-	let query: MultilinearQuery<BinaryField128b, _> =
-		backend.multilinear_query(&eval_point).unwrap();
+	let query: MultilinearQuery<FExtension, _> = backend.multilinear_query(&eval_point).unwrap();
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
 
@@ -103,7 +101,7 @@ fn test_shifted_evaluation_whole_cube() {
 		})
 		.collect();
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(poly_id, poly_witness.to_ref().specialize_arc_dyn::<PExtension>()),
@@ -121,11 +119,22 @@ fn test_shifted_evaluation_whole_cube() {
 }
 
 #[test]
-fn test_shifted_evaluation_subcube() {
-	type P = PackedBinaryField16x8b;
+fn test_shifted_evaluation_whole_cube() {
+	run_test_shifted_evaluation_whole_cube::<PackedBinaryField16x8b, FExtension, PExtension>(8);
+	run_test_shifted_evaluation_whole_cube::<
+		ByteSlicedAES16x16x8b,
+		AESTowerField128b,
+		ByteSlicedAES16x128b,
+	>(16);
+}
 
-	let n_vars = 8;
-
+fn run_test_shifted_evaluation_subcube<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField + Pod,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<P::Scalar>,
+	PExtension: PackedField<Scalar = FExtension> + RepackedExtension<P>,
+{
 	let mut oracles = MultilinearOracleSet::<FExtension>::new();
 
 	let poly_id = oracles.add_committed(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
@@ -154,7 +163,7 @@ fn test_shifted_evaluation_subcube() {
 
 	let backend = make_portable_backend();
 	let query = backend
-		.multilinear_query::<BinaryField128b>(&eval_point)
+		.multilinear_query::<FExtension>(&eval_point)
 		.unwrap();
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
@@ -169,7 +178,7 @@ fn test_shifted_evaluation_subcube() {
 		})
 		.collect();
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(poly_id, poly_witness.to_ref().specialize_arc_dyn::<PExtension>()),
@@ -187,8 +196,26 @@ fn test_shifted_evaluation_subcube() {
 }
 
 #[test]
-fn test_evalcheck_linear_combination() {
-	let n_vars = 8;
+fn test_shifted_evaluation_subcube() {
+	run_test_shifted_evaluation_subcube::<PackedBinaryField16x8b, FExtension, PExtension>(8);
+	run_test_shifted_evaluation_subcube::<
+		ByteSlicedAES16x16x8b,
+		AESTowerField128b,
+		ByteSlicedAES16x128b,
+	>(16);
+}
+
+fn run_test_evalcheck_linear_combination<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField<Scalar = BinaryField1b> + Pod,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	PExtension:
+		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
+{
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let values: [FExtension; 4] = array::from_fn(|_| <FExtension as Field>::random(&mut rng));
 
 	let select_row1 = SelectRow::new(n_vars, 0).unwrap();
 	let select_row2 = SelectRow::new(n_vars, 5).unwrap();
@@ -203,43 +230,36 @@ fn test_evalcheck_linear_combination() {
 	let lin_com_id = oracles
 		.add_linear_combination_with_offset(
 			n_vars,
-			FExtension::new(1),
+			values[0],
 			[
-				(select_row1_oracle_id, FExtension::new(2)),
-				(select_row2_oracle_id, FExtension::new(3)),
-				(select_row3_oracle_id, FExtension::new(4)),
+				(select_row1_oracle_id, values[1]),
+				(select_row2_oracle_id, values[2]),
+				(select_row3_oracle_id, values[3]),
 			],
 		)
 		.unwrap();
 
-	let mut rng = StdRng::seed_from_u64(0);
 	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
 		.take(n_vars)
 		.collect::<Vec<_>>();
 
-	let eval = select_row1.evaluate(&eval_point).unwrap() * FExtension::new(2)
-		+ select_row2.evaluate(&eval_point).unwrap() * FExtension::new(3)
-		+ select_row3.evaluate(&eval_point).unwrap() * FExtension::new(4)
-		+ FExtension::new(1);
+	let eval = select_row1.evaluate(&eval_point).unwrap() * values[1]
+		+ select_row2.evaluate(&eval_point).unwrap() * values[2]
+		+ select_row3.evaluate(&eval_point).unwrap() * values[3]
+		+ values[0];
 
-	let select_row1_witness = select_row1
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
-	let select_row2_witness = select_row2
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
-	let select_row3_witness = select_row3
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
+	let select_row1_witness = select_row1.multilinear_extension::<P>().unwrap();
+	let select_row2_witness = select_row2.multilinear_extension::<P>().unwrap();
+	let select_row3_witness = select_row3.multilinear_extension::<P>().unwrap();
 
 	let lin_com_values = (0..1 << n_vars)
 		.map(|i| {
-			select_row1_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(2)
-				+ select_row2_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(3)
-				+ select_row3_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(4)
-				+ FExtension::new(1)
+			values[1] * select_row1_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[2] * select_row2_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[3] * select_row3_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[0]
 		})
-		.map(PackedBinaryField1x128b::set_single)
+		.map(PExtension::set_single)
 		.collect();
 	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
 
@@ -251,7 +271,7 @@ fn test_evalcheck_linear_combination() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn()),
@@ -270,16 +290,32 @@ fn test_evalcheck_linear_combination() {
 }
 
 #[test]
-fn test_evalcheck_linear_combination_size_one() {
-	let n_vars = 8;
+fn test_evalcheck_linear_combination() {
+	run_test_evalcheck_linear_combination::<PackedBinaryField128x1b, FExtension, PExtension>(8);
+	run_test_evalcheck_linear_combination::<
+		ByteSliced16x128x1b,
+		AESTowerField128b,
+		ByteSlicedAES16x128b,
+	>(16);
+}
+
+fn run_test_evalcheck_linear_combination_size_one<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField<Scalar = BinaryField1b> + Pod,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	PExtension:
+		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
+{
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let [offset, coef] = array::from_fn(|_| <FExtension as Field>::random(&mut rng));
 
 	let select_row = SelectRow::new(n_vars, 0).unwrap();
 
 	let mut oracles = MultilinearOracleSet::new();
 
 	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
-	let offset = FExtension::new(12345);
-	let coef = FExtension::new(67890);
 
 	let lin_com_id = oracles
 		.add_linear_combination_with_offset(n_vars, offset, [(select_row_oracle_id, coef)])
@@ -292,13 +328,11 @@ fn test_evalcheck_linear_combination_size_one() {
 
 	let eval = select_row.evaluate(&eval_point).unwrap() * coef + offset;
 
-	let select_row_witness = select_row
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
+	let select_row_witness = select_row.multilinear_extension::<P>().unwrap();
 
 	let lin_com_values = (0..1 << n_vars)
-		.map(|i| select_row_witness.evaluate_on_hypercube(i).unwrap() * coef + offset)
-		.map(PackedBinaryField1x128b::set_single)
+		.map(|i| coef * select_row_witness.evaluate_on_hypercube(i).unwrap() + offset)
+		.map(PExtension::set_single)
 		.collect();
 	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
 
@@ -310,7 +344,7 @@ fn test_evalcheck_linear_combination_size_one() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row_oracle_id, select_row_witness.specialize_arc_dyn()),
@@ -327,8 +361,26 @@ fn test_evalcheck_linear_combination_size_one() {
 }
 
 #[test]
-fn test_evalcheck_composite() {
-	let n_vars = 8;
+fn test_evalcheck_linear_combination_size_one() {
+	run_test_evalcheck_linear_combination_size_one::<PackedBinaryField128x1b, FExtension, PExtension>(
+		8,
+	);
+	run_test_evalcheck_linear_combination_size_one::<
+		ByteSliced16x128x1b,
+		AESTowerField128b,
+		ByteSlicedAES16x128b,
+	>(16);
+}
+
+fn run_test_evalcheck_composite<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField<Scalar = BinaryField1b> + Pod,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	PExtension:
+		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
+{
+	let mut rng = StdRng::seed_from_u64(0);
 
 	let select_row1 = SelectRow::new(n_vars, 0).unwrap();
 	let select_row2 = SelectRow::new(n_vars, 5).unwrap();
@@ -340,7 +392,9 @@ fn test_evalcheck_composite() {
 	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
 
-	let comp = arith_expr!(BinaryField128b[x, y, z] = x * y * 15 + z * y * 8 + z * 2 + 77);
+	let comp = arith_expr!(FExtension[x, y, z] = x * y + z * y + z);
+
+	let values: [FExtension; 4] = array::from_fn(|_| <FExtension as Field>::random(&mut rng));
 
 	let composite_id = oracles
 		.add_composite_mle(
@@ -354,7 +408,6 @@ fn test_evalcheck_composite() {
 		)
 		.unwrap();
 
-	let mut rng = StdRng::seed_from_u64(0);
 	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
 		.take(n_vars)
 		.collect::<Vec<_>>();
@@ -367,24 +420,18 @@ fn test_evalcheck_composite() {
 		])
 		.unwrap();
 
-	let select_row1_witness = select_row1
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
-	let select_row2_witness = select_row2
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
-	let select_row3_witness = select_row3
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
+	let select_row1_witness = select_row1.multilinear_extension::<P>().unwrap();
+	let select_row2_witness = select_row2.multilinear_extension::<P>().unwrap();
+	let select_row3_witness = select_row3.multilinear_extension::<P>().unwrap();
 
 	let lin_com_values = (0..1 << n_vars)
 		.map(|i| {
-			select_row1_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(2)
-				+ select_row2_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(3)
-				+ select_row3_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(4)
-				+ FExtension::new(1)
+			values[1] * select_row1_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[2] * select_row2_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[3] * select_row3_witness.evaluate_on_hypercube(i).unwrap()
+				+ values[0]
 		})
-		.map(PackedBinaryField1x128b::set_single)
+		.map(PExtension::set_single)
 		.collect();
 	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
 
@@ -396,7 +443,7 @@ fn test_evalcheck_composite() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn()),
@@ -415,8 +462,21 @@ fn test_evalcheck_composite() {
 }
 
 #[test]
-fn test_evalcheck_repeating() {
-	let n_vars = 7;
+fn test_evalcheck_composite() {
+	run_test_evalcheck_composite::<PackedBinaryField128x1b, FExtension, PExtension>(8);
+	run_test_evalcheck_composite::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
+		16,
+	);
+}
+
+fn run_test_evalcheck_repeating<P, FExtension, PExtension>(n_vars: usize)
+where
+	P: PackedField<Scalar = BinaryField1b> + Pod,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	PExtension:
+		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
+{
 	let row_id = 11;
 
 	let mut oracles = MultilinearOracleSet::new();
@@ -424,9 +484,7 @@ fn test_evalcheck_repeating() {
 	let select_row = SelectRow::new(n_vars, row_id).unwrap();
 	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
 
-	let select_row_subwitness = select_row
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
+	let select_row_subwitness = select_row.multilinear_extension::<P>().unwrap();
 	let repeated_values = (0..4)
 		.flat_map(|_| select_row_subwitness.evals().iter().copied())
 		.collect::<Vec<_>>();
@@ -450,7 +508,7 @@ fn test_evalcheck_repeating() {
 		eval,
 	};
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
@@ -466,33 +524,38 @@ fn test_evalcheck_repeating() {
 }
 
 #[test]
-/// Constructs a small ZeroPadded oracle, proves and verifies it.
-fn test_evalcheck_zero_padded() {
-	let inner_n_vars = 7;
-	let n_vars = 10;
+fn test_evalcheck_repeating() {
+	run_test_evalcheck_repeating::<PackedBinaryField128x1b, FExtension, PExtension>(8);
+	run_test_evalcheck_repeating::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
+		16,
+	);
+}
+
+fn run_test_evalcheck_zero_padded<P, FExtension, PExtension>(n_vars: usize, inner_n_vars: usize)
+where
+	P: PackedField<Scalar = BinaryField1b> + Pod + RepackedExtension<P>,
+	P::Scalar: TowerField,
+	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	PExtension:
+		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
+{
 	let row_id = 9;
 
 	let mut oracles = MultilinearOracleSet::new();
 
 	let select_row = SelectRow::new(inner_n_vars, row_id).unwrap();
 
-	let select_row_subwitness = select_row
-		.multilinear_extension::<PackedBinaryField128x1b>()
-		.unwrap();
+	let select_row_subwitness = select_row.multilinear_extension::<P>().unwrap();
 
-	let x = select_row_subwitness
-		.clone()
-		.specialize::<PackedBinaryField128x1b>();
+	let x = select_row_subwitness.clone().specialize::<P>();
 
-	assert!(x.n_vars() >= PackedBinaryField128x1b::LOG_WIDTH);
+	assert!(x.n_vars() >= P::LOG_WIDTH);
 
-	let mut values =
-		vec![PackedBinaryField128x1b::zero(); 1 << (n_vars - PackedBinaryField128x1b::LOG_WIDTH)];
+	let mut values = vec![P::zero(); 1 << (n_vars - P::LOG_WIDTH)];
 
 	let values_len = values.len();
 
-	let (_, x_values) =
-		values.split_at_mut(values_len - (1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH)));
+	let (_, x_values) = values.split_at_mut(values_len - (1 << (x.n_vars() - P::LOG_WIDTH)));
 
 	x.subcube_evals(x.n_vars(), 0, 0, x_values).unwrap();
 
@@ -504,7 +567,7 @@ fn test_evalcheck_zero_padded() {
 		.add_zero_padded(select_row_oracle_id, n_vars)
 		.unwrap();
 
-	let mut witness_index = MultilinearExtensionIndex::<PackedType<U, FExtension>>::new();
+	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
 			(select_row_oracle_id, select_row_subwitness.specialize_arc_dyn()),
@@ -524,8 +587,8 @@ fn test_evalcheck_zero_padded() {
 	let mut inner_eval = eval;
 
 	for i in 0..n_vars - inner_n_vars {
-		inner_eval = extrapolate_line::<BinaryField128b, BinaryField128b>(
-			BinaryField128b::zero(),
+		inner_eval = extrapolate_line::<FExtension, FExtension>(
+			FExtension::zero(),
 			inner_eval,
 			eval_point[inner_n_vars + i],
 		);
@@ -547,6 +610,15 @@ fn test_evalcheck_zero_padded() {
 	verifier_state.verify(vec![claim], proof).unwrap();
 }
 
+#[test]
+/// Constructs a small ZeroPadded oracle, proves and verifies it.
+fn test_evalcheck_zero_padded() {
+	run_test_evalcheck_zero_padded::<PackedBinaryField128x1b, FExtension, PExtension>(10, 8);
+	run_test_evalcheck_zero_padded::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
+		18, 16,
+	);
+}
+
 // Test evalcheck serialization
 #[test]
 fn test_evalcheck_serialization() {
@@ -564,7 +636,7 @@ fn test_evalcheck_serialization() {
 		let mut rng = thread_rng();
 		EvalcheckProof::LinearCombination {
 			subproofs: elems
-				.map(|x| (F::random(&mut rng), x.clone()))
+				.map(|x| (Some(F::random(&mut rng)), x.clone()))
 				.collect::<Vec<_>>(),
 		}
 	}

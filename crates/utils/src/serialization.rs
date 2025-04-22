@@ -48,6 +48,8 @@ pub enum SerializationError {
 	FromUtf8Error(#[from] std::string::FromUtf8Error),
 	#[error("Invalid construction of {name}")]
 	InvalidConstruction { name: &'static str },
+	#[error("usize {size} is too large to serialize (max is {max})", max = u32::MAX)]
+	UsizeTooLarge { size: usize },
 }
 
 // Copyright 2025 Irreducible Inc.
@@ -69,7 +71,10 @@ impl SerializeBytes for usize {
 		mut write_buf: impl BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
-		SerializeBytes::serialize(&(*self as u64), &mut write_buf, mode)
+		let value: u32 = (*self)
+			.try_into()
+			.map_err(|_| SerializationError::UsizeTooLarge { size: *self })?;
+		SerializeBytes::serialize(&value, &mut write_buf, mode)
 	}
 }
 
@@ -81,7 +86,7 @@ impl DeserializeBytes for usize {
 	where
 		Self: Sized,
 	{
-		let value: u64 = DeserializeBytes::deserialize(&mut read_buf, mode)?;
+		let value: u32 = DeserializeBytes::deserialize(&mut read_buf, mode)?;
 		Ok(value as Self)
 	}
 }

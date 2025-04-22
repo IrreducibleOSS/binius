@@ -231,12 +231,8 @@ where
 	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 
-	// take the first arity as coset_log_len, or use log_inv_rate if arities are empty
-	let coset_log_len = params
-		.fold_arities()
-		.first()
-		.copied()
-		.unwrap_or_else(|| rs_code.log_inv_rate());
+	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
+	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
 
@@ -382,7 +378,7 @@ where
 			.fold_arities()
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
-			.unwrap_or_else(|| self.params.rs_code().inv_rate());
+			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
 
 		let (commitment, committed) = self
 			.merkle_prover
@@ -460,7 +456,7 @@ where
 		let params = query_prover.params;
 
 		for _ in 0..params.n_test_queries() {
-			let index = transcript.sample_bits(params.index_bits());
+			let index = transcript.sample_bits(params.index_bits()) as usize;
 			query_prover.prove_query(index, transcript.decommitment())?;
 		}
 

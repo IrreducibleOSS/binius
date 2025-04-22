@@ -24,7 +24,7 @@ use super::{
 	statement::Statement,
 	table::TablePartition,
 	types::B128,
-	witness::{TableWitnessIndex, WitnessIndex},
+	witness::WitnessIndex,
 	Table, TableBuilder,
 };
 use crate::builder::expr::ArithExprNamedVars;
@@ -55,7 +55,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| table.columns[partition.columns[*i]].name.clone())
+						.map(|i| table.columns[*i].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -147,31 +147,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	/// Creates and allocates the witness index for a statement.
+	/// Creates and allocates the witness index.
 	///
-	/// The statement includes information about the tables sizes, which this requires in order to
-	/// allocate the column data correctly. The created witness index needs to be populated before
-	/// proving.
+	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
-		statement: &Statement,
-	) -> Result<WitnessIndex<'cs, 'alloc, P>, Error> {
-		Ok(WitnessIndex {
-			tables: self
-				.tables
-				.iter()
-				.zip(&statement.table_sizes)
-				.map(|(table, &table_size)| {
-					let witness = if table_size > 0 {
-						Some(TableWitnessIndex::new(allocator, table, table_size))
-					} else {
-						None
-					};
-					witness.transpose()
-				})
-				.collect::<Result<_, _>>()?,
-		})
+	) -> WitnessIndex<'cs, 'alloc, P> {
+		WitnessIndex::new(self, allocator)
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.
@@ -197,11 +180,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized && !count.is_power_of_two() {
-				return Err(Error::TableSizePowerOfTwoRequired {
-					table_id: table.id,
-					size: count,
-				});
+			if table.power_of_two_sized {
+				if !count.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id: table.id,
+						size: count,
+					});
+				}
+				if count != 1 << table.log_capacity(count) {
+					panic!(
+						"Tables with required power-of-two size currently cannot have capacity \
+						exceeding their count. This is because the flushes do not have automatic \
+						selectors applied, and so the table would flush invalid events"
+					);
+				}
 			}
 
 			let mut oracle_lookup = Vec::new();
@@ -360,6 +352,23 @@ fn add_oracle_for_column<F: TowerField>(
 				})
 				.collect();
 			addition.projected(oracle_lookup[col.table_index], index_values, 0)?
+		}
+		ColumnDef::Projected {
+			col,
+			start_index,
+			query_size,
+			query_bits,
+		} => {
+			let query_values = (0..*query_size)
+				.map(|i| -> F {
+					if (query_bits >> i) & 1 == 0 {
+						F::ZERO
+					} else {
+						F::ONE
+					}
+				})
+				.collect();
+			addition.projected(oracle_lookup[col.table_index], query_values, *start_index)?
 		}
 		ColumnDef::Shifted {
 			col,

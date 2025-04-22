@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use binius_field::{
 	packed::copy_packed_from_scalars_slice, util::powers, ExtensionField, Field, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	PackedField, PackedSubfield, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -143,7 +143,7 @@ where
 	F: TowerField,
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FBase>
 		+ PackedExtension<FDomain>,
@@ -275,10 +275,10 @@ where
 	F: TowerField,
 	FDomain: TowerField,
 	FBase: ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
-		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+		+ PackedExtension<FBase>
+		+ PackedExtension<FDomain>,
 	CompositionBase: CompositionPoly<PackedSubfield<P, FBase>> + 'static,
 	Composition: CompositionPoly<P> + 'static,
 	M: MultilinearPoly<P> + Send + Sync + 'a,

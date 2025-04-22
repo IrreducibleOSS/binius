@@ -121,7 +121,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 			.zip(pps)
 			.map(|(p, pp)| *p + pp)
 			.collect::<Vec<_>>();
-		Ok(MultilinearExtension::from_values(values)?)
+		Ok(MultilinearExtension::new(self.block_size, values)?)
 	}
 
 	fn multilinear_extension_logical_left<P>(&self) -> Result<MultilinearExtension<P>, Error>
@@ -130,7 +130,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 	{
 		let (ps, _) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
-		Ok(MultilinearExtension::from_values(ps)?)
+		Ok(MultilinearExtension::new(self.block_size, ps)?)
 	}
 
 	fn multilinear_extension_logical_right<P>(&self) -> Result<MultilinearExtension<P>, Error>
@@ -140,7 +140,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		let right_shift_offset = get_left_shift_offset(self.block_size, self.shift_offset);
 		let (_, pps) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, right_shift_offset, &self.r)?;
-		Ok(MultilinearExtension::from_values(pps)?)
+		Ok(MultilinearExtension::new(self.block_size, pps)?)
 	}
 
 	/// Evaluates this partially evaluated circular shift indicator MLE $f(X, r)$
@@ -272,8 +272,8 @@ fn partial_evaluate_hypercube_impl<P: PackedField>(
 	r: &[P::Scalar],
 ) -> Result<(Vec<P>, Vec<P>), Error> {
 	assert_valid_shift_ind_args(block_size, shift_offset, r)?;
-	let mut s_ind_p = vec![P::one(); 1 << (block_size - P::LOG_WIDTH)];
-	let mut s_ind_pp = vec![P::zero(); 1 << (block_size - P::LOG_WIDTH)];
+	let mut s_ind_p = vec![P::one(); 1 << block_size.saturating_sub(P::LOG_WIDTH)];
+	let mut s_ind_pp = vec![P::zero(); 1 << block_size.saturating_sub(P::LOG_WIDTH)];
 
 	partial_evaluate_hypercube_with_buffers_within_packed(
 		block_size.min(P::LOG_WIDTH),

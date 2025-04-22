@@ -1,6 +1,7 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use std::{
+	hash::Hash,
 	ops::{Deref, Range},
 	slice,
 	sync::Arc,
@@ -15,7 +16,8 @@ use crate::{
 	transcript::{TranscriptReader, TranscriptWriter},
 };
 
-#[derive(Debug, Clone)]
+/// This struct represents a claim to be verified through the evalcheck protocol.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
 	pub id: OracleId,
@@ -36,8 +38,11 @@ enum EvalcheckNumerics {
 	LinearCombination,
 	ZeroPadded,
 	CompositeMLE,
+	Projected,
+	DuplicateClaim,
 }
 
+/// The proof output of a given claim which may recursively contain proofs of subclaims arising from a given claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalcheckProof<F: Field> {
 	Transparent,
@@ -46,32 +51,12 @@ pub enum EvalcheckProof<F: Field> {
 	Packed,
 	Repeating(Box<EvalcheckProof<F>>),
 	LinearCombination {
-		subproofs: Vec<(F, EvalcheckProof<F>)>,
+		subproofs: Vec<(Option<F>, EvalcheckProof<F>)>,
 	},
 	ZeroPadded(F, Box<EvalcheckProof<F>>),
 	CompositeMLE,
-}
-
-impl<F: Field> EvalcheckProof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
-		match self {
-			Self::Transparent => EvalcheckProof::Transparent,
-			Self::Committed => EvalcheckProof::Committed,
-			Self::Shifted => EvalcheckProof::Shifted,
-			Self::Packed => EvalcheckProof::Packed,
-			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
-			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
-				subproofs: subproofs
-					.into_iter()
-					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
-					.collect(),
-			},
-			Self::ZeroPadded(eval, proof) => {
-				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
-			}
-			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
-		}
-	}
+	Projected(Box<EvalcheckProof<F>>),
+	DuplicateClaim(usize),
 }
 
 impl EvalcheckNumerics {
@@ -85,6 +70,8 @@ impl EvalcheckNumerics {
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
 			8 => Ok(Self::CompositeMLE),
+			9 => Ok(Self::Projected),
+			10 => Ok(Self::DuplicateClaim),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -117,8 +104,10 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			let len_u64 = subproofs.len() as u64;
 			transcript.write_bytes(&len_u64.to_le_bytes());
 			for (scalar, subproof) in subproofs {
-				transcript.write_scalar(*scalar);
-				serialize_evalcheck_proof(transcript, subproof)
+				serialize_evalcheck_proof(transcript, subproof);
+				if let Some(scalar) = scalar {
+					transcript.write_scalar(*scalar);
+				}
 			}
 		}
 		EvalcheckProof::ZeroPadded(val, subproof) => {
@@ -128,6 +117,14 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 		}
 		EvalcheckProof::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
+		}
+		EvalcheckProof::DuplicateClaim(index) => {
+			transcript.write_bytes(&[EvalcheckNumerics::DuplicateClaim as u8]);
+			transcript.write(index);
+		}
+		EvalcheckProof::Projected(subproof) => {
+			transcript.write_bytes(&[EvalcheckNumerics::Projected as u8]);
+			serialize_evalcheck_proof(transcript, subproof);
 		}
 	}
 }
@@ -153,10 +150,16 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let mut len = [0u8; 8];
 			transcript.read_bytes(&mut len)?;
 			let len = u64::from_le_bytes(len) as usize;
-			let mut subproofs: Vec<(F, EvalcheckProof<F>)> = Vec::new();
+			let mut subproofs = Vec::new();
 			for _ in 0..len {
-				let scalar = transcript.read_scalar()?;
 				let subproof = deserialize_evalcheck_proof(transcript)?;
+
+				let scalar = if let EvalcheckProof::DuplicateClaim(_) = subproof {
+					None
+				} else {
+					Some(transcript.read_scalar()?)
+				};
+
 				subproofs.push((scalar, subproof));
 			}
 			Ok(EvalcheckProof::LinearCombination { subproofs })
@@ -167,9 +170,22 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
 		}
 		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
+		EvalcheckNumerics::DuplicateClaim => {
+			let index = transcript.read()?;
+			Ok(EvalcheckProof::DuplicateClaim(index))
+		}
+		EvalcheckNumerics::Projected => {
+			let subproof = deserialize_evalcheck_proof(transcript)?;
+			Ok(EvalcheckProof::Projected(Box::new(subproof)))
+		}
 	}
 }
 
+/// Data structure for efficiently querying and inserting evaluations of claims.
+///
+/// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the data.
+/// This data structure is more memory efficient for small number of evaluation points and OracleIds which
+/// are grouped together.
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -181,6 +197,9 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		}
 	}
 
+	/// Query the first value found for an evaluation point for a given oracle id.
+	///
+	/// Returns `None` if no value is found.
 	pub fn get(&self, id: OracleId, eval_point: &[F]) -> Option<&T> {
 		self.data
 			.get(id)?
@@ -189,6 +208,9 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
+	/// Insert a new evaluation point for a given oracle id.
+	///
+	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
@@ -197,6 +219,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 		self.data[id].push((eval_point, val))
 	}
 
+	/// Flatten the data structure into a vector of values.
 	pub fn flatten(mut self) -> Vec<T> {
 		self.data.reverse();
 
@@ -205,6 +228,10 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.flatten()
 			.map(|(_, val)| val)
 			.collect::<Vec<_>>()
+	}
+
+	pub fn clear(&mut self) {
+		self.data.clear()
 	}
 }
 
@@ -216,8 +243,9 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct EvalPoint<F> {
+/// A wrapper struct for evaluation points.
+#[derive(Debug, Clone, Eq)]
+pub struct EvalPoint<F: Field> {
 	data: Arc<[F]>,
 	range: Range<usize>,
 }
@@ -228,7 +256,13 @@ impl<F: Field> PartialEq for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> EvalPoint<F> {
+impl<F: Field> Hash for EvalPoint<F> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.data[self.range.clone()].hash(state)
+	}
+}
+
+impl<F: Field> EvalPoint<F> {
 	pub fn slice(&self, range: Range<usize>) -> Self {
 		assert!(self.range.len() >= range.len());
 
@@ -245,7 +279,7 @@ impl<F: Clone> EvalPoint<F> {
 	}
 }
 
-impl<F> From<Vec<F>> for EvalPoint<F> {
+impl<F: Field> From<Vec<F>> for EvalPoint<F> {
 	fn from(data: Vec<F>) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -255,7 +289,7 @@ impl<F> From<Vec<F>> for EvalPoint<F> {
 	}
 }
 
-impl<F: Clone> From<&[F]> for EvalPoint<F> {
+impl<F: Field> From<&[F]> for EvalPoint<F> {
 	fn from(data: &[F]) -> Self {
 		let range = 0..data.len();
 		Self {
@@ -265,7 +299,7 @@ impl<F: Clone> From<&[F]> for EvalPoint<F> {
 	}
 }
 
-impl<F> Deref for EvalPoint<F> {
+impl<F: Field> Deref for EvalPoint<F> {
 	type Target = [F];
 
 	fn deref(&self) -> &Self::Target {

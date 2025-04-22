@@ -1,6 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{PackedFieldIndexable, TowerField};
+use std::collections::HashSet;
+
+use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
@@ -37,32 +39,45 @@ use crate::{
 #[derive(Getters, MutGetters)]
 pub struct EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
+	/// Mutable reference to the oracle set which is modified to create new claims arising from sumchecks
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
+	/// Mutable reference to the witness index which is is populated by the prover for new claims arising from sumchecks
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
 
+	/// The committed evaluation claims arising in this round
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	finalized_proofs: EvalPointOracleIdMap<(F, EvalcheckProof<F>), F>,
-
+	// Internally used to collect subclaims with evaluations to consume and further reduce.
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
-	incomplete_proof_claims: EvalPointOracleIdMap<EvalcheckMultilinearClaim<F>, F>,
+	// Internally used to collect subclaims without evaluations for future query and memoization
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
-	claims_without_evals_dedup: EvalPointOracleIdMap<(), F>,
+	// The list of claims that reduces to a bivariate sumcheck in a round.
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
+	// The new sumcheck constraints arising in this round
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
+	// Tensor expansion of evaluation points and partial evaluations of multilinears
 	pub memoized_data: MemoizedData<'b, P, Backend>,
 	backend: &'a Backend,
+
+	// The unique index of a claim in this round.
+	claim_to_index: EvalPointOracleIdMap<usize, F>,
+	// Claims that have been visited in this round, used to deduplicate claims when collecting subclaims in a BFS manner.
+	visited_claims: EvalPointOracleIdMap<(), F>,
+	// Memoization of evaluations of claims the prover sees in this round
+	evals_memoization: EvalPointOracleIdMap<F, F>,
+	// The index of the next claim to be verified
+	round_claim_index: usize,
 }
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Backend: ComputationBackend,
 {
@@ -79,14 +94,16 @@ where
 			witness_index,
 			committed_eval_claims: Vec::new(),
 			new_sumchecks_constraints: Vec::new(),
-			finalized_proofs: EvalPointOracleIdMap::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
-			claims_without_evals_dedup: EvalPointOracleIdMap::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
-			incomplete_proof_claims: EvalPointOracleIdMap::new(),
+
+			claim_to_index: EvalPointOracleIdMap::new(),
+			visited_claims: EvalPointOracleIdMap::new(),
+			evals_memoization: EvalPointOracleIdMap::new(),
+			round_claim_index: 0,
 		}
 	}
 
@@ -119,43 +136,44 @@ where
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	) -> Result<Vec<EvalcheckProof<F>>, Error> {
+		// Reset the prover state for a new round.
+		self.round_claim_index = 0;
+		self.visited_claims.clear();
+		self.claim_to_index.clear();
+		self.evals_memoization.clear();
+
 		for claim in &evalcheck_claims {
-			self.claims_without_evals_dedup
-				.insert(claim.id, claim.eval_point.clone(), ());
+			if self
+				.evals_memoization
+				.get(claim.id, &claim.eval_point)
+				.is_some()
+			{
+				continue;
+			}
+
+			self.evals_memoization
+				.insert(claim.id, claim.eval_point.clone(), claim.eval);
 		}
 
-		// Step 1: Collect proofs
 		self.claims_queue.extend(evalcheck_claims.clone());
 
-		// Use modified BFS approach with memoization to collect proofs.
-		// The `prove_multilinear` function saves a proof if it can be generated immediately; otherwise, the claim is added to `incomplete_proof_claims` and resolved after BFS.
-		// Claims requiring additional evaluation are stored in `claims_without_evals` and processed in parallel.
+		// Step 1: Use modified BFS to memoize evaluations. For each claim, if there is a subclaim and we know the evaluation of the subclaim, we add the subclaim to the claims_queue
+		// Otherwise, we find the evaluation of the claim by querying the witness data from the oracle id and evaluation point
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
-			// Prove all available claims
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
 					.into_iter()
-					.for_each(|claim| self.prove_multilinear(claim));
+					.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 			}
 
-			let mut deduplicated_claims_without_evals = Vec::new();
+			let mut deduplicated_claims_without_evals = HashSet::new();
 
 			for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
-				if self.finalized_proofs.get(poly.id(), &eval_point).is_some() {
-					continue;
-				}
-				if self
-					.claims_without_evals_dedup
-					.get(poly.id(), &eval_point)
-					.is_some()
-				{
+				if self.evals_memoization.get(poly.id(), &eval_point).is_some() {
 					continue;
 				}
 
-				self.claims_without_evals_dedup
-					.insert(poly.id(), eval_point.clone(), ());
-
-				deduplicated_claims_without_evals.push((poly, eval_point.clone()))
+				deduplicated_claims_without_evals.insert((poly.id(), eval_point.clone()));
 			}
 
 			let deduplicated_eval_points = deduplicated_claims_without_evals
@@ -163,15 +181,16 @@ where
 				.map(|(_, eval_point)| eval_point.as_ref())
 				.collect::<Vec<_>>();
 
+			// Tensor expansion of unique eval points.
 			self.memoized_data
 				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
 
-			// Make new evaluation claims in parallel.
+			// Query and fill missing evaluations.
 			let subclaims = deduplicated_claims_without_evals
 				.into_par_iter()
-				.map(|(poly, eval_point)| {
+				.map(|(id, eval_point)| {
 					Self::make_new_eval_claim(
-						poly.id(),
+						id,
 						eval_point,
 						self.witness_index,
 						&self.memoized_data,
@@ -179,132 +198,95 @@ where
 				})
 				.collect::<Result<Vec<_>, Error>>()?;
 
+			for subclaim in &subclaims {
+				self.evals_memoization.insert(
+					subclaim.id,
+					subclaim.eval_point.clone(),
+					subclaim.eval,
+				);
+			}
+
 			subclaims
 				.into_iter()
-				.for_each(|claim| self.prove_multilinear(claim));
+				.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 		}
 
-		let mut incomplete_proof_claims =
-			std::mem::take(&mut self.incomplete_proof_claims).flatten();
-
-		while !incomplete_proof_claims.is_empty() {
-			for claim in std::mem::take(&mut incomplete_proof_claims) {
-				if self.complete_proof(&claim) {
-					continue;
-				}
-				incomplete_proof_claims.push(claim);
-			}
-		}
-
-		// Step 2: Collect batch_committed_eval_claims and projected_bivariate_claims in right order
-
-		// Since we use BFS for collecting proofs and DFS for verifying them,
-		// it imposes restrictions on the correct order of collecting `batch_committed_eval_claims` and `projected_bivariate_claims`.
-		// Therefore, we run a DFS to handle this.
-		evalcheck_claims
+		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the subclaims by stepping through subclaims in a DFS manner
+		// and deduplicating claims.
+		let proofs = evalcheck_claims
 			.iter()
 			.cloned()
-			.for_each(|claim| self.collect_projected_committed(claim));
+			.map(|claim| self.prove_multilinear(claim))
+			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
-
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
 			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
 			.collect::<Result<Vec<_>, Error>>()?;
 
+		let projected_bivariate_claims = std::mem::take(&mut self.projected_bivariate_claims);
+
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
 
+		// Fill witnesss data for Composite MLEs
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.witness_index,
 			self.backend,
 		)?;
 
-		for (claim, meta, projected) in izip!(
-			std::mem::take(&mut self.projected_bivariate_claims),
-			&projected_bivariate_metas,
-			projected_mles
-		) {
+		for (claim, meta, projected) in
+			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
+		{
 			self.process_sumcheck(claim, meta, projected)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
 			&projected_bivariate_metas,
-			&self.projected_bivariate_claims,
+			&projected_bivariate_claims,
 			self.oracles,
 			self.witness_index,
 		);
 
-		// Step 4: Find and return the proofs of the original claims.
-
-		Ok(evalcheck_claims
-			.iter()
-			.map(|claim| {
-				self.finalized_proofs
-					.get(claim.id, &claim.eval_point)
-					.map(|(_, proof)| proof.clone())
-					.expect("finalized_proofs contains all the proofs")
-			})
-			.collect::<Vec<_>>())
+		proofs
 	}
 
 	#[instrument(
 		skip_all,
-		name = "EvalcheckProverState::prove_multilinear",
+		name = "EvalcheckProverState::collect_subclaims_for_precompute",
 		level = "debug"
 	)]
-	fn prove_multilinear(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
+	fn collect_subclaims_for_memoization(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
 		let multilinear_id = evalcheck_claim.id;
 
-		let eval_point = evalcheck_claim.eval_point.clone();
+		let eval_point = evalcheck_claim.eval_point;
 
 		let eval = evalcheck_claim.eval;
 
 		if self
-			.finalized_proofs
+			.visited_claims
 			.get(multilinear_id, &eval_point)
 			.is_some()
 		{
 			return;
 		}
 
-		if self
-			.incomplete_proof_claims
-			.get(multilinear_id, &eval_point)
-			.is_some()
-		{
-			return;
-		}
+		self.visited_claims
+			.insert(multilinear_id, eval_point.clone(), ());
 
 		let multilinear = self.oracles.oracle(multilinear_id);
 
 		match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::Transparent),
-				);
-			}
-
-			MultilinearPolyVariant::Committed => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::Committed),
-				);
-			}
-
 			MultilinearPolyVariant::Repeating { id, .. } => {
 				let n_vars = self.oracles.n_vars(id);
 				let inner_eval_point = eval_point.slice(0..n_vars);
@@ -313,33 +295,7 @@ where
 					eval_point: inner_eval_point,
 					eval,
 				};
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
 				self.claims_queue.push(subclaim);
-			}
-
-			MultilinearPolyVariant::Shifted { .. } => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::Shifted),
-				);
-			}
-
-			MultilinearPolyVariant::Packed { .. } => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::Packed),
-				);
-			}
-
-			MultilinearPolyVariant::Composite(_) => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::CompositeMLE),
-				);
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
@@ -357,8 +313,6 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
 				self.claims_queue.push(subclaim);
 			}
 
@@ -375,7 +329,7 @@ where
 							* coeff.invert().expect("not zero");
 						let subclaim = EvalcheckMultilinearClaim {
 							id: suboracle_id,
-							eval_point: eval_point.clone(),
+							eval_point,
 							eval,
 						};
 						self.claims_queue.push(subclaim);
@@ -387,9 +341,6 @@ where
 						}
 					}
 				};
-
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
 			}
 
 			MultilinearPolyVariant::ZeroPadded(id) => {
@@ -397,97 +348,42 @@ where
 				let inner_n_vars = inner.n_vars();
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 				self.claims_without_evals.push((inner, inner_eval_point));
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
 			}
+			_ => return,
 		};
 	}
 
-	fn complete_proof(&mut self, evalcheck_claim: &EvalcheckMultilinearClaim<F>) -> bool {
-		let id = &evalcheck_claim.id;
-		let eval_point = evalcheck_claim.eval_point.clone();
-		let eval = evalcheck_claim.eval;
-
-		let res = match self.oracles.oracle(*id).variant {
-			MultilinearPolyVariant::Repeating { id, .. } => {
-				let n_vars = self.oracles.n_vars(id);
-				let inner_eval_point = &evalcheck_claim.eval_point[..n_vars];
-				self.finalized_proofs
-					.get(id, inner_eval_point)
-					.map(|(_, subproof)| subproof.clone())
-					.map(move |subproof| {
-						let proof = EvalcheckProof::Repeating(Box::new(subproof));
-						self.finalized_proofs
-							.insert(evalcheck_claim.id, eval_point, (eval, proof));
-					})
-			}
-			MultilinearPolyVariant::Projected(projected) => {
-				let (id, values) = (projected.id(), projected.values());
-				let new_eval_point = {
-					let idx = projected.start_index();
-					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.clone());
-					new_eval_point.extend(eval_point[idx..].to_vec());
-					new_eval_point
-				};
-
-				self.finalized_proofs
-					.get(id, &new_eval_point)
-					.map(|(_, subproof)| subproof.clone())
-					.map(|subproof| {
-						self.finalized_proofs.insert(
-							evalcheck_claim.id,
-							eval_point,
-							(eval, subproof),
-						);
-					})
-			}
-
-			MultilinearPolyVariant::LinearCombination(linear_combination) => linear_combination
-				.polys()
-				.map(|suboracle_id| {
-					self.finalized_proofs
-						.get(suboracle_id, &evalcheck_claim.eval_point)
-						.map(|(eval, subproof)| (*eval, subproof.clone()))
-				})
-				.collect::<Option<Vec<_>>>()
-				.map(|subproofs| {
-					self.finalized_proofs.insert(
-						evalcheck_claim.id,
-						eval_point,
-						(eval, EvalcheckProof::LinearCombination { subproofs }),
-					);
-				}),
-
-			MultilinearPolyVariant::ZeroPadded(inner_id) => {
-				let inner_n_vars = self.oracles.n_vars(inner_id);
-				let inner_eval_point = &evalcheck_claim.eval_point[..inner_n_vars];
-				self.finalized_proofs
-					.get(inner_id, inner_eval_point)
-					.map(|(eval, subproof)| (*eval, subproof.clone()))
-					.map(|(internal_eval, subproof)| {
-						self.finalized_proofs.insert(
-							evalcheck_claim.id,
-							eval_point,
-							(eval, EvalcheckProof::ZeroPadded(internal_eval, Box::new(subproof))),
-						);
-					})
-			}
-
-			_ => unreachable!(),
-		};
-		res.is_some()
-	}
-
-	fn collect_projected_committed(&mut self, evalcheck_claim: EvalcheckMultilinearClaim<F>) {
+	#[instrument(
+		skip_all,
+		name = "EvalcheckProverState::prove_multilinear",
+		level = "debug"
+	)]
+	fn prove_multilinear(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+	) -> Result<EvalcheckProof<F>, Error> {
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
 			eval,
 		} = evalcheck_claim.clone();
 
+		let claim_id = self.claim_to_index.get(id, &eval_point);
+
+		if let Some(claim_id) = claim_id {
+			return Ok(EvalcheckProof::DuplicateClaim(*claim_id));
+		}
+
+		self.claim_to_index
+			.insert(id, eval_point.clone(), self.round_claim_index);
+
+		self.round_claim_index += 1;
+
 		let multilinear = self.oracles.oracle(id);
-		match multilinear.variant {
+
+		let proof = match multilinear.variant {
+			MultilinearPolyVariant::Transparent { .. } => EvalcheckProof::Transparent,
+
 			MultilinearPolyVariant::Committed => {
 				let subclaim = EvalcheckMultilinearClaim {
 					id: multilinear.id,
@@ -496,6 +392,7 @@ where
 				};
 
 				self.committed_eval_claims.push(subclaim);
+				EvalcheckProof::Committed
 			}
 			MultilinearPolyVariant::Repeating { id, .. } => {
 				let n_vars = self.oracles.n_vars(id);
@@ -506,7 +403,8 @@ where
 					eval,
 				};
 
-				self.collect_projected_committed(subclaim);
+				let subproof = self.prove_multilinear(subclaim)?;
+				EvalcheckProof::Repeating(Box::new(subproof))
 			}
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
@@ -523,45 +421,102 @@ where
 					eval_point: new_eval_point.into(),
 					eval,
 				};
-				self.collect_projected_committed(subclaim);
+
+				EvalcheckProof::Projected(Box::new(self.prove_multilinear(subclaim)?))
 			}
-			MultilinearPolyVariant::Shifted { .. }
-			| MultilinearPolyVariant::Packed { .. }
-			| MultilinearPolyVariant::Composite { .. } => {
-				self.projected_bivariate_claims.push(evalcheck_claim)
+			MultilinearPolyVariant::Shifted { .. } => {
+				self.projected_bivariate_claims.push(evalcheck_claim);
+				EvalcheckProof::Shifted
+			}
+			MultilinearPolyVariant::Packed { .. } => {
+				self.projected_bivariate_claims.push(evalcheck_claim);
+				EvalcheckProof::Packed
+			}
+			MultilinearPolyVariant::Composite { .. } => {
+				self.projected_bivariate_claims.push(evalcheck_claim);
+				EvalcheckProof::CompositeMLE
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				for id in linear_combination.polys() {
-					let (eval, _) = self
-						.finalized_proofs
-						.get(id, &eval_point)
-						.expect("finalized_proofs contains all the proofs");
-					let subclaim = EvalcheckMultilinearClaim {
-						id,
-						eval_point: eval_point.clone(),
-						eval: *eval,
-					};
-					self.collect_projected_committed(subclaim);
-				}
+				let n_polys = linear_combination.n_polys();
+
+				let subproofs = match linear_combination
+					.polys()
+					.zip(linear_combination.coefficients())
+					.next()
+				{
+					Some((suboracle_id, coeff)) if n_polys == 1 && !coeff.is_zero() => {
+						let subclaim = if let Some(claim_index) =
+							self.claim_to_index.get(suboracle_id, &eval_point)
+						{
+							(None, EvalcheckProof::DuplicateClaim(*claim_index))
+						} else {
+							let eval = (eval - linear_combination.offset())
+								* coeff.invert().expect("not zero");
+							let subclaim = EvalcheckMultilinearClaim {
+								id: suboracle_id,
+								eval_point,
+								eval,
+							};
+
+							let proof = self.prove_multilinear(subclaim).unwrap();
+
+							(Some(eval), proof)
+						};
+
+						vec![subclaim]
+					}
+					_ => linear_combination
+						.polys()
+						.map(|suboracle_id| {
+							let eval = *self
+								.evals_memoization
+								.get(suboracle_id, &eval_point)
+								.expect("precomputed above");
+
+							let subclaim = if let Some(claim_index) =
+								self.claim_to_index.get(suboracle_id, &eval_point)
+							{
+								(None, EvalcheckProof::DuplicateClaim(*claim_index))
+							} else {
+								let subclaim = EvalcheckMultilinearClaim {
+									id: suboracle_id,
+									eval_point: eval_point.clone(),
+									eval,
+								};
+
+								let proof = self.prove_multilinear(subclaim).unwrap();
+
+								(Some(eval), proof)
+							};
+							Ok(subclaim)
+						})
+						.collect::<Result<Vec<_>, Error>>()?,
+				};
+
+				EvalcheckProof::LinearCombination { subproofs }
 			}
 			MultilinearPolyVariant::ZeroPadded(id) => {
 				let inner_n_vars = self.oracles.n_vars(id);
-				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 
-				let (eval, _) = self
-					.finalized_proofs
-					.get(id, &inner_eval_point)
-					.expect("finalized_proofs contains all the proofs");
+				let inner_eval_point = &eval_point[..inner_n_vars];
+
+				let eval = *self
+					.evals_memoization
+					.get(id, inner_eval_point)
+					.expect("precomputed above");
 
 				let subclaim = EvalcheckMultilinearClaim {
 					id,
-					eval_point,
-					eval: *eval,
+					eval_point: eval_point.clone(),
+					eval,
 				};
-				self.collect_projected_committed(subclaim);
+
+				let subproof = self.prove_multilinear(subclaim)?;
+
+				EvalcheckProof::ZeroPadded(eval, Box::new(subproof))
 			}
-			_ => {}
-		}
+		};
+		Ok(proof)
 	}
 
 	fn projected_bivariate_meta(
@@ -584,7 +539,7 @@ where
 
 	fn process_sumcheck(
 		&mut self,
-		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
 		meta: &ProjectedBivariateMeta,
 		projected: Option<MultilinearExtension<P>>,
 	) -> Result<(), Error> {
@@ -594,12 +549,12 @@ where
 			eval,
 		} = evalcheck_claim;
 
-		match self.oracles.oracle(id).variant {
+		match self.oracles.oracle(*id).variant {
 			MultilinearPolyVariant::Shifted(shifted) => process_shifted_sumcheck(
 				&shifted,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -609,8 +564,8 @@ where
 				self.oracles,
 				&packed,
 				meta,
-				&eval_point,
-				eval,
+				eval_point,
+				*eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
@@ -622,7 +577,7 @@ where
 					meta,
 					&mut self.new_sumchecks_constraints,
 					&composite,
-					eval,
+					*eval,
 				);
 				Ok(())
 			}
@@ -630,6 +585,12 @@ where
 		}
 	}
 
+	/// Function that queries the witness data from the oracle id and evaluation point to find the evaluation of the multilinear
+	#[instrument(
+		skip_all,
+		name = "EvalcheckProverState::make_new_eval_claim",
+		level = "debug"
+	)]
 	fn make_new_eval_claim(
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
