@@ -6,4 +6,8 @@
 //! for readability, used to validate the abstract interfaces and provide algorithmic references
 //! for optimized implementations.
 
+pub mod layer;
 pub mod memory;
+
+pub use layer::CpuLayer;
+pub use memory::CpuMemory;

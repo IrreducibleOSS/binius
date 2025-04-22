@@ -3,6 +3,7 @@
 use std::cell::Cell;
 
 use super::memory::{ComputeMemory, DevSlice};
+use crate::cpu::CpuMemory;
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
@@ -19,6 +20,24 @@ where
 		Self {
 			buffer: Cell::new(Some(buffer)),
 		}
+	}
+
+	pub fn from_ref<'b>(buffer: &'b mut Mem::FSliceMut<'a>) -> BumpAllocator<'b, F, Mem> {
+		let buffer = Mem::slice_mut(buffer, ..);
+		BumpAllocator {
+			buffer: Cell::new(Some(buffer)),
+		}
+	}
+
+	/// Returns the remaining number of elements that can be allocated.
+	pub fn capacity(&self) -> usize {
+		let buffer = self
+			.buffer
+			.take()
+			.expect("buffer is always Some by invariant");
+		let ret = buffer.len();
+		self.buffer.set(Some(buffer));
+		ret
 	}
 
 	/// Allocates a slice of elements.
@@ -48,6 +67,9 @@ where
 		}
 	}
 }
+
+/// Alias for a bump allocator over CPU host memory.
+pub type HostBumpAllocator<'a, F> = BumpAllocator<'a, F, CpuMemory>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
