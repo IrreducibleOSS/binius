@@ -12,8 +12,6 @@ use crate::builder::{
 	upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64,
 };
 
-// TODO: Should we add u8 and u16 as well?
-
 trait UnsignedMulPrimitives {
 	type FP: TowerField;
 	type FPExt: TowerField + ExtensionField<Self::FP>;
@@ -128,16 +126,23 @@ where
 {
 	// TODO: Figure out if we need to create a separate table for this gadget.
 
-	pub fn new(table: &mut TableBuilder, name: impl ToString) -> Self {
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let x_in_bits = array::from_fn(|i| table.add_committed(format!("x_in_bits[{i}]")));
+		let y_in_bits = array::from_fn(|i| table.add_committed(format!("y_in_bits[{i}]")));
+
+		Self::with_inputs(table, x_in_bits, y_in_bits)
+	}
+
+	pub fn with_inputs(
+		table: &mut TableBuilder,
+		x_in_bits: [Col<B1>; BIT_LENGTH],
+		y_in_bits: [Col<B1>; BIT_LENGTH],
+	) -> Self {
 		assert_eq!(FPExt::TOWER_LEVEL, FP::TOWER_LEVEL + 1);
 		assert_eq!(BIT_LENGTH, 1 << FP::TOWER_LEVEL);
 		assert_eq!(BIT_LENGTH, UX::get_bit_length());
 		// These are currently the only bit lengths I've tested
 		assert!(BIT_LENGTH == 32 || BIT_LENGTH == 64);
-
-		table.with_namespace(format!("{}::U{}", name.to_string(), BIT_LENGTH));
-		let x_in_bits = array::from_fn(|i| table.add_committed(format!("x_in_bits[{i}]")));
-		let y_in_bits = array::from_fn(|i| table.add_committed(format!("y_in_bits[{i}]")));
 
 		let x_in = table.add_computed("x_in", pack_fp(x_in_bits));
 		let y_in = table.add_computed("y_in", pack_fp(y_in_bits));
@@ -178,11 +183,13 @@ where
 		}
 	}
 
-	pub fn populate_with_inputs<P>(
+	#[inline]
+	fn populate_internal<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
 		x_vals: impl IntoIterator<Item = FP>,
 		y_vals: impl IntoIterator<Item = FP>,
+		fill_input_bits: bool,
 	) -> Result<()>
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<FP>,
@@ -221,11 +228,13 @@ where
 			set_packed_slice(&mut out_high, i, res_high);
 
 			for bit_idx in 0..BIT_LENGTH {
-				if UX::is_bit_set_at(x, bit_idx) {
-					set_packed_slice(&mut x_in_bits[bit_idx], i, B1::ONE);
-				}
-				if UX::is_bit_set_at(y, bit_idx) {
-					set_packed_slice(&mut y_in_bits[bit_idx], i, B1::ONE);
+				if fill_input_bits {
+					if UX::is_bit_set_at(x, bit_idx) {
+						set_packed_slice(&mut x_in_bits[bit_idx], i, B1::ONE);
+					}
+					if UX::is_bit_set_at(y, bit_idx) {
+						set_packed_slice(&mut y_in_bits[bit_idx], i, B1::ONE);
+					}
 				}
 				if UX::is_bit_set_at(res_low, bit_idx) {
 					set_packed_slice(&mut out_low_bits[bit_idx], i, B1::ONE);
@@ -238,6 +247,30 @@ where
 
 		Ok(())
 	}
+
+	pub fn populate_with_inputs<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = FP>,
+		y_vals: impl IntoIterator<Item = FP>,
+	) -> Result<()>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<FP>,
+	{
+		self.populate_internal(index, x_vals, y_vals, true)
+	}
+
+	pub fn populate<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = FP>,
+		y_vals: impl IntoIterator<Item = FP>,
+	) -> Result<()>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<FP>,
+	{
+		self.populate_internal(index, x_vals, y_vals, false)
+	}
 }
 
 #[derive(Debug)]
@@ -248,17 +281,43 @@ pub struct MulUU32 {
 	pub y_in: Col<B32>,
 	pub out_high: Col<B32>,
 	pub out_low: Col<B32>,
+	pub out_high_bits: [Col<B1>; 32],
+	pub out_low_bits: [Col<B1>; 32],
 }
 
 impl MulUU32 {
-	pub fn new(table: &mut TableBuilder, name: impl ToString) -> Self {
-		let inner = Mul::new(table, name);
+	/// Constructor for `u32` multiplication gadget that creates the columns for inputs.
+	/// You must call `MulUU32::populate` to fill the witness data.
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let inner = Mul::new(table);
 
 		Self {
 			x_in: inner.x_in,
 			y_in: inner.y_in,
 			out_high: inner.out_high,
 			out_low: inner.out_low,
+			out_high_bits: inner.out_high_bits,
+			out_low_bits: inner.out_low_bits,
+			inner,
+		}
+	}
+
+	/// Constructor for `u32` multiplication gadget that uses the provided columns for inputs.
+	/// You must call `MulUU32::populate_with_inputs` to fill the witness data.
+	pub fn with_inputs(
+		table: &mut TableBuilder,
+		x_in_bits: [Col<B1>; 32],
+		y_in_bits: [Col<B1>; 32],
+	) -> Self {
+		let inner = Mul::with_inputs(table, x_in_bits, y_in_bits);
+
+		Self {
+			x_in: inner.x_in,
+			y_in: inner.y_in,
+			out_high: inner.out_high,
+			out_low: inner.out_low,
+			out_high_bits: inner.out_high_bits,
+			out_low_bits: inner.out_low_bits,
 			inner,
 		}
 	}
@@ -274,6 +333,18 @@ impl MulUU32 {
 	{
 		self.inner.populate_with_inputs(index, x_vals, y_vals)
 	}
+
+	pub fn populate<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = B32>,
+		y_vals: impl IntoIterator<Item = B32>,
+	) -> Result<()>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		self.inner.populate(index, x_vals, y_vals)
+	}
 }
 
 #[derive(Debug)]
@@ -284,17 +355,43 @@ pub struct MulUU64 {
 	pub y_in: Col<B64>,
 	pub out_high: Col<B64>,
 	pub out_low: Col<B64>,
+	pub out_high_bits: [Col<B1>; 64],
+	pub out_low_bits: [Col<B1>; 64],
 }
 
 impl MulUU64 {
-	pub fn new(table: &mut TableBuilder, name: impl ToString) -> Self {
-		let inner = Mul::new(table, name);
+	/// Constructor for `u64` multiplication gadget that creates the columns for inputs.
+	/// You must call `MulUU64::populate` to fill the witness data.
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let inner = Mul::new(table);
 
 		Self {
 			x_in: inner.x_in,
 			y_in: inner.y_in,
 			out_high: inner.out_high,
 			out_low: inner.out_low,
+			out_high_bits: inner.out_high_bits,
+			out_low_bits: inner.out_low_bits,
+			inner,
+		}
+	}
+
+	/// Constructor for `u64` multiplication gadget that uses the provided columns for inputs.
+	/// You must call `MulUU64::populate_with_inputs` to fill the witness data.
+	pub fn with_inputs(
+		table: &mut TableBuilder,
+		x_in_bits: [Col<B1>; 64],
+		y_in_bits: [Col<B1>; 64],
+	) -> Self {
+		let inner = Mul::with_inputs(table, x_in_bits, y_in_bits);
+
+		Self {
+			x_in: inner.x_in,
+			y_in: inner.y_in,
+			out_high: inner.out_high,
+			out_low: inner.out_low,
+			out_high_bits: inner.out_high_bits,
+			out_low_bits: inner.out_low_bits,
 			inner,
 		}
 	}
@@ -309,6 +406,18 @@ impl MulUU64 {
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B64>,
 	{
 		self.inner.populate_with_inputs(index, x_vals, y_vals)
+	}
+
+	pub fn populate<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = B64>,
+		y_vals: impl IntoIterator<Item = B64>,
+	) -> Result<()>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B64>,
+	{
+		self.inner.populate(index, x_vals, y_vals)
 	}
 }
 

@@ -15,9 +15,9 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 #[test]
 fn test_muluu64() {
 	let mut cs = ConstraintSystem::new();
-	let mut table = cs.add_table("Test");
+	let mut table = cs.add_table("Testu64");
 
-	let muluu = MulUU64::new(&mut table, "64bit");
+	let muluu = MulUU64::new(&mut table);
 
 	let table_id = table.id();
 
@@ -69,8 +69,6 @@ fn test_muluu64() {
 	)
 	.unwrap();
 
-	// TODO: ADD Test here to query witness data for correct high and low outputs.
-
 	binius_core::constraint_system::verify::<
 		OptimalUnderlier128b,
 		CanonicalTowerFamily,
@@ -84,9 +82,9 @@ fn test_muluu64() {
 #[test]
 fn test_muluu32() {
 	let mut cs = ConstraintSystem::new();
-	let mut table = cs.add_table("Test");
+	let mut table = cs.add_table("Testu32");
 
-	let muluu = MulUU32::new(&mut table, "32bit");
+	let muluu = MulUU32::new(&mut table);
 
 	let table_id = table.id();
 
@@ -137,8 +135,6 @@ fn test_muluu32() {
 		&binius_hal::make_portable_backend(),
 	)
 	.unwrap();
-
-	// TODO: ADD Test here to query witness data for correct high and low outputs.
 
 	binius_core::constraint_system::verify::<
 		OptimalUnderlier128b,
