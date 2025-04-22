@@ -266,22 +266,21 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// - `base`: The base to exponentiate. The field used in exponentiation will be `FSub`
 	///
 	/// ## Preconditions
-	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
+	/// * `pow_bits.len()` must be less than or equal to the width of the field `FSub`
 	///
 	/// ## NOTE
 	/// * The witness generation for the return column will be done inside gkr_gpa *
-	pub fn add_static_exp<FSub>(
+	pub fn add_static_exp<FExpBase>(
 		&mut self,
 		name: impl ToString,
 		pow_bits: &[Col<B1>],
 		base: F,
-	) -> Col<FSub>
+	) -> Col<FExpBase>
 	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
+		FExpBase: TowerField,
+		F: ExtensionField<FExpBase>,
 	{
-		assert!(pow_bits.len().is_power_of_two());
-		assert!(pow_bits.len() <= 1 << (FSub::TOWER_LEVEL));
+		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
 		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
@@ -291,7 +290,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			ColumnDef::StaticExp {
 				bit_cols,
 				base,
-				base_tower_level: FSub::TOWER_LEVEL,
+				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
 	}
@@ -304,22 +303,21 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be `FSub`
 	///
 	/// ## Preconditions
-	/// * `pow_bits.len()` must be a power of 2 and less than or equal to the width of field `FSub`
+	/// * `pow_bits.len()` must be less than or equal to the width of field `FSub`
 	///
 	/// ## NOTE
 	/// * The witness generation for the return column will be done inside gkr_gpa *
-	pub fn add_dynamic_exp<FSub>(
+	pub fn add_dynamic_exp<FExpBase>(
 		&mut self,
 		name: impl ToString,
 		pow_bits: &[Col<B1>],
-		base: Col<FSub>,
-	) -> Col<FSub>
+		base: Col<FExpBase>,
+	) -> Col<FExpBase>
 	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
+		FExpBase: TowerField,
+		F: ExtensionField<FExpBase>,
 	{
-		assert!(pow_bits.len().is_power_of_two());
-		assert!(pow_bits.len() <= (1 << FSub::TOWER_LEVEL));
+		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
 		let namespaced_name = self.namespaced_name(name);
 		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
@@ -328,7 +326,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			ColumnDef::DynamicExp {
 				bit_cols,
 				base: base.id().table_index,
-				base_tower_level: FSub::TOWER_LEVEL,
+				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
 	}

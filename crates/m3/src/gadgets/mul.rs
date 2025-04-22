@@ -1,12 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, marker::PhantomData, ops::MulAssign};
+use std::{array, marker::PhantomData};
 
 use anyhow::Result;
 use binius_field::{
 	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
 	PackedField, TowerField,
 };
+use binius_maybe_rayon::prelude::*;
 
 use crate::builder::{
 	upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64,
@@ -14,7 +15,7 @@ use crate::builder::{
 
 trait UnsignedMulPrimitives {
 	type FP: TowerField;
-	type FPExt: TowerField + ExtensionField<Self::FP>;
+	type FExpBase: TowerField + ExtensionField<Self::FP>;
 	fn get_bit_length() -> usize;
 
 	// Does primitive mul of x*y = z => (z_high, z_low)
@@ -22,15 +23,15 @@ trait UnsignedMulPrimitives {
 
 	fn is_bit_set_at(a: Self::FP, index: usize) -> bool;
 
-	fn get_generator() -> Self::FPExt;
+	fn get_generator() -> Self::FExpBase;
 
 	// Returns the generator shifted by the bit length of `Self::FP`.
-	fn get_shifted_generator() -> Self::FPExt;
+	fn get_shifted_generator() -> Self::FExpBase;
 }
 
 impl UnsignedMulPrimitives for u32 {
 	type FP = B32;
-	type FPExt = B64;
+	type FExpBase = B64;
 
 	fn get_bit_length() -> usize {
 		32
@@ -52,13 +53,17 @@ impl UnsignedMulPrimitives for u32 {
 	}
 
 	fn get_shifted_generator() -> B64 {
-		B64::MULTIPLICATIVE_GENERATOR.pow(1 << Self::get_bit_length())
+		let mut g = B64::MULTIPLICATIVE_GENERATOR;
+		for _ in 0..Self::get_bit_length() {
+			g *= g
+		}
+		g
 	}
 }
 
 impl UnsignedMulPrimitives for u64 {
 	type FP = B64;
-	type FPExt = B128;
+	type FExpBase = B128;
 
 	fn get_bit_length() -> usize {
 		64
@@ -75,30 +80,25 @@ impl UnsignedMulPrimitives for u64 {
 		((a.val() >> index) & 1) == 1
 	}
 
-	fn get_generator() -> Self::FPExt {
+	fn get_generator() -> Self::FExpBase {
 		B128::MULTIPLICATIVE_GENERATOR
 	}
 
 	fn get_shifted_generator() -> B128 {
-		let base = Self::get_generator();
-		let exp: u128 = 1 << Self::get_bit_length();
-		let mut res = B128::one();
-		for i in (0..128).rev() {
-			res = res.square();
-			if ((exp >> i) & 1) == 1 {
-				res.mul_assign(base)
-			}
+		let mut g = Self::get_generator();
+		for _ in 0..Self::get_bit_length() {
+			g *= g
 		}
-		res
+		g
 	}
 }
 
 // Internally used to have deduplicated implementations.
 #[derive(Debug)]
 struct Mul<
-	FPExt: TowerField,
+	FExpBase: TowerField,
 	FP: TowerField,
-	UX: UnsignedMulPrimitives<FP = FP, FPExt = FPExt>,
+	UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
 	const BIT_LENGTH: usize,
 > {
 	x_in_bits: [Col<B1>; BIT_LENGTH],
@@ -111,24 +111,24 @@ struct Mul<
 	pub out_high: Col<FP>,
 	pub out_low: Col<FP>,
 
-	_marker: PhantomData<(FPExt, UX)>,
+	_marker: PhantomData<(FExpBase, UX)>,
 }
 
 impl<
-		FPExt: TowerField,
+		FExpBase: TowerField,
 		FP: TowerField,
-		UX: UnsignedMulPrimitives<FP = FP, FPExt = FPExt>,
+		UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
 		const BIT_LENGTH: usize,
-	> Mul<FPExt, FP, UX, BIT_LENGTH>
+	> Mul<FExpBase, FP, UX, BIT_LENGTH>
 where
-	FPExt: ExtensionField<FP> + ExtensionField<B1>,
-	B128: ExtensionField<FPExt> + ExtensionField<FP> + ExtensionField<B1>,
+	FExpBase: ExtensionField<FP> + ExtensionField<B1>,
+	B128: ExtensionField<FExpBase> + ExtensionField<FP> + ExtensionField<B1>,
 {
 	// TODO: Figure out if we need to create a separate table for this gadget.
 
 	pub fn new(table: &mut TableBuilder) -> Self {
-		let x_in_bits = array::from_fn(|i| table.add_committed(format!("x_in_bits[{i}]")));
-		let y_in_bits = array::from_fn(|i| table.add_committed(format!("y_in_bits[{i}]")));
+		let x_in_bits = table.add_committed_multiple("x_in_bits");
+		let y_in_bits = table.add_committed_multiple("y_in_bits");
 
 		Self::with_inputs(table, x_in_bits, y_in_bits)
 	}
@@ -138,7 +138,7 @@ where
 		x_in_bits: [Col<B1>; BIT_LENGTH],
 		y_in_bits: [Col<B1>; BIT_LENGTH],
 	) -> Self {
-		assert_eq!(FPExt::TOWER_LEVEL, FP::TOWER_LEVEL + 1);
+		assert_eq!(FExpBase::TOWER_LEVEL, FP::TOWER_LEVEL + 1);
 		assert_eq!(BIT_LENGTH, 1 << FP::TOWER_LEVEL);
 		assert_eq!(BIT_LENGTH, UX::get_bit_length());
 		// These are currently the only bit lengths I've tested
@@ -150,18 +150,18 @@ where
 		let generator = UX::get_generator().into();
 		let generator_pow_bit_len = UX::get_shifted_generator().into();
 
-		let g_pow_x: Col<FPExt> = table.add_static_exp("g^x", &x_in_bits, generator);
-		let g_pow_xy: Col<FPExt> = table.add_dynamic_exp("(g^x)^y", &y_in_bits, g_pow_x);
+		let g_pow_x = table.add_static_exp::<FExpBase>("g^x", &x_in_bits, generator);
+		let g_pow_xy = table.add_dynamic_exp::<FExpBase>("(g^x)^y", &y_in_bits, g_pow_x);
 
-		let out_high_bits = array::from_fn(|i| table.add_committed(format!("out_high[{i}]")));
-		let out_low_bits = array::from_fn(|i| table.add_committed(format!("out_low[{i}]")));
+		let out_high_bits = table.add_committed_multiple("out_high");
+		let out_low_bits = table.add_committed_multiple("out_low");
 
 		let out_high = table.add_computed("out_high", pack_fp(out_high_bits));
 		let out_low = table.add_computed("out_low", pack_fp(out_low_bits));
 
-		let g_pow_out_low: Col<FPExt> =
+		let g_pow_out_low: Col<FExpBase> =
 			table.add_static_exp("g^(out_low)", &out_low_bits, generator);
-		let g_pow_out_high: Col<FPExt> = table.add_static_exp(
+		let g_pow_out_high: Col<FExpBase> = table.add_static_exp(
 			"(g^(2^BIT_LENGTH))^(out_high)",
 			&out_high_bits,
 			generator_pow_bit_len,

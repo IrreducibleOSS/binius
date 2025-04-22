@@ -1,21 +1,27 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::array;
+use std::iter::repeat_with;
 
 use anyhow::Result;
-use binius_circuits::{
-	arithmetic::mul,
-	builder::{types::U, ConstraintSystemBuilder},
+use binius_circuits::builder::types::U;
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, Field, PackedExtension,
+	PackedFieldIndexable,
 };
-use binius_core::{
-	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
-};
-use binius_field::BinaryField1b;
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_m3::{
+	builder::{
+		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
+		B128, B32,
+	},
+	gadgets::mul::MulUU32,
+};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
+use rand::thread_rng;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -26,6 +32,44 @@ struct Args {
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
+}
+
+#[derive(Debug)]
+pub struct MulTable {
+	table_id: TableId,
+	mul_table: MulUU32,
+}
+
+impl MulTable {
+	pub fn new(cs: &mut ConstraintSystem) -> Self {
+		let mut table = cs.add_table("Mulu32 Example");
+		let mul_table = MulUU32::new(&mut table);
+
+		Self {
+			table_id: table.id(),
+			mul_table,
+		}
+	}
+}
+
+impl<P> TableFiller<P> for MulTable
+where
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+{
+	type Event = (B32, B32);
+
+	fn id(&self) -> TableId {
+		self.table_id
+	}
+
+	fn fill<'a>(
+		&'a self,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
+		witness: &'a mut TableWitnessSegment<P>,
+	) -> Result<()> {
+		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.cloned().unzip();
+		self.mul_table.populate_with_inputs(witness, x_vals, y_vals)
+	}
 }
 
 fn main() -> Result<()> {
@@ -44,34 +88,27 @@ fn main() -> Result<()> {
 	let log_n_muls = log2_ceil_usize(args.n_muls as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let mut cs = ConstraintSystem::new();
+	let table = MulTable::new(&mut cs);
+
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![1 << log_n_muls],
+	};
+
+	let mut rng = thread_rng();
+	let events = repeat_with(|| (B32::random(&mut rng), B32::random(&mut rng)))
+		.take(1 << log_n_muls)
+		.collect::<Vec<_>>();
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a: [OracleId; 32] = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-			&mut builder,
-			format!("in_a_{}", i),
-			log_n_muls,
-		)
-		.unwrap()
-	});
-	let in_b: [OracleId; 32] = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-			&mut builder,
-			format!("in_b_{}", i),
-			log_n_muls,
-		)
-		.unwrap()
-	});
-
-	mul::u32_mul::<22>(&mut builder, "u32_mul", in_a, in_b).unwrap();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+	witness.fill_table_sequential(&table, &events)?;
 
 	drop(trace_gen_scope);
 
-	let witness = builder
-		.take_witness()
-		.expect("builder created with witness");
-	let constraint_system = builder.build()?;
+	let constraint_system = cs.compile(&statement)?;
+	let witness = witness.into_multilinear_extension_index();
 
 	let backend = make_portable_backend();
 
