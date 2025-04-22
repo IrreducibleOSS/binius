@@ -319,13 +319,8 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 
 	let coset_bits = 32 - coset.leading_zeros() as usize;
 
-	// The domain size should be at least large enough to represent the given coset;
-	// on the lower end, there is a fallback for data.len() == 1 which reduces to
-	// a forward/inverse NTT on the [PB; 2], which demands log_domain_size of
-	// at least min(PB::LOG_WIDTH + 1 - log_batch_size, 0).
-	// Not enforcing this bound makes some twiddle values unavailable.
-	let log_required_domain_size =
-		(log_y + coset_bits).max((PB::LOG_WIDTH + 1).saturating_sub(log_x));
+	// The domain size should be at least large enough to represent the given coset.
+	let log_required_domain_size = log_y + coset_bits;
 	if log_required_domain_size > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size,

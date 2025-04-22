@@ -431,38 +431,38 @@ where
 	}
 }
 
-fn sample_bits_reader<Reader: Buf>(mut reader: Reader, bits: usize) -> usize {
-	let bits = bits.min(usize::BITS as usize);
+fn sample_bits_reader<Reader: Buf>(mut reader: Reader, bits: usize) -> u32 {
+	let bits = bits.min(u32::BITS as usize);
 
-	let bytes_to_sample = bits.div_ceil(8);
+	let bytes_to_sample: usize = std::mem::size_of::<u32>();
 
-	let mut bytes = [0u8; std::mem::size_of::<usize>()];
+	let mut bytes = [0u8; std::mem::size_of::<u32>()];
 
 	reader.copy_to_slice(&mut bytes[..bytes_to_sample]);
 
-	let unmasked = usize::from_le_bytes(bytes);
-	let mask = 1usize.checked_shl(bits as u32);
+	let unmasked = u32::from_le_bytes(bytes);
+	let mask = 1u32.checked_shl(bits as u32);
 	let mask = match mask {
 		Some(x) => x - 1,
-		None => usize::MAX,
+		None => u32::MAX,
 	};
 	mask & unmasked
 }
 
-impl<Challenger_> CanSampleBits<usize> for VerifierTranscript<Challenger_>
+impl<Challenger_> CanSampleBits<u32> for VerifierTranscript<Challenger_>
 where
 	Challenger_: Challenger,
 {
-	fn sample_bits(&mut self, bits: usize) -> usize {
+	fn sample_bits(&mut self, bits: usize) -> u32 {
 		sample_bits_reader(self.combined.challenger.sampler(), bits)
 	}
 }
 
-impl<Challenger_> CanSampleBits<usize> for ProverTranscript<Challenger_>
+impl<Challenger_> CanSampleBits<u32> for ProverTranscript<Challenger_>
 where
 	Challenger_: Challenger,
 {
-	fn sample_bits(&mut self, bits: usize) -> usize {
+	fn sample_bits(&mut self, bits: usize) -> u32 {
 		sample_bits_reader(self.combined.challenger.sampler(), bits)
 	}
 }
