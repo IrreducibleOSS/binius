@@ -740,9 +740,9 @@ impl<F: Field> ArithCircuit<F> {
 							expected: *index,
 						}
 					})?;
-					return Ok(ArithCircuitStep::Var(new_index));
+					Ok(ArithCircuitStep::Var(new_index))
 				} else {
-					return Ok(step.clone());
+					Ok(*step)
 				}
 			})
 			.collect::<Result<Vec<_>, _>>()?;
@@ -810,7 +810,7 @@ impl<F: Field> From<&ArithExpr<F>> for ArithCircuit<F> {
 			}
 		}
 
-		ArithCircuit { steps }
+		Self { steps }
 	}
 }
 
