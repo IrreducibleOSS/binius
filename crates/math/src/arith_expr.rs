@@ -5,16 +5,12 @@ use std::{
 	collections::{HashMap, HashSet},
 	fmt::{self, Display},
 	iter::{Product, Sum},
-	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 	sync::Arc,
 };
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
-use bytes::{Buf, BufMut};
-use stackalloc::stackalloc_with_default;
 
 use super::error::Error;
 

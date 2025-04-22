@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{collections::HashMap, fmt::Debug, mem::MaybeUninit, sync::Arc};
+use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{
@@ -129,6 +129,7 @@ fn convert_circuit<F: Field>(
 	let ret = convert_step(expr.steps().len() - 1, expr.steps(), &mut steps, &mut steps_mapping);
 	(steps, ret)
 }
+
 /// Input of the circuit calculation step
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CircuitNode {
