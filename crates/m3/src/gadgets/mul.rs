@@ -7,7 +7,6 @@ use binius_field::{
 	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
 	PackedField, TowerField,
 };
-use binius_maybe_rayon::prelude::*;
 
 use crate::builder::{
 	upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64,
