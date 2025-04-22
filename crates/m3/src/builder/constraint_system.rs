@@ -287,7 +287,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|zero_constraint| Constraint {
 							name: zero_constraint.name.clone(),
-							composition: zero_constraint.expr.clone(),
+							composition: (&zero_constraint.expr).into(),
 							predicate: ConstraintPredicate::Zero,
 						})
 						.collect::<Vec<_>>();

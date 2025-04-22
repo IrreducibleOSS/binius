@@ -182,14 +182,14 @@ mod tests {
 
 	#[test]
 	fn tests_expr() {
-		let expr = ArithExpr::Add(
+		let expr = ArithExpr::Mul(
 			Arc::new(ArithExpr::Var(0)),
-			Arc::new(ArithExpr::Mul(
+			Arc::new(ArithExpr::Add(
 				Arc::new(ArithExpr::Var(1)),
 				Arc::new(ArithExpr::Const(BinaryField1b::ONE)),
 			)),
 		);
-		let circuit = ArithCircuitPoly::new(expr);
+		let circuit = ArithCircuitPoly::new(&expr);
 
 		let composition = IndexComposition {
 			n_vars: 3,
@@ -199,9 +199,9 @@ mod tests {
 
 		assert_eq!(
 			(&composition as &dyn CompositionPoly<BinaryField1b>).expression(),
-			ArithExpr::Add(
+			ArithExpr::Mul(
 				Arc::new(ArithExpr::Var(1)),
-				Arc::new(ArithExpr::Mul(
+				Arc::new(ArithExpr::Add(
 					Arc::new(ArithExpr::Var(2)),
 					Arc::new(ArithExpr::Const(BinaryField1b::ONE)),
 				)),

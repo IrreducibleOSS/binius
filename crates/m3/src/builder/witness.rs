@@ -1048,7 +1048,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
 		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
-		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
+		ArithCircuitPoly::new(expr.expr()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
 

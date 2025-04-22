@@ -5,16 +5,12 @@ use std::{
 	collections::{HashMap, HashSet},
 	fmt::{self, Display},
 	iter::{Product, Sum},
-	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 	sync::Arc,
 };
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
-use bytes::{Buf, BufMut};
-use stackalloc::stackalloc_with_default;
 
 use super::error::Error;
 
@@ -129,7 +125,7 @@ impl<F: Field> ArithExpr<F> {
 				.get(var)
 				.copied()
 				.ok_or_else(|| Error::IncorrectArgumentLength {
-					arg: "subset".to_string(),
+					arg: "indices".to_string(),
 					expected: var,
 				})
 		}
@@ -615,55 +611,13 @@ impl<F: Field> Product for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> SerializeBytes for ArithExpr<F> {
-	fn serialize(
-		&self,
-		write_buf: impl BufMut,
-		mode: SerializationMode,
-	) -> Result<(), SerializationError> {
-		/// Return the upper bound on the number of steps needed to serialize the expression.
-		fn estimate_steps<F: Field>(expr: &ArithExpr<F>) -> usize {
-			match expr {
-				ArithExpr::Const(_) => 1,
-				ArithExpr::Var(_) => 0, // variables do not represent a separate step
-				ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
-					1 + estimate_steps(left) + estimate_steps(right)
-				}
-				ArithExpr::Pow(base, _) => 1 + estimate_steps(base),
-			}
-		}
-
-		let steps_bound = estimate_steps(self);
-		stackalloc_with_default::<ArithCircuitStep<F>, _, _>(steps_bound, |mut steps_buf| {
-			let circuit = ArithCircuit::from_expr(self, &mut steps_buf);
-			circuit.serialize(write_buf, mode)
-		})
-	}
-}
-
-impl<F: Field> DeserializeBytes for ArithExpr<F> {
-	fn deserialize(
-		read_buf: impl Buf,
-		mode: SerializationMode,
-	) -> Result<Self, SerializationError> {
-		let circuit = ArithCircuit::<F, Vec<ArithCircuitStep<F>>>::deserialize(read_buf, mode)?;
-		let expr = circuit.to_expr();
-		Ok(expr)
-	}
-}
-
-#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
-enum CircuitArg {
-	Var(usize),
-	Step(usize),
-}
-
-#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
-enum ArithCircuitStep<F: Field> {
-	Add(CircuitArg, CircuitArg),
-	Mul(CircuitArg, CircuitArg),
-	Pow(CircuitArg, u64),
+#[derive(Clone, Copy, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
+pub enum ArithCircuitStep<F: Field> {
+	Add(usize, usize),
+	Mul(usize, usize),
+	Pow(usize, u64),
 	Const(F),
+	Var(usize),
 }
 
 impl<F: Field> Default for ArithCircuitStep<F> {
@@ -675,161 +629,230 @@ impl<F: Field> Default for ArithCircuitStep<F> {
 /// A simple circuit representation of an arithmetic expression.
 /// We use this representation as a temporary object for serialization/deserialization to
 /// ensure that common sub-expressions are correctly desewrialized into the same `Arc` instance.
-#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
-struct ArithCircuit<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> {
-	steps: Data,
-	_pd: PhantomData<F>,
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
+pub struct ArithCircuit<F: Field> {
+	steps: Vec<ArithCircuitStep<F>>,
 }
 
-impl<F: Field, Data: AsRef<[ArithCircuitStep<F>]>> ArithCircuit<F, Data> {
-	/// Constructs a new `ArithCircuit` from the given expression and a buffer for the steps.
-	/// `data` must be large enough to hold all the steps of the expression.
-	fn from_expr<'a>(
-		expr: &ArithExpr<F>,
-		data: &'a mut Data,
-	) -> ArithCircuit<F, &'a [ArithCircuitStep<F>]>
+impl<F: Field> ArithCircuit<F> {
+	/// Steps of the circuit.
+	pub fn steps(&self) -> &[ArithCircuitStep<F>] {
+		&self.steps
+	}
+
+	pub fn degree(&self) -> usize {
+		fn step_degree<F: Field>(step: usize, steps: &[ArithCircuitStep<F>]) -> usize {
+			match steps[step] {
+				ArithCircuitStep::Const(_) => 0,
+				ArithCircuitStep::Var(_) => 1,
+				ArithCircuitStep::Add(left, right) => {
+					step_degree(left, steps).max(step_degree(right, steps))
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					step_degree(left, steps) + step_degree(right, steps)
+				}
+				ArithCircuitStep::Pow(base, exp) => step_degree(base, steps) * (exp as usize),
+			}
+		}
+
+		step_degree(self.steps.len() - 1, &self.steps)
+	}
+
+	pub fn n_vars(&self) -> usize {
+		self.steps
+			.iter()
+			.map(|step| {
+				if let ArithCircuitStep::Var(index) = step {
+					*index + 1
+				} else {
+					0
+				}
+			})
+			.max()
+			.unwrap_or(0)
+	}
+
+	pub fn binary_tower_level(&self) -> usize
 	where
-		Data: AsMut<[ArithCircuitStep<F>]>,
+		F: TowerField,
 	{
-		let mut node_to_index = HashMap::new();
-
-		fn visit_node<F: Field>(
-			node: &Arc<ArithExpr<F>>,
-			node_to_index: &mut HashMap<*const ArithExpr<F>, usize>,
-			steps: &mut [ArithCircuitStep<F>],
-			current_len: &mut usize,
-		) -> CircuitArg {
-			if let Some(index) = node_to_index.get(&Arc::as_ptr(node)) {
-				return CircuitArg::Step(*index);
-			}
-
-			match &**node {
-				ArithExpr::Const(value) => {
-					let step = ArithCircuitStep::Const(*value);
-					steps[*current_len] = step;
-					node_to_index.insert(Arc::as_ptr(node), *current_len);
-					*current_len += 1;
-
-					CircuitArg::Step(*current_len - 1)
+		self.steps
+			.iter()
+			.map(|step| {
+				if let ArithCircuitStep::Const(value) = step {
+					value.min_tower_level()
+				} else {
+					0
 				}
-				ArithExpr::Var(index) => CircuitArg::Var(*index),
-				ArithExpr::Add(left, right) => {
-					let left = visit_node(left, node_to_index, steps, current_len);
-					let right = visit_node(right, node_to_index, steps, current_len);
-					let step = ArithCircuitStep::Add(left, right);
-					steps[*current_len] = step;
-					node_to_index.insert(Arc::as_ptr(node), *current_len);
-					*current_len += 1;
+			})
+			.max()
+			.unwrap_or(0)
+	}
 
-					CircuitArg::Step(*current_len - 1)
-				}
-				ArithExpr::Mul(left, right) => {
-					let left = visit_node(left, node_to_index, steps, current_len);
-					let right = visit_node(right, node_to_index, steps, current_len);
-					let step = ArithCircuitStep::Mul(left, right);
-					steps[*current_len] = step;
-					node_to_index.insert(Arc::as_ptr(node), *current_len);
-					*current_len += 1;
-
-					CircuitArg::Step(*current_len - 1)
-				}
-				ArithExpr::Pow(base, exp) => {
-					let base = visit_node(base, node_to_index, steps, current_len);
-					let step = ArithCircuitStep::Pow(base, *exp);
-					steps[*current_len] = step;
-					node_to_index.insert(Arc::as_ptr(node), *current_len);
-					*current_len += 1;
-
-					CircuitArg::Step(*current_len - 1)
-				}
-			}
-		}
-
-		let mut current_len = 0;
-		match expr {
-			ArithExpr::Const(c) => {
-				data.as_mut()[0] = ArithCircuitStep::Const(*c);
-				current_len = 1;
-			}
-			ArithExpr::Var(_) => {
-				data.as_mut()[0] = ArithCircuitStep::Const(F::ZERO);
-				current_len = 1;
-			}
-			ArithExpr::Add(left, right) => {
-				let left = visit_node(left, &mut node_to_index, data.as_mut(), &mut current_len);
-				let right = visit_node(right, &mut node_to_index, data.as_mut(), &mut current_len);
-				data.as_mut()[current_len] = ArithCircuitStep::Add(left, right);
-				current_len += 1;
-			}
-			ArithExpr::Mul(left, right) => {
-				let left = visit_node(left, &mut node_to_index, data.as_mut(), &mut current_len);
-				let right = visit_node(right, &mut node_to_index, data.as_mut(), &mut current_len);
-				data.as_mut()[current_len] = ArithCircuitStep::Mul(left, right);
-				current_len += 1;
-			}
-			ArithExpr::Pow(base, exp) => {
-				let base = visit_node(base, &mut node_to_index, data.as_mut(), &mut current_len);
-				data.as_mut()[current_len] = ArithCircuitStep::Pow(base, *exp);
-				current_len += 1;
-			}
-		}
-
+	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithCircuit<FTgt> {
 		ArithCircuit {
-			steps: &data.as_mut()[..current_len],
-			_pd: PhantomData,
+			steps: self
+				.steps
+				.iter()
+				.map(|step| match step {
+					ArithCircuitStep::Const(value) => ArithCircuitStep::Const((*value).into()),
+					ArithCircuitStep::Var(index) => ArithCircuitStep::Var(*index),
+					ArithCircuitStep::Add(left, right) => ArithCircuitStep::Add(*left, *right),
+					ArithCircuitStep::Mul(left, right) => ArithCircuitStep::Mul(*left, *right),
+					ArithCircuitStep::Pow(base, exp) => ArithCircuitStep::Pow(*base, *exp),
+				})
+				.collect(),
 		}
 	}
 
-	/// Converts the circuit back to an expression.
-	fn to_expr(&self) -> ArithExpr<F> {
-		let root = stackalloc_with_default::<Option<Arc<ArithExpr<F>>>, _, _>(
-			self.steps.as_ref().len(),
-			|cached_exrs| {
-				fn visit_arg<F: Field>(
-					arg: &CircuitArg,
-					cached_exrs: &mut [Option<Arc<ArithExpr<F>>>],
-					steps: &[ArithCircuitStep<F>],
-				) -> Arc<ArithExpr<F>> {
-					match arg {
-						CircuitArg::Var(index) => Arc::new(ArithExpr::Var(*index)),
-						CircuitArg::Step(index) => visit_step(*index, cached_exrs, steps),
+	pub fn try_convert_field<FTgt: Field + TryFrom<F>>(
+		&self,
+	) -> Result<ArithCircuit<FTgt>, <FTgt as TryFrom<F>>::Error> {
+		let steps = self
+			.steps
+			.iter()
+			.map(|step| -> Result<ArithCircuitStep<FTgt>, <FTgt as TryFrom<F>>::Error> {
+				let result = match step {
+					ArithCircuitStep::Const(value) => {
+						ArithCircuitStep::Const(FTgt::try_from(*value)?)
 					}
+					ArithCircuitStep::Var(index) => ArithCircuitStep::Var(*index),
+					ArithCircuitStep::Add(left, right) => ArithCircuitStep::Add(*left, *right),
+					ArithCircuitStep::Mul(left, right) => ArithCircuitStep::Mul(*left, *right),
+					ArithCircuitStep::Pow(base, exp) => ArithCircuitStep::Pow(*base, *exp),
+				};
+				Ok(result)
+			})
+			.collect::<Result<Vec<_>, _>>()?;
+
+		Ok(ArithCircuit { steps })
+	}
+
+	pub fn remap_vars(&self, indices: &[usize]) -> Result<Self, Error> {
+		let steps = self
+			.steps
+			.iter()
+			.map(|step| -> Result<ArithCircuitStep<F>, Error> {
+				if let ArithCircuitStep::Var(index) = step {
+					let new_index = indices.get(*index).copied().ok_or_else(|| {
+						Error::IncorrectArgumentLength {
+							arg: "indices".to_string(),
+							expected: *index,
+						}
+					})?;
+					return Ok(ArithCircuitStep::Var(new_index));
+				} else {
+					return Ok(step.clone());
 				}
+			})
+			.collect::<Result<Vec<_>, _>>()?;
+		Ok(Self { steps })
+	}
+}
 
-				fn visit_step<F: Field>(
-					step: usize,
-					cached_exrs: &mut [Option<Arc<ArithExpr<F>>>],
-					steps: &[ArithCircuitStep<F>],
-				) -> Arc<ArithExpr<F>> {
-					if let Some(node) = cached_exrs[step].as_ref() {
-						return Arc::clone(node);
-					}
+impl<F: Field> From<&ArithExpr<F>> for ArithCircuit<F> {
+	fn from(expr: &ArithExpr<F>) -> Self {
+		fn visit_node<F: Field>(
+			node: &Arc<ArithExpr<F>>,
+			node_to_index: &mut HashMap<*const ArithExpr<F>, usize>,
+			steps: &mut Vec<ArithCircuitStep<F>>,
+		) -> usize {
+			if let Some(index) = node_to_index.get(&Arc::as_ptr(node)) {
+				return *index;
+			}
 
-					let node = match &steps[step] {
-						ArithCircuitStep::Const(value) => Arc::new(ArithExpr::Const(*value)),
-						ArithCircuitStep::Add(left, right) => {
-							let left = visit_arg(left, cached_exrs, steps);
-							let right = visit_arg(right, cached_exrs, steps);
-							Arc::new(ArithExpr::Add(left, right))
-						}
-						ArithCircuitStep::Mul(left, right) => {
-							let left = visit_arg(left, cached_exrs, steps);
-							let right = visit_arg(right, cached_exrs, steps);
-							Arc::new(ArithExpr::Mul(left, right))
-						}
-						ArithCircuitStep::Pow(base, exp) => {
-							let base = visit_arg(base, cached_exrs, steps);
-							Arc::new(ArithExpr::Pow(base, *exp))
-						}
-					};
-
-					cached_exrs[step] = Some(Arc::clone(&node));
-					node
+			let step = match &**node {
+				ArithExpr::Const(value) => ArithCircuitStep::Const(*value),
+				ArithExpr::Var(index) => ArithCircuitStep::Var(*index),
+				ArithExpr::Add(left, right) => {
+					let left = visit_node(left, node_to_index, steps);
+					let right = visit_node(right, node_to_index, steps);
+					ArithCircuitStep::Add(left, right)
 				}
+				ArithExpr::Mul(left, right) => {
+					let left = visit_node(left, node_to_index, steps);
+					let right = visit_node(right, node_to_index, steps);
+					ArithCircuitStep::Mul(left, right)
+				}
+				ArithExpr::Pow(base, exp) => {
+					let base = visit_node(base, node_to_index, steps);
+					ArithCircuitStep::Pow(base, *exp)
+				}
+			};
 
-				visit_step(self.steps.as_ref().len() - 1, cached_exrs, self.steps.as_ref())
-			},
-		);
+			steps.push(step);
+			node_to_index.insert(Arc::as_ptr(node), steps.len() - 1);
+			steps.len() - 1
+		}
+
+		let mut steps = Vec::new();
+		let mut node_to_index = HashMap::new();
+		match expr {
+			ArithExpr::Const(c) => {
+				steps.push(ArithCircuitStep::Const(*c));
+			}
+			ArithExpr::Var(var) => {
+				steps.push(ArithCircuitStep::Var(*var));
+			}
+			ArithExpr::Add(left, right) => {
+				let left = visit_node(left, &mut node_to_index, &mut steps);
+				let right = visit_node(right, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Add(left, right));
+			}
+			ArithExpr::Mul(left, right) => {
+				let left = visit_node(left, &mut node_to_index, &mut steps);
+				let right = visit_node(right, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Mul(left, right));
+			}
+			ArithExpr::Pow(base, exp) => {
+				let base = visit_node(base, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Pow(base, *exp));
+			}
+		}
+
+		ArithCircuit { steps }
+	}
+}
+
+impl<F: Field, FTgt: Field + From<F>> From<&ArithCircuit<F>> for ArithExpr<FTgt> {
+	fn from(circuit: &ArithCircuit<F>) -> Self {
+		fn visit_step<F: Field, FTgt: Field + From<F>>(
+			step: usize,
+			cached_exrs: &mut [Option<Arc<ArithExpr<FTgt>>>],
+			steps: &[ArithCircuitStep<F>],
+		) -> Arc<ArithExpr<FTgt>> {
+			if let Some(node) = cached_exrs[step].as_ref() {
+				return Arc::clone(node);
+			}
+
+			let node = match &steps[step] {
+				ArithCircuitStep::Const(value) => Arc::new(ArithExpr::Const((*value).into())),
+				ArithCircuitStep::Var(index) => Arc::new(ArithExpr::Var(*index)),
+				ArithCircuitStep::Add(left, right) => {
+					let left = visit_step(*left, cached_exrs, steps);
+					let right = visit_step(*right, cached_exrs, steps);
+					Arc::new(ArithExpr::Add(left, right))
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					let left = visit_step(*left, cached_exrs, steps);
+					let right = visit_step(*right, cached_exrs, steps);
+					Arc::new(ArithExpr::Mul(left, right))
+				}
+				ArithCircuitStep::Pow(base, exp) => {
+					let base = visit_step(*base, cached_exrs, steps);
+					Arc::new(ArithExpr::Pow(base, *exp))
+				}
+			};
+
+			cached_exrs[step] = Some(Arc::clone(&node));
+			node
+		}
+
+		let mut cached_exprs = vec![None; circuit.steps.len()];
+		let root = visit_step(circuit.steps.len() - 1, &mut cached_exprs, &circuit.steps);
+
+		// to remove the extra copy of the root node
+		drop(cached_exprs);
 
 		Arc::into_inner(root).expect("root must have only one reference")
 	}
@@ -926,6 +949,7 @@ impl<F: Field> From<SparseLinearNormalForm<F>> for LinearNormalForm<F> {
 mod tests {
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField, BinaryField128b, BinaryField1b, BinaryField8b};
+	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
 
 	use super::*;
 
@@ -1108,10 +1132,13 @@ mod tests {
 
 	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExpr<F>) {
 		let mut buf = Vec::new();
-		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
+		let circut = ArithCircuit::from(&expr);
+		circut
+			.serialize(&mut buf, SerializationMode::CanonicalTower)
 			.unwrap();
 		let deserialized =
-			ArithExpr::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
+			ArithCircuit::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
+		let deserialized = ArithExpr::from(&deserialized);
 		assert_eq!(expr, deserialized);
 		assert_eq!(unique_nodes_count(&expr), unique_nodes_count(&deserialized));
 	}
