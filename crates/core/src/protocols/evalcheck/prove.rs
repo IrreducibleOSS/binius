@@ -520,7 +520,7 @@ where
 
 				let subclaim = EvalcheckMultilinearClaim {
 					id,
-					eval_point: eval_point.clone(),
+					eval_point: inner_eval_point.into(),
 					eval,
 				};
 
