@@ -20,10 +20,15 @@ struct Args {
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
+    /// Number of proofs to run consecutively.
+    #[arg(short, long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
+    repeat: u32,
+    /// Enable warm-up iteration (not traced).
+    #[arg(long, default_value_t = false)]
+    warm_up: bool,
 }
 
 fn main() -> Result<()> {
-	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
 		.as_ref()
@@ -31,11 +36,30 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
+    if args.warm_up {
+        println!("Running warm-up iteration (no tracing)");
+
+        run_proof(args.n_permutations, args.log_inv_rate)?;
+    }
+
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} Keccak-f permutations", args.n_permutations);
+    for iteration in 1..=args.repeat {
+		println!("Iteration {} of {} of Verifying {} Keccak-f permutations", iteration, args.repeat, args.n_permutations);
 
-	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
+        run_proof(args.n_permutations, args.log_inv_rate)?;
+    }
+
+    Ok(())
+}
+
+fn run_proof(
+    n_permutations: u32,
+    log_inv_rate: u32,
+) -> Result<()> {
+	const SECURITY_BITS: usize = 100;
+
+	let log_n_permutations = log2_ceil_usize(n_permutations as usize);
 
 	let allocator = bumpalo::Bump::new();
 
@@ -66,7 +90,7 @@ fn main() -> Result<()> {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+		>(&constraint_system, log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
@@ -78,7 +102,7 @@ fn main() -> Result<()> {
 		HasherChallenger<Groestl256>,
 	>(
 		&constraint_system.no_base_constraints(),
-		args.log_inv_rate as usize,
+		log_inv_rate as usize,
 		SECURITY_BITS,
 		&[],
 		proof,
