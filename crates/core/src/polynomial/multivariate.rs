@@ -302,7 +302,7 @@ mod tests {
 		//Complicated circuit for (x0 + x1) * x0 + x0^2
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField8x32b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
@@ -319,7 +319,7 @@ mod tests {
 
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField8x32b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
@@ -337,7 +337,7 @@ mod tests {
 		// Complicated circuit for (x0 + x1) * x0 + x0^2
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField4x64b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
@@ -353,7 +353,7 @@ mod tests {
 		use binius_field::{BinaryField1b, PackedBinaryField4x64b};
 
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField4x64b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
@@ -371,7 +371,7 @@ mod tests {
 		// Complicated circuit for (x0 + x1) * x0 + x0^2
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField2x128b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
@@ -387,7 +387,7 @@ mod tests {
 		use binius_field::{BinaryField1b, PackedBinaryField2x128b};
 
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
-		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
+		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(&expr)
 			as &dyn CompositionPoly<PackedBinaryField2x128b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};

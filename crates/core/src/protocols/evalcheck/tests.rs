@@ -412,7 +412,7 @@ where
 		.take(n_vars)
 		.collect::<Vec<_>>();
 
-	let eval = ArithCircuitPoly::new(comp)
+	let eval = ArithCircuitPoly::new(&comp)
 		.evaluate(&[
 			select_row1.evaluate(&eval_point).unwrap(),
 			select_row2.evaluate(&eval_point).unwrap(),
