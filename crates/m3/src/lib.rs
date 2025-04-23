@@ -77,8 +77,6 @@
 //! assumes their values are already populated during witness population. The gadget defines output
 //! and internal columns, and exposes only the output columns to the caller.
 
-#![feature(array_try_from_fn)]
-
 pub mod builder;
 pub mod emulate;
 pub mod gadgets;
