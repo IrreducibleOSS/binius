@@ -67,7 +67,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		alloc::{BumpAllocator, Error as AllocError, HostBumpAllocator},
+		alloc::{BumpAllocator, ComputeAllocator, Error as AllocError, HostBumpAllocator},
 		cpu::CpuLayer,
 	};
 
