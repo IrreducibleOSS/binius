@@ -173,7 +173,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 
 #[cfg(test)]
 mod tests {
-	use std::sync::Arc;
 
 	use binius_field::{BinaryField1b, Field};
 

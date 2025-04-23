@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};

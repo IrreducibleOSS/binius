@@ -393,11 +393,7 @@ impl<F: Field> ArithExpr<F> {
 
 		for step in &mut self.steps {
 			match step {
-				ArithCircuitStep::Add(left, right) => {
-					*left = step_indices[*left];
-					*right = step_indices[*right];
-				}
-				ArithCircuitStep::Mul(left, right) => {
+				ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
 					*left = step_indices[*left];
 					*right = step_indices[*right];
 				}
@@ -414,11 +410,7 @@ impl<F: Field> ArithExpr<F> {
 			}
 			used[step] = true;
 			match steps[step] {
-				ArithCircuitStep::Add(left, right) => {
-					mark_used(left, steps, used);
-					mark_used(right, steps, used);
-				}
-				ArithCircuitStep::Mul(left, right) => {
+				ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
 					mark_used(left, steps, used);
 					mark_used(right, steps, used);
 				}
@@ -428,7 +420,7 @@ impl<F: Field> ArithExpr<F> {
 		}
 
 		let mut used = vec![false; self.steps.len()];
-		mark_used(self.steps.len() - 1, &mut self.steps, &mut used);
+		mark_used(self.steps.len() - 1, &self.steps, &mut used);
 
 		let mut steps_map = (0..self.steps.len()).collect::<Vec<_>>();
 		let mut target_index = 0;
@@ -436,11 +428,7 @@ impl<F: Field> ArithExpr<F> {
 			if used[source_index] {
 				if target_index != source_index {
 					match &mut self.steps[source_index] {
-						ArithCircuitStep::Add(left, right) => {
-							*left = steps_map[*left];
-							*right = steps_map[*right];
-						}
-						ArithCircuitStep::Mul(left, right) => {
+						ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
 							*left = steps_map[*left];
 							*right = steps_map[*right];
 						}
@@ -551,6 +539,7 @@ impl<F: Field> Sub for ArithExpr<F> {
 }
 
 impl<F: Field> SubAssign for ArithExpr<F> {
+	#[allow(clippy::suspicious_op_assign_impl)]
 	fn sub_assign(&mut self, rhs: Self) {
 		*self += rhs;
 	}
@@ -590,11 +579,7 @@ impl<F: Field> Product for ArithExpr<F> {
 fn add_offset<F: Field>(steps: &mut [ArithCircuitStep<F>], offset: usize) {
 	for step in steps.iter_mut() {
 		match step {
-			ArithCircuitStep::Add(left, right) => {
-				*left += offset;
-				*right += offset;
-			}
-			ArithCircuitStep::Mul(left, right) => {
+			ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
 				*left += offset;
 				*right += offset;
 			}
@@ -697,7 +682,7 @@ struct StepNode<'a, F: Field> {
 	steps: &'a [ArithCircuitStep<F>],
 }
 
-impl<'a, F: Field> StepNode<'a, F> {
+impl<F: Field> StepNode<'_, F> {
 	fn prev_step(&self, step: usize) -> Self {
 		StepNode {
 			index: step,
@@ -707,6 +692,7 @@ impl<'a, F: Field> StepNode<'a, F> {
 }
 
 impl<F: Field> PartialEq for StepNode<'_, F> {
+	#[allow(clippy::suspicious_operation_groupings)] // false positive
 	fn eq(&self, other: &Self) -> bool {
 		match (&self.steps[self.index], &other.steps[other.index]) {
 			(ArithCircuitStep::Const(left), ArithCircuitStep::Const(right)) => left == right,
@@ -714,11 +700,8 @@ impl<F: Field> PartialEq for StepNode<'_, F> {
 			(
 				ArithCircuitStep::Add(left, right),
 				ArithCircuitStep::Add(other_left, other_right),
-			) => {
-				self.prev_step(*left) == other.prev_step(*other_left)
-					&& self.prev_step(*right) == other.prev_step(*other_right)
-			}
-			(
+			)
+			| (
 				ArithCircuitStep::Mul(left, right),
 				ArithCircuitStep::Mul(other_left, other_right),
 			) => {

@@ -284,9 +284,3 @@ impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
 		write_step(f, 0, self.0.steps(), self.1)
 	}
 }
-
-impl<'a, F: TowerField> ArithExprNamedVars<'a, F> {
-	fn expr(&self, expr: &'a ArithExpr<F>) -> Self {
-		Self(expr, self.1)
-	}
-}
