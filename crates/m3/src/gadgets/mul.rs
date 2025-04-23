@@ -12,29 +12,32 @@ use crate::builder::{
 	upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64,
 };
 
+/// Helper trait to create Multiplication gadgets for unsigned integers of different bit lengths.
 trait UnsignedMulPrimitives {
 	type FP: TowerField;
 	type FExpBase: TowerField + ExtensionField<Self::FP>;
-	fn get_bit_length() -> usize;
 
-	// Does primitive mul of x*y = z => (z_high, z_low)
+	const BIT_LENGTH: usize;
+
+	/// Computes the unsigned primitive mul of `x*y = z` and returns the tuple (z_high, z_low)
+	/// representing the high and low bits respectively.
 	fn mul(x: Self::FP, y: Self::FP) -> (Self::FP, Self::FP);
 
-	fn is_bit_set_at(a: Self::FP, index: usize) -> bool;
+	fn is_bit_set_at(a: Self::FP, index: usize) -> bool {
+		<Self::FP as ExtensionField<B1>>::get_base(&a, index) == B1::ONE
+	}
 
-	fn get_generator() -> Self::FExpBase;
+	fn generator() -> Self::FExpBase;
 
-	// Returns the generator shifted by the bit length of `Self::FP`.
-	fn get_shifted_generator() -> Self::FExpBase;
+	/// Returns the generator shifted by the bit length of `Self::FP`.
+	fn shifted_generator() -> Self::FExpBase;
 }
 
 impl UnsignedMulPrimitives for u32 {
 	type FP = B32;
 	type FExpBase = B64;
 
-	fn get_bit_length() -> usize {
-		32
-	}
+	const BIT_LENGTH: usize = 32;
 
 	fn mul(x: B32, y: B32) -> (B32, B32) {
 		let res = x.val() as u64 * y.val() as u64;
@@ -43,17 +46,13 @@ impl UnsignedMulPrimitives for u32 {
 		(high, low)
 	}
 
-	fn is_bit_set_at(a: B32, index: usize) -> bool {
-		((a.val() >> index) & 1) == 1
-	}
-
-	fn get_generator() -> B64 {
+	fn generator() -> B64 {
 		B64::MULTIPLICATIVE_GENERATOR
 	}
 
-	fn get_shifted_generator() -> B64 {
+	fn shifted_generator() -> B64 {
 		let mut g = B64::MULTIPLICATIVE_GENERATOR;
-		for _ in 0..Self::get_bit_length() {
+		for _ in 0..Self::BIT_LENGTH {
 			g *= g
 		}
 		g
@@ -64,9 +63,7 @@ impl UnsignedMulPrimitives for u64 {
 	type FP = B64;
 	type FExpBase = B128;
 
-	fn get_bit_length() -> usize {
-		64
-	}
+	const BIT_LENGTH: usize = 64;
 
 	fn mul(x: B64, y: B64) -> (B64, B64) {
 		let res = x.val() as u128 * y.val() as u128;
@@ -75,17 +72,13 @@ impl UnsignedMulPrimitives for u64 {
 		(high, low)
 	}
 
-	fn is_bit_set_at(a: B64, index: usize) -> bool {
-		((a.val() >> index) & 1) == 1
-	}
-
-	fn get_generator() -> Self::FExpBase {
+	fn generator() -> Self::FExpBase {
 		B128::MULTIPLICATIVE_GENERATOR
 	}
 
-	fn get_shifted_generator() -> B128 {
-		let mut g = Self::get_generator();
-		for _ in 0..Self::get_bit_length() {
+	fn shifted_generator() -> B128 {
+		let mut g = Self::generator();
+		for _ in 0..Self::BIT_LENGTH {
 			g *= g
 		}
 		g
@@ -139,15 +132,15 @@ where
 	) -> Self {
 		assert_eq!(FExpBase::TOWER_LEVEL, FP::TOWER_LEVEL + 1);
 		assert_eq!(BIT_LENGTH, 1 << FP::TOWER_LEVEL);
-		assert_eq!(BIT_LENGTH, UX::get_bit_length());
+		assert_eq!(BIT_LENGTH, UX::BIT_LENGTH);
 		// These are currently the only bit lengths I've tested
 		assert!(BIT_LENGTH == 32 || BIT_LENGTH == 64);
 
 		let x_in = table.add_computed("x_in", pack_fp(x_in_bits));
 		let y_in = table.add_computed("y_in", pack_fp(y_in_bits));
 
-		let generator = UX::get_generator().into();
-		let generator_pow_bit_len = UX::get_shifted_generator().into();
+		let generator = UX::generator().into();
+		let generator_pow_bit_len = UX::shifted_generator().into();
 
 		let g_pow_x = table.add_static_exp::<FExpBase>("g^x", &x_in_bits, generator);
 		let g_pow_xy = table.add_dynamic_exp::<FExpBase>("(g^x)^y", &y_in_bits, g_pow_x);
@@ -193,26 +186,10 @@ where
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<FP>,
 	{
-		let mut x_in_bits = self
-			.x_in_bits
-			.iter()
-			.map(|bit| index.get_mut(*bit))
-			.collect::<Result<Vec<_>, _>>()?;
-		let mut y_in_bits = self
-			.y_in_bits
-			.iter()
-			.map(|bit| index.get_mut(*bit))
-			.collect::<Result<Vec<_>, _>>()?;
-		let mut out_low_bits = self
-			.out_low_bits
-			.iter()
-			.map(|bit| index.get_mut(*bit))
-			.collect::<Result<Vec<_>, _>>()?;
-		let mut out_high_bits = self
-			.out_high_bits
-			.iter()
-			.map(|bit| index.get_mut(*bit))
-			.collect::<Result<Vec<_>, _>>()?;
+		let mut x_in_bits = array_util::try_map(self.x_in_bits, |bit| index.get_mut(bit))?;
+		let mut y_in_bits = array_util::try_map(self.y_in_bits, |bit| index.get_mut(bit))?;
+		let mut out_low_bits = array_util::try_map(self.out_low_bits, |bit| index.get_mut(bit))?;
+		let mut out_high_bits = array_util::try_map(self.out_high_bits, |bit| index.get_mut(bit))?;
 
 		let mut x_in = index.get_mut(self.x_in)?;
 		let mut y_in = index.get_mut(self.y_in)?;
