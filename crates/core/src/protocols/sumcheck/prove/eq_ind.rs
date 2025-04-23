@@ -514,7 +514,6 @@ where
 		self.state.evaluation_order()
 	}
 
-	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let round = self.round();
 		let n_rounds_remaining = self.n_rounds_remaining();

@@ -403,7 +403,7 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 		let start_bytes = buffer.remaining_mut();
 		f(buffer);
 		let end_bytes = buffer.remaining_mut();
-		tracing::event!(name: "proof_size", tracing::Level::INFO, counter=true, incremental=true, value=start_bytes - end_bytes);
+		tracing::event!(name: "incremental_proof_size", tracing::Level::INFO, counter=true, incremental=true, value=start_bytes - end_bytes);
 	}
 }
 
