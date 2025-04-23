@@ -43,7 +43,7 @@ where
 		return Ok(BaseExpReductionOutput { layers_claims });
 	}
 
-	// Check that the witnesses are in ascending order by n_vars
+	// Check that the witnesses are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
 	}

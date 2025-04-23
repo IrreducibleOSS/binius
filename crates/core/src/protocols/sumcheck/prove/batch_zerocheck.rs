@@ -9,7 +9,6 @@ use binius_math::{
 	MLEDirectAdapter, MultilinearPoly,
 };
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::instrument;
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
