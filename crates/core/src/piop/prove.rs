@@ -286,12 +286,9 @@ where
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 
 	for round in 0..n_rounds {
-		let _span = tracing::debug_span!(
-			"[phase] PIOP Compiler Round",
-			phase = "piop_compiler",
-			round = round
-		)
-		.entered();
+		let _span =
+			tracing::debug_span!("PIOP Compiler Round", phase = "piop_compiler", round = round)
+				.entered();
 
 		let bivariate_sumcheck_span = tracing::debug_span!(
 			"[step] Bivariate Sumcheck",

@@ -45,9 +45,11 @@ fn main() -> Result<()> {
 
 	let log_size = log_n_permutations;
 
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let input_witness = vec![];
 	let _state_out =
 		binius_circuits::keccakf::keccakf(&mut builder, &Some(input_witness), log_size)?;
+	drop(trace_gen_scope);
 
 	drop(witness_generation_span);
 
