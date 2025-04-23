@@ -160,7 +160,6 @@ where
 /// call and used for [`ZerocheckProver`] instances creation (most likely via calls to
 /// [`ZerocheckProverImpl::new`](`super::zerocheck::ZerocheckProverImpl::new`))
 #[allow(clippy::type_complexity)]
-#[instrument(skip_all, level = "debug")]
 pub fn batch_prove<'a, F, FDomain, P, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
@@ -238,12 +237,19 @@ where
 	// Project witness multilinears to "skipped" variables
 	let mut projected_multilinears = Vec::new();
 
+	let mle_fold_low_span = tracing::debug_span!(
+		"[task] Initial MLE Fold Low",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	for prover in provers {
 		let claim_projected_multilinears =
 			Box::new(prover).project_to_skipped_variables(&unskipped_challenges)?;
 
 		projected_multilinears.extend(claim_projected_multilinears);
 	}
+	drop(mle_fold_low_span);
 
 	// Prove univariatizing reduction sumcheck.
 	// It's small (`skip_rounds` variables), so portable backend is likely fine.
