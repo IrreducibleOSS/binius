@@ -274,14 +274,6 @@ impl<F: Field> ArithExpr<F> {
 		})
 	}
 
-	/// Whether expression is a composite node, and not a leaf.
-	pub const fn is_composite(&self) -> bool {
-		match self {
-			Self::Const(_) | Self::Var(_) => false,
-			Self::Add(_, _) | Self::Mul(_, _) | Self::Pow(_, _) => true,
-		}
-	}
-
 	/// Returns `Some(F)` if the expression is a constant.
 	pub const fn constant(&self) -> Option<F> {
 		match self {
@@ -454,20 +446,6 @@ impl<F: Field> ArithExpr<F> {
 			}
 		}
 	}
-
-	pub fn binary_tower_level(&self) -> usize
-	where
-		F: TowerField,
-	{
-		match self {
-			Self::Const(value) => value.min_tower_level(),
-			Self::Var(_) => 0,
-			Self::Add(left, right) | Self::Mul(left, right) => {
-				left.binary_tower_level().max(right.binary_tower_level())
-			}
-			Self::Pow(base, _) => base.binary_tower_level(),
-		}
-	}
 }
 
 impl<F> Default for ArithExpr<F>
@@ -627,8 +605,9 @@ impl<F: Field> Default for ArithCircuitStep<F> {
 }
 
 /// A simple circuit representation of an arithmetic expression.
-/// We use this representation as a temporary object for serialization/deserialization to
-/// ensure that common sub-expressions are correctly desewrialized into the same `Arc` instance.
+///
+/// This implementation isn't optimized for performance, but rather for simplicity
+/// to allow easy conversion and preservation of the
 #[derive(Clone, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub struct ArithCircuit<F: Field> {
 	steps: Vec<ArithCircuitStep<F>>,
@@ -1179,5 +1158,91 @@ mod tests {
 
 		let expr = expr.deduplicate_nodes();
 		assert_eq!(unique_nodes_count(&expr), 8);
+	}
+
+	#[test]
+	fn test_arith_circuit_degree() {
+		type F = BinaryField8b;
+		let expr = ((ArithExpr::<F>::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(2)).pow(3);
+		let circuit = ArithCircuit::from(&expr);
+		assert_eq!(circuit.degree(), expr.degree());
+	}
+
+	#[test]
+	fn test_arith_circuit_n_vars() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(0) + ArithExpr::Var(1) + ArithExpr::Var(2);
+		let circuit = ArithCircuit::from(&expr);
+		assert_eq!(circuit.n_vars(), expr.n_vars());
+	}
+
+	#[test]
+	fn test_arith_circuit_remap_vars() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(0) + ArithExpr::Var(1) * ArithExpr::Var(2);
+		let circuit = ArithCircuit::from(&expr);
+		let remapped_circuit = circuit.remap_vars(&[2, 0, 1]).unwrap();
+		let expected_expr = ArithExpr::Var(2) + ArithExpr::Var(0) * ArithExpr::Var(1);
+		let expected_circuit = ArithCircuit::from(&expected_expr);
+		assert_eq!(remapped_circuit, expected_circuit);
+	}
+
+	#[test]
+	fn test_arith_circuit_convert_field() {
+		type F8 = BinaryField8b;
+		type F128 = BinaryField128b;
+
+		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F8::new(5))) * ArithExpr::Var(1);
+		let circuit = ArithCircuit::from(&expr);
+		let converted_circuit = circuit.convert_field::<F128>();
+
+		let expected_expr =
+			(ArithExpr::Var(0) + ArithExpr::Const(F128::new(5))) * ArithExpr::Var(1);
+		let expected_circuit = ArithCircuit::from(&expected_expr);
+
+		assert_eq!(converted_circuit, expected_circuit);
+	}
+
+	#[test]
+	fn test_arith_circuit_try_convert_field() {
+		type F8 = BinaryField8b;
+		type F128 = BinaryField128b;
+
+		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F128::new(5))) * ArithExpr::Var(1);
+		let circuit = ArithCircuit::from(&expr);
+
+		// Successful conversion
+		let converted_circuit = circuit.try_convert_field::<F8>().unwrap();
+		let expected_expr = (ArithExpr::Var(0) + ArithExpr::Const(F8::new(5))) * ArithExpr::Var(1);
+		let expected_circuit = ArithCircuit::from(&expected_expr);
+		assert_eq!(converted_circuit, expected_circuit);
+
+		// Failing conversion
+		let invalid_expr =
+			(ArithExpr::Var(0) + ArithExpr::Const(F128::new(256))) * ArithExpr::Var(1);
+		let invalid_circuit = ArithCircuit::from(&invalid_expr);
+		assert!(invalid_circuit.try_convert_field::<F8>().is_err());
+	}
+
+	#[test]
+	fn test_arith_circuit_binary_tower_level() {
+		type F = BinaryField128b;
+		let expr = ArithExpr::Const(F::ONE) + ArithExpr::Const(F::MULTIPLICATIVE_GENERATOR);
+		let circuit = ArithCircuit::from(&expr);
+		assert_eq!(circuit.binary_tower_level(), F::MULTIPLICATIVE_GENERATOR.min_tower_level());
+	}
+
+	#[test]
+	fn test_arith_circuit_steps() {
+		type F = BinaryField8b;
+		let expr = (ArithExpr::<F>::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(2);
+		let circuit = ArithCircuit::from(&expr);
+		let steps = circuit.steps();
+		assert_eq!(steps.len(), 5); // 3 variables, 1 addition, 1 multiplication
+		assert!(matches!(steps[0], ArithCircuitStep::Var(0)));
+		assert!(matches!(steps[1], ArithCircuitStep::Var(1)));
+		assert!(matches!(steps[2], ArithCircuitStep::Add(_, _)));
+		assert!(matches!(steps[3], ArithCircuitStep::Var(2)));
+		assert!(matches!(steps[4], ArithCircuitStep::Mul(_, _)));
 	}
 }

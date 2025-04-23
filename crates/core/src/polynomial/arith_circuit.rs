@@ -1207,7 +1207,7 @@ mod tests {
 
 		let (steps, retval) = convert_circuit(&(&expr).into());
 
-		assert_eq!(steps.len(), 3, "Expression should generate 4 computation steps");
+		assert_eq!(steps.len(), 3, "Expression should generate 3 computation steps");
 
 		assert!(
 			matches!(
