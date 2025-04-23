@@ -87,23 +87,18 @@ impl UnsignedMulPrimitives for u64 {
 
 // Internally used to have deduplicated implementations.
 #[derive(Debug)]
-struct Mul<
-	FExpBase: TowerField,
-	FP: TowerField,
-	UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
-	const BIT_LENGTH: usize,
-> {
+struct Mul<UX: UnsignedMulPrimitives, const BIT_LENGTH: usize> {
 	x_in_bits: [Col<B1>; BIT_LENGTH],
 	y_in_bits: [Col<B1>; BIT_LENGTH],
 	out_high_bits: [Col<B1>; BIT_LENGTH],
 	out_low_bits: [Col<B1>; BIT_LENGTH],
 
-	pub x_in: Col<FP>,
-	pub y_in: Col<FP>,
-	pub out_high: Col<FP>,
-	pub out_low: Col<FP>,
+	pub x_in: Col<UX::FP>,
+	pub y_in: Col<UX::FP>,
+	pub out_high: Col<UX::FP>,
+	pub out_low: Col<UX::FP>,
 
-	_marker: PhantomData<(FExpBase, UX)>,
+	_marker: PhantomData<UX>,
 }
 
 impl<
@@ -111,13 +106,11 @@ impl<
 		FP: TowerField,
 		UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
 		const BIT_LENGTH: usize,
-	> Mul<FExpBase, FP, UX, BIT_LENGTH>
+	> Mul<UX, BIT_LENGTH>
 where
 	FExpBase: ExtensionField<FP> + ExtensionField<B1>,
 	B128: ExtensionField<FExpBase> + ExtensionField<FP> + ExtensionField<B1>,
 {
-	// TODO: Figure out if we need to create a separate table for this gadget.
-
 	pub fn new(table: &mut TableBuilder) -> Self {
 		let x_in_bits = table.add_committed_multiple("x_in_bits");
 		let y_in_bits = table.add_committed_multiple("y_in_bits");
@@ -205,19 +198,27 @@ where
 
 			for bit_idx in 0..BIT_LENGTH {
 				if fill_input_bits {
-					if UX::is_bit_set_at(x, bit_idx) {
-						set_packed_slice(&mut x_in_bits[bit_idx], i, B1::ONE);
-					}
-					if UX::is_bit_set_at(y, bit_idx) {
-						set_packed_slice(&mut y_in_bits[bit_idx], i, B1::ONE);
-					}
+					set_packed_slice(
+						&mut x_in_bits[bit_idx],
+						i,
+						B1::from(UX::is_bit_set_at(x, bit_idx)),
+					);
+					set_packed_slice(
+						&mut y_in_bits[bit_idx],
+						i,
+						B1::from(UX::is_bit_set_at(y, bit_idx)),
+					);
 				}
-				if UX::is_bit_set_at(res_low, bit_idx) {
-					set_packed_slice(&mut out_low_bits[bit_idx], i, B1::ONE);
-				}
-				if UX::is_bit_set_at(res_high, bit_idx) {
-					set_packed_slice(&mut out_high_bits[bit_idx], i, B1::ONE);
-				}
+				set_packed_slice(
+					&mut out_low_bits[bit_idx],
+					i,
+					B1::from(UX::is_bit_set_at(res_low, bit_idx)),
+				);
+				set_packed_slice(
+					&mut out_high_bits[bit_idx],
+					i,
+					B1::from(UX::is_bit_set_at(res_high, bit_idx)),
+				);
 			}
 		}
 
@@ -251,7 +252,7 @@ where
 
 #[derive(Debug)]
 pub struct MulUU32 {
-	inner: Mul<B64, B32, u32, 32>,
+	inner: Mul<u32, 32>,
 
 	pub x_in: Col<B32>,
 	pub y_in: Col<B32>,
@@ -325,7 +326,7 @@ impl MulUU32 {
 
 #[derive(Debug)]
 pub struct MulUU64 {
-	inner: Mul<B128, B64, u64, 64>,
+	inner: Mul<u64, 64>,
 
 	pub x_in: Col<B64>,
 	pub y_in: Col<B64>,
