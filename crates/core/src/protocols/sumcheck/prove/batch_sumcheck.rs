@@ -92,10 +92,10 @@ impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Pro
 ///
 /// The sumcheck protocol over can be batched over multiple instances by taking random linear
 /// combinations over the claimed sums and polynomials. See
-/// [`crate::protocols::sumcheck::batch_verify_sumcheck`] for more details.
+/// [`crate::protocols::sumcheck::batch_verify`] for more details.
 ///
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
-/// provided to [`crate::protocols::sumcheck::batch_verify_sumcheck`] during proof verification.
+/// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove<F, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
