@@ -287,7 +287,7 @@ where
 
 	for round in 0..n_rounds {
 		let _span = tracing::debug_span!(
-			"[phase] PIOP Compiler Round",
+			"PIOP Compiler Round",
 			phase = "piop_compiler",
 			round = round
 		)
