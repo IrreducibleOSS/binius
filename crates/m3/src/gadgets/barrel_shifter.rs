@@ -200,9 +200,7 @@ mod tests {
 			let expected_output = match variant {
 				ShiftVariant::LogicalLeft => test_inputs[i] << (i % 32),
 				ShiftVariant::LogicalRight => test_inputs[i] >> (i % 32),
-				ShiftVariant::CircularLeft => {
-					test_inputs[i].rotate_left(i as u32 % 32)
-				}
+				ShiftVariant::CircularLeft => test_inputs[i].rotate_left(i as u32 % 32),
 			};
 			assert_eq!(output, expected_output);
 		}
