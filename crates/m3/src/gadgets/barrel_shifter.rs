@@ -28,7 +28,7 @@ pub struct BarrelShifter {
 	shift_amount_bits: [Col<B1>; MAX_SHIFT_BITS],
 
 	// TODO: Try to replace the Vec with an array.
-	/// Partial shift virtual columns containing the partia_shift[i - 1]
+	/// Partial shift virtual columns containing the partial_shift[i - 1]
 	/// shifted by 2^i.
 	shifted: Vec<Col<B1, 32>>, // Virtual
 
@@ -54,7 +54,6 @@ impl BarrelShifter {
 	/// * `input` - The input column of type `Col<B1, 32>`.
 	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant bits are ignored.
 	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or circular left shift.
-	/// * `flags` - A `BarrelShifterFlags` struct that configures the behavior of the gadget.
 	///
 	/// # Returns
 	///
@@ -149,13 +148,16 @@ impl BarrelShifter {
 
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
 
-	fn test_barrel_shifter(input_val: u32, variant: ShiftVariant) {
+	fn test_barrel_shifter(variant: ShiftVariant) {
 		let mut cs = ConstraintSystem::new();
 		let mut table = cs.add_table("BarrelShifterTable");
 		let table_id = table.id();
@@ -175,12 +177,15 @@ mod tests {
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
 		let mut segment = table_witness.full_segment();
 
+		let mut rng = StdRng::seed_from_u64(0x1234);
+		let test_inputs = repeat_with(|| rng.gen()).take(1 << 8).collect::<Vec<u32>>();
+
 		for (i, (input, shift_amount)) in (*segment.get_mut_as(input).unwrap())
 			.iter_mut()
 			.zip(segment.get_mut_as(shift_amount).unwrap().iter_mut())
 			.enumerate()
 		{
-			*input = input_val;
+			*input = test_inputs[i];
 			*shift_amount = i as u16; // Only the first 5 bits are used
 		}
 
@@ -192,12 +197,11 @@ mod tests {
 			.iter()
 			.enumerate()
 		{
-			let i = i % 32;
 			let expected_output = match variant {
-				ShiftVariant::LogicalLeft => input_val << (i % 32),
-				ShiftVariant::LogicalRight => input_val >> (i % 32),
+				ShiftVariant::LogicalLeft => test_inputs[i] << (i % 32),
+				ShiftVariant::LogicalRight => test_inputs[i] >> (i % 32),
 				ShiftVariant::CircularLeft => {
-					(input_val << (i % 32)) | (input_val >> ((32 - i) % 32))
+					test_inputs[i].rotate_left(i as u32 % 32)
 				}
 			};
 			assert_eq!(output, expected_output);
@@ -211,16 +215,16 @@ mod tests {
 
 	#[test]
 	fn test_barrel_shifter_logical_left() {
-		test_barrel_shifter(0x1234, ShiftVariant::LogicalLeft);
+		test_barrel_shifter(ShiftVariant::LogicalLeft);
 	}
 
 	#[test]
 	fn test_barrel_shifter_logical_right() {
-		test_barrel_shifter(0x1234, ShiftVariant::LogicalRight);
+		test_barrel_shifter(ShiftVariant::LogicalRight);
 	}
 
 	#[test]
 	fn test_barrel_shifter_circular_left() {
-		test_barrel_shifter(0x1234, ShiftVariant::CircularLeft);
+		test_barrel_shifter(ShiftVariant::CircularLeft);
 	}
 }
