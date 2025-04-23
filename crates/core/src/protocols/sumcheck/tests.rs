@@ -61,7 +61,7 @@ impl<P: PackedField> CompositionPoly<P> for PowerComposition {
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0).pow(self.exponent as _)
+		ArithExpr::var(0).pow(self.exponent as _)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

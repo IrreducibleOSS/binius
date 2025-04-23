@@ -5,6 +5,7 @@ use std::{
 	collections::{hash_map::Entry, HashMap},
 	fmt::{self, Display},
 	hash::{Hash, Hasher},
+	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
@@ -458,6 +459,12 @@ impl<F: Field> ArithExpr<F> {
 		self.steps.truncate(target_index);
 	}
 
+	pub fn optimize_in_place(&mut self) {
+		self.optimize_constants();
+		self.deduplicate_steps();
+		self.compress_unused_steps();
+	}
+
 	pub fn optimize(mut self) -> Self {
 		self.optimize_constants();
 		self.deduplicate_steps();
@@ -565,6 +572,18 @@ impl<F: Field> MulAssign for ArithExpr<F> {
 		self.steps.extend(rhs.steps);
 		self.steps
 			.push(ArithCircuitStep::Mul(old_len - 1, self.steps.len() - 1));
+	}
+}
+
+impl<F: Field> Sum for ArithExpr<F> {
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.fold(Self::zero(), |sum, item| sum + item)
+	}
+}
+
+impl<F: Field> Product for ArithExpr<F> {
+	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.fold(Self::one(), |product, item| product * item)
 	}
 }
 
@@ -729,17 +748,17 @@ impl<F: Field> Hash for StepNode<'_, F> {
 			}
 			ArithCircuitStep::Add(left, right) => {
 				2u8.hash(state);
-				left.hash(state);
-				right.hash(state);
+				self.prev_step(left).hash(state);
+				self.prev_step(right).hash(state);
 			}
 			ArithCircuitStep::Mul(left, right) => {
 				3u8.hash(state);
-				left.hash(state);
-				right.hash(state);
+				self.prev_step(left).hash(state);
+				self.prev_step(right).hash(state);
 			}
 			ArithCircuitStep::Pow(base, exp) => {
 				4u8.hash(state);
-				base.hash(state);
+				self.prev_step(base).hash(state);
 				exp.hash(state);
 			}
 		}

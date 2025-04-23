@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use binius_field::{Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::{ArithCircuit, ArithExpr, CompositionPoly};
+use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 use itertools::Itertools;
 
@@ -19,7 +19,7 @@ pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Constraint<F: Field> {
 	pub name: String,
-	pub composition: ArithCircuit<F>,
+	pub composition: ArithExpr<F>,
 	pub predicate: ConstraintPredicate<F>,
 }
 
@@ -133,7 +133,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 				.into_iter()
 				.map(|constraint| Constraint {
 					name: constraint.name,
-					composition: ArithCircuit::<F>::from(&constraint.composition)
+					composition: constraint
+						.composition
 						.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
 							"precondition: oracle_ids is a superset of constraint.oracle_ids",
 						))
@@ -233,7 +234,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 					.into_iter()
 					.map(|constraint| Constraint {
 						name: constraint.name,
-						composition: ArithCircuit::<F>::from(&constraint.composition)
+						composition: constraint
+							.composition
 							.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
 								"precondition: oracle_ids is a superset of constraint.oracle_ids",
 							))

@@ -121,7 +121,7 @@ impl Parse for CompositionPolyItem {
 		let degree = poly_degree(&poly_packed)?;
 		rewrite_literals(&mut poly_packed, &replace_packed_literals)?;
 
-		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::Var(#i)))?;
+		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::var(#i)))?;
 		rewrite_literals(&mut expr, &replace_expr_literals)?;
 
 		let scalar_type = if input.is_empty() {

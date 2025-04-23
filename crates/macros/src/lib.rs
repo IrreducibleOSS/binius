@@ -59,7 +59,7 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 ///
 /// assert_eq!(
 ///     arith_expr!(BinaryField8b[x] = 3*x + 15),
-///     Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))
+///     Expr::Const(BinaryField8b::new(3)) * Expr::var(0) + Expr::constant(BinaryField8b::new(15))
 /// );
 /// ```
 #[proc_macro]

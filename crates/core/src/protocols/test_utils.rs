@@ -73,7 +73,7 @@ where
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		(0..self.arity).map(ArithExpr::Var).product()
+		(0..self.arity).map(ArithExpr::var).product()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

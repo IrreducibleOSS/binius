@@ -42,7 +42,7 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?,
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),
@@ -71,7 +71,7 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Zero => {
-				zeros.push(ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?)
+				zeros.push(ArithCircuitPoly::with_n_vars(n_multilinears, composition)?)
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}

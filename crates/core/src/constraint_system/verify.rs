@@ -666,7 +666,7 @@ impl<P: PackedField> CompositionPoly<P> for FlushSumcheckComposition {
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0) * ArithExpr::Var(1) + ArithExpr::one() - ArithExpr::Var(1)
+		ArithExpr::var(0) * ArithExpr::var(1) + ArithExpr::one() - ArithExpr::var(1)
 	}
 
 	fn binary_tower_level(&self) -> usize {

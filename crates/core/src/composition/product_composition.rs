@@ -27,7 +27,7 @@ impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		(0..N).map(ArithExpr::Var).product()
+		(0..N).map(ArithExpr::var).product()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
