@@ -1219,7 +1219,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
 		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
-		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
+		ArithCircuitPoly::new(expr.expr()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
 
@@ -1419,7 +1419,7 @@ mod tests {
 		let _col2 = table.add_committed::<B8, 1>("col2");
 		let _col3 = table.add_committed::<B32, 1>("col3");
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 		let table_size = 7;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier256b, B128>>::new(
 			&allocator,
@@ -1428,18 +1428,18 @@ mod tests {
 		)
 		.unwrap();
 
-		assert_eq!(index.log_capacity(), 4);
-		assert_eq!(index.min_log_segment_size(), 4);
+		assert_eq!(index.log_capacity(), 3);
+		assert_eq!(index.min_log_segment_size(), 3);
 
 		let mut iter = index.segments(5);
 		// Check that the segment size is clamped to the capacity.
-		assert_eq!(iter.next().unwrap().log_size(), 4);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
 		assert!(iter.next().is_none());
 		drop(iter);
 
 		let mut iter = index.segments(2);
 		// Check that the segment size is clamped to the minimum segment size.
-		assert_eq!(iter.next().unwrap().log_size(), 4);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
 		assert!(iter.next().is_none());
 		drop(iter);
 	}

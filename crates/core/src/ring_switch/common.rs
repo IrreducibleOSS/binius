@@ -166,16 +166,23 @@ fn group_claims_by_eval_point<F: TowerField>(
 			}
 		})?;
 
-		let (prefix, suffix) = claim.eval_point.split_at(kappa);
+		let (prefix, suffix) = if claim.eval_point.len() < kappa {
+			// If evaluation point is less than kappa, pad the evaluation point with 0s
+			let mut prefix = Vec::with_capacity(kappa);
+			prefix.extend_from_slice(&claim.eval_point);
+			prefix.resize(kappa, F::ZERO);
+			(prefix, &[][..])
+		} else {
+			let (prefix, suffix) = claim.eval_point.split_at(kappa);
+			(prefix.to_vec(), suffix)
+		};
 
 		let prefix_id = prefix_descs
 			.iter()
 			.position(|desc| desc.prefix == prefix)
 			.unwrap_or_else(|| {
 				let index = prefix_descs.len();
-				prefix_descs.push(EvalClaimPrefixDesc {
-					prefix: prefix.to_vec(),
-				});
+				prefix_descs.push(EvalClaimPrefixDesc { prefix });
 				index
 			});
 		claim_to_prefix_index.push(prefix_id);

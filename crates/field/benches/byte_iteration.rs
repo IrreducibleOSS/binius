@@ -3,8 +3,7 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	arch::ArchOptimal,
-	byte_iteration::{create_partial_sums_lookup_tables, PackedSlice},
+	arch::ArchOptimal, byte_iteration::create_partial_sums_lookup_tables, packed::PackedSlice,
 	BinaryField128b, BinaryField1b, BinaryField8b, PackedField,
 };
 use criterion::{
@@ -26,7 +25,7 @@ pub fn bench_create_partial_sums<P>(
 			.take(count)
 			.collect::<Vec<P>>();
 
-		let values_collection = PackedSlice::new(&values, count);
+		let values_collection = PackedSlice::new_with_len(&values, count);
 
 		group.bench_function(format!("{name}/{count}"), |bench| {
 			bench.iter(|| create_partial_sums_lookup_tables(values_collection.clone()));

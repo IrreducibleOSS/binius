@@ -3,34 +3,13 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice, set_packed_slice},
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
 };
 use binius_math::BinarySubspace;
+use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
 use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
-
-/// This trait allows passing packed batches to the simple NTT implementation.
-trait DataAccess<T> {
-	fn get(&self, index: usize) -> T;
-	fn set(&mut self, index: usize, value: T);
-
-	fn len(&self) -> usize;
-}
-
-impl<T: Clone> DataAccess<T> for [T] {
-	fn len(&self) -> usize {
-		self.len()
-	}
-
-	fn get(&self, index: usize) -> T {
-		self[index].clone()
-	}
-
-	fn set(&mut self, index: usize, value: T) {
-		self[index] = value;
-	}
-}
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
@@ -52,16 +31,12 @@ impl<'a, P> BatchedPackedFieldSlice<'a, P> {
 	}
 }
 
-impl<P> DataAccess<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+impl<P> RandomAccessSequence<P::Scalar> for BatchedPackedFieldSlice<'_, P>
 where
 	P: PackedField,
 {
-	fn get(&self, index: usize) -> P::Scalar {
-		get_packed_slice(self.data, self.batch_index + (index << self.log_batch_count))
-	}
-
-	fn set(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice(self.data, self.batch_index + (index << self.log_batch_count), value)
+	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
+		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
 	}
 
 	fn len(&self) -> usize {
@@ -69,11 +44,24 @@ where
 	}
 }
 
+impl<P> RandomAccessSequenceMut<P::Scalar> for BatchedPackedFieldSlice<'_, P>
+where
+	P: PackedField,
+{
+	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
+		set_packed_slice_unchecked(
+			self.data,
+			self.batch_index + (index << self.log_batch_count),
+			value,
+		);
+	}
+}
+
 /// Reference implementation of the forward NTT to compare against in tests.
 fn forward_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl DataAccess<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>
@@ -118,7 +106,7 @@ where
 fn inverse_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
-	data: &mut impl DataAccess<FF>,
+	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
 ) -> Result<(), Error>

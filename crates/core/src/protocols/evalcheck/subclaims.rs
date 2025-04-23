@@ -301,6 +301,11 @@ where
 /// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
 /// composite oracle -> None
 #[allow(clippy::type_complexity)]
+#[instrument(
+	skip_all,
+	name = "Evalcheck::calculate_projected_mles",
+	level = "debug"
+)]
 pub fn calculate_projected_mles<F, P, Backend>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedData<P, Backend>,
@@ -369,7 +374,8 @@ where
 	let eq_indicators = dedup_eval_points
 		.into_iter()
 		.map(|eval_point| {
-			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
+			let mle = MLEDirectAdapter::from(MultilinearExtension::new(
+				eval_point.len(),
 				memoized_queries
 					.full_query_readonly(eval_point)
 					.expect("computed above")
@@ -396,6 +402,7 @@ where
 	Ok(())
 }
 
+/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of multilinears
 #[allow(clippy::type_complexity)]
 pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
 	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
@@ -446,7 +453,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			})
 	}
 
-	#[instrument(skip_all, name = "memoize_query_par", level = "debug")]
+	#[instrument(skip_all, name = "Evalcheck::memoize_query_par", level = "debug")]
 	pub fn memoize_query_par(
 		&mut self,
 		eval_points: &[&[P::Scalar]],

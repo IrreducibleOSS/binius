@@ -11,7 +11,7 @@ use digest::{
 use super::Challenger;
 
 /// Challenger type which implements `[Buf]` that has similar functionality as `[CanSample]`
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HasherSampler<H: Digest> {
 	index: usize,
 	buffer: Output<H>,
@@ -19,7 +19,7 @@ pub struct HasherSampler<H: Digest> {
 }
 
 /// Challenger type which implements `[BufMut]` that has similar functionality as `[CanObserve]`
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HasherObserver<H: Digest + BlockSizeUser> {
 	index: usize,
 	buffer: Block<H>,
@@ -29,7 +29,7 @@ pub struct HasherObserver<H: Digest + BlockSizeUser> {
 /// Challenger interface over hashes that implement `[Digest]` trait,
 ///
 /// This challenger works over bytes instead of Field elements
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum HasherChallenger<H: Digest + BlockSizeUser> {
 	Observer(HasherObserver<H>),
 	Sampler(HasherSampler<H>),

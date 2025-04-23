@@ -5,7 +5,7 @@ use std::{
 	ops::{Mul, MulAssign},
 };
 
-use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
+use binius_field::{packed::set_packed_slice, ExtensionField, Field, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{BinarySubspace, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, checked_arithmetics::checked_log_2, sorting::is_sorted_ascending};
@@ -203,14 +203,16 @@ pub(super) fn lagrange_evals_multilinear_extension<FDomain, F, P>(
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 {
 	let lagrange_evals = evaluation_domain.lagrange_evals(univariate_challenge);
 
 	let n_vars = checked_log_2(lagrange_evals.len());
 	let mut packed = zeroed_vec(lagrange_evals.len().div_ceil(P::WIDTH));
-	let scalars = P::unpack_scalars_mut(packed.as_mut_slice());
-	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());
+
+	for (i, &lagrange_eval) in lagrange_evals.iter().enumerate() {
+		set_packed_slice(&mut packed, i, lagrange_eval);
+	}
 
 	Ok(MultilinearExtension::new(n_vars, packed)?)
 }

@@ -33,7 +33,6 @@ pub struct ReducedWitness<P: PackedField> {
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
 }
 
-#[tracing::instrument("ring_switch::prove", skip_all)]
 pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
@@ -42,11 +41,10 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<ReducedWitness<P>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	P: PackedFieldIndexable<Scalar = F>,
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
@@ -60,6 +58,12 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
+	let mle_fold_high_span = tracing::debug_span!(
+		"[task] (Ring Switch) MLE Fold High",
+		phase = "ring_switch",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
@@ -71,6 +75,7 @@ where
 		&system.prefix_descs,
 		&system.eval_claim_to_prefix_desc_index,
 	)?;
+	drop(mle_fold_high_span);
 	let mut writer = transcript.message();
 	for (mixed_tensor_elem, prefix_desc) in iter::zip(mixed_tensor_elems, &system.prefix_descs) {
 		debug_assert_eq!(mixed_tensor_elem.vertical_elems().len(), 1 << prefix_desc.kappa());
@@ -88,12 +93,20 @@ where
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
+	let calculate_ring_switch_eq_ind_span = tracing::debug_span!(
+		"[task] Calculate Ring Switch Eq Ind",
+		phase = "ring_switch",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
 		&mixing_coeffs,
 	)?;
+	drop(calculate_ring_switch_eq_ind_span);
+
 	let sumcheck_claims = iter::zip(&system.sumcheck_claim_descs, row_batched_evals)
 		.enumerate()
 		.map(|(idx, (claim_desc, eval))| {
@@ -146,14 +159,14 @@ where
 			 }| {
 				let suffix_desc = &system.suffix_descs[*suffix_desc_idx];
 
-				let elems = if let Some(partial_eval) =
+				let mut elems = if let Some(partial_eval) =
 					memoized_data.partial_eval(eval_claim.id, Arc::as_ref(&suffix_desc.suffix))
 				{
 					PackedField::iter_slice(
 						partial_eval.packed_evals().expect("packed_evals exist"),
 					)
 					.take(1 << suffix_desc.kappa)
-					.collect()
+					.collect::<Vec<_>>()
 				} else {
 					let suffix_query = memoized_data
 						.full_query_readonly(&suffix_desc.suffix)
@@ -162,9 +175,16 @@ where
 						witnesses[*committed_idx].evaluate_partial_high(suffix_query.into())?;
 					PackedField::iter_slice(partial_eval.evals())
 						.take(1 << suffix_desc.kappa)
-						.collect()
+						.collect::<Vec<_>>()
 				};
 
+				if elems.len() < (1 << suffix_desc.kappa) {
+					elems = elems
+						.into_iter()
+						.cycle()
+						.take(1 << suffix_desc.kappa)
+						.collect();
+				}
 				TowerTensorAlgebra::new(suffix_desc.kappa, elems)
 			},
 		)
@@ -233,7 +253,6 @@ where
 		.collect()
 }
 
-#[instrument(skip_all)]
 fn make_ring_switch_eq_inds<F, P, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
@@ -241,10 +260,9 @@ fn make_ring_switch_eq_inds<F, P, Tower>(
 	mixing_coeffs: &[F],
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	P: PackedFieldIndexable<Scalar = F>,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 {
 	sumcheck_claim_descs
 		.par_iter()
