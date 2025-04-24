@@ -61,7 +61,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			Some(s) => {
 				let x: [usize; N] = array::from_fn(|i| i);
 				x.map(|i| {
-					self.add_committed_with_name(n_vars, tower_level, Some(format!("{}_{}", s, i)))
+					self.add_committed_with_name(n_vars, tower_level, Some(format!("{s}_{i}")))
 				})
 			}
 		}
@@ -816,7 +816,7 @@ impl<F: TowerField> CompositeMLE<F> {
 				}
 			})
 			.collect::<Result<Vec<_>, _>>()?;
-		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
+		let c = ArithCircuitPoly::with_n_vars(inner.len(), &c)
 			.map_err(|_| Error::CompositionMismatch)?; // occurs if `c` has more variables than `inner.len()`
 		Ok(Self { n_vars, inner, c })
 	}

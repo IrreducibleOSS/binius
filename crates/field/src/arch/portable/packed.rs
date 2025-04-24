@@ -158,7 +158,7 @@ where
 		let width = checked_int_div(U::BITS, Scalar::N_BITS);
 		let values_str = self
 			.iter()
-			.map(|value| format!("{}", value))
+			.map(|value| format!("{value}"))
 			.collect::<Vec<_>>()
 			.join(",");
 

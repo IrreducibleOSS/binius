@@ -298,7 +298,6 @@ where
 			.unwrap_or(0)
 	}
 
-	#[instrument(skip_all, level = "debug")]
 	fn execute_univariate_round(
 		&mut self,
 		skip_rounds: usize,

@@ -1,27 +1,27 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::array;
+use std::iter::repeat_with;
 
 use anyhow::Result;
-use binius_circuits::{
-	builder::{types::U, ConstraintSystemBuilder},
-	lasso::{
-		batch::LookupBatch,
-		big_integer_ops::byte_sliced_mul,
-		lookups::u8_arithmetic::{add_lookup, dci_lookup, mul_lookup},
-	},
-	transparent,
-};
+use binius_circuits::builder::types::U;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
-	tower_levels::{TowerLevel4, TowerLevel8},
-	BinaryField1b, BinaryField32b, BinaryField8b, Field,
+	arch::OptimalUnderlier, as_packed_field::PackedType, Field, PackedExtension,
+	PackedFieldIndexable,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_m3::{
+	builder::{
+		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
+		B128, B32,
+	},
+	gadgets::mul::MulUU32,
+};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
+use rand::thread_rng;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -32,6 +32,44 @@ struct Args {
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
+}
+
+#[derive(Debug)]
+pub struct MulTable {
+	table_id: TableId,
+	mul_table: MulUU32,
+}
+
+impl MulTable {
+	pub fn new(cs: &mut ConstraintSystem) -> Self {
+		let mut table = cs.add_table("Mulu32 Example");
+		let mul_table = MulUU32::new(&mut table);
+
+		Self {
+			table_id: table.id(),
+			mul_table,
+		}
+	}
+}
+
+impl<P> TableFiller<P> for MulTable
+where
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+{
+	type Event = (B32, B32);
+
+	fn id(&self) -> TableId {
+		self.table_id
+	}
+
+	fn fill<'a>(
+		&'a self,
+		rows: impl Iterator<Item = &'a Self::Event> + Clone,
+		witness: &'a mut TableWitnessSegment<P>,
+	) -> Result<()> {
+		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.cloned().unzip();
+		self.mul_table.populate_with_inputs(witness, x_vals, y_vals)
+	}
 }
 
 fn main() -> Result<()> {
@@ -50,57 +88,27 @@ fn main() -> Result<()> {
 	let log_n_muls = log2_ceil_usize(args.n_muls as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let mut cs = ConstraintSystem::new();
+	let table = MulTable::new(&mut cs);
+
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![1 << log_n_muls],
+	};
+
+	let mut rng = thread_rng();
+	let events = repeat_with(|| (B32::random(&mut rng), B32::random(&mut rng)))
+		.take(1 << log_n_muls)
+		.collect::<Vec<_>>();
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	// Assuming our input data is already transposed, i.e a length 4 array of B8's
-	let in_a = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
-			&mut builder,
-			format!("in_a_{i}"),
-			log_n_muls,
-		)
-		.unwrap()
-	});
-	let in_b = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
-			&mut builder,
-			format!("in_b_{i}"),
-			log_n_muls,
-		)
-		.unwrap()
-	});
-	let zero_oracle_carry =
-		transparent::constant(&mut builder, "zero carry", log_n_muls, BinaryField1b::ZERO).unwrap();
-
-	let lookup_t_mul = mul_lookup(&mut builder, "mul lookup")?;
-	let lookup_t_add = add_lookup(&mut builder, "add lookup")?;
-	let lookup_t_dci = dci_lookup(&mut builder, "dci lookup")?;
-
-	let mut lookup_batch_mul = LookupBatch::new([lookup_t_mul]);
-	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
-	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
-	let _mul_and_cout = byte_sliced_mul::<TowerLevel4, TowerLevel8>(
-		&mut builder,
-		"lasso_bytesliced_mul",
-		&in_a,
-		&in_b,
-		log_n_muls,
-		zero_oracle_carry,
-		&mut lookup_batch_mul,
-		&mut lookup_batch_add,
-		&mut lookup_batch_dci,
-	)?;
-	lookup_batch_mul.execute::<BinaryField32b>(&mut builder)?;
-	lookup_batch_add.execute::<BinaryField32b>(&mut builder)?;
-	lookup_batch_dci.execute::<BinaryField32b>(&mut builder)?;
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+	witness.fill_table_sequential(&table, &events)?;
 
 	drop(trace_gen_scope);
 
-	let witness = builder
-		.take_witness()
-		.expect("builder created with witness");
-	let constraint_system = builder.build()?;
+	let constraint_system = cs.compile(&statement)?;
+	let witness = witness.into_multilinear_extension_index();
 
 	let backend = make_portable_backend();
 

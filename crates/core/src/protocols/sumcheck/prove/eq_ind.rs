@@ -514,7 +514,6 @@ where
 		self.state.evaluation_order()
 	}
 
-	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let round = self.round();
 		let n_rounds_remaining = self.n_rounds_remaining();
@@ -537,7 +536,7 @@ where
 			.iter_mut()
 			.map(|(composition, const_eval_suffix)| {
 				let composition_at_infinity =
-					ArithCircuitPoly::new(composition.expression().leading_term());
+					ArithCircuitPoly::new(&composition.expression().leading_term());
 
 				const_eval_suffix.update(self.state.evaluation_order(), n_rounds_remaining);
 

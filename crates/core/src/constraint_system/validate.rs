@@ -44,7 +44,7 @@ where
 			match constraint.predicate {
 				ConstraintPredicate::Zero => zero_claims.push((
 					constraint.name.clone(),
-					ArithCircuitPoly::with_n_vars(
+					ArithCircuitPoly::with_n_vars_circuit(
 						multilinears.len(),
 						constraint.composition.clone(),
 					)?,

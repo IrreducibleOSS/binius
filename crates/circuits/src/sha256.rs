@@ -44,14 +44,14 @@ pub fn rotate_and_xor(
 		.map(|(oracle_id, shift, t)| {
 			match t {
 				RotateRightType::Circular => builder.add_shifted(
-					format!("RotateRightType::Circular shift:{} oracle_id: {}", shift, oracle_id),
+					format!("RotateRightType::Circular shift:{shift} oracle_id: {oracle_id}"),
 					*oracle_id,
 					32 - shift,
 					LOG_U32_BITS,
 					ShiftVariant::CircularLeft,
 				),
 				RotateRightType::Logical => builder.add_shifted(
-					format!("RotateRightType::Logical shift:{} oracle_id: {}", shift, oracle_id),
+					format!("RotateRightType::Logical shift:{shift} oracle_id: {oracle_id}"),
 					*oracle_id,
 					*shift,
 					LOG_U32_BITS,
@@ -63,7 +63,7 @@ pub fn rotate_and_xor(
 		.collect::<Result<Vec<_>, anyhow::Error>>()?;
 
 	let result_oracle_id = builder.add_linear_combination(
-		format!("linear combination of {:?}", shifted_oracle_ids),
+		format!("linear combination of {shifted_oracle_ids:?}"),
 		log_size,
 		shifted_oracle_ids.iter().map(|s| (*s, Field::ONE)),
 	)?;
@@ -137,7 +137,7 @@ pub fn sha256(
 
 		w[i] = arithmetic::u32::add(
 			builder,
-			format!("w[{}]", i),
+			format!("w[{i}]"),
 			w_addition,
 			s_addition,
 			arithmetic::Flags::Unchecked,

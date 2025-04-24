@@ -130,9 +130,8 @@ fn merge_multilins<F, P, Data>(
 /// * `fri_params` - the FRI parameters for the commitment opening protocol
 /// * `merkle_prover` - the Merkle tree prover used in FRI
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
-///     defined over subfields of `F`. They must be in ascending order by the number of variables
-///     in the packed multilinear (ie. number of variables minus log extension degree).
-#[tracing::instrument("piop::commit", skip_all)]
+///   defined over subfields of `F`. They must be in ascending order by the number of variables
+///   in the packed multilinear (ie. number of variables minus log extension degree).
 pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
@@ -177,7 +176,6 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument("piop::prove", skip_all)]
 pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
@@ -287,17 +285,53 @@ where
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 
-	for _ in 0..n_rounds {
-		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
-		let challenge = transcript.sample();
-		sumcheck_batch_prover.receive_challenge(challenge)?;
+	for round in 0..n_rounds {
+		let _span =
+			tracing::debug_span!("PIOP Compiler Round", phase = "piop_compiler", round = round)
+				.entered();
 
+		let bivariate_sumcheck_span = tracing::debug_span!(
+			"[step] Bivariate Sumcheck",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "phase.sub"
+		)
+		.entered();
+		let bivariate_sumcheck_calculate_coeffs_span = tracing::debug_span!(
+			"[task] (PIOP Compiler) Calculate Coeffs",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "task.main"
+		)
+		.entered();
+		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
+		drop(bivariate_sumcheck_calculate_coeffs_span);
+		let challenge = transcript.sample();
+		let bivariate_sumcheck_all_folds_span = tracing::debug_span!(
+			"[task] (PIOP Compiler) Fold (All Rounds)",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "task.main"
+		)
+		.entered();
+		sumcheck_batch_prover.receive_challenge(challenge)?;
+		drop(bivariate_sumcheck_all_folds_span);
+		drop(bivariate_sumcheck_span);
+
+		let fri_fold_rounds_span = tracing::debug_span!(
+			"[step] FRI Fold Rounds",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "phase.sub"
+		)
+		.entered();
 		match fri_prover.execute_fold_round(challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
 				transcript.message().write(&round_commitment);
 			}
 		}
+		drop(fri_fold_rounds_span);
 	}
 
 	sumcheck_batch_prover.finish(&mut transcript.message())?;

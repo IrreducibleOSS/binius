@@ -315,7 +315,6 @@ where
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
-#[instrument(skip_all, level = "debug")]
 pub fn zerocheck_univariate_evals<F, FDomain, FBase, P, Composition, M, Backend>(
 	multilinears: &[M],
 	compositions: &[Composition],
@@ -379,7 +378,14 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
+	let expand_span = tracing::debug_span!(
+		"[task] Expand Query",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
+	drop(expand_span);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
 	let pbase_prefix_lens = composition_degrees
@@ -392,6 +398,12 @@ where
 			)
 		})
 		.collect::<Vec<_>>();
+	let coeffs_span = tracing::debug_span!(
+		"[task] Univariate Skip Calculate coeffs",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 
 	let subcube_vars = log_batch + skip_rounds;
 	let log_subcube_count = n_vars - subcube_vars;
@@ -556,6 +568,7 @@ where
 	// domain which guarantees uniqueness of the round polynomial. We extrapolate them to max_domain_size to
 	// aid in Gruen section 3.2 optimization below and batch mixing.
 	let round_evals = extrapolate_round_evals(staggered_round_evals, skip_rounds, max_domain_size)?;
+	drop(coeffs_span);
 
 	Ok(ZerocheckUnivariateEvalsOutput {
 		round_evals,

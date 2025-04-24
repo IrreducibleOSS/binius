@@ -78,7 +78,7 @@ where
 	group.throughput(Throughput::Bytes(
 		((1 << LOG_SIZE) * committed_multilins.len() * std::mem::size_of::<F>()) as u64,
 	));
-	group.bench_function(BenchmarkId::new(format!("{}/log_size", name), LOG_SIZE), |b| {
+	group.bench_function(BenchmarkId::new(format!("{name}/log_size"), LOG_SIZE), |b| {
 		b.iter(|| {
 			fri::commit_interleaved_with(&rs_code, &fri_params, &merkle_prover, |message_buffer| {
 				merge_multilins(&committed_multilins, message_buffer)

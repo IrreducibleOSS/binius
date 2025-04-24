@@ -2,7 +2,6 @@
 
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::instrument;
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -100,7 +99,6 @@ pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
 /// provided to [`crate::protocols::sumcheck::batch_verify_zerocheck_univariate_round`] during proof
 /// verification.
 #[allow(clippy::type_complexity)]
-#[instrument(skip_all, level = "debug")]
 pub fn batch_prove_zerocheck_univariate_round<'a, F, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
@@ -152,11 +150,18 @@ where
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
+	let mle_fold_low_span = tracing::debug_span!(
+		"[task] Initial MLE Fold Low",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
 		let regular_prover = Box::new(prover).fold_univariate_round(univariate_challenge)?;
 		reduction_provers.push(regular_prover);
 	}
+	drop(mle_fold_low_span);
 
 	let batch_prove_start = BatchProveStart {
 		batch_coeffs,
