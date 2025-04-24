@@ -55,7 +55,7 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "debug-amd-stable"
             cmd: "cargo +$RUST_VERSION build --tests --benches --examples --no-default-features --features rayon"
-          - runner: "c8g-2xlarge"
+          - runner: "m8g-2xlarge"
             name: "debug-arm"
             cmd: "cargo build --tests --benches --examples"
           - runner: "c7a-2xlarge"
@@ -105,10 +105,10 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "no-default-features"
             cmd: 'CARGO_EXTRA_FLAGS="--no-default-features" RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
-          - runner: "c8g-4xlarge"
+          - runner: "m8g-2xlarge"
             name: "arm"
             cmd: 'RUSTFLAGS="-C target-cpu=native -C target-feature=+aes" ./scripts/run_tests_and_examples.sh'
-          - runner: "c8g-2xlarge"
+          - runner: "m8g-2xlarge"
             name: "arm-portable"
             cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
     steps:
