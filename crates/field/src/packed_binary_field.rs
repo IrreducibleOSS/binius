@@ -953,16 +953,14 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize_then_deserialize_8b() {
-		test_serialize_then_deserialize::<PackedBinaryField32x2b>();
-	}
-
-	#[test]
 	fn test_set_then_get_4b() {
 		test_set_then_get::<PackedBinaryField32x4b>();
 		test_set_then_get::<PackedBinaryField64x4b>();
 		test_set_then_get::<PackedBinaryField128x4b>();
+	}
 
+	#[test]
+	fn test_serialize_then_deserialize_4b() {
 		test_serialize_then_deserialize::<PackedBinaryField32x4b>();
 		test_serialize_then_deserialize::<PackedBinaryField64x4b>();
 		test_serialize_then_deserialize::<PackedBinaryField128x4b>();
@@ -974,11 +972,17 @@ mod tests {
 		test_set_then_get::<PackedBinaryField4x32b>();
 		test_set_then_get::<PackedBinaryField8x32b>();
 		test_set_then_get::<PackedBinaryField16x32b>();
+	}
 
+	#[test]
+	fn test_elements_order_32b() {
 		test_elements_order::<PackedBinaryField4x32b>();
 		test_elements_order::<PackedBinaryField8x32b>();
 		test_elements_order::<PackedBinaryField16x32b>();
+	}
 
+	#[test]
+	fn test_serialize_then_deserialize_32b() {
 		test_serialize_then_deserialize::<PackedBinaryField4x32b>();
 		test_serialize_then_deserialize::<PackedBinaryField8x32b>();
 		test_serialize_then_deserialize::<PackedBinaryField16x32b>();
@@ -989,11 +993,17 @@ mod tests {
 		test_set_then_get::<PackedBinaryField2x64b>();
 		test_set_then_get::<PackedBinaryField4x64b>();
 		test_set_then_get::<PackedBinaryField8x64b>();
+	}
 
+	#[test]
+	fn test_elements_order_64b() {
 		test_elements_order::<PackedBinaryField2x64b>();
 		test_elements_order::<PackedBinaryField4x64b>();
 		test_elements_order::<PackedBinaryField8x64b>();
+	}
 
+	#[test]
+	fn test_serialize_then_deserialize_64b() {
 		test_serialize_then_deserialize::<PackedBinaryField2x64b>();
 		test_serialize_then_deserialize::<PackedBinaryField4x64b>();
 		test_serialize_then_deserialize::<PackedBinaryField8x64b>();
@@ -1004,11 +1014,17 @@ mod tests {
 		test_set_then_get::<PackedBinaryField1x128b>();
 		test_set_then_get::<PackedBinaryField2x128b>();
 		test_set_then_get::<PackedBinaryField4x128b>();
+	}
 
+	#[test]
+	fn test_elements_order_128b() {
 		test_elements_order::<PackedBinaryField1x128b>();
 		test_elements_order::<PackedBinaryField2x128b>();
 		test_elements_order::<PackedBinaryField4x128b>();
+	}
 
+	#[test]
+	fn test_serialize_then_deserialize_128b() {
 		test_serialize_then_deserialize::<PackedBinaryField1x128b>();
 		test_serialize_then_deserialize::<PackedBinaryField2x128b>();
 		test_serialize_then_deserialize::<PackedBinaryField4x128b>();

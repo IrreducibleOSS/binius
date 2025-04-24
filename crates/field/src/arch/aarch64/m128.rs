@@ -167,7 +167,9 @@ impl SerializeBytes for M128 {
 		_mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
+
 		write_buf.put_u128_le(self.0);
+
 		Ok(())
 	}
 }
@@ -181,6 +183,7 @@ impl DeserializeBytes for M128 {
 		Self: Sized,
 	{
 		assert_enough_data_for(&read_buf, std::mem::size_of::<Self>())?;
+		
 		Ok(Self(read_buf.get_u128_le()))
 	}
 }
@@ -278,7 +281,7 @@ impl std::fmt::Display for M128 {
 
 impl std::fmt::Debug for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "M128({})", self)
+		write!(f, "M128({self})")
 	}
 }
 
@@ -592,3 +595,26 @@ impl_iteration!(M128,
 	@strategy FallbackStrategy, U2, U4,
 	@strategy DivisibleStrategy, u8, u16, u32, u64, u128, M128,
 );
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use binius_utils::bytes::BytesMut;
+
+    #[test]
+    fn test_serialize_and_deserialize_m128() {
+		let mode = SerializationMode::Native;
+
+        let mut rng = StdRng::from_seed([0; 32]);
+
+        let original_value = M128::from(rng.gen::<u128>());
+
+        let mut buf = BytesMut::new();
+        original_value.serialize(&mut buf, mode).unwrap();
+
+        let deserialized_value = M128::deserialize(buf.freeze(), mode).unwrap();
+
+        assert_eq!(original_value, deserialized_value);
+    }
+}
