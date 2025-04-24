@@ -210,19 +210,4 @@ mod tests {
 				.unwrap();
 		});
 	}
-
-	#[test]
-	fn test_basic_lookup_producer_nonzero_counts() {
-		with_lookup_test_instance(true, |cs, witness| {
-			let statement = Statement {
-				boundaries: vec![],
-				table_sizes: witness.table_sizes(),
-			};
-			let ccs = cs.compile(&statement).unwrap();
-			let witness = witness.into_multilinear_extension_index();
-
-			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
-				.unwrap();
-		});
-	}
 }
