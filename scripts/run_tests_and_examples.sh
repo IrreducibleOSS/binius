@@ -10,7 +10,7 @@ FEATURES="${FEATURES:-}"
 if [ ! -z "$CARGO_STABLE" ]; then
     FEATURES="$FEATURES --no-default-features --features=rayon"
 fi
-CARGO="cargo ${CARGO_STABLE:+ +$RUST_VERSION} -Z timings"
+CARGO="cargo ${CARGO_STABLE:+ +$RUST_VERSION} --timings"
 export CARGO_LOG=debug
 
 env

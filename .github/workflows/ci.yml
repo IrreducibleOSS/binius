@@ -106,7 +106,7 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "no-default-features"
             cmd: 'CARGO_EXTRA_FLAGS="--no-default-features" RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
-          - runner: "c8g-2xlarge"
+          - runner: "c8g-4xlarge"
             name: "arm"
             cmd: 'RUSTFLAGS="-C target-cpu=native -C target-feature=+aes" ./scripts/run_tests_and_examples.sh'
           - runner: "c8g-2xlarge"
