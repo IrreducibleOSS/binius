@@ -135,6 +135,12 @@ pub enum ColumnDef<F: TowerField = B128> {
 		query_size: usize,
 		query_bits: usize,
 	},
+	ZeroPadded {
+		col: ColumnId,
+		num_extra_variables: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	},
 	Shifted {
 		col: ColumnId,
 		offset: usize,

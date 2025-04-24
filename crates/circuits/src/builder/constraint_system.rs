@@ -415,11 +415,13 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		id: OracleId,
 		n_vars: usize,
+		nonzero_index: usize,
+		start_index: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.zero_padded(id, n_vars)
+			.zero_padded(id, n_vars, nonzero_index, start_index)
 	}
 
 	fn scoped_name(&self, name: impl ToString) -> String {

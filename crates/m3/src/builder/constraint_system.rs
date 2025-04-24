@@ -407,6 +407,17 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect();
 			addition.projected(oracle_lookup[col.table_index], query_values, *start_index)?
 		}
+		ColumnDef::ZeroPadded {
+			col,
+			num_extra_variables,
+			start_index,
+			nonzero_index,
+		} => addition.zero_padded(
+			oracle_lookup[col.table_index],
+			*num_extra_variables,
+			*nonzero_index,
+			*start_index,
+		)?,
 		ColumnDef::Shifted {
 			col,
 			offset,

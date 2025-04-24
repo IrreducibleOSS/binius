@@ -563,8 +563,11 @@ where
 
 	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
 
+	let start_index = inner_n_vars;
+	let num_extra_vars = n_vars - inner_n_vars;
+	let nonzero_index = (1 << num_extra_vars) - 1;
 	let zero_padded_id = oracles
-		.add_zero_padded(select_row_oracle_id, n_vars)
+		.add_zero_padded(select_row_oracle_id, num_extra_vars, nonzero_index, start_index)
 		.unwrap();
 
 	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();

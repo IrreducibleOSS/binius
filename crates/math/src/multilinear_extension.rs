@@ -12,7 +12,9 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::instrument;
 
-use crate::{fold::fold_left, fold_middle, fold_right, Error, MultilinearQueryRef, PackingDeref};
+use crate::{
+	fold::fold_left, fold_middle, fold_right, zero_pad, Error, MultilinearQueryRef, PackingDeref,
+};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -327,6 +329,37 @@ where
 		// the vector of tensor product-expanded query coefficients.
 		fold_right(&self.evals, self.mu, query.expansion(), query.n_vars(), out)
 	}
+
+	pub fn zero_pad<PE>(
+		&self,
+		new_n_vars: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	) -> Result<MultilinearExtension<PE>, Error>
+	where
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		let init_n_vars = self.mu;
+		if start_index >= init_n_vars {
+			bail!(Error::IncorrectStartIndex { expected: self.mu })
+		}
+		if new_n_vars < init_n_vars {
+			bail!(Error::IncorrectPadSize {
+				expected: new_n_vars,
+			});
+		}
+		if nonzero_index >= 1 << (new_n_vars - init_n_vars) {
+			bail!(Error::IncorrectNonZeroIndex {
+				expected: 1 << (new_n_vars - init_n_vars),
+			});
+		}
+
+		let mut result = zeroed_vec(1 << new_n_vars);
+
+		zero_pad(&self.evals, init_n_vars, new_n_vars, start_index, nonzero_index, &mut result)?;
+		MultilinearExtension::new(new_n_vars, result)
+	}
 }
 
 impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<F, Data> {
@@ -494,6 +527,18 @@ mod tests {
 		new_vals
 	}
 
+	fn get_all_bits<PE>(values: &[PE]) -> Vec<PE::Scalar>
+	where
+		PE: PackedField,
+	{
+		let new_vals = values
+			.iter()
+			.flat_map(|v| (0..PE::WIDTH).map(|i| v.get(i)).collect::<Vec<_>>())
+			.collect::<Vec<_>>();
+
+		new_vals
+	}
+
 	#[test]
 	fn test_evaluate_middle_32b_to_16b() {
 		let mut rng = StdRng::seed_from_u64(0);
@@ -599,6 +644,40 @@ mod tests {
 		assert_eq!(evals_second_quarter, expected_second_quarter);
 		assert_eq!(evals_third_quarter, expected_third_quarter);
 		assert_eq!(evals_fourth_quarter, expected_fourth_quarter);
+	}
+
+	#[test]
+	fn test_zeropad_8b_to_32b_project() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values = repeat_with(|| PackedBinaryField8x1b::random(&mut rng))
+			.take(1 << 2)
+			.collect::<Vec<_>>();
+		let expected_out = get_all_bits(&values);
+
+		let poly = MultilinearExtension::from_values(values).unwrap();
+
+		// Quadruple the number of elements.
+		let new_n_vars = poly.n_vars() + 2;
+		// Pad each block of 8 consecutive bits to 32 bits.
+		let start_index = 3;
+		// Pad to the right.
+		let nonzero_index = 0;
+		// Pad the polynomial.
+		let padded_poly = poly
+			.zero_pad::<BinaryField1b>(new_n_vars, start_index, nonzero_index)
+			.unwrap();
+
+		// Now, project to the first quarter of each block of 32 bits.
+		let query_first = multilinear_query::<BinaryField1b>(&[
+			<BinaryField1b as PackedField>::zero(),
+			<BinaryField1b as PackedField>::zero(),
+		]);
+		let projected_poly = padded_poly
+			.evaluate_partial(query_first.to_ref(), 3)
+			.unwrap();
+
+		// Assert that the projection of the padded polynomials is equal to the original.
+		assert_eq!(expected_out, projected_poly.evals());
 	}
 
 	#[test]

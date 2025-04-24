@@ -3,7 +3,6 @@
 use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
-use binius_math::extrapolate_line_scalar;
 use getset::{Getters, MutGetters};
 use tracing::instrument;
 
@@ -15,9 +14,13 @@ use super::{
 		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
 };
-use crate::oracle::{
-	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-	MultilinearPolyVariant, OracleId,
+use crate::{
+	oracle::{
+		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
+		MultilinearPolyVariant, OracleId,
+	},
+	polynomial::MultivariatePoly,
+	transparent::select_row::SelectRow,
 };
 
 /// A mutable verifier state.
@@ -263,24 +266,32 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 						_ => Err(VerificationError::MissingLinearCombinationEval.into()),
 					})?;
 			}
-			MultilinearPolyVariant::ZeroPadded(inner) => {
+			MultilinearPolyVariant::ZeroPadded(padded) => {
+				let inner = padded.id();
+				let inner_n_vars = self.oracles.n_vars(inner);
+
+				let start_index = padded.start_index();
+				let extra_n_vars = padded.new_n_vars() - inner_n_vars;
+
 				let (inner_eval, subproof) = match evalcheck_proof {
 					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let inner_n_vars = self.oracles.n_vars(inner);
+				let (first_subclaim_eval_point, zs_second_subclaim) =
+					eval_point.split_at(start_index);
 
-				let (subclaim_eval_point, zs) = eval_point.split_at(inner_n_vars);
+				let (zs, second_subclaim) = zs_second_subclaim.split_at(extra_n_vars);
+				let subclaim_eval_point = {
+					let mut subclaim_eval_point = first_subclaim_eval_point.to_vec();
+					subclaim_eval_point.extend_from_slice(second_subclaim);
+					subclaim_eval_point
+				};
 
-				let mut extrapolate_eval = inner_eval;
+				let select_row = SelectRow::new(zs.len(), padded.nonzero_index()).unwrap();
+				let expected_eval = inner_eval * select_row.evaluate(zs).unwrap();
 
-				for z in zs {
-					extrapolate_eval =
-						extrapolate_line_scalar::<F, F>(F::ZERO, extrapolate_eval, *z);
-				}
-
-				if extrapolate_eval != eval {
+				if expected_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
 				}
 
@@ -288,7 +299,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					inner_eval,
 					*subproof,
 					inner,
-					subclaim_eval_point,
+					&subclaim_eval_point,
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {

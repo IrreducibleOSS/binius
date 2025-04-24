@@ -6,6 +6,8 @@ use crate::oracle::OracleId;
 pub enum Error {
 	#[error("the number of variables of the composition polynomial does not match the number of composed polynomials")]
 	CompositionMismatch,
+	#[error("expected the start index to be at most {expected}")]
+	InvalidStartIndex { expected: usize },
 	#[error("expected the polynomial to have {expected} variables")]
 	IncorrectNumberOfVariables { expected: usize },
 	#[error("attempted to project more variables {values_len} than inner polynomial has {n_vars}")]

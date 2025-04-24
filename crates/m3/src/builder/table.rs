@@ -231,6 +231,35 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables) by left
+	/// padding each FSub element with zeroes.
+	pub fn add_zero_pad_upcast<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
+		let num_extra_variables = NEW_VALUES_PER_ROW - VALUES_PER_ROW;
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let nonzero_index = (1 << num_extra_variables) - 1;
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::ZeroPadded {
+				col: col.id(),
+				num_extra_variables,
+				start_index: log_values_per_row,
+				nonzero_index,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,

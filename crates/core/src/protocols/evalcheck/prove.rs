@@ -356,7 +356,8 @@ where
 				};
 			}
 
-			MultilinearPolyVariant::ZeroPadded(id) => {
+			MultilinearPolyVariant::ZeroPadded(padded) => {
+				let id = padded.id();
 				let inner = self.oracles.oracle(id);
 				let inner_n_vars = inner.n_vars();
 				let inner_eval_point = eval_point.slice(0..inner_n_vars);
@@ -508,7 +509,8 @@ where
 
 				EvalcheckProof::LinearCombination { subproofs }
 			}
-			MultilinearPolyVariant::ZeroPadded(id) => {
+			MultilinearPolyVariant::ZeroPadded(padded) => {
+				let id = padded.id();
 				let inner_n_vars = self.oracles.n_vars(id);
 
 				let inner_eval_point = &eval_point[..inner_n_vars];
