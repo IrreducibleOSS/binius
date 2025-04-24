@@ -81,6 +81,19 @@ impl<F: BinaryField> DynamicDispatchNTT<F> {
 
 		Ok(result)
 	}
+
+	pub fn convert<FTgt: BinaryField + From<F>>(&self) -> DynamicDispatchNTT<FTgt> {
+		match self {
+			Self::SingleThreaded(ntt) => DynamicDispatchNTT::SingleThreaded(ntt.convert()),
+			Self::SingleThreadedPrecompute(ntt) => {
+				DynamicDispatchNTT::SingleThreadedPrecompute(ntt.convert())
+			}
+			Self::MultiThreaded(ntt) => DynamicDispatchNTT::MultiThreaded(ntt.convert()),
+			Self::MultiThreadedPrecompute(ntt) => {
+				DynamicDispatchNTT::MultiThreadedPrecompute(ntt.convert())
+			}
+		}
+	}
 }
 
 impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {

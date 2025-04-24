@@ -35,7 +35,7 @@ pub fn fold_codeword<F, FS>(
 ) -> Vec<F>
 where
 	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
+	FS: TowerField,
 {
 	// Preconditions
 	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
@@ -86,7 +86,7 @@ fn fold_interleaved<F, FS, P>(
 ) -> Vec<F>
 where
 	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
+	FS: TowerField,
 	P: PackedField<Scalar = F>,
 {
 	assert_eq!(len_packed_slice(codeword), 1 << (rs_code.log_len() + log_batch_size));
@@ -179,7 +179,7 @@ pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
 	F: BinaryField,
-	FA: BinaryField,
+	FA: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
@@ -213,7 +213,7 @@ pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
 	F: BinaryField,
-	FA: BinaryField,
+	FA: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
@@ -295,7 +295,7 @@ where
 impl<'a, F, FA, P, MerkleProver, VCS> FRIFolder<'a, F, FA, P, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
@@ -507,7 +507,7 @@ where
 impl<F, FA, P, MerkleProver, VCS> FRIQueryProver<'_, F, FA, P, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,

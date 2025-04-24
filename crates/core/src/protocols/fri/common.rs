@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use binius_field::{
 	packed::len_packed_slice, util::inner_product_unchecked, BinaryField, ExtensionField,
-	PackedField,
+	PackedField, TowerField,
 };
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
@@ -31,7 +31,7 @@ fn fold_pair<F, FS>(
 ) -> F
 where
 	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
+	FS: TowerField,
 {
 	// Perform inverse additive NTT butterfly
 	let t = rs_code.get_ntt().get_subspace_eval(round, index);
@@ -66,7 +66,7 @@ pub fn fold_chunk<F, FS>(
 ) -> F
 where
 	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
+	FS: TowerField,
 {
 	// Preconditions
 	debug_assert!(!folding_challenges.is_empty());
@@ -138,7 +138,7 @@ pub fn fold_interleaved_chunk<F, FS, P>(
 ) -> F
 where
 	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
+	FS: TowerField,
 	P: PackedField<Scalar = F>,
 {
 	// Preconditions
@@ -198,7 +198,7 @@ where
 impl<F, FA> FRIParams<F, FA>
 where
 	F: BinaryField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 {
 	pub fn new(
 		rs_code: ReedSolomonCode<FA>,
@@ -261,7 +261,7 @@ pub fn vcs_optimal_layers_depths_iter<'a, F, FA, VCS>(
 where
 	VCS: MerkleTreeScheme<F>,
 	F: BinaryField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 {
 	fri_params
 		.fold_arities()
@@ -285,7 +285,7 @@ pub fn calculate_n_test_queries<F, PS>(
 ) -> Result<usize, Error>
 where
 	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedField<Scalar: BinaryField>,
+	PS: PackedField<Scalar: TowerField>,
 {
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
 	let sumcheck_err = (2 * code.log_dim()) as f64 / field_size;

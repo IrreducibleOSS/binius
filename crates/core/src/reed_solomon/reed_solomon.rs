@@ -12,7 +12,7 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
+use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension, TowerField};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
 use binius_utils::bail;
@@ -34,7 +34,7 @@ where
 
 impl<P> ReedSolomonCode<P>
 where
-	P: PackedField<Scalar: BinaryField>,
+	P: PackedField<Scalar: TowerField>,
 {
 	pub fn new(
 		log_dimension: usize,
@@ -46,7 +46,7 @@ where
 			.thread_settings
 			.log_threads_count()
 			.saturating_sub(log_inv_rate);
-		let ntt = DynamicDispatchNTT::new(
+		let ntt = DynamicDispatchNTT::<<P::Scalar as TowerField>::Canonical>::new(
 			log_dimension + log_inv_rate,
 			&NTTOptions {
 				thread_settings: ThreadingSettings::ExplicitThreadsCount {
@@ -60,7 +60,7 @@ where
 			!matches!(ntt_options.thread_settings, ThreadingSettings::SingleThreaded);
 
 		Ok(Self {
-			ntt,
+			ntt: ntt.convert(),
 			log_dimension,
 			log_inv_rate,
 			multithreaded,

@@ -4,7 +4,7 @@ use std::{any::TypeId, borrow::Cow, ops::Deref};
 
 use binius_field::{
 	packed::{PackedSliceMut, RepackFromCanonical},
-	BinaryField, Field, PackedExtension, PackedField, TowerField,
+	Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -140,7 +140,7 @@ pub fn commit<F, FEncode, P, PC, M, MTScheme, MTProver>(
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
 where
 	F: TowerField,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode> + RepackFromCanonical<PC>,
 	PC: PackedField,
 	M: MultilinearPoly<P>,
@@ -206,7 +206,7 @@ pub fn prove<
 where
 	F: TowerField,
 	FDomain: Field,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	PC: PackedField,
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -291,7 +291,7 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,

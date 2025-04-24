@@ -81,6 +81,10 @@ where
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis_checked(1 << iota)?)
 	}
+
+	fn to_canonical(self) -> Self::Canonical {
+		Self::Canonical::from(self)
+	}
 }
 
 /// Returns the i'th basis element of `FExt` as a field extension of `FSub`.

@@ -60,6 +60,15 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 			_marker: PhantomData,
 		}
 	}
+
+	pub fn convert<FTgt: BinaryField + From<F>>(
+		&self,
+	) -> SingleThreadedNTT<FTgt, TA::ConvertedType<FTgt>> {
+		SingleThreadedNTT {
+			s_evals: self.s_evals.iter().map(|ta| ta.convert()).collect(),
+			_marker: PhantomData,
+		}
+	}
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {

@@ -41,6 +41,21 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	}
 }
 
+impl<F, TA> MultithreadedNTT<F, TA>
+where
+	F: BinaryField,
+	TA: TwiddleAccess<F> + Sync,
+{
+	pub fn convert<FTgt: BinaryField + From<F>>(
+		&self,
+	) -> MultithreadedNTT<FTgt, TA::ConvertedType<FTgt>> {
+		MultithreadedNTT {
+			single_threaded: self.single_threaded.convert(),
+			log_max_threads: self.log_max_threads,
+		}
+	}
+}
+
 impl<F, TA> AdditiveNTT<F> for MultithreadedNTT<F, TA>
 where
 	F: BinaryField,
