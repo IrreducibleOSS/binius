@@ -14,9 +14,9 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
 		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B64,
+		B128, B32,
 	},
-	gadgets::mul::MulUU64,
+	gadgets::mul::MulUU32,
 };
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
@@ -37,13 +37,13 @@ struct Args {
 #[derive(Debug)]
 pub struct MulTable {
 	table_id: TableId,
-	mul_table: MulUU64,
+	mul_table: MulUU32,
 }
 
 impl MulTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
-		let mut table = cs.add_table("Mulu64 Example");
-		let mul_table = MulUU64::new(&mut table);
+		let mut table = cs.add_table("Mulu32 Example");
+		let mul_table = MulUU32::new(&mut table);
 
 		Self {
 			table_id: table.id(),
@@ -54,9 +54,9 @@ impl MulTable {
 
 impl<P> TableFiller<P> for MulTable
 where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B64>,
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 {
-	type Event = (B64, B64);
+	type Event = (B32, B32);
 
 	fn id(&self) -> TableId {
 		self.table_id
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} u64 multiplication", args.n_muls);
+	println!("Verifying {} u32 multiplication", args.n_muls);
 
 	let log_n_muls = log2_ceil_usize(args.n_muls as usize);
 
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
 	};
 
 	let mut rng = thread_rng();
-	let events = repeat_with(|| (B64::random(&mut rng), B64::random(&mut rng)))
+	let events = repeat_with(|| (B32::random(&mut rng), B32::random(&mut rng)))
 		.take(1 << log_n_muls)
 		.collect::<Vec<_>>();
 

@@ -23,7 +23,7 @@ use super::{
 	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts,
+	upcast_col, ColumnIndex, FlushOpts, B1,
 };
 use crate::builder::column::ColumnId;
 
@@ -254,6 +254,79 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::Constant {
 				poly: Arc::new(mle),
+			},
+		)
+	}
+
+	/// Adds field exponentiation column with a fixed base
+	///
+	/// ## Parameters
+	/// - `name`: Name for the column
+	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
+	/// - `base`: The base to exponentiate. The field used in exponentiation will be `FSub`
+	///
+	/// ## Preconditions
+	/// * `pow_bits.len()` must be less than or equal to the width of the field `FSub`
+	///
+	/// ## NOTE
+	/// * The witness generation for the return column will be done inside gkr_gpa *
+	pub fn add_static_exp<FExpBase>(
+		&mut self,
+		name: impl ToString,
+		pow_bits: &[Col<B1>],
+		base: F,
+	) -> Col<FExpBase>
+	where
+		FExpBase: TowerField,
+		F: ExtensionField<FExpBase>,
+	{
+		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
+
+		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
+		let namespaced_name = self.namespaced_name(name);
+		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		self.table.new_column(
+			namespaced_name,
+			ColumnDef::StaticExp {
+				bit_cols,
+				base,
+				base_tower_level: FExpBase::TOWER_LEVEL,
+			},
+		)
+	}
+
+	/// Adds field exponentiation column with a base from another column
+	///
+	/// ## Parameters
+	/// - `name`: Name for the column
+	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
+	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be `FSub`
+	///
+	/// ## Preconditions
+	/// * `pow_bits.len()` must be less than or equal to the width of field `FSub`
+	///
+	/// ## NOTE
+	/// * The witness generation for the return column will be done inside gkr_gpa *
+	pub fn add_dynamic_exp<FExpBase>(
+		&mut self,
+		name: impl ToString,
+		pow_bits: &[Col<B1>],
+		base: Col<FExpBase>,
+	) -> Col<FExpBase>
+	where
+		FExpBase: TowerField,
+		F: ExtensionField<FExpBase>,
+	{
+		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
+
+		let namespaced_name = self.namespaced_name(name);
+		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		self.table.new_column(
+			namespaced_name,
+			ColumnDef::DynamicExp {
+				bit_cols,
+				base: base.id().table_index,
+				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
 	}

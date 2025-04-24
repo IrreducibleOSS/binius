@@ -87,8 +87,8 @@ name = "blake3_circuit"
 path = "blake3_circuit.rs"
 
 [[example]]
-name = "u32_mul_gkr_exp_lookups"
-path = "u32_mul_gkr_exp_lookups.rs"
+name = "u32_mul_gkr"
+path = "u32_mul_gkr.rs"
 
 [features]
 default = ["rayon", "nightly_features"]
