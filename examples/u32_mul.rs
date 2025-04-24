@@ -57,7 +57,7 @@ fn main() -> Result<()> {
 	let in_a = array::from_fn(|i| {
 		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 			&mut builder,
-			format!("in_a_{}", i),
+			format!("in_a_{i}"),
 			log_n_muls,
 		)
 		.unwrap()
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
 	let in_b = array::from_fn(|i| {
 		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 			&mut builder,
-			format!("in_b_{}", i),
+			format!("in_b_{i}"),
 			log_n_muls,
 		)
 		.unwrap()

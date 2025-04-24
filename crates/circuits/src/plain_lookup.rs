@@ -88,9 +88,7 @@ where
 	);
 
 	let permuted_lookup_t = (0..lookup_t.as_ref().len())
-		.map(|i| {
-			builder.add_committed(format!("permuted_t_{}", i), t_log_rows, FTable::TOWER_LEVEL)
-		})
+		.map(|i| builder.add_committed(format!("permuted_t_{i}"), t_log_rows, FTable::TOWER_LEVEL))
 		.collect::<Vec<_>>();
 
 	if let Some(witness) = builder.witness() {

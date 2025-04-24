@@ -342,14 +342,14 @@ pub fn u32const_repeating(
 	let brodcasted = vec![x; 1 << (PackedType::<U, B1>::LOG_WIDTH.saturating_sub(LOG_U32_BITS))];
 
 	let transparent_id = builder.add_transparent(
-		format!("transparent {}", name),
+		format!("transparent {name}"),
 		MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(into_packed_vec::<
 			PackedType<U, B1>,
 		>(&brodcasted))?,
 	)?;
 
 	let repeating_id = builder.add_repeating(
-		format!("repeating {}", name),
+		format!("repeating {name}"),
 		transparent_id,
 		log_size - PackedType::<U, B1>::LOG_WIDTH,
 	)?;

@@ -37,7 +37,7 @@ fn main() -> Result<()> {
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
 	let x0 = args.starting_value; //9999999;
-	println!("Verifying collatz orbit over u32 with starting value {}", x0);
+	println!("Verifying collatz orbit over u32 with starting value {x0}");
 
 	let log_inv_rate = args.log_inv_rate as usize;
 
