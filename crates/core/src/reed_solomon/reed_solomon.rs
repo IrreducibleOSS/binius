@@ -12,7 +12,7 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
+use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension, TowerField};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
 use binius_utils::bail;
