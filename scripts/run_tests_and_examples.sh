@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+set -x
 
 export RUST_BACKTRACE=full
 CARGO_PROFILE="${CARGO_PROFILE:-test}"
@@ -9,7 +10,10 @@ FEATURES="${FEATURES:-}"
 if [ ! -z "$CARGO_STABLE" ]; then
     FEATURES="$FEATURES --no-default-features --features=rayon"
 fi
-CARGO="cargo ${CARGO_STABLE:+ +$RUST_VERSION}"
+CARGO="cargo -Ztimings ${CARGO_STABLE:+ +$RUST_VERSION}"
+export CARGO_LOG=debug
+
+env
 
 # Do not build examples at this stage by passing "--tests" explicitly
 $CARGO test --profile $CARGO_PROFILE $FEATURES $CARGO_EXTRA_FLAGS --tests
