@@ -300,7 +300,7 @@ impl Display for BinaryField128bPolyval {
 
 impl Debug for BinaryField128bPolyval {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		write!(f, "BinaryField128bPolyval({})", self)
+		write!(f, "BinaryField128bPolyval({self})")
 	}
 }
 

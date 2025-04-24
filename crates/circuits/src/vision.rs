@@ -260,7 +260,7 @@ where {
 	let even_round_consts: [OracleId; STATE_SIZE] = array::from_fn(|i| {
 		builder
 			.add_transparent(
-				format!("even_round_consts_{}", i),
+				format!("even_round_consts_{i}"),
 				Constant::new(log_size, BinaryField32b::new(VISION_RC_EVEN[i][round_i])),
 			)
 			.unwrap()
@@ -268,7 +268,7 @@ where {
 	let odd_round_consts: [OracleId; STATE_SIZE] = array::from_fn(|i| {
 		builder
 			.add_transparent(
-				format!("odd_round_consts_{}", i),
+				format!("odd_round_consts_{i}"),
 				Constant::new(log_size, BinaryField32b::new(VISION_RC_ODD[i][round_i])),
 			)
 			.unwrap()
@@ -277,7 +277,7 @@ where {
 	let mds_out_0: [_; STATE_SIZE] = array::from_fn(|row| {
 		builder
 			.add_linear_combination(
-				format!("mds_out_evens_{}", row),
+				format!("mds_out_evens_{row}"),
 				log_size,
 				MDS_TRANS[row]
 					.iter()
@@ -289,7 +289,7 @@ where {
 	let mds_out_1: [_; STATE_SIZE] = array::from_fn(|row| {
 		builder
 			.add_linear_combination(
-				format!("mds_out_odds_{}", row),
+				format!("mds_out_odds_{row}"),
 				log_size,
 				MDS_TRANS[row]
 					.iter()
@@ -301,7 +301,7 @@ where {
 	let round_out_0: [_; STATE_SIZE] = array::from_fn(|row| {
 		builder
 			.add_linear_combination(
-				format!("round_out_evens_{}", row),
+				format!("round_out_evens_{row}"),
 				log_size,
 				[
 					(mds_out_0[row], Field::ONE),
@@ -314,7 +314,7 @@ where {
 	let perm_out = array::from_fn(|row| {
 		builder
 			.add_linear_combination(
-				format!("round_out_odd_{}", row),
+				format!("round_out_odd_{row}"),
 				log_size,
 				[
 					(mds_out_1[row], Field::ONE),

@@ -28,7 +28,7 @@ where
 	let data: Vec<F> = repeat_with(|| Field::random(&mut rng))
 		.take(1 << (LOG_ELEMS + LOG_ELEMS_IN_LEAF))
 		.collect();
-	let mut group = c.benchmark_group(format!("slow/merkle_tree/{}", hash_name));
+	let mut group = c.benchmark_group(format!("slow/merkle_tree/{hash_name}"));
 	group.throughput(Throughput::Bytes(
 		((1 << (LOG_ELEMS + LOG_ELEMS_IN_LEAF)) * std::mem::size_of::<F>()) as u64,
 	));

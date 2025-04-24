@@ -41,7 +41,7 @@ impl Display for BitwiseOp {
 			BitwiseOp::Xor => String::from("Xor"),
 			BitwiseOp::Or => String::from("Or"),
 		};
-		write!(f, "{}", str)
+		write!(f, "{str}")
 	}
 }
 

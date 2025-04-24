@@ -115,7 +115,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			for log_values_per_row in table.partitions.keys() {
 				let values_per_row = 1 << log_values_per_row;
 				let selector_type_str = if values_per_row > 1 {
-					format!("B1x{}", values_per_row)
+					format!("B1x{values_per_row}")
 				} else {
 					"B1".to_string()
 				};
