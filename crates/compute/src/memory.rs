@@ -2,7 +2,7 @@
 
 use std::ops::RangeBounds;
 
-pub trait DevSlice<T> {
+pub trait OpaqueSlice<T> {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
@@ -10,13 +10,13 @@ pub trait DevSlice<T> {
 	fn len(&self) -> usize;
 }
 
-impl<T> DevSlice<T> for &[T] {
+impl<T> OpaqueSlice<T> for &[T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
 }
 
-impl<T> DevSlice<T> for &mut [T] {
+impl<T> OpaqueSlice<T> for &mut [T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
@@ -24,13 +24,16 @@ impl<T> DevSlice<T> for &mut [T] {
 
 /// Interface for manipulating handles to memory in a compute device.
 pub trait ComputeMemory<F> {
+	// The minimum length of a slice that can be allocated and used in a compute kernel.
 	const MIN_SLICE_LEN: usize;
+	// The required alignment of a slice that can be allocated and used in a compute kernel.
+	const REQUIRED_SLICE_ALIGNMENT: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
-	type FSlice<'a>: Copy + DevSlice<F>;
+	type FSlice<'a>: Copy + OpaqueSlice<F>;
 
 	/// An opaque handle to a mutable slice of elements stored in a compute memory.
-	type FSliceMut<'a>: DevSlice<F>;
+	type FSliceMut<'a>: OpaqueSlice<F>;
 
 	/// Borrows a mutable memory slice as immutable.
 	///
@@ -42,6 +45,7 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the range bounds must be aligned to [`Self::REQUIRED_SLICE_ALIGNMENT`]
 	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
 
 	/// Borrows a subslice of a mutable memory slice.
@@ -49,6 +53,7 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the range bounds must be aligned to [`Self::REQUIRED_SLICE_ALIGNMENT`]
 	fn slice_mut<'a>(
 		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
@@ -59,6 +64,7 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `mid` must be aligned to [`Self::REQUIRED_SLICE_ALIGNMENT`]
 	fn split_at_mut(
 		data: Self::FSliceMut<'_>,
 		mid: usize,

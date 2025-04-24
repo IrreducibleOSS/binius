@@ -9,6 +9,7 @@ pub struct CpuMemory;
 
 impl<F: 'static> ComputeMemory<F> for CpuMemory {
 	const MIN_SLICE_LEN: usize = 1;
+	const REQUIRED_SLICE_ALIGNMENT: usize = 1;
 
 	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];
