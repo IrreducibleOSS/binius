@@ -140,7 +140,7 @@ pub fn commit<F, FEncode, P, PC, M, MTScheme, MTProver>(
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
 where
 	F: TowerField,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode> + TryRepack<PC>,
 	PC: PackedField,
 	M: MultilinearPoly<P>,
@@ -205,7 +205,7 @@ pub fn prove<
 where
 	F: TowerField,
 	FDomain: Field,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	PC: PackedField,
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -310,7 +310,7 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,

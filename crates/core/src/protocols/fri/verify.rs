@@ -25,7 +25,7 @@ use crate::{
 pub struct FRIVerifier<'a, F, FA, VCS>
 where
 	F: BinaryField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 	VCS: MerkleTreeScheme<F>,
 {
 	vcs: &'a VCS,
@@ -43,7 +43,7 @@ where
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
-	FA: BinaryField,
+	FA: TowerField,
 	VCS: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	#[allow(clippy::too_many_arguments)]

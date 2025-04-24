@@ -61,7 +61,7 @@ fn bench_poly_commit<F, P, FEncode>(c: &mut Criterion, name: &str)
 where
 	F: TowerField + ExtensionField<FEncode>,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 {
 	let (fri_params, merkle_prover, committed_multilins) =
 		create_poly_commit::<F, P, FEncode>(LOG_SIZE);
@@ -100,7 +100,7 @@ fn create_poly_commit<F, P, FEncode>(
 where
 	F: TowerField + ExtensionField<FEncode>,
 	P: PackedField<Scalar = F>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 {
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;

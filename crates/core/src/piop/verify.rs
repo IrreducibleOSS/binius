@@ -123,7 +123,7 @@ fn make_commit_params_with_constant_arity<F, FEncode>(
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 {
 	assert!(arity > 0);
 
@@ -150,7 +150,7 @@ pub fn make_commit_params_with_optimal_arity<F, FEncode, MTScheme>(
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	MTScheme: MerkleTreeScheme<F>,
 {
 	let arity = estimate_optimal_arity(
@@ -288,7 +288,7 @@ pub fn verify<'a, F, FEncode, Challenger_, MTScheme>(
 ) -> Result<(), Error>
 where
 	F: TowerField + ExtensionField<FEncode>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	Challenger_: Challenger,
 	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
@@ -420,7 +420,7 @@ fn verify_interleaved_fri_sumcheck<F, FEncode, Challenger_, MTScheme>(
 ) -> Result<BatchInterleavedSumcheckFRIOutput<F>, Error>
 where
 	F: TowerField + ExtensionField<FEncode>,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	Challenger_: Challenger,
 	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {

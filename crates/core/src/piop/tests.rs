@@ -105,7 +105,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 ) where
 	F: TowerField,
 	FDomain: BinaryField,
-	FEncode: BinaryField,
+	FEncode: TowerField,
 	P: PackedField<Scalar = F>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>

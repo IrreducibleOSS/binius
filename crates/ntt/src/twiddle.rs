@@ -39,6 +39,8 @@ use crate::Error;
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 pub trait TwiddleAccess<F: BinaryField> {
+	type ConvertedType<FTgt: BinaryField>: TwiddleAccess<FTgt>;
+
 	/// Base-2 logarithm of the number of twiddle factors in this round.
 	fn log_n(&self) -> usize;
 
@@ -78,6 +80,8 @@ pub trait TwiddleAccess<F: BinaryField> {
 	/// Panics if `coset_bits` is not in the range 0 to `self.log_n()` or `coset` is not in the
 	/// range 0 to `1 << coset_bits`.
 	fn coset(&self, coset_bits: usize, coset: usize) -> impl TwiddleAccess<F>;
+
+	fn convert<FTgt: BinaryField + From<F>>(&self) -> Self::ConvertedType<FTgt>;
 }
 
 /// Twiddle access method that does on-the-fly computation to reduce its memory footprint.
@@ -118,6 +122,8 @@ where
 	F: BinaryField,
 	SEvals: Deref<Target = [F]>,
 {
+	type ConvertedType<FTgt: BinaryField> = OnTheFlyTwiddleAccess<FTgt, Vec<FTgt>>;
+
 	#[inline]
 	fn log_n(&self) -> usize {
 		self.log_n
@@ -151,6 +157,14 @@ where
 			log_n,
 			offset: self.offset + offset,
 			s_evals: &self.s_evals[..log_n],
+		}
+	}
+
+	fn convert<FTgt: BinaryField + From<F>>(&self) -> Self::ConvertedType<FTgt> {
+		OnTheFlyTwiddleAccess {
+			log_n: self.log_n,
+			offset: FTgt::from(self.offset),
+			s_evals: self.s_evals.iter().copied().map(FTgt::from).collect(),
 		}
 	}
 }
@@ -191,6 +205,8 @@ where
 	F: BinaryField,
 	SEvals: Deref<Target = [F]>,
 {
+	type ConvertedType<FTgt: BinaryField> = PrecomputedTwiddleAccess<FTgt, Vec<FTgt>>;
+
 	#[inline]
 	fn log_n(&self) -> usize {
 		self.log_n
@@ -222,6 +238,14 @@ where
 		PrecomputedTwiddleAccess {
 			log_n,
 			s_evals: &self.s_evals[coset << log_n..(coset + 1) << log_n],
+			_marker: PhantomData,
+		}
+	}
+
+	fn convert<FTgt: BinaryField + From<F>>(&self) -> Self::ConvertedType<FTgt> {
+		PrecomputedTwiddleAccess {
+			log_n: self.log_n,
+			s_evals: self.s_evals.iter().copied().map(FTgt::from).collect(),
 			_marker: PhantomData,
 		}
 	}
