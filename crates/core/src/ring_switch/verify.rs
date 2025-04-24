@@ -80,6 +80,9 @@ where
 		&row_batch_coeffs,
 		&mixing_coeffs,
 	)?;
+
+	let one_point = vec![F::ONE; ring_switch_eq_inds[0].n_vars()];
+
 	let sumcheck_claims = iter::zip(&system.sumcheck_claim_descs, row_batched_evals)
 		.enumerate()
 		.map(|(idx, (claim_desc, eval))| {

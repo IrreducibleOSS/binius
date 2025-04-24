@@ -646,6 +646,10 @@ pub unsafe trait TryRepackSliceInplace<P: PackedField>: PackedField {
 // 	}
 // }
 
+pub unsafe trait TryRepack<P: PackedField>: PackedField {
+	fn try_repack(slice: &[P]) -> Vec<Self>;
+}
+
 #[cfg(test)]
 mod tests {
 	use itertools::Itertools;

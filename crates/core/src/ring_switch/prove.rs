@@ -58,6 +58,9 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
+
+	println!("!@# {}", F::Canonical::from(mixing_challenges[0]));
+
 	let mle_fold_high_span = tracing::debug_span!(
 		"[task] (Ring Switch) MLE Fold High",
 		phase = "ring_switch",
@@ -77,13 +80,14 @@ where
 	)?;
 	drop(mle_fold_high_span);
 	let mut writer = transcript.message();
+
 	for (mixed_tensor_elem, prefix_desc) in iter::zip(mixed_tensor_elems, &system.prefix_descs) {
 		debug_assert_eq!(mixed_tensor_elem.vertical_elems().len(), 1 << prefix_desc.kappa());
 		writer.write_scalar_slice(mixed_tensor_elem.vertical_elems());
 	}
 
 	// Sample the row-batching randomness.
-	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
+	let row_batch_challenges: Vec<F> = transcript.sample_vec(system.max_claim_kappa());
 	let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
 		MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
 	));
@@ -105,6 +109,11 @@ where
 		row_batch_coeffs,
 		&mixing_coeffs,
 	)?;
+
+	let one_point = vec![F::ONE; ring_switch_eq_inds[0].n_vars()];
+
+	let query_abc = MultilinearQuery::<P, _>::expand(&one_point);
+
 	drop(calculate_ring_switch_eq_ind_span);
 
 	let sumcheck_claims = iter::zip(&system.sumcheck_claim_descs, row_batched_evals)

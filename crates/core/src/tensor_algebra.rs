@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{
+	any::TypeId,
 	iter::Sum,
 	marker::PhantomData,
 	mem,
@@ -8,7 +9,8 @@ use std::{
 };
 
 use binius_field::{
-	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
+	square_transpose, util::inner_product_unchecked, BinaryField1b, ExtensionField, Field,
+	PackedExtension, TowerField,
 };
 
 /// An element of the tensor algebra defined as the tensor product of `FE` and `FE` as fields.
@@ -123,7 +125,7 @@ where
 	}
 }
 
-impl<F: Field, FE: ExtensionField<F> + PackedExtension<F>> TensorAlgebra<F, FE> {
+impl<F: TowerField, FE: TowerField + ExtensionField<F> + PackedExtension<F>> TensorAlgebra<F, FE> {
 	/// Multiply by an element from the vertical subring.
 	///
 	/// Internally, this performs a transpose, vertical scaling, then transpose sequence. If
@@ -137,8 +139,31 @@ impl<F: Field, FE: ExtensionField<F> + PackedExtension<F>> TensorAlgebra<F, FE> 
 	///
 	/// A transpose flips the vertical and horizontal subring elements.
 	pub fn transpose(mut self) -> Self {
-		square_transpose(Self::kappa(), FE::cast_bases_mut(&mut self.elems))
-			.expect("transpose dimensions are square by struct invariant");
+		// <AesBinaryField as ExtensionField<BinaryField1b>>::cast_bases_mut doesn't work correctly.
+		// This temporary workaround allows us to fix it.
+		if TypeId::of::<F>() == TypeId::of::<BinaryField1b>()
+			&& TypeId::of::<FE>() != TypeId::of::<FE::Canonical>()
+		{
+			let elems_canonical = self
+				.elems
+				.drain(..)
+				.map(|v| v.into())
+				.collect::<Vec<FE::Canonical>>();
+			let mut b1: Vec<FE::PackedSubfield> = unsafe { std::mem::transmute(elems_canonical) };
+
+			square_transpose(Self::kappa(), &mut b1)
+				.expect("transpose dimensions are square by struct invariant");
+
+			let elems_canonical: Vec<FE::Canonical> = unsafe { std::mem::transmute(b1) };
+
+			self.elems = elems_canonical
+				.into_iter()
+				.map(|v| FE::from(v))
+				.collect::<Vec<_>>();
+		} else {
+			square_transpose(Self::kappa(), FE::cast_bases_mut(&mut self.elems))
+				.expect("transpose dimensions are square by struct invariant");
+		}
 		self
 	}
 
