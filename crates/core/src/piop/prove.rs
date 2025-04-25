@@ -1,9 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{borrow::Cow, ops::Deref};
+use std::{any::TypeId, borrow::Cow, ops::Deref};
 
 use binius_field::{
-	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
+	packed::{PackedSliceMut, RepackFromCanonical},
+	BinaryField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -132,7 +133,7 @@ fn merge_multilins<F, P, Data>(
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
 ///   defined over subfields of `F`. They must be in ascending order by the number of variables
 ///   in the packed multilinear (ie. number of variables minus log extension degree).
-pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
+pub fn commit<F, FEncode, P, PC, M, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
 	multilins: &[M],
@@ -140,7 +141,8 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 where
 	F: TowerField,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode> + RepackFromCanonical<PC>,
+	PC: PackedField,
 	M: MultilinearPoly<P>,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -176,7 +178,19 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
+pub fn prove<
+	F,
+	FDomain,
+	FEncode,
+	P,
+	PC,
+	M,
+	DomainFactory,
+	MTScheme,
+	MTProver,
+	Challenger_,
+	Backend,
+>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
 	domain_factory: DomainFactory,
@@ -193,10 +207,12 @@ where
 	F: TowerField,
 	FDomain: Field,
 	FEncode: BinaryField,
+	PC: PackedField,
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>
-		+ PackedExtension<FEncode>,
+		+ PackedExtension<FEncode>
+		+ RepackFromCanonical<PC>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
@@ -339,14 +355,15 @@ where
 	Ok(())
 }
 
-pub fn validate_sumcheck_witness<F, P, M>(
+pub fn validate_sumcheck_witness<F, P, PC, M>(
 	committed_multilins: &[M],
 	transparent_multilins: &[M],
 	claims: &[PIOPSumcheckClaim<F>],
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	P: PackedField<Scalar = F>,
+	PC: PackedField,
+	P: PackedField<Scalar = F> + RepackFromCanonical<PC>,
 	M: MultilinearPoly<P> + Send + Sync,
 {
 	let packed_committed = committed_multilins
@@ -395,13 +412,14 @@ where
 /// $n < \kappa$, which is when a polynomial is too full to have even a single packed evaluation,
 /// the polynomial is extended by padding with more variables, which corresponds to repeating its
 /// subcube evaluations.
-fn packed_committed<F, P, M>(
+fn packed_committed<F, P, PC, M>(
 	id: usize,
 	unpacked_committed: &M,
 ) -> Result<MultilinearExtension<P, Cow<'_, [P]>>, Error>
 where
 	F: TowerField,
-	P: PackedField<Scalar = F>,
+	PC: PackedField,
+	P: PackedField<Scalar = F> + RepackFromCanonical<PC>,
 	M: MultilinearPoly<P>,
 {
 	let unpacked_n_vars = unpacked_committed.n_vars();
@@ -409,10 +427,8 @@ where
 		let packed_eval = padded_packed_eval(unpacked_committed);
 		MultilinearExtension::new(0, Cow::Owned(vec![P::set_single(packed_eval)]))
 	} else {
-		let packed_evals = unpacked_committed
-			.packed_evals()
-			.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
-		MultilinearExtension::from_values_generic(Cow::Borrowed(packed_evals))
+		let packed_evals = canonical_packed(unpacked_committed, id)?;
+		MultilinearExtension::from_values_generic(packed_evals)
 	}?;
 	Ok(packed_committed)
 }
@@ -438,6 +454,28 @@ where
 				.expect("i is in range 0..1 << n_vars")
 		})
 		.sum()
+}
+
+fn canonical_packed<P, PC, M>(poly: &M, id: usize) -> Result<Cow<'_, [P]>, Error>
+where
+	P: PackedField + RepackFromCanonical<PC>,
+	PC: PackedField,
+	M: MultilinearPoly<P>,
+{
+	let packed_evals = poly
+		.packed_evals()
+		.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
+
+	// <PackedAesBinaryField as PackedExtension<BinaryField1b>>::cast_bases_mut doesn't work correctly.
+	// This temporary workaround allows us to fix it.
+	if poly.log_extension_degree() == 7 && TypeId::of::<P>() != TypeId::of::<PC>() {
+		let packed_evals_canonical: &[PC] = unsafe { std::mem::transmute(packed_evals) };
+
+		let non_canonical_packed = P::repack(packed_evals_canonical);
+		Ok(Cow::Owned(non_canonical_packed))
+	} else {
+		Ok(Cow::Borrowed(packed_evals))
+	}
 }
 
 #[cfg(test)]

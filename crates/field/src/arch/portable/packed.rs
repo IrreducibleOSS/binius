@@ -22,7 +22,7 @@ use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	as_packed_field::PackedType,
-	packed::{pack_slice, TryRepackSliceInplace},
+	packed::{pack_slice, RepackFromCanonical, TryRepackSliceInplace},
 	underlier::{
 		IterationMethods, IterationStrategy, NumCast, UnderlierType, UnderlierWithBitOps,
 		WithUnderlier, U1, U2, U4,
@@ -384,6 +384,7 @@ where
 
 use crate::as_packed_field::PackScalar;
 
+// TODO: improve transformation
 unsafe impl<U: UnderlierType + Pod + PackScalar<Scalar::Canonical>, Scalar: TowerField>
 	TryRepackSliceInplace<PackedType<U, Scalar::Canonical>> for PackedPrimitiveType<U, Scalar>
 where
@@ -404,6 +405,21 @@ where
 		underliers.copy_from_slice(WithUnderlier::to_underliers_ref(&temp));
 
 		Ok(bytemuck::cast_slice_mut(underliers))
+	}
+}
+
+impl<U: UnderlierType + Pod + PackScalar<Scalar::Canonical>, Scalar: TowerField>
+	RepackFromCanonical<PackedType<U, Scalar::Canonical>> for PackedPrimitiveType<U, Scalar>
+where
+	Self: PackedField,
+	Self::Scalar: From<Scalar::Canonical>,
+{
+	fn repack(slice: &[PackedType<U, Scalar::Canonical>]) -> Vec<Self> {
+		let temp = PackedType::<U, Scalar::Canonical>::iter_slice(slice)
+			.map(Self::Scalar::from)
+			.collect::<Vec<_>>();
+
+		pack_slice(&temp)
 	}
 }
 

@@ -5,6 +5,7 @@ use std::{cmp::Ordering, iter::repeat_with};
 use binius_field::{
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
+	packed::RepackFromCanonical,
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -281,7 +282,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 ) where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
+	PackedType<U, FExt<Tower>>:
+		PackedFieldIndexable + RepackFromCanonical<PackedType<U, FExt<Tower>>>,
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
@@ -338,7 +340,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	.unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
-	piop::prove(
+	piop::prove::<_, _, _, PackedType<U, FExt<Tower>>, PackedType<U, FExt<Tower>>, _, _, _, _, _, _>(
 		&fri_params,
 		merkle_prover,
 		domain_factory,

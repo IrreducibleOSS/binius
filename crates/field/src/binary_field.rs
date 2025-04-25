@@ -38,7 +38,7 @@ pub trait BinaryField: ExtensionField<BinaryField1b> {
 /// [DP23]: https://eprint.iacr.org/2023/1784
 pub trait TowerField: BinaryField + From<Self::Canonical>
 where
-	Self::Canonical: From<Self>,
+	Self::Canonical: From<Self> + Into<Self>,
 {
 	/// The level $\iota$ in the tower, where this field is isomorphic to $T_{\iota}$.
 	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;

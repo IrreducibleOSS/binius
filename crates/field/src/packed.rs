@@ -639,12 +639,9 @@ pub unsafe trait TryRepackSliceInplace<P: PackedField>: PackedField {
 	fn try_repack_slice(slice: &mut [P]) -> Result<&mut [Self], Error>;
 }
 
-// unsafe impl<P: PackedField> TryRepackSliceInplace<P> for P {
-// 	#[inline]
-// 	fn try_repack_slice(slice: &mut [P]) -> Result<&mut [Self], Error> {
-// 		Ok(slice)
-// 	}
-// }
+pub trait RepackFromCanonical<P: PackedField>: PackedField {
+	fn repack(slice: &[P]) -> Vec<Self>;
+}
 
 #[cfg(test)]
 mod tests {

@@ -5,9 +5,10 @@ use std::{cmp::Reverse, env, marker::PhantomData, slice::from_mut};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
+	packed::RepackFromCanonical,
 	underlier::WithUnderlier,
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
+	BinaryField, BinaryField128b, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
@@ -72,7 +73,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
-	U: ProverTowerUnderlier<Tower>,
+	U: ProverTowerUnderlier<Tower> + PackScalar<BinaryField128b>,
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
@@ -81,6 +82,7 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
+		+ RepackFromCanonical<PackedType<U, BinaryField128b>>
 		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
@@ -145,7 +147,11 @@ where
 		commitment,
 		committed,
 		codeword,
-	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
+	} = piop::commit::<_, _, _, PackedType<U, BinaryField128b>, _, _, _>(
+		&fri_params,
+		&merkle_prover,
+		&committed_multilins,
+	)?;
 	drop(commit_span);
 
 	// Observe polynomial commitment
@@ -558,7 +564,7 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
+	piop::prove::<_, FDomain<Tower>, _, _, PackedType<U, BinaryField128b>, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
 		domain_factory,
