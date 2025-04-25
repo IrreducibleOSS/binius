@@ -151,7 +151,7 @@ fn test_muluu64() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let muluu = MulUU64TestTable::new(&mut cs);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -282,7 +282,7 @@ fn test_muluu32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulUU32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -297,7 +297,7 @@ fn test_mulsu32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSU32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -312,7 +312,7 @@ fn test_mulss32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSS32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -408,7 +408,7 @@ fn test_twos_complement() {
 
 	let allocator = Bump::new();
 
-	const TABLE_SIZE: usize = 1 << 8;
+	const TABLE_SIZE: usize = 1 << 9;
 
 	let statement = Statement {
 		boundaries: vec![],
