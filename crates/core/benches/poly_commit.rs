@@ -10,9 +10,9 @@ use binius_core::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
-	packed::set_packed_slice, AESTowerField128b, AESTowerField32b, BinaryField, BinaryField128b,
-	BinaryField32b, ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b,
-	ExtensionField, PackedBinaryField1x128b, PackedExtension, PackedField, TowerField,
+	packed::set_packed_slice, AESTowerField128b, AESTowerField32b, BinaryField128b, BinaryField32b,
+	ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b, ExtensionField,
+	PackedBinaryField1x128b, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};

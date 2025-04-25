@@ -6,8 +6,8 @@ use binius_field::{
 	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField,
-	PackedBinaryField16x16b, PackedField, TowerField,
+	BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField, PackedBinaryField16x16b,
+	PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -37,7 +37,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA>,
 	F: TowerField + ExtensionField<FA> + PackedField<Scalar = F>,
-	FA: BinaryField,
+	FA: TowerField,
 	PackedType<U, F>: PackedField,
 	PackedType<U, FA>: PackedField,
 {
