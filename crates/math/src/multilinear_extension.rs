@@ -527,18 +527,6 @@ mod tests {
 		new_vals
 	}
 
-	fn get_all_bits<PE>(values: &[PE]) -> Vec<PE::Scalar>
-	where
-		PE: PackedField,
-	{
-		let new_vals = values
-			.iter()
-			.flat_map(|v| (0..PE::WIDTH).map(|i| v.get(i)).collect::<Vec<_>>())
-			.collect::<Vec<_>>();
-
-		new_vals
-	}
-
 	#[test]
 	fn test_evaluate_middle_32b_to_16b() {
 		let mut rng = StdRng::seed_from_u64(0);
@@ -652,7 +640,7 @@ mod tests {
 		let values = repeat_with(|| PackedBinaryField8x1b::random(&mut rng))
 			.take(1 << 2)
 			.collect::<Vec<_>>();
-		let expected_out = get_all_bits(&values);
+		let expected_out = PackedBinaryField8x1b::iter_slice(&values).collect::<Vec<_>>();
 
 		let poly = MultilinearExtension::from_values(values).unwrap();
 

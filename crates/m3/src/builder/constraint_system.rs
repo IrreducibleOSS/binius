@@ -409,12 +409,12 @@ fn add_oracle_for_column<F: TowerField>(
 		}
 		ColumnDef::ZeroPadded {
 			col,
-			num_extra_variables,
+			new_n_vars,
 			start_index,
 			nonzero_index,
 		} => addition.zero_padded(
 			oracle_lookup[col.table_index],
-			*num_extra_variables,
+			*new_n_vars,
 			*nonzero_index,
 			*start_index,
 		)?,

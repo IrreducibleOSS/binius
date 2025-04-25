@@ -410,18 +410,26 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.transparent(poly)
 	}
 
+	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars` variables.
+	///
+	/// Arguments:
+	/// - `name`: The name of the oracle.
+	/// - `id`: The id of the oracle.
+	/// - `new_n_vars`: The number of variables in the new column.
+	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1 << m`,
+	/// and it is the index of the nonzero block.
 	pub fn add_zero_padded(
 		&mut self,
 		name: impl ToString,
 		id: OracleId,
-		n_vars: usize,
+		new_n_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.zero_padded(id, n_vars, nonzero_index, start_index)
+			.zero_padded(id, new_n_vars, nonzero_index, start_index)
 	}
 
 	fn scoped_name(&self, name: impl ToString) -> String {

@@ -137,7 +137,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 	},
 	ZeroPadded {
 		col: ColumnId,
-		num_extra_variables: usize,
+		new_n_vars: usize,
 		start_index: usize,
 		nonzero_index: usize,
 	},

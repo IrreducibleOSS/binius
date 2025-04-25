@@ -43,15 +43,15 @@ where
 		});
 	}
 
-	let extra_vals = log_new_vals - log_evals_size;
-	if nonzero_index > 1 << extra_vals {
+	let extra_vars = log_new_vals - log_evals_size;
+	if nonzero_index > 1 << extra_vars {
 		bail!(Error::IncorrectNonZeroIndex {
-			expected: 1 << extra_vals
+			expected: 1 << extra_vars
 		});
 	}
 
 	let block_size = 1 << start_index;
-	let nb_elts_per_row = 1 << (start_index + extra_vals);
+	let nb_elts_per_row = 1 << (start_index + extra_vars);
 	let length = 1 << start_index;
 
 	let start_index_in_row = nonzero_index * block_size;
@@ -1168,11 +1168,11 @@ mod tests {
 		let start_index = 3;
 
 		for nonzero_index in 0..1 << num_extra_vars {
-			let mut out = vec![
-				PackedBinaryField8x1b::zero();
-				(1usize << (LOG_EVALS_SIZE + num_extra_vars))
-					.div_ceil(PackedBinaryField8x1b::WIDTH)
-			];
+			let mut out =
+				vec![
+					PackedBinaryField8x1b::zero();
+					1usize << (LOG_EVALS_SIZE + num_extra_vars - PackedBinaryField8x1b::LOG_WIDTH)
+				];
 			zero_pad(
 				&evals,
 				LOG_EVALS_SIZE,

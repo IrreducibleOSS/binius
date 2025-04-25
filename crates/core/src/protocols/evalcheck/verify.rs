@@ -282,13 +282,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval_point.split_at(start_index);
 
 				let (zs, second_subclaim) = zs_second_subclaim.split_at(extra_n_vars);
-				let subclaim_eval_point = {
-					let mut subclaim_eval_point = first_subclaim_eval_point.to_vec();
-					subclaim_eval_point.extend_from_slice(second_subclaim);
-					subclaim_eval_point
-				};
+				let subclaim_eval_point = [first_subclaim_eval_point, second_subclaim].concat();
 
-				let select_row = SelectRow::new(zs.len(), padded.nonzero_index()).unwrap();
+				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
 				let expected_eval = inner_eval * select_row.evaluate(zs).unwrap();
 
 				if expected_eval != eval {
