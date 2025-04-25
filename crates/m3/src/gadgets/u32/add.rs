@@ -1,9 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_core::oracle::ShiftVariant;
-use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedFieldIndexable};
+use std::{array, marker::PhantomData};
 
-use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128};
+use binius_core::oracle::ShiftVariant;
+use binius_field::{
+	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	PackedSubfield, TowerField,
+};
+use itertools::izip;
+
+use crate::builder::{
+	column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128, B32, B64,
+};
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
 ///
@@ -133,6 +141,112 @@ impl U32Add {
 		Ok(())
 	}
 }
+
+/// A very simple trait used in Addition gadgets for unsigned integers of different bit lengths.
+pub trait UnsignedAddPrimitives {
+	type F: TowerField;
+	const BIT_LENGTH: usize;
+}
+
+impl UnsignedAddPrimitives for u32 {
+	type F = B32;
+
+	const BIT_LENGTH: usize = 32;
+}
+
+impl UnsignedAddPrimitives for u64 {
+	type F = B64;
+
+	const BIT_LENGTH: usize = 64;
+}
+
+/// Gadget for incrementing the values in a column by 1, generic over `u32` and `u64`
+#[derive(Debug)]
+pub struct Incr<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
+	cin: [Col<B1>; BIT_LENGTH],
+
+	/// Input column as bits.
+	pub input: [Col<B1>; BIT_LENGTH],
+	/// Output column as bits.
+	pub zout: [Col<B1>; BIT_LENGTH],
+	/// Output carry bit if there is any.
+	pub final_carry_out: Col<B1>,
+
+	_marker: PhantomData<UPrimitive>,
+}
+
+impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> Incr<UPrimitive, BIT_LENGTH> {
+	pub fn new(table: &mut TableBuilder, input: [Col<B1>; BIT_LENGTH]) -> Self {
+		assert_eq!(BIT_LENGTH, UPrimitive::BIT_LENGTH);
+		let cin = array::from_fn(|i| {
+			if i != 0 {
+				table.add_committed(format!("cout[{i}]"))
+			} else {
+				table.add_constant("cout[0]", [B1::ONE])
+			}
+		});
+		let zout = table.add_committed_multiple("zout");
+		let final_carry_out = table.add_committed("final_carry_out");
+		let cout: [_; BIT_LENGTH] = array::from_fn(|i| {
+			if i != BIT_LENGTH - 1 {
+				cin[i + 1]
+			} else {
+				final_carry_out
+			}
+		});
+
+		for (i, &xin) in input.iter().enumerate() {
+			table.assert_zero(format!("sum_{i}"), xin + cin[i] - zout[i]);
+			table.assert_zero(format!("carry_{i}"), xin * cin[i] - cout[i]);
+		}
+
+		Self {
+			cin,
+			input,
+			zout,
+			final_carry_out,
+			_marker: PhantomData,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1>,
+	{
+		// Get the input bits (read-only)
+		let in_bits = array_util::try_map(self.input, |bit| index.get(bit))?;
+		// Get the carry-in bits
+		let mut cin = array_util::try_map(self.cin, |bit| index.get_mut(bit))?;
+		// Get the output bits
+		let mut zout = array_util::try_map(self.zout, |bit| index.get_mut(bit))?;
+		let mut final_carry_out = index.get_mut(self.final_carry_out)?;
+
+		let p_inv = PackedSubfield::<P, B1>::broadcast(B1::ONE);
+		let mut carry_in = vec![p_inv; cin[0].len()];
+		for bit in 0..BIT_LENGTH {
+			for (in_bit, cin, zout, carry_in) in izip!(
+				in_bits[bit].iter(),
+				cin[bit].iter_mut(),
+				zout[bit].iter_mut(),
+				carry_in.iter_mut()
+			) {
+				let sum = *in_bit + *carry_in;
+				let new_carry = (*in_bit) * (*carry_in);
+				*cin = *carry_in;
+				*zout = sum;
+				*carry_in = new_carry;
+			}
+		}
+		for (final_carry, carry) in izip!(final_carry_out.iter_mut(), carry_in.iter()) {
+			*final_carry = *carry;
+		}
+
+		Ok(())
+	}
+}
+
+pub type U32Incr = Incr<u32, 32>;
+pub type U64Incr = Incr<u64, 64>;
 
 #[cfg(test)]
 mod tests {

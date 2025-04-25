@@ -5,15 +5,17 @@ use std::{array, marker::PhantomData};
 use anyhow::Result;
 use binius_field::{
 	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, TowerField,
+	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
+use itertools::izip;
 
-use crate::builder::{
-	upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64,
+use crate::{
+	builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	gadgets::u32::add::{Incr, UnsignedAddPrimitives},
 };
 
 /// Helper trait to create Multiplication gadgets for unsigned integers of different bit lengths.
-trait UnsignedMulPrimitives {
+pub trait UnsignedMulPrimitives {
 	type FP: TowerField;
 	type FExpBase: TowerField + ExtensionField<Self::FP>;
 
@@ -406,4 +408,400 @@ fn pack_fp<FP: TowerField, const BIT_LENGTH: usize>(bits: [Col<B1>; BIT_LENGTH])
 		.map(|(i, bit)| upcast_col(bit) * basis[i])
 		.reduce(|a, b| a + b)
 		.expect("bit has length checked above")
+}
+
+#[derive(Debug)]
+pub struct MulSS32 {
+	mul_inner: MulUU32,
+	x_in_bits: [Col<B1>; 32],
+	y_in_bits: [Col<B1>; 32],
+	x_abs_value: SignConverter<u32, 32>,
+	y_abs_value: SignConverter<u32, 32>,
+	out_signed_value: SignConverter<u64, 64>,
+	x_abs_bits: [Col<B1>; 32],
+	y_abs_bits: [Col<B1>; 32],
+	out_bits: [Col<B1>; 64],
+
+	pub x_in: Col<B32>,
+	pub y_in: Col<B32>,
+	pub out_high: Col<B32>,
+	pub out_low: Col<B32>,
+}
+
+impl MulSS32 {
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let x_in_bits = table.add_committed_multiple("x_in_bits");
+		let y_in_bits = table.add_committed_multiple("y_in_bits");
+
+		let x_in = table.add_computed("SS::x_in", pack_fp(x_in_bits));
+		let y_in = table.add_computed("SS::y_in", pack_fp(y_in_bits));
+
+		// Convert x and y to |x| and |y| via two's complement
+		let x_is_negative = x_in_bits[31]; // Will be 1 if negative
+		let y_is_negative = y_in_bits[31]; // Will be 1 if negative
+		let x_abs_value = SignConverter::new(table, "x_abs_bits", x_in_bits, x_is_negative.into());
+		let y_abs_value = SignConverter::new(table, "y_abs_bits", y_in_bits, y_is_negative.into());
+
+		let x_abs_bits = x_abs_value.converted_bits;
+		let y_abs_bits = y_abs_value.converted_bits;
+
+		let mul_inner = MulUU32::with_inputs(table, x_abs_bits, y_abs_bits);
+
+		let abs_mul_out_bits = array::from_fn(|i| {
+			if i < 32 {
+				mul_inner.out_low_bits[i]
+			} else {
+				mul_inner.out_high_bits[i - 32]
+			}
+		});
+
+		let product_is_negative = x_in_bits[31] + y_in_bits[31]; // Will be 1 if the product is negative
+		let out_signed_value =
+			SignConverter::new(table, "out_bits", abs_mul_out_bits, product_is_negative);
+
+		let out_bits = out_signed_value.converted_bits;
+		let out_low_bits: [_; 32] = array::from_fn(|i| out_bits[i]);
+		let out_high_bits: [_; 32] = array::from_fn(|i| out_bits[i + 32]);
+		let out_high = table.add_computed("out_high", pack_fp(out_high_bits));
+		let out_low = table.add_computed("out_low", pack_fp(out_low_bits));
+
+		Self {
+			x_abs_value,
+			y_abs_value,
+			out_signed_value,
+			x_in_bits,
+			y_in_bits,
+			x_abs_bits,
+			y_abs_bits,
+			out_bits,
+			mul_inner,
+			x_in,
+			y_in,
+			out_low,
+			out_high,
+		}
+	}
+
+	pub fn populate_with_inputs<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = B32>,
+		y_vals: impl IntoIterator<Item = B32>,
+	) -> Result<()>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		let mut inner_mul_x = Vec::new();
+		let mut inner_mul_y = Vec::new();
+		// For interior mutability we need scoped refs.
+		{
+			let mut x_in_bits = array_util::try_map(self.x_in_bits, |bit| index.get_mut(bit))?;
+			let mut y_in_bits = array_util::try_map(self.y_in_bits, |bit| index.get_mut(bit))?;
+			let mut out_bits = array_util::try_map(self.out_bits, |bit| index.get_mut(bit))?;
+			let mut x_abs_bits = array_util::try_map(self.x_abs_bits, |bit| index.get_mut(bit))?;
+			let mut y_abs_bits = array_util::try_map(self.y_abs_bits, |bit| index.get_mut(bit))?;
+
+			let mut x_in = index.get_mut(self.x_in)?;
+			let mut y_in = index.get_mut(self.y_in)?;
+			let mut out_low = index.get_mut(self.out_low)?;
+			let mut out_high = index.get_mut(self.out_high)?;
+
+			for (i, (x, y)) in x_vals.into_iter().zip(y_vals.into_iter()).enumerate() {
+				let x_i32 = x.val() as i32;
+				let y_i32 = y.val() as i32;
+				let x_abs = B32::new(abs(x_i32));
+				let y_abs = B32::new(abs(y_i32));
+				let res = x_i32 as i64 * y_i32 as i64;
+				let res_high = B32::new((res >> 32) as u32);
+				let res_low = B32::new(res as u32);
+				inner_mul_x.push(x_abs);
+				inner_mul_y.push(y_abs);
+				set_packed_slice(&mut x_in, i, x);
+				set_packed_slice(&mut y_in, i, y);
+				set_packed_slice(&mut out_low, i, res_low);
+				set_packed_slice(&mut out_high, i, res_high);
+
+				for bit_idx in 0..32 {
+					set_packed_slice(
+						&mut x_abs_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(x_abs, bit_idx)),
+					);
+					set_packed_slice(
+						&mut y_abs_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(y_abs, bit_idx)),
+					);
+					set_packed_slice(
+						&mut x_in_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(x, bit_idx)),
+					);
+					set_packed_slice(
+						&mut y_in_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(y, bit_idx)),
+					);
+					set_packed_slice(
+						&mut out_bits[bit_idx + 32],
+						i,
+						B1::from(u32::is_bit_set_at(res_high, bit_idx)),
+					);
+					set_packed_slice(
+						&mut out_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(res_low, bit_idx)),
+					);
+				}
+			}
+		}
+
+		self.x_abs_value.populate(index)?;
+		self.y_abs_value.populate(index)?;
+		self.mul_inner.populate(index, inner_mul_x, inner_mul_y)?;
+		self.out_signed_value.populate(index)?;
+
+		Ok(())
+	}
+}
+
+#[derive(Debug)]
+pub struct MulSU32 {
+	mul_inner: MulUU32,
+	x_in_bits: [Col<B1>; 32],
+	y_in_bits: [Col<B1>; 32],
+	x_abs_value: SignConverter<u32, 32>,
+	out_signed_value: SignConverter<u64, 64>,
+	x_abs_bits: [Col<B1>; 32],
+	out_bits: [Col<B1>; 64],
+
+	pub x_in: Col<B32>,
+	pub y_in: Col<B32>,
+	pub out_high: Col<B32>,
+	pub out_low: Col<B32>,
+}
+
+impl MulSU32 {
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let x_in_bits = table.add_committed_multiple("x_in_bits");
+		let y_in_bits = table.add_committed_multiple("y_in_bits");
+
+		let x_in = table.add_computed("x_in", pack_fp(x_in_bits));
+		let y_in = table.add_computed("y_in", pack_fp(y_in_bits));
+
+		let x_is_negative = x_in_bits[31];
+		let x_abs_value = SignConverter::new(table, "x_abs_bits", x_in_bits, x_is_negative.into());
+		let x_abs_bits = x_abs_value.converted_bits;
+		let mul_inner = MulUU32::with_inputs(table, x_abs_value.converted_bits, y_in_bits);
+		let abs_mul_out_bits = array::from_fn(|i| {
+			if i < 32 {
+				mul_inner.out_low_bits[i]
+			} else {
+				mul_inner.out_high_bits[i - 32]
+			}
+		});
+
+		let product_is_negative = x_in_bits[31];
+		let out_signed_value =
+			SignConverter::new(table, "out_bits", abs_mul_out_bits, product_is_negative.into());
+
+		let out_bits = out_signed_value.converted_bits;
+		let out_low_bits: [_; 32] = array::from_fn(|i| out_bits[i]);
+		let out_high_bits: [_; 32] = array::from_fn(|i| out_bits[i + 32]);
+
+		let out_high = table.add_computed("out_high", pack_fp(out_high_bits));
+		let out_low = table.add_computed("out_low", pack_fp(out_low_bits));
+
+		Self {
+			mul_inner,
+			x_in_bits,
+			y_in_bits,
+			x_abs_value,
+			out_signed_value,
+			x_abs_bits,
+			out_bits,
+			x_in,
+			y_in,
+			out_low,
+			out_high,
+		}
+	}
+
+	pub fn populate_with_inputs<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		x_vals: impl IntoIterator<Item = B32>,
+		y_vals: impl IntoIterator<Item = B32>,
+	) -> Result<()>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		let mut mul_inner_x = Vec::new();
+		let mut mul_inner_y = Vec::new();
+		{
+			let mut x_in_bits = array_util::try_map(self.x_in_bits, |bit| index.get_mut(bit))?;
+			let mut y_in_bits = array_util::try_map(self.y_in_bits, |bit| index.get_mut(bit))?;
+			let mut out_bits = array_util::try_map(self.out_bits, |bit| index.get_mut(bit))?;
+			let mut x_abs_bits = array_util::try_map(self.x_abs_bits, |bit| index.get_mut(bit))?;
+
+			let mut x_in = index.get_mut(self.x_in)?;
+			let mut y_in = index.get_mut(self.y_in)?;
+			let mut out_low = index.get_mut(self.out_low)?;
+			let mut out_high = index.get_mut(self.out_high)?;
+
+			for (i, (x, y)) in x_vals.into_iter().zip(y_vals.into_iter()).enumerate() {
+				let x_i32 = i32::from_le_bytes(x.val().to_le_bytes());
+				let x_abs = B32::new(abs(x_i32));
+				let res = x_i32 as i64 * y.val() as i64;
+				let res_high = B32::new((res >> 32) as u32);
+				let res_low = B32::new(res as u32);
+				mul_inner_x.push(x_abs);
+				mul_inner_y.push(y);
+				set_packed_slice(&mut x_in, i, x);
+				set_packed_slice(&mut y_in, i, y);
+				set_packed_slice(&mut out_low, i, res_low);
+				set_packed_slice(&mut out_high, i, res_high);
+
+				for bit_idx in 0..32 {
+					set_packed_slice(
+						&mut x_abs_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(x_abs, bit_idx)),
+					);
+					set_packed_slice(
+						&mut x_in_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(x, bit_idx)),
+					);
+					set_packed_slice(
+						&mut y_in_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(y, bit_idx)),
+					);
+					set_packed_slice(
+						&mut out_bits[bit_idx + 32],
+						i,
+						B1::from(u32::is_bit_set_at(res_high, bit_idx)),
+					);
+					set_packed_slice(
+						&mut out_bits[bit_idx],
+						i,
+						B1::from(u32::is_bit_set_at(res_low, bit_idx)),
+					);
+				}
+			}
+		}
+
+		self.x_abs_value.populate(index)?;
+		self.mul_inner.populate(index, mul_inner_x, mul_inner_y)?;
+		self.out_signed_value.populate(index)?;
+
+		Ok(())
+	}
+}
+
+/// Simple struct to convert to and from Two's complement representation based on bits. See [`SignConverter::new`]
+///
+/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by caller*
+#[derive(Debug)]
+pub struct SignConverter<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
+	twos_complement: TwosComplement<UPrimitive, BIT_LENGTH>,
+
+	// Output,
+	pub converted_bits: [Col<B1>; BIT_LENGTH],
+}
+
+impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
+	SignConverter<UPrimitive, BIT_LENGTH>
+{
+	/// Used to conditionally select bit representation based on the MSB bit (sign bit)
+	///
+	/// ## Parameters
+	/// `name`: Name for the new column that will be created
+	/// `in_bits`: The input bits from MSB to LSB
+	/// `conditional`: The conditional bit to choose input bits, or it's two's complement
+	///
+	/// ## Example
+	/// - If the conditional is zero, the output will be the input bits.
+	/// - If the conditional is one, the output will be the two's complement of input bits.
+	///
+	pub fn new(
+		table: &mut TableBuilder,
+		name: &str,
+		in_bits: [Col<B1>; BIT_LENGTH],
+		conditional: Expr<B1, 1>,
+	) -> Self {
+		let twos_complement = TwosComplement::new(table, in_bits);
+		let converted_bits = array::from_fn(|bit| {
+			table.add_computed(
+				format!("{name}[{bit}]"),
+				twos_complement.result_bits[bit] * conditional.clone()
+					+ (conditional.clone() + B1::ONE) * in_bits[bit],
+			)
+		});
+		Self {
+			twos_complement,
+			converted_bits,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<()>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1>,
+	{
+		self.twos_complement.populate(index)
+	}
+}
+
+#[derive(Debug)]
+pub struct TwosComplement<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
+	inverted: [Col<B1>; BIT_LENGTH],
+	inner_incr: Incr<UPrimitive, BIT_LENGTH>,
+
+	pub x_in: [Col<B1>; BIT_LENGTH],
+	pub result_bits: [Col<B1>; BIT_LENGTH],
+}
+
+impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
+	TwosComplement<UPrimitive, BIT_LENGTH>
+{
+	pub fn new(table: &mut TableBuilder, x_in: [Col<B1>; BIT_LENGTH]) -> Self {
+		let inverted = array::from_fn(|i| {
+			table.add_computed(format!("TwosComplement::inverted[{i}]"), x_in[i] + B1::ONE)
+		});
+		let inner_incr = Incr::new(table, inverted);
+
+		Self {
+			inverted,
+			result_bits: inner_incr.zout,
+			inner_incr,
+			x_in,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1>,
+	{
+		let one = PackedSubfield::<P, B1>::broadcast(B1::ONE);
+		for (inverted, xin) in izip!(self.inverted.iter(), self.x_in.iter()) {
+			let inp = index.get(*xin)?;
+			let mut inverted = index.get_mut(*inverted)?;
+			for (inp, value) in izip!(inp.iter(), inverted.iter_mut()) {
+				*value = *inp + one;
+			}
+		}
+
+		self.inner_incr.populate(index)?;
+
+		Ok(())
+	}
+}
+
+fn abs(x: i32) -> u32 {
+	if x < 0 {
+		(-x) as u32
+	} else {
+		x as u32
+	}
 }
