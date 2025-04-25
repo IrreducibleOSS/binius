@@ -417,7 +417,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	/// - `id`: The id of the oracle.
 	/// - `new_n_vars`: The number of variables in the new column.
 	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1 << m`,
-	/// and it is the index of the nonzero block.
+	///   and it is the index of the nonzero block.
 	pub fn add_zero_padded(
 		&mut self,
 		name: impl ToString,
