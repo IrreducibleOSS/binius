@@ -14,12 +14,13 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::ParallelIterator;
 use binius_ntt::NTTOptions;
+use binius_utils::checked_arithmetics::checked_log_2;
 use rand::prelude::*;
 
 use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
-	merkle_tree::BinaryMerkleTreeProver,
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
 		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
 		FoldRoundOutput,
@@ -128,7 +129,29 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let final_fri_value = verifier.verify(&mut verifier_challenger).unwrap();
+	let mut cloned_verifier_challenger = verifier_challenger.clone();
+
+	let terminate_codeword_len =
+		1 << (params.n_final_challenges() + params.rs_code().log_inv_rate());
+
+	let mut advice = verifier_challenger.decommitment();
+	let terminate_codeword: Vec<F> = advice.read_scalar_slice(terminate_codeword_len).unwrap();
+
+	let log_batch_size =
+		checked_log_2(terminate_codeword.len()).saturating_sub(params.rs_code().log_inv_rate());
+
+	let (commitment, tree) = merkle_prover
+		.commit(&terminate_codeword, 1 << log_batch_size)
+		.unwrap();
+
+	// Ensure that the terminate_codeword commitment is correct
+	let last_round_commitment = round_commitments.last().unwrap_or(&codeword_commitment);
+	assert_eq!(*last_round_commitment, commitment.root);
+
+	// Verify that the Merkle tree has exactly inv_rate leaves.
+	assert_eq!(tree.log_len, params.rs_code().log_inv_rate());
+
+	let final_fri_value = verifier.verify(&mut cloned_verifier_challenger).unwrap();
 	assert_eq!(computed_eval, final_fri_value);
 }
 

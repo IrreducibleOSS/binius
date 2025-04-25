@@ -302,7 +302,7 @@ impl std::fmt::Display for M128 {
 
 impl std::fmt::Debug for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "M128({})", self)
+		write!(f, "M128({self})")
 	}
 }
 

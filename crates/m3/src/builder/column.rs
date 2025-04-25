@@ -294,6 +294,16 @@ pub enum ColumnDef<F: TowerField = B128> {
 		expr: ArithExpr<F>,
 	},
 	Constant(ConstantColumn<F>),
+	StaticExp {
+		bit_cols: Vec<ColumnIndex>,
+		base: F,
+		base_tower_level: usize,
+	},
+	DynamicExp {
+		bit_cols: Vec<ColumnIndex>,
+		base: ColumnIndex,
+		base_tower_level: usize,
+	},
 }
 
 impl<F: TowerField> ColumnDef<F> {
@@ -366,6 +376,24 @@ impl<F: TowerField> ColumnDef<F> {
 
 				ColumnDef::Constant(data)
 			}
+			Self::StaticExp {
+				bit_cols,
+				base,
+				base_tower_level,
+			} => ColumnDef::StaticExp {
+				bit_cols: bit_cols.clone(),
+				base: (*base).into(),
+				base_tower_level: *base_tower_level,
+			},
+			Self::DynamicExp {
+				bit_cols,
+				base,
+				base_tower_level,
+			} => ColumnDef::DynamicExp {
+				bit_cols: bit_cols.clone(),
+				base: *base,
+				base_tower_level: *base_tower_level,
+			},
 		}
 	}
 }

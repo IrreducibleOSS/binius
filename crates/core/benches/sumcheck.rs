@@ -56,10 +56,10 @@ fn bench_bivariate_with_evaluation_order<
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
-	let mut group = c.benchmark_group(format!("Sumcheck/{}", field));
+	let mut group = c.benchmark_group(format!("Sumcheck/{field}"));
 
 	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	group.bench_function(format!("n_vars={n_vars}/{:?}", eval_order), |b| {
+	group.bench_function(format!("n_vars={n_vars}/{eval_order:?}"), |b| {
 		b.iter_batched(
 			|| {
 				let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(

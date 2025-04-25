@@ -216,12 +216,8 @@ pub fn sha256(
 
 		let s_addition = several_u32_add.u32add::<B1, B1>(builder, "s_addition", s0, s1)?;
 
-		w[i] = several_u32_add.u32add::<B1, B1>(
-			builder,
-			format!("w[{}]", i),
-			w_addition,
-			s_addition,
-		)?;
+		w[i] =
+			several_u32_add.u32add::<B1, B1>(builder, format!("w[{i}]"), w_addition, s_addition)?;
 	}
 
 	let init_oracles = INIT.map(|val| u32const_repeating(n_vars, builder, val, "INIT").unwrap());

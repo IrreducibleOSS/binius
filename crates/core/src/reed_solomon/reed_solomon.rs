@@ -17,7 +17,6 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
-use tracing::instrument;
 
 #[derive(Debug, CopyGetters)]
 pub struct ReedSolomonCode<P>
@@ -164,7 +163,6 @@ where
 	/// ## Throws
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
-	#[instrument(skip_all, level = "debug")]
 	pub fn encode_ext_batch_inplace<PE: RepackedExtension<P>>(
 		&self,
 		code: &mut [PE],

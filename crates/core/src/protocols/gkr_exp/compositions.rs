@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
@@ -48,7 +48,7 @@ where
 						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_static))
 			}
 			Self::DynamicBase => {
-				ArithExpr::Pow(Box::new(ArithExpr::Var(0)), 2)
+				ArithExpr::Pow(Arc::new(ArithExpr::Var(0)), 2)
 					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
 						+ ArithExpr::Var(1) * ArithExpr::Var(2))
 			}

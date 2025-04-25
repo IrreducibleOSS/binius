@@ -43,23 +43,35 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
+	/// Mutable reference to the oracle set which is modified to create new claims arising from sumchecks
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
+	/// Mutable reference to the witness index which is is populated by the prover for new claims arising from sumchecks
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
 
+	/// The committed evaluation claims arising in this round
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
+	// Internally used to collect subclaims with evaluations to consume and further reduce.
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
+	// Internally used to collect subclaims without evaluations for future query and memoization
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
+	// The list of claims that reduces to a bivariate sumcheck in a round.
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
+	// The new sumcheck constraints arising in this round
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
+	// Tensor expansion of evaluation points and partial evaluations of multilinears
 	pub memoized_data: MemoizedData<'b, P, Backend>,
 	backend: &'a Backend,
 
+	// The unique index of a claim in this round.
 	claim_to_index: EvalPointOracleIdMap<usize, F>,
+	// Claims that have been visited in this round, used to deduplicate claims when collecting subclaims in a BFS manner.
 	visited_claims: EvalPointOracleIdMap<(), F>,
+	// Memoization of evaluations of claims the prover sees in this round
 	evals_memoization: EvalPointOracleIdMap<F, F>,
+	// The index of the next claim to be verified
 	round_claim_index: usize,
 }
 
@@ -119,11 +131,11 @@ where
 	///  * they are always a product of two multilins (composition polynomial is `BivariateProduct`)
 	///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 	///  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
-	#[instrument(skip_all, name = "EvalcheckProver::prove", level = "debug")]
 	pub fn prove(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	) -> Result<Vec<EvalcheckProof<F>>, Error> {
+		// Reset the prover state for a new round.
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
 		self.claim_to_index.clear();
@@ -144,7 +156,14 @@ where
 
 		self.claims_queue.extend(evalcheck_claims.clone());
 
-		// Step 1: Use modified BFS to memoize evaluations.
+		// Step 1: Use modified BFS to memoize evaluations. For each claim, if there is a subclaim and we know the evaluation of the subclaim, we add the subclaim to the claims_queue
+		// Otherwise, we find the evaluation of the claim by querying the witness data from the oracle id and evaluation point
+		let mle_fold_full_span = tracing::debug_span!(
+			"[task] MLE Fold Full",
+			phase = "evalcheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		while !self.claims_without_evals.is_empty() || !self.claims_queue.is_empty() {
 			while !self.claims_queue.is_empty() {
 				std::mem::take(&mut self.claims_queue)
@@ -167,10 +186,11 @@ where
 				.map(|(_, eval_point)| eval_point.as_ref())
 				.collect::<Vec<_>>();
 
+			// Tensor expansion of unique eval points.
 			self.memoized_data
 				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
 
-			// Make new evaluation claims in parallel.
+			// Query and fill missing evaluations.
 			let subclaims = deduplicated_claims_without_evals
 				.into_par_iter()
 				.map(|(id, eval_point)| {
@@ -195,8 +215,10 @@ where
 				.into_iter()
 				.for_each(|claim| self.collect_subclaims_for_memoization(claim));
 		}
+		drop(mle_fold_full_span);
 
-		// Step 2: Prove multilinears
+		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the subclaims by stepping through subclaims in a DFS manner
+		// and deduplicating claims.
 		let proofs = evalcheck_claims
 			.iter()
 			.cloned()
@@ -204,6 +226,12 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
+		let evalcheck_mle_fold_high_span = tracing::debug_span!(
+			"[task] (Evalcheck) MLE Fold High",
+			phase = "evalcheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
@@ -219,7 +247,9 @@ where
 			self.witness_index,
 			self.backend,
 		)?;
+		drop(evalcheck_mle_fold_high_span);
 
+		// Fill witnesss data for Composite MLEs
 		fill_eq_witness_for_composites(
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
@@ -490,7 +520,7 @@ where
 
 				let subclaim = EvalcheckMultilinearClaim {
 					id,
-					eval_point: eval_point.clone(),
+					eval_point: inner_eval_point.into(),
 					eval,
 				};
 
@@ -568,6 +598,7 @@ where
 		}
 	}
 
+	/// Function that queries the witness data from the oracle id and evaluation point to find the evaluation of the multilinear
 	#[instrument(
 		skip_all,
 		name = "EvalcheckProverState::make_new_eval_claim",

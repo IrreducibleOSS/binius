@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::bail;
@@ -69,10 +67,10 @@ pub fn constraint_set_zerocheck_prover<
 	Error,
 >
 where
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
-		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+		+ PackedExtension<FDomain>
+		+ PackedExtension<FBase>,
 	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
@@ -89,15 +87,14 @@ where
 	} in constraints
 	{
 		let composition_base = composition
-			.clone()
 			.try_convert_field::<FBase>()
 			.map_err(|_| Error::CircuitFieldDowncastFailed)?;
 		match predicate {
 			ConstraintPredicate::Zero => {
 				zeros.push((
 					name,
-					ArithCircuitPoly::with_n_vars(multilinears.len(), composition_base)?,
-					ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
+					ArithCircuitPoly::with_n_vars_circuit(multilinears.len(), composition_base)?,
+					ArithCircuitPoly::with_n_vars_circuit(multilinears.len(), composition)?,
 				));
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
@@ -143,7 +140,10 @@ where
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
+				composition: ArithCircuitPoly::with_n_vars_circuit(
+					multilinears.len(),
+					composition,
+				)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),

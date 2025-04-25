@@ -1105,7 +1105,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
 		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
-		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
+		ArithCircuitPoly::new(expr.expr()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
 
@@ -1305,7 +1305,7 @@ mod tests {
 		let _col2 = table.add_committed::<B8, 1>("col2");
 		let _col3 = table.add_committed::<B32, 1>("col3");
 
-		let allocator = bumpalo::Bump::new();
+		let allocator = Bump::new();
 		let table_size = 7;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier256b, B128>>::new(
 			&allocator,

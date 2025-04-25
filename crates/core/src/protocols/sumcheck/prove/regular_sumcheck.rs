@@ -196,7 +196,7 @@ where
 		let evaluators = izip!(&self.compositions, &self.domains)
 			.map(|(composition, interpolation_domain)| {
 				let composition_at_infinity =
-					ArithCircuitPoly::new(composition.expression().leading_term());
+					ArithCircuitPoly::new(&composition.expression().leading_term());
 
 				RegularSumcheckEvaluator {
 					composition,

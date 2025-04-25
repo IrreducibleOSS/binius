@@ -92,7 +92,7 @@ fn main() -> Result<()> {
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
 	let n_permutations = args.n_permutations as usize;
-	println!("Verifying {} Grøstl-256 P permutations", n_permutations);
+	println!("Verifying {n_permutations} Grøstl-256 P permutations");
 
 	let allocator = bumpalo::Bump::new();
 	let mut cs = ConstraintSystem::new();

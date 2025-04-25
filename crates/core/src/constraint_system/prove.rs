@@ -81,19 +81,14 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ PackedFieldIndexable
+		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
 		+ RepackedExtension<PackedType<U, Tower::B32>>
 		+ RepackedExtension<PackedType<U, Tower::B64>>
 		+ RepackedExtension<PackedType<U, Tower::B128>>
 		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
-	PackedType<U, Tower::FastB128>:
-		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, Tower::B128>>,
-	PackedType<U, Tower::B8>: PackedFieldIndexable,
-	PackedType<U, Tower::B16>: PackedFieldIndexable,
-	PackedType<U, Tower::B32>: PackedFieldIndexable,
-	PackedType<U, Tower::B64>: PackedFieldIndexable,
+	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -143,11 +138,15 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
+	let commit_span =
+		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
+			.entered();
 	let CommitOutput {
 		commitment,
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
+	drop(commit_span);
 
 	// Observe polynomial commitment
 	let mut writer = transcript.message();
@@ -319,6 +318,13 @@ where
 	)?;
 
 	// Zerocheck
+	let zerocheck_span = tracing::info_span!(
+		"[phase] Zerocheck",
+		phase = "zerocheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
 		.iter()
 		.cloned()
@@ -398,6 +404,12 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
+	let zerocheck_mle_check_span = tracing::debug_span!(
+		"[step] MLE-check",
+		phase = "zerocheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
@@ -409,6 +421,14 @@ where
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
+	drop(zerocheck_mle_check_span);
+
+	let zerocheck_univariatized_evaluation_span = tracing::debug_span!(
+		"[step] Univariatized Evaluation",
+		phase = "zerocheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
@@ -422,8 +442,16 @@ where
 
 		let skip_challenges = (max_n_vars - claim_n_vars).saturating_sub(skip_rounds);
 		let challenges = &zerocheck_output.challenges[skip_challenges..];
+
+		let zerocheck_mle_fold_high_span = tracing::debug_span!(
+			"[task] (Zerocheck) MLE Fold High",
+			phase = "zerocheck",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let reduced_multilinears =
 			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
+		drop(zerocheck_mle_fold_high_span);
 
 		let claim_skip_rounds = claim_n_vars - challenges.len();
 		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
@@ -443,7 +471,14 @@ where
 		reduction_provers.push(reduction_prover);
 	}
 
+	let zerocheck_regular_sumcheck_small_span = tracing::debug_span!(
+		"[task] (Zerocheck) Regular Sumcheck (Small)",
+		phase = "zerocheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
+	drop(zerocheck_regular_sumcheck_small_span);
 
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
@@ -451,6 +486,16 @@ where
 		&zerocheck_output.challenges,
 		univariatizing_output,
 	)?;
+	drop(zerocheck_univariatized_evaluation_span);
+
+	drop(zerocheck_span);
+
+	let evalcheck_span = tracing::info_span!(
+		"[phase] Evalcheck",
+		phase = "evalcheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 
 	let zerocheck_eval_claims = sumcheck::make_eval_claims(
 		EvaluationOrder::LowToHigh,
@@ -486,6 +531,14 @@ where
 		&eval_claims,
 	)?;
 
+	drop(evalcheck_span);
+
+	let ring_switch_span = tracing::info_span!(
+		"[phase] Ring Switch",
+		phase = "ring_switch",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
@@ -496,8 +549,15 @@ where
 		memoized_data,
 		backend,
 	)?;
+	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
+	let piop_compiler_span = tracing::info_span!(
+		"[phase] PIOP Compiler",
+		phase = "piop_compiler",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
@@ -511,10 +571,21 @@ where
 		&mut transcript,
 		&backend,
 	)?;
+	drop(piop_compiler_span);
 
-	Ok(Proof {
+	let proof = Proof {
 		transcript: transcript.finalize(),
-	})
+	};
+
+	tracing::event!(
+		name: "proof_size",
+		tracing::Level::INFO,
+		counter = true,
+		value = proof.get_proof_size() as u64,
+		unit = "bytes",
+	);
+
+	Ok(proof)
 }
 
 type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;
@@ -539,7 +610,7 @@ impl<'a, P, F, FDomain, DomainFactory, SwitchoverFn, Backend>
 	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
 where
 	F: Field,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	FDomain: TowerField,
 	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
 	SwitchoverFn: Fn(usize) -> usize + Clone + 'a,
@@ -552,8 +623,8 @@ where
 	where
 		FBase: TowerField + ExtensionField<FDomain> + TryFrom<F>,
 		P: PackedExtension<F, PackedSubfield = P>
-			+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
-			+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+			+ PackedExtension<FDomain>
+			+ PackedExtension<FBase>,
 		F: TowerField,
 	{
 		let univariate_prover =
@@ -756,7 +827,6 @@ where
 	FDomain: Field,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
-	PackedType<U, Tower::B128>: PackedFieldIndexable,
 	'a: 'b,
 {
 	let flush_sumcheck_metas =

@@ -88,8 +88,10 @@ mod tests {
 	use super::*;
 	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement, WitnessIndex};
 
-	#[test]
-	fn test_basic_lookup_producer() {
+	fn with_lookup_test_instance(
+		no_zero_counts: bool,
+		f: impl FnOnce(&ConstraintSystem<B128>, WitnessIndex<PackedType<OptimalUnderlier128b, B128>>),
+	) {
 		let mut cs = ConstraintSystem::new();
 		let chan = cs.add_channel("values");
 
@@ -118,22 +120,26 @@ mod tests {
 		let mut counts = vec![0u32; lookup_table_size];
 
 		let looker_1_size = 56;
-		let inputs_1 = repeat_with(|| {
-			let index = rng.gen_range(0..lookup_table_size);
-			counts[index] += 1;
-			values[index]
-		})
-		.take(looker_1_size)
-		.collect::<Vec<_>>();
-
 		let looker_2_size = 67;
-		let inputs_2 = repeat_with(|| {
-			let index = rng.gen_range(0..lookup_table_size);
-			counts[index] += 1;
-			values[index]
-		})
-		.take(looker_2_size)
-		.collect::<Vec<_>>();
+
+		// Choose looked-up indices randomly, but ensuring they are at least one if no_zero_counts
+		// is true. This tests an edge case.
+		let mut look_indices = Vec::with_capacity(looker_1_size + looker_2_size);
+		if no_zero_counts {
+			look_indices.extend(0..lookup_table_size);
+		}
+		let remaining = look_indices.capacity() - look_indices.len();
+		look_indices.extend(repeat_with(|| rng.gen_range(0..lookup_table_size)).take(remaining));
+
+		let look_values = look_indices
+			.into_iter()
+			.map(|index| {
+				counts[index] += 1;
+				values[index]
+			})
+			.collect::<Vec<_>>();
+
+		let (inputs_1, inputs_2) = look_values.split_at(looker_1_size);
 
 		let values_and_counts = iter::zip(values, counts)
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
@@ -171,7 +177,7 @@ mod tests {
 					}
 					Ok(())
 				}),
-				&inputs_1,
+				inputs_1,
 			)
 			.unwrap();
 
@@ -184,19 +190,27 @@ mod tests {
 					}
 					Ok(())
 				}),
-				&inputs_2,
+				inputs_2,
 			)
 			.unwrap();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: witness.table_sizes(),
-		};
-		let ccs = cs
-			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
-			.unwrap();
-		let witness = witness.into_multilinear_extension_index();
+		f(&cs, witness)
+	}
 
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+	#[test]
+	fn test_basic_lookup_producer() {
+		with_lookup_test_instance(false, |cs, witness| {
+			let statement = Statement {
+				boundaries: vec![],
+				table_sizes: witness.table_sizes(),
+			};
+			let ccs = cs
+				.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
+				.unwrap();
+			let witness = witness.into_multilinear_extension_index();
+
+			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
+				.unwrap();
+		});
 	}
 }

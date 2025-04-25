@@ -6,7 +6,6 @@ use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::ArithExpr;
 use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
-use bytes::Buf;
 use getset::{CopyGetters, Getters};
 
 use crate::{
@@ -62,7 +61,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			Some(s) => {
 				let x: [usize; N] = array::from_fn(|i| i);
 				x.map(|i| {
-					self.add_committed_with_name(n_vars, tower_level, Some(format!("{}_{}", s, i)))
+					self.add_committed_with_name(n_vars, tower_level, Some(format!("{s}_{i}")))
 				})
 			}
 		}
@@ -355,20 +354,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 ///
 /// The oracle set also tracks the committed polynomial in batches where each batch is committed
 /// together with a polynomial commitment scheme.
-#[derive(Default, Debug, Clone, SerializeBytes)]
+#[derive(Default, Debug, Clone, SerializeBytes, DeserializeBytes)]
+#[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct MultilinearOracleSet<F: TowerField> {
 	oracles: Vec<MultilinearPolyOracle<F>>,
-}
-
-impl DeserializeBytes for MultilinearOracleSet<BinaryField128b> {
-	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
-	where
-		Self: Sized,
-	{
-		Ok(Self {
-			oracles: DeserializeBytes::deserialize(read_buf, mode)?,
-		})
-	}
 }
 
 impl<F: TowerField> MultilinearOracleSet<F> {
@@ -542,31 +531,14 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 ///    other oracles. This is formalized in [DP23] Section 4.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
+#[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct MultilinearPolyOracle<F: TowerField> {
 	pub id: OracleId,
 	pub name: Option<String>,
 	pub n_vars: usize,
 	pub tower_level: usize,
 	pub variant: MultilinearPolyVariant<F>,
-}
-
-impl DeserializeBytes for MultilinearPolyOracle<BinaryField128b> {
-	fn deserialize(
-		mut read_buf: impl bytes::Buf,
-		mode: SerializationMode,
-	) -> Result<Self, SerializationError>
-	where
-		Self: Sized,
-	{
-		Ok(Self {
-			id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			name: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			n_vars: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			tower_level: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			variant: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-		})
-	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, SerializeBytes)]
@@ -844,7 +816,7 @@ impl<F: TowerField> CompositeMLE<F> {
 				}
 			})
 			.collect::<Result<Vec<_>, _>>()?;
-		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
+		let c = ArithCircuitPoly::with_n_vars(inner.len(), &c)
 			.map_err(|_| Error::CompositionMismatch)?; // occurs if `c` has more variables than `inner.len()`
 		Ok(Self { n_vars, inner, c })
 	}

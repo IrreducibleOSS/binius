@@ -3,6 +3,23 @@
 use std::cell::Cell;
 
 use super::memory::{ComputeMemory, DevSlice};
+use crate::cpu::CpuMemory;
+
+pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
+	/// Allocates a slice of elements.
+	///
+	/// This method operates on an immutable self reference so that multiple allocator references
+	/// can co-exist. This follows how the `bumpalo` crate's `Bump` interface works. It may not be
+	/// necessary actually (since this partitions a borrowed slice, whereas `Bump` owns its memory).
+	///
+	/// ## Pre-conditions
+	///
+	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
+	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error>;
+
+	/// Returns the remaining number of elements that can be allocated.
+	fn capacity(&self) -> usize;
+}
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
@@ -21,16 +38,16 @@ where
 		}
 	}
 
-	/// Allocates a slice of elements.
-	///
-	/// This method operates on an immutable self reference so that multiple allocator references
-	/// can co-exist. This follows how the `bumpalo` crate's `Bump` interface works. It may not be
-	/// necessary actually (since this partitions a borrowed slice, whereas `Bump` owns its memory).
-	///
-	/// ## Pre-conditions
-	///
-	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
-	pub fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error> {
+	pub fn from_ref<'b>(buffer: &'b mut Mem::FSliceMut<'a>) -> BumpAllocator<'b, F, Mem> {
+		let buffer = Mem::slice_mut(buffer, ..);
+		BumpAllocator {
+			buffer: Cell::new(Some(buffer)),
+		}
+	}
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocator<'a, F, Mem> {
+	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error> {
 		let buffer = self
 			.buffer
 			.take()
@@ -47,7 +64,20 @@ where
 			Ok(lhs)
 		}
 	}
+
+	fn capacity(&self) -> usize {
+		let buffer = self
+			.buffer
+			.take()
+			.expect("buffer is always Some by invariant");
+		let ret = buffer.len();
+		self.buffer.set(Some(buffer));
+		ret
+	}
 }
+
+/// Alias for a bump allocator over CPU host memory.
+pub type HostBumpAllocator<'a, F> = BumpAllocator<'a, F, CpuMemory>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
