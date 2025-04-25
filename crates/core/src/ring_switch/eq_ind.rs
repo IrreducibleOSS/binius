@@ -91,14 +91,17 @@ where
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error>
+	where
+		F: TowerField,
+	{
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
 		evals.par_iter_mut().for_each(|val| {
 			*val = P::from_scalars(
 				val.iter()
-					.map(|v| inner_product_subfield(v, &self.row_batch_coeffs)),
+					.map(|v| inner_product_subfield::<FSub, F>(v, &self.row_batch_coeffs)),
 			);
 		});
 		Ok(MultilinearExtension::new(self.z_vals.len(), evals)?)
@@ -109,36 +112,24 @@ where
 fn inner_product_subfield<FSub, F>(value: F, row_batch_coeffs: &RowBatchCoeffs<F>) -> F
 where
 	FSub: Field,
-	F: ExtensionField<FSub>,
+	F: ExtensionField<FSub> + TowerField,
 {
-	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>() && can_iterate_bytes::<F>() {
-		// Special case when we are folding with 1-bit coefficients.
-		// Use partial sums lookup table to speed up the computation.
+	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>()
+		&& TypeId::of::<F>() != TypeId::of::<F::Canonical>()
+	{
+		let a = F::Canonical::from(value);
 
-		struct Callback<'a, F> {
-			partial_sums_lookup: &'a [F],
-			result: F,
-		}
+		let b1: &F = unsafe { std::mem::transmute(&a) };
 
-		impl<F: Field> ByteIteratorCallback for Callback<'_, F> {
-			#[inline(always)]
-			fn call(&mut self, iter: impl Iterator<Item = u8>) {
-				for (byte_index, byte) in iter.enumerate() {
-					self.result += self.partial_sums_lookup[(byte_index << 8) + byte as usize];
-				}
-			}
-		}
-
-		let mut callback = Callback {
-			partial_sums_lookup: &row_batch_coeffs.partial_sums_lookup_table,
-			result: F::ZERO,
-		};
-		iterate_bytes(std::slice::from_ref(&value), &mut callback);
-
-		callback.result
+		inner_product_unchecked::<FSub, F>(
+			row_batch_coeffs.coeffs.iter().copied(),
+			<F as ExtensionField<FSub>>::iter_bases(b1),
+		)
 	} else {
-		// fall back to the general case
-		inner_product_unchecked(row_batch_coeffs.coeffs.iter().copied(), F::iter_bases(&value))
+		inner_product_unchecked::<FSub, F>(
+			row_batch_coeffs.coeffs.iter().copied(),
+			<F as ExtensionField<FSub>>::iter_bases(&value),
+		)
 	}
 }
 
