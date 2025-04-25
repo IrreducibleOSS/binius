@@ -4,7 +4,7 @@ use std::iter::repeat_with;
 
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::OptimalUnderlier128b, tower::CanonicalTowerFamily, packed::{get_packed_slice, set_packed_slice}, };
+	arch::OptimalUnderlier, tower::CanonicalTowerFamily, packed::{get_packed_slice, set_packed_slice}, };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
@@ -64,7 +64,7 @@ impl MulDivTestSuite {
 
 		if self.prove_verify {
 			let proof = binius_core::constraint_system::prove::<
-				OptimalUnderlier128b,
+				OptimalUnderlier,
 				CanonicalTowerFamily,
 				Groestl256,
 				Groestl256ByteCompression,
@@ -80,7 +80,7 @@ impl MulDivTestSuite {
 			)?;
 
 			binius_core::constraint_system::verify::<
-				OptimalUnderlier128b,
+				OptimalUnderlier,
 				CanonicalTowerFamily,
 				Groestl256,
 				Groestl256ByteCompression,

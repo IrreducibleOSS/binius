@@ -5,7 +5,7 @@ use std::{array, marker::PhantomData};
 use anyhow::Result;
 use binius_field::{
 	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	PackedField, PackedSubfield, TowerField,
 };
 use itertools::izip;
 
@@ -400,7 +400,9 @@ impl MulUU64 {
 	}
 }
 
-fn pack_fp<FP: TowerField, const BIT_LENGTH: usize>(bits: [Col<B1>; BIT_LENGTH]) -> Expr<FP, 1> {
+pub(crate) fn pack_fp<FP: TowerField, const BIT_LENGTH: usize>(
+	bits: [Col<B1>; BIT_LENGTH],
+) -> Expr<FP, 1> {
 	assert_eq!(BIT_LENGTH, 1 << FP::TOWER_LEVEL);
 	let basis: [_; BIT_LENGTH] = array::from_fn(ext_basis::<FP, B1>);
 	bits.into_iter()
@@ -420,8 +422,9 @@ pub struct MulSS32 {
 	out_signed_value: SignConverter<u64, 64>,
 	x_abs_bits: [Col<B1>; 32],
 	y_abs_bits: [Col<B1>; 32],
-	out_bits: [Col<B1>; 64],
 
+	// Outputs
+	pub out_bits: [Col<B1>; 64],
 	pub x_in: Col<B32>,
 	pub y_in: Col<B32>,
 	pub out_high: Col<B32>,
@@ -433,6 +436,14 @@ impl MulSS32 {
 		let x_in_bits = table.add_committed_multiple("x_in_bits");
 		let y_in_bits = table.add_committed_multiple("y_in_bits");
 
+		Self::with_input(table, x_in_bits, y_in_bits)
+	}
+
+	pub fn with_input(
+		table: &mut TableBuilder,
+		x_in_bits: [Col<B1>; 32],
+		y_in_bits: [Col<B1>; 32],
+	) -> Self {
 		let x_in = table.add_computed("SS::x_in", pack_fp(x_in_bits));
 		let y_in = table.add_computed("SS::y_in", pack_fp(y_in_bits));
 
@@ -489,7 +500,7 @@ impl MulSS32 {
 		y_vals: impl IntoIterator<Item = B32>,
 	) -> Result<()>
 	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
 		let mut inner_mul_x = Vec::new();
 		let mut inner_mul_y = Vec::new();
@@ -634,7 +645,7 @@ impl MulSU32 {
 		y_vals: impl IntoIterator<Item = B32>,
 	) -> Result<()>
 	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
 		let mut mul_inner_x = Vec::new();
 		let mut mul_inner_y = Vec::new();
