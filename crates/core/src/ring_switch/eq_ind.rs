@@ -3,11 +3,8 @@
 use std::{any::TypeId, iter, marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	byte_iteration::{
-		can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes, ByteIteratorCallback,
-	},
-	util::inner_product_unchecked,
-	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
+	util::inner_product_unchecked, BinaryField1b, ExtensionField, Field, PackedExtension,
+	PackedField, TowerField,
 };
 use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
 use binius_maybe_rayon::prelude::*;
@@ -24,22 +21,22 @@ use crate::{
 #[derive(Debug)]
 pub struct RowBatchCoeffs<F> {
 	coeffs: Vec<F>,
-	/// This is a lookup table for the partial sums of the coefficients
-	/// that is used to efficiently fold with 1-bit coefficients.
-	partial_sums_lookup_table: Vec<F>,
+	// This is a lookup table for the partial sums of the coefficients
+	// that is used to efficiently fold with 1-bit coefficients.
+	// partial_sums_lookup_table: Vec<F>,
 }
 
 impl<F: Field> RowBatchCoeffs<F> {
 	pub fn new(coeffs: Vec<F>) -> Self {
-		let partial_sums_lookup_table = if coeffs.len() >= 8 {
-			create_partial_sums_lookup_tables(coeffs.as_slice())
-		} else {
-			Vec::new()
-		};
+		// let partial_sums_lookup_table = if coeffs.len() >= 8 {
+		// 	create_partial_sums_lookup_tables(coeffs.as_slice())
+		// } else {
+		// 	Vec::new()
+		// };
 
 		Self {
 			coeffs,
-			partial_sums_lookup_table,
+			// partial_sums_lookup_table,
 		}
 	}
 
@@ -91,14 +88,17 @@ where
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error>
+	where
+		F: TowerField,
+	{
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
 		evals.par_iter_mut().for_each(|val| {
 			*val = P::from_scalars(
 				val.iter()
-					.map(|v| inner_product_subfield(v, &self.row_batch_coeffs)),
+					.map(|v| inner_product_subfield::<FSub, F>(v, &self.row_batch_coeffs)),
 			);
 		});
 		Ok(MultilinearExtension::new(self.z_vals.len(), evals)?)
@@ -109,36 +109,50 @@ where
 fn inner_product_subfield<FSub, F>(value: F, row_batch_coeffs: &RowBatchCoeffs<F>) -> F
 where
 	FSub: Field,
-	F: ExtensionField<FSub>,
+	F: ExtensionField<FSub> + TowerField,
 {
-	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>() && can_iterate_bytes::<F>() {
-		// Special case when we are folding with 1-bit coefficients.
-		// Use partial sums lookup table to speed up the computation.
+	// if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>() && can_iterate_bytes::<F>() {
+	// 	// Special case when we are folding with 1-bit coefficients.
+	// 	// Use partial sums lookup table to speed up the computation.
 
-		struct Callback<'a, F> {
-			partial_sums_lookup: &'a [F],
-			result: F,
-		}
+	// 	struct Callback<'a, F> {
+	// 		partial_sums_lookup: &'a [F],
+	// 		result: F,
+	// 	}
 
-		impl<F: Field> ByteIteratorCallback for Callback<'_, F> {
-			#[inline(always)]
-			fn call(&mut self, iter: impl Iterator<Item = u8>) {
-				for (byte_index, byte) in iter.enumerate() {
-					self.result += self.partial_sums_lookup[(byte_index << 8) + byte as usize];
-				}
-			}
-		}
+	// 	impl<F: Field> ByteIteratorCallback for Callback<'_, F> {
+	// 		#[inline(always)]
+	// 		fn call(&mut self, iter: impl Iterator<Item = u8>) {
+	// 			for (byte_index, byte) in iter.enumerate() {
+	// 				self.result += self.partial_sums_lookup[(byte_index << 8) + byte as usize];
+	// 			}
+	// 		}
+	// 	}
 
-		let mut callback = Callback {
-			partial_sums_lookup: &row_batch_coeffs.partial_sums_lookup_table,
-			result: F::ZERO,
-		};
-		iterate_bytes(std::slice::from_ref(&value), &mut callback);
+	// 	let mut callback = Callback {
+	// 		partial_sums_lookup: &row_batch_coeffs.partial_sums_lookup_table,
+	// 		result: F::ZERO,
+	// 	};
+	// 	iterate_bytes(std::slice::from_ref(&value), &mut callback);
 
-		callback.result
+	// 	callback.result
+	// }
+	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>()
+		&& TypeId::of::<F>() != TypeId::of::<F::Canonical>()
+	{
+		let canonical = F::Canonical::from(value);
+
+		let with_canonical_bits: &F = unsafe { std::mem::transmute(&canonical) };
+
+		inner_product_unchecked::<FSub, F>(
+			row_batch_coeffs.coeffs.iter().copied(),
+			<F as ExtensionField<FSub>>::iter_bases(with_canonical_bits),
+		)
 	} else {
-		// fall back to the general case
-		inner_product_unchecked(row_batch_coeffs.coeffs.iter().copied(), F::iter_bases(&value))
+		inner_product_unchecked::<FSub, F>(
+			row_batch_coeffs.coeffs.iter().copied(),
+			<F as ExtensionField<FSub>>::iter_bases(&value),
+		)
 	}
 }
 
