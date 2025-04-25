@@ -200,7 +200,7 @@ impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideAdd<UX, BIT_LENGTH>
 		});
 		for bit in 0..BIT_LENGTH {
 			table.assert_zero(
-				format!("carry_{}", bit),
+				format!("carry_{bit}"),
 				(x_in[bit] + cin[bit]) * (y_in[bit] + cin[bit]) + cin[bit] - cout[bit],
 			);
 		}
