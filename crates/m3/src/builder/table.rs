@@ -20,12 +20,12 @@ use binius_utils::{
 
 use super::{
 	channel::Flush,
-	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
+	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
+	structured::StructuredDynSize,
 	types::B128,
 	upcast_col, ColumnIndex, FlushOpts, B1,
 };
-use crate::builder::column::ColumnId;
 
 pub type TableId = usize;
 
@@ -329,6 +329,28 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
+	}
+
+	/// Add a structured column to a table.
+	///
+	/// A structured column is one that has sufficient structure that its multilinear extension
+	/// can be evaluated succinctly. See [`StructuredDynSize`] for more information.
+	pub fn add_structured<FSub>(
+		&mut self,
+		name: impl ToString,
+		variant: StructuredDynSize,
+	) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(
+			self.table.power_of_two_sized,
+			"Structured columns may only be added to tables that are power of two sized"
+		);
+		let namespaced_name = self.namespaced_name(name);
+		self.table
+			.new_column(namespaced_name, ColumnDef::StructuredDynSize(variant))
 	}
 
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(

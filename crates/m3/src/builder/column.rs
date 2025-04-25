@@ -6,7 +6,7 @@ use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
 
-use super::{table::TableId, types::B128};
+use super::{structured::StructuredDynSize, table::TableId, types::B128};
 
 /// An index of a column within a table.
 pub type ColumnIndex = usize;
@@ -152,6 +152,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
+	StructuredDynSize(StructuredDynSize),
 	StaticExp {
 		bit_cols: Vec<ColumnIndex>,
 		base: F,
