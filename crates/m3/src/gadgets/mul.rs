@@ -54,7 +54,7 @@ impl UnsignedMulPrimitives for u32 {
 
 	fn shifted_generator() -> B64 {
 		let mut g = B64::MULTIPLICATIVE_GENERATOR;
-		for _ in 0..Self::BIT_LENGTH {
+		for _ in 0..32 {
 			g *= g
 		}
 		g
@@ -80,7 +80,7 @@ impl UnsignedMulPrimitives for u64 {
 
 	fn shifted_generator() -> B128 {
 		let mut g = Self::generator();
-		for _ in 0..Self::BIT_LENGTH {
+		for _ in 0..64 {
 			g *= g
 		}
 		g
