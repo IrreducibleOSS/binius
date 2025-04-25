@@ -1255,18 +1255,18 @@ mod tests {
 		)
 		.unwrap();
 
-		assert_eq!(index.log_capacity(), 3);
-		assert_eq!(index.min_log_segment_size(), 3);
+		assert_eq!(index.log_capacity(), 4);
+		assert_eq!(index.min_log_segment_size(), 4);
 
 		let mut iter = index.segments(5);
 		// Check that the segment size is clamped to the capacity.
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 
 		let mut iter = index.segments(2);
 		// Check that the segment size is clamped to the minimum segment size.
-		assert_eq!(iter.next().unwrap().log_size(), 3);
+		assert_eq!(iter.next().unwrap().log_size(), 4);
 		assert!(iter.next().is_none());
 		drop(iter);
 	}
