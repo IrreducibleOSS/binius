@@ -336,6 +336,58 @@ fn test_mulss32() {
 		.unwrap();
 }
 
+// This needs to create witness data as well as later query for checking outputs.
+
+#[test]
+
+enum MulDivType {
+	MulUU32,
+	MulSU32,
+	MulSS32,
+	DivUU32,
+	DivSS32,
+}
+
+#[test]
+
+#[test]
+
+#[test]
+
+#[test]
+
+fn test_divuu32() {
+	let mut cs = ConstraintSystem::new();
+	let allocator = Bump::new();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![1 << 8],
+	};
+	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivUU32);
+	let test_suite = MulDivTestSuite { prove_verify: true };
+	test_suite
+		.execute(cs, allocator, statement, mul_div_32)
+		.unwrap();
+}
+
+#[test]
+
+fn test_divss32() {
+	let mut cs = ConstraintSystem::new();
+	let allocator = Bump::new();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![1 << 8],
+	};
+	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivSS32);
+	let test_suite = MulDivTestSuite { prove_verify: true };
+	test_suite
+		.execute(cs, allocator, statement, mul_div_32)
+		.unwrap();
+}
+
+#[test]
+
 #[derive(Debug)]
 pub struct AbsoluteValueTable {
 	table_id: TableId,
