@@ -112,7 +112,7 @@ fn main() -> Result<()> {
 	drop(trace_gen_scope);
 
 	let constraint_system = cs.compile::<CanonicalOptimalPackedTowerFamily>(&statement)?;
-	let witness = witness.into_multilinear_extension_index();
+	let witness = witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 	let backend = make_portable_backend();
 

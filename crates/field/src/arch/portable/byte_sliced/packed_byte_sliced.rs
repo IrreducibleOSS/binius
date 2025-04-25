@@ -499,6 +499,13 @@ macro_rules! byte_sliced_common {
 			}
 		}
 
+		unsafe impl TryRepackSliceInplace<$name > for $name {
+			#[inline]
+			fn try_repack_slice(slice: &mut [$name]) -> Result<&mut [Self], crate::Error> {
+				Ok(slice)
+			}
+		}
+
 		impl Add<$scalar_type> for $name {
 			type Output = Self;
 

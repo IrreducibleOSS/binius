@@ -52,7 +52,7 @@ fn test_muluu64() {
 	let ccs = cs
 		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 		.unwrap();
-	let witness = witness.into_multilinear_extension_index();
+	let witness = witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;
@@ -121,7 +121,7 @@ fn test_muluu32() {
 	let ccs = cs
 		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 		.unwrap();
-	let witness = witness.into_multilinear_extension_index();
+	let witness = witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;

@@ -198,7 +198,8 @@ mod arithmetization {
 		let compiled_cs = cs
 			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 			.unwrap();
-		let witness = witness.into_multilinear_extension_index();
+		let witness =
+			witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,
@@ -216,7 +217,8 @@ mod arithmetization {
 		let compiled_cs = cs
 			.compile::<CanonicalOptimalPackedTowerFamily>(statement)
 			.unwrap();
-		let witness = witness.into_multilinear_extension_index();
+		let witness =
+			witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,

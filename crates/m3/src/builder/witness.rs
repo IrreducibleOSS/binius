@@ -7,12 +7,16 @@ use std::{
 };
 
 use binius_core::{
-	oracle::OracleId, polynomial::ArithCircuitPoly, transparent::step_down::StepDown,
+	oracle::OracleId,
+	polynomial::ArithCircuitPoly,
+	tower::{PackedTowerFamily, TowerFamily},
+	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, packed::TryRepackSliceInplace,
-	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+	RepackedExtension, TowerField,
 };
 use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
 use binius_maybe_rayon::prelude::*;
@@ -27,7 +31,7 @@ use super::{
 	column::{Col, ColumnShape},
 	error::Error,
 	table::{Table, TableId},
-	types::{B1, B128, B16, B32, B64, B8},
+	types::B128,
 	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 };
 use crate::builder::multi_iter::MultiIterator;
@@ -154,10 +158,20 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			.collect()
 	}
 
-	pub fn repack<'cs_2, P2: TryRepackSliceInplace<P, Scalar: TowerField>>(
+	pub fn repack<'cs_2, SourcePackedTower, TargetPackedTower>(
 		self,
-		converted_cs: &'cs_2 ConstraintSystem<P2::Scalar>,
-	) -> Result<WitnessIndex<'cs_2, 'alloc, P2>, super::Error> {
+		converted_cs: &'cs_2 ConstraintSystem<<TargetPackedTower::Tower as TowerFamily>::B128>,
+	) -> Result<WitnessIndex<'cs_2, 'alloc, TargetPackedTower::PackedB128>, super::Error>
+	where
+		SourcePackedTower: PackedTowerFamily<PackedB128 = P>,
+		TargetPackedTower: PackedTowerFamily,
+		TargetPackedTower::PackedB1: TryRepackSliceInplace<SourcePackedTower::PackedB1>,
+		TargetPackedTower::PackedB8: TryRepackSliceInplace<SourcePackedTower::PackedB8>,
+		TargetPackedTower::PackedB16: TryRepackSliceInplace<SourcePackedTower::PackedB16>,
+		TargetPackedTower::PackedB32: TryRepackSliceInplace<SourcePackedTower::PackedB32>,
+		TargetPackedTower::PackedB64: TryRepackSliceInplace<SourcePackedTower::PackedB64>,
+		TargetPackedTower::PackedB128: TryRepackSliceInplace<SourcePackedTower::PackedB128>,
+	{
 		let mut tables = Vec::with_capacity(self.tables.len());
 		for table in self.tables {
 			let converted_table = match table {
@@ -166,8 +180,12 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 						.cols
 						.into_iter()
 						.map(|col| {
-							let data = col.data.try_repack::<P2>()?;
-							Ok(WitnessIndexColumn::<'_, P2> {
+							let data = col
+								.data
+								.try_repack::<SourcePackedTower, TargetPackedTower>(
+									col.shape.tower_height,
+								)?;
+							Ok(WitnessIndexColumn::<'_, TargetPackedTower::PackedB128> {
 								shape: col.shape,
 								data,
 								is_single_row: col.is_single_row,
@@ -198,14 +216,12 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 		})
 	}
 
-	pub fn into_multilinear_extension_index(self) -> MultilinearExtensionIndex<'alloc, P>
+	pub fn into_multilinear_extension_index<PackedTower>(
+		self,
+	) -> MultilinearExtensionIndex<'alloc, PackedTower::PackedB128>
 	where
-		P: PackedExtension<B1>
-			+ PackedExtension<B8>
-			+ PackedExtension<B16>
-			+ PackedExtension<B32>
-			+ PackedExtension<B64>
-			+ PackedExtension<B128>,
+		PackedTower: PackedTowerFamily<PackedB128 = P>,
+		P: RepackedExtension<PackedTower::PackedB1>,
 	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
@@ -229,7 +245,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				let underlier_count = 1
 					<< (n_vars + col.shape.tower_height)
 						.saturating_sub(P::LOG_WIDTH + F::TOWER_LEVEL);
-				let witness = multilin_poly_from_underlier_data(
+				let witness = multilin_poly_from_underlier_data::<PackedTower>(
 					&col.data[..underlier_count],
 					n_vars,
 					col.shape.tower_height,
@@ -247,7 +263,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 					let log_size = table_witness.log_capacity + log_values_per_row;
 					let witness = StepDown::new(log_size, size)
 						.unwrap()
-						.multilinear_extension::<PackedSubfield<P, B1>>()
+						.multilinear_extension::<PackedTower::PackedB1>()
 						.unwrap()
 						.specialize_arc_dyn();
 					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -261,38 +277,67 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 	}
 }
 
-fn multilin_poly_from_underlier_data<P>(
-	data: &[P],
+fn multilin_poly_from_underlier_data<PackedTower>(
+	data: &[PackedTower::PackedB128],
 	n_vars: usize,
 	tower_height: usize,
-) -> Arc<dyn MultilinearPoly<P> + Send + Sync + '_>
+) -> Arc<dyn MultilinearPoly<PackedTower::PackedB128> + Send + Sync + '_>
 where
-	P: PackedExtension<B1>
-		+ PackedExtension<B8>
-		+ PackedExtension<B16>
-		+ PackedExtension<B32>
-		+ PackedExtension<B64>
-		+ PackedExtension<B128>,
+	PackedTower: PackedTowerFamily,
 {
 	match tower_height {
-		0 => MultilinearExtension::new(n_vars, PackedExtension::<B1>::cast_bases(data))
+		0 => {
+			MultilinearExtension::new(
+				n_vars,
+				<PackedTower::PackedB128 as PackedExtension<
+					<PackedTower::Tower as TowerFamily>::B1,
+				>>::cast_bases(data),
+			)
 			.unwrap()
-			.specialize_arc_dyn(),
-		3 => MultilinearExtension::new(n_vars, PackedExtension::<B8>::cast_bases(data))
+			.specialize_arc_dyn()
+		}
+		3 => {
+			MultilinearExtension::new(
+				n_vars,
+				<PackedTower::PackedB128 as PackedExtension<
+					<PackedTower::Tower as TowerFamily>::B8,
+				>>::cast_bases(data),
+			)
 			.unwrap()
-			.specialize_arc_dyn(),
-		4 => MultilinearExtension::new(n_vars, PackedExtension::<B16>::cast_bases(data))
-			.unwrap()
-			.specialize_arc_dyn(),
-		5 => MultilinearExtension::new(n_vars, PackedExtension::<B32>::cast_bases(data))
-			.unwrap()
-			.specialize_arc_dyn(),
-		6 => MultilinearExtension::new(n_vars, PackedExtension::<B64>::cast_bases(data))
-			.unwrap()
-			.specialize_arc_dyn(),
-		7 => MultilinearExtension::new(n_vars, PackedExtension::<B128>::cast_bases(data))
-			.unwrap()
-			.specialize_arc_dyn(),
+			.specialize_arc_dyn()
+		}
+		4 => MultilinearExtension::new(
+			n_vars,
+			<PackedTower::PackedB128 as PackedExtension<
+				<PackedTower::Tower as TowerFamily>::B16,
+			>>::cast_bases(data),
+		)
+		.unwrap()
+		.specialize_arc_dyn(),
+		5 => MultilinearExtension::new(
+			n_vars,
+			<PackedTower::PackedB128 as PackedExtension<
+				<PackedTower::Tower as TowerFamily>::B32,
+			>>::cast_bases(data),
+		)
+		.unwrap()
+		.specialize_arc_dyn(),
+		6 => MultilinearExtension::new(
+			n_vars,
+			<PackedTower::PackedB128 as PackedExtension<
+				<PackedTower::Tower as TowerFamily>::B64,
+			>>::cast_bases(data),
+		)
+		.unwrap()
+		.specialize_arc_dyn(),
+		7 => MultilinearExtension::new(
+			n_vars,
+			<PackedTower::PackedB128 as PackedExtension<
+				<PackedTower::Tower as TowerFamily>::B128,
+			>>::cast_bases(data),
+		)
+		.unwrap()
+		.specialize_arc_dyn(),
 		_ => {
 			panic!("Unsupported tower height: {tower_height}");
 		}
@@ -343,17 +388,87 @@ impl<'a, P: PackedField> WitnessDataMut<'a, P> {
 		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
 	}
 
-	pub fn try_repack<P2: TryRepackSliceInplace<P>>(
+	pub fn try_repack<SourcePackedTower, TargetPackedTower>(
 		self,
-	) -> Result<WitnessDataMut<'a, P2>, super::Error> {
-		match self {
-			WitnessColumnInfo::Owned(data) => Ok(WitnessColumnInfo::Owned(
-				P2::try_repack_slice(data).map_err(super::Error::Repacking)?,
-			)),
-			WitnessColumnInfo::SameAsOracleIndex(index) => {
-				Ok(WitnessColumnInfo::SameAsOracleIndex(index))
-			}
+		tower_level: usize,
+	) -> Result<WitnessDataMut<'a, TargetPackedTower::PackedB128>, super::Error>
+	where
+		SourcePackedTower: PackedTowerFamily,
+		TargetPackedTower: PackedTowerFamily,
+		TargetPackedTower::PackedB1: TryRepackSliceInplace<SourcePackedTower::PackedB1>,
+		TargetPackedTower::PackedB8: TryRepackSliceInplace<SourcePackedTower::PackedB8>,
+		TargetPackedTower::PackedB16: TryRepackSliceInplace<SourcePackedTower::PackedB16>,
+		TargetPackedTower::PackedB32: TryRepackSliceInplace<SourcePackedTower::PackedB32>,
+		TargetPackedTower::PackedB64: TryRepackSliceInplace<SourcePackedTower::PackedB64>,
+		TargetPackedTower::PackedB128: TryRepackSliceInplace<SourcePackedTower::PackedB128>,
+	{
+		fn try_repack_slice_as<PSource, PTarget, PESource, PETarget>(
+			data: &mut [PESource],
+		) -> Result<&mut [PETarget], super::Error>
+		where
+			PSource: PackedField,
+			PTarget: TryRepackSliceInplace<PSource>,
+			PESource: RepackedExtension<PSource>,
+			PETarget: RepackedExtension<PTarget>,
+		{
+			let data = PESource::cast_bases_mut(data);
+			let data = PTarget::try_repack_slice(data)?;
+			Ok(PETarget::cast_exts_mut(data))
 		}
+
+		let column = match self {
+			WitnessColumnInfo::Owned(data) => {
+				let data: &mut [SourcePackedTower::PackedB128] =
+					unsafe { std::mem::transmute(data) };
+
+				let repacked_data = match tower_level {
+					0 => try_repack_slice_as::<
+						SourcePackedTower::PackedB1,
+						TargetPackedTower::PackedB1,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					3 => try_repack_slice_as::<
+						SourcePackedTower::PackedB8,
+						TargetPackedTower::PackedB8,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					4 => try_repack_slice_as::<
+						SourcePackedTower::PackedB16,
+						TargetPackedTower::PackedB16,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					5 => try_repack_slice_as::<
+						SourcePackedTower::PackedB32,
+						TargetPackedTower::PackedB32,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					6 => try_repack_slice_as::<
+						SourcePackedTower::PackedB64,
+						TargetPackedTower::PackedB64,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					7 => try_repack_slice_as::<
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+						SourcePackedTower::PackedB128,
+						TargetPackedTower::PackedB128,
+					>(data),
+					_ => panic!("Unsupported tower level: {tower_level}"),
+				};
+
+				WitnessColumnInfo::Owned(repacked_data?)
+			}
+			WitnessColumnInfo::SameAsOracleIndex(index) => {
+				WitnessColumnInfo::SameAsOracleIndex(index)
+			}
+		};
+
+		Ok(column)
 	}
 }
 
@@ -1155,11 +1270,11 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use assert_matches::assert_matches;
-	use binius_core::tower::{AESTowerFamily, CanonicalTowerFamily};
+	use binius_core::tower::{AESTowerFamily, CanonicalTowerFamily, PackUnderlierFamily};
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlierByteSliced128b},
 		packed::{len_packed_slice, set_packed_slice},
-		AESTowerField128b, AESTowerField32b,
+		AESTowerField32b,
 	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -1501,7 +1616,7 @@ mod tests {
 
 		let converted_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
 		let mut repacked_index = index
-			.repack::<PackedType<OptimalUnderlierByteSliced128b, AESTowerField128b>>(&converted_cs)
+			.repack::<PackUnderlierFamily<CanonicalTowerFamily, OptimalUnderlier128b>, PackUnderlierFamily<AESTowerFamily, OptimalUnderlierByteSliced128b>>(&converted_cs)
 			.unwrap();
 
 		let repacked_table = repacked_index

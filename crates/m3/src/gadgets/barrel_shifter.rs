@@ -208,7 +208,8 @@ mod tests {
 		let ccs = cs
 			.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 			.unwrap();
-		let witness = witness.into_multilinear_extension_index();
+		let witness =
+			witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
 	}

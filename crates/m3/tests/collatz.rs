@@ -335,7 +335,8 @@ mod arithmetization {
 			constraint_system: cs
 				.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 				.unwrap(),
-			witness: witness.into_multilinear_extension_index(),
+			witness: witness
+				.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>(),
 			statement,
 		}
 	}

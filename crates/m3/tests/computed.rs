@@ -101,7 +101,7 @@ fn test_m3_computed_col() {
 	let constraint_system = cs
 		.compile::<CanonicalOptimalPackedTowerFamily>(&statement)
 		.unwrap();
-	let witness = witness.into_multilinear_extension_index();
+	let witness = witness.into_multilinear_extension_index::<CanonicalOptimalPackedTowerFamily>();
 
 	binius_core::constraint_system::validate::validate_witness(
 		&constraint_system,
