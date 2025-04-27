@@ -129,37 +129,37 @@ impl<U: NumCast<u128>> NumCast<M512> for U {
 }
 
 impl SerializeBytes for M512 {
-    fn serialize(
-        &self,
-        mut write_buf: impl BufMut,
-        _mode: SerializationMode,
-    ) -> Result<(), SerializationError> {
-        assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
-        
-        let raw_values: [u128; 4] = self.clone().into();
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		_mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
 
-        for &val in raw_values.iter() {
-            write_buf.put_u128_le(val);
-        }
-        
-        Ok(())
-    }
+		let raw_values: [u128; 4] = self.clone().into();
+
+		for &val in raw_values.iter() {
+			write_buf.put_u128_le(val);
+		}
+
+		Ok(())
+	}
 }
 
 impl DeserializeBytes for M512 {
-    fn deserialize(
-        mut read_buf: impl Buf,
-        _mode: SerializationMode,
-    ) -> Result<Self, SerializationError>
-    where
-        Self: Sized,
-    {
-        assert_enough_data_for(&read_buf, size_of::<Self>())?;
+	fn deserialize(
+		mut read_buf: impl Buf,
+		_mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		assert_enough_data_for(&read_buf, size_of::<Self>())?;
 
 		let raw_values = core::array::from_fn(|_| read_buf.get_u128_le());
 
-        Ok(Self::from(raw_values))
-    }
+		Ok(Self::from(raw_values))
+	}
 }
 
 impl_divisible!(@pairs M512, M256, M128, u128, u64, u32, u16, u8);
@@ -1519,12 +1519,12 @@ impl_iteration!(M512,
 
 #[cfg(test)]
 mod tests {
+	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;
-	use rand::{rngs::StdRng, SeedableRng};
-	use binius_utils::bytes::BytesMut;
 
 	fn check_roundtrip<T>(val: M512)
 	where
@@ -1715,19 +1715,19 @@ mod tests {
 		assert_ne!(c, d);
 	}
 
-    #[test]
-    fn test_serialize_and_deserialize_m512() {
+	#[test]
+	fn test_serialize_and_deserialize_m512() {
 		let mode = SerializationMode::Native;
 
-        let mut rng = StdRng::from_seed([0; 32]);
+		let mut rng = StdRng::from_seed([0; 32]);
 
-        let original_value = M512::from(core::array::from_fn(|_| rng.gen::<u128>()));
+		let original_value = M512::from(core::array::from_fn(|_| rng.gen::<u128>()));
 
-        let mut buf = BytesMut::new();
-        original_value.serialize(&mut buf, mode).unwrap();
+		let mut buf = BytesMut::new();
+		original_value.serialize(&mut buf, mode).unwrap();
 
-        let deserialized_value = M512::deserialize(buf.freeze(), mode).unwrap();
+		let deserialized_value = M512::deserialize(buf.freeze(), mode).unwrap();
 
-        assert_eq!(original_value, deserialized_value);
-    }
+		assert_eq!(original_value, deserialized_value);
+	}
 }

@@ -624,7 +624,7 @@ impl<F: Field> PackedField for F {
 	}
 }
 
-/// A helper trait to make the generic bunds shorter
+/// A helper trait to make the generic bounds shorter
 pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}

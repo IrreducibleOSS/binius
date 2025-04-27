@@ -1,5 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::marker::PhantomData;
+
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use cfg_if::cfg_if;
 
 use super::{
@@ -7,7 +13,10 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
+	arch::{
+		portable::packed::serialize_deserialize, PackedStrategy, PairwiseRecursiveStrategy,
+		PairwiseStrategy,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -22,6 +31,13 @@ pub type PackedBinaryField8x4b = PackedPrimitiveType<u32, BinaryField4b>;
 pub type PackedBinaryField4x8b = PackedPrimitiveType<u32, BinaryField8b>;
 pub type PackedBinaryField2x16b = PackedPrimitiveType<u32, BinaryField16b>;
 pub type PackedBinaryField1x32b = PackedPrimitiveType<u32, BinaryField32b>;
+
+serialize_deserialize!(PackedBinaryField32x1b);
+serialize_deserialize!(PackedBinaryField16x2b);
+serialize_deserialize!(PackedBinaryField8x4b);
+serialize_deserialize!(PackedBinaryField4x8b);
+serialize_deserialize!(PackedBinaryField2x16b);
+serialize_deserialize!(PackedBinaryField1x32b);
 
 // Define broadcast
 impl_broadcast!(u32, BinaryField1b);

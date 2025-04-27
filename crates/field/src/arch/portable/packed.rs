@@ -14,10 +14,7 @@ use std::{
 };
 
 use binius_utils::{
-	bytes::{Buf, BufMut},
-	checked_arithmetics::checked_int_div,
-	iter::IterExtensions,
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	checked_arithmetics::checked_int_div, iter::IterExtensions, DeserializeBytes, SerializeBytes,
 };
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
@@ -66,31 +63,6 @@ impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField>
 	#[inline]
 	pub const fn to_underlier(self) -> U {
 		self.0
-	}
-}
-
-impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField> SerializeBytes
-	for PackedPrimitiveType<U, Scalar>
-{
-	fn serialize(
-		&self,
-		write_buf: impl BufMut,
-		mode: SerializationMode,
-	) -> Result<(), SerializationError> {
-		self.0.serialize(write_buf, mode)
-	}
-}
-
-impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField> DeserializeBytes
-	for PackedPrimitiveType<U, Scalar>
-{
-	fn deserialize(
-		read_buf: impl Buf,
-		mode: SerializationMode,
-	) -> Result<Self, SerializationError> {
-		let value = U::deserialize(read_buf, mode)?;
-
-		Ok(Self::from_underlier(value))
 	}
 }
 
@@ -487,6 +459,31 @@ macro_rules! impl_ops_for_zero_height {
 }
 
 pub(crate) use impl_ops_for_zero_height;
+
+macro_rules! serialize_deserialize {
+	($bin_type:ty) => {
+		impl SerializeBytes for $bin_type {
+			fn serialize(
+				&self,
+				write_buf: impl BufMut,
+				mode: SerializationMode,
+			) -> Result<(), SerializationError> {
+				self.0.serialize(write_buf, mode)
+			}
+		}
+
+		impl DeserializeBytes for $bin_type {
+			fn deserialize(
+				read_buf: impl Buf,
+				mode: SerializationMode,
+			) -> Result<Self, SerializationError> {
+				Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?, PhantomData))
+			}
+		}
+	};
+}
+
+pub(crate) use serialize_deserialize;
 
 /// Multiply `PT1` values by upcasting to wider `PT2` type with the same scalar.
 /// This is useful for the cases when SIMD multiplication is faster.
