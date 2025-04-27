@@ -130,4 +130,9 @@ where
 		}
 		Ok(())
 	}
+
+	/// Returns the iterator over the provers.
+	pub fn provers(&self) -> impl Iterator<Item = &Prover> {
+		self.provers.iter().map(|(prover, _)| prover)
+	}
 }

@@ -7,7 +7,7 @@ use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
@@ -64,6 +64,14 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+	for witness in witnesses {
+		event!(
+			name: "[data_dimensions]",
+			Level::DEBUG,
+			{ task = "(Ring Switch) MLE Fold High", n_vars = witness.n_vars() }
+		);
+	}
+
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
@@ -99,6 +107,14 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+	for suffix_desc in &system.suffix_descs {
+		event!(
+			name: "[data_dimensions]",
+			Level::DEBUG,
+			{ task = "Calculate Ring Switch Eq Ind", suffix_desc_kappa = suffix_desc.kappa, suffix_len = suffix_desc.suffix.len() }
+		);
+	}
+
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,

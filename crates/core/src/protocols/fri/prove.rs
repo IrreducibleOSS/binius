@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
-	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
+	BinaryField, BinaryField1b, ExtensionField, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
@@ -10,7 +10,7 @@ use binius_utils::{bail, SerializeBytes};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use super::{
 	common::{vcs_optimal_layers_depths_iter, FRIParams},
@@ -229,11 +229,16 @@ where
 
 	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
 		.in_scope(|| {
+			event!(name: "[data_dimensions]", Level::TRACE, {task = "Sort & Merge", log_elems = log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE });
 			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 		});
 
 	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
-		.in_scope(|| rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size))?;
+		.in_scope(|| {
+			event!(name: "[data_dimensions]", Level::TRACE, { task = "RS Encode", log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE, log_batch_size });
+
+			rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)
+	})?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
@@ -246,6 +251,7 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+	event!(name: "[data_dimensions]", Level::TRACE, {task = "Merkle Tree", log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE, coset_log_len });
 	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
 		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, 1 << coset_log_len);
 
@@ -334,6 +340,14 @@ where
 	/// Number of times `execute_fold_round` has been called.
 	pub const fn curr_round(&self) -> usize {
 		self.curr_round
+	}
+
+	/// The length of the current codeword.
+	pub fn current_codeword_len(&self) -> usize {
+		match self.round_committed.last() {
+			Some((codeword, _)) => codeword.len(),
+			None => len_packed_slice(self.codeword),
+		}
 	}
 
 	fn is_commitment_round(&self) -> bool {

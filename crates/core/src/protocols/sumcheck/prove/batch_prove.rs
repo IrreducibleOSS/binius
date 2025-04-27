@@ -5,7 +5,7 @@ use std::iter;
 use binius_field::{Field, TowerField};
 use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -201,6 +201,7 @@ where
 		for (&batch_coeff, prover) in
 			iter::zip(batch_coeffs.iter(), provers[..active_index].iter_mut())
 		{
+			event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Calculate Coeffs", n_vars = prover.n_vars() });
 			let prover_coeffs = prover.execute(batch_coeff)?;
 			round_coeffs += &(prover_coeffs * batch_coeff);
 		}
@@ -222,6 +223,7 @@ where
 		)
 		.entered();
 		for prover in &mut provers[..active_index] {
+			event!(name: "[data_dimensions]", Level::TRACE, { task = "Fold", n_vars = prover.n_vars() });
 			prover.fold(challenge)?;
 		}
 		drop(fold_span);

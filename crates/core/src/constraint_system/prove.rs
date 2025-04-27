@@ -20,7 +20,7 @@ use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use either::Either;
 use itertools::{chain, izip};
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use super::{
 	channel::Boundary,
@@ -141,6 +141,11 @@ where
 	let commit_span =
 		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
 			.entered();
+	for mle in &committed_multilins {
+		event!(name: "[data_dimensions]", Level::TRACE, {
+			phase = "Commit",
+			n_vars = mle.n_vars(), log_extension_degree = mle.log_extension_degree()});
+	}
 	let CommitOutput {
 		commitment,
 		committed,
@@ -337,6 +342,12 @@ where
 
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
+	event!(name: "[data_dimensions]", Level::TRACE, {
+		phase = "Zerocheck",
+		max_n_vars,
+		skip_rounds,
+		n_claims = table_constraints.len(),
+	});
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
@@ -410,12 +421,18 @@ where
 		perfetto_category = "phase.sub"
 	)
 	.entered();
+	for tail_prover in &tail_regular_zerocheck_provers {
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Check", tail_prover_n_vars = tail_prover.n_vars() });
+	}
 	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
 		&mut transcript,
 	)?;
 
+	for eq_ind_claim in &eq_ind_sumcheck_claims {
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Check", eq_ind_claim_n_vars = eq_ind_claim.n_vars(), eq_ind_n_multilinears = eq_ind_claim.n_multilinears() });
+	}
 	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
 		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
@@ -449,6 +466,14 @@ where
 			perfetto_category = "task.main"
 		)
 		.entered();
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Fold High", query_length = challenges.len() });
+		for mle in &multilinears {
+			event!(name: "[data_dimensions]", Level::TRACE, {
+				task = "(Zerocheck) MLE Fold High",
+				mle_n_vars = mle.n_vars(),
+			});
+		}
+
 		let reduced_multilinears =
 			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
 		drop(zerocheck_mle_fold_high_span);
@@ -477,9 +502,16 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+	for reduction_prover in &reduction_provers {
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Regular Sumcheck (Small)", reduction_prover_n_vars = reduction_prover.n_vars() });
+	}
+
 	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
 	drop(zerocheck_regular_sumcheck_small_span);
 
+	for reduction_claim in &reduction_claims {
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Regular Sumcheck (Small)", reduction_claim_n_vars = reduction_claim.n_vars(), reduction_claim_n_multilinears = reduction_claim.n_multilinears() });
+	}
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
 		univariate_challenge,

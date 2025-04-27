@@ -2,6 +2,7 @@
 
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
+use tracing::{event, Level};
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -158,6 +159,8 @@ where
 	.entered();
 	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "Initial MLE Fold Low", n_vars = prover.n_vars(), domain_size = prover.domain_size(skip_rounds) });
+
 		let regular_prover = Box::new(prover).fold_univariate_round(univariate_challenge)?;
 		reduction_provers.push(regular_prover);
 	}

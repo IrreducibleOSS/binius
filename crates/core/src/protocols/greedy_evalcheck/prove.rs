@@ -5,6 +5,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
+use tracing::{event, Level};
 
 use super::error::Error;
 use crate::{
@@ -55,6 +56,12 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+	event!(
+		name: "[data_dimensions]",
+		Level::DEBUG,
+		{ phase = "(Evalcheck) Initial Round", n_claims = claims.len() }
+	);
+
 	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
 	drop(initial_evalcheck_round_span);
 
@@ -74,6 +81,12 @@ where
 		if new_sumchecks.is_empty() {
 			break;
 		}
+
+		event!(
+			name: "[data_dimensions]",
+			Level::DEBUG,
+			{ step = "Evalcheck Round", n_claims = new_sumchecks.len() }
+		);
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
 		let evalcheck_round_mle_fold_high_span = tracing::debug_span!(

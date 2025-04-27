@@ -19,7 +19,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPointOracleIdMap};
 use crate::{
@@ -31,7 +31,10 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
 		self,
-		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
+		prove::{
+			oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
+			SumcheckProver,
+		},
 		Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
@@ -543,6 +546,14 @@ where
 		&switchover_fn,
 		backend,
 	)?;
+
+	for prover in &provers {
+		event!(
+			name: "[data_dimensions]",
+			Level::DEBUG,
+			{ task = "(Evalcheck) Regular Sumcheck (Small)", n_vars = prover.n_vars() }
+		);
+	}
 
 	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
 

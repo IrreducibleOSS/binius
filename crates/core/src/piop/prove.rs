@@ -21,6 +21,7 @@ use binius_utils::{
 };
 use either::Either;
 use itertools::{chain, Itertools};
+use tracing::{event, Level};
 
 use super::{
 	error::Error,
@@ -304,6 +305,14 @@ where
 			perfetto_category = "task.main"
 		)
 		.entered();
+		for prover in &mut sumcheck_batch_prover.provers() {
+			event!(
+				name: "[data_dimensions]",
+				Level::TRACE,
+				{ task = "(PIOP Compiler) Calculate Coeffs", sumcheck_n_vars = prover.n_vars(), round = round }
+			);
+		}
+
 		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
 		drop(bivariate_sumcheck_calculate_coeffs_span);
 		let challenge = transcript.sample();
@@ -314,6 +323,14 @@ where
 			perfetto_category = "task.main"
 		)
 		.entered();
+		for prover in &mut sumcheck_batch_prover.provers() {
+			event!(
+				name: "[data_dimensions]",
+				Level::DEBUG,
+				{ task = "(PIOP Compiler) Calculate Coeffs", sumcheck_n_vars = prover.n_vars(), round = round }
+			);
+		}
+
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 		drop(bivariate_sumcheck_all_folds_span);
 		drop(bivariate_sumcheck_span);
@@ -325,6 +342,12 @@ where
 			perfetto_category = "phase.sub"
 		)
 		.entered();
+		event!(
+			name: "[data_dimensions]",
+			Level::TRACE,
+			{ task = "FRI Fold Rounds", codeword_len = fri_prover.current_codeword_len(), round = round, log_batch_size = fri_params.log_batch_size() }
+		);
+
 		match fri_prover.execute_fold_round(challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {

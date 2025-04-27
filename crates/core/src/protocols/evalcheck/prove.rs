@@ -8,7 +8,7 @@ use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
 use itertools::izip;
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use super::{
 	error::Error,
@@ -232,6 +232,8 @@ where
 			perfetto_category = "task.main"
 		)
 		.entered();
+		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Evalcheck) MLE Fold High", n_claims = self.projected_bivariate_claims.len() });
+
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
