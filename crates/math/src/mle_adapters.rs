@@ -9,6 +9,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField, RepackedExtension,
 };
 use binius_utils::bail;
+use tracing::instrument;
 
 use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 
@@ -197,7 +198,7 @@ where
 
 		Ok(())
 	}
-
+	#[instrument(skip_all, name = "ExtensionAdapter::subcube_evals")]
 	fn subcube_evals(
 		&self,
 		subcube_vars: usize,
