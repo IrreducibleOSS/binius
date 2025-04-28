@@ -7,9 +7,10 @@ pub trait ComputeLayer<F> {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
-	/// The layer executor.
+	/// The executor that can execute operations on the device.
 	type Exec;
 
+	/// The operation (scalar) value type.
 	type OpValue;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
