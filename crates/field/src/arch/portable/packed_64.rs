@@ -66,7 +66,7 @@ macro_rules! define_packed_field {
         $(
             // Define packed field types
 			pub type $name = PackedPrimitiveType<$prim, $bits>;
-            
+
 			// Define serialization and deserialization
 			serialize_deserialize!($name);
 
@@ -87,17 +87,15 @@ macro_rules! define_packed_field {
     (@maybe_impl_ops $_other:ident) => {};
 }
 
-
 define_packed_field!(
-    PackedBinaryField64x1b, BinaryField1b, u64, 0;
-    PackedBinaryField32x2b, BinaryField2b, u64, 1;
-    PackedBinaryField16x4b, BinaryField4b, u64, 2;
-    PackedBinaryField8x8b, BinaryField8b, u64, 3;
-    PackedBinaryField4x16b, BinaryField16b, u64, 4;
-    PackedBinaryField2x32b, BinaryField32b, u64, 5;
-    PackedBinaryField1x64b, BinaryField64b, u64, 6;
+	PackedBinaryField64x1b, BinaryField1b, u64, 0;
+	PackedBinaryField32x2b, BinaryField2b, u64, 1;
+	PackedBinaryField16x4b, BinaryField4b, u64, 2;
+	PackedBinaryField8x8b, BinaryField8b, u64, 3;
+	PackedBinaryField4x16b, BinaryField16b, u64, 4;
+	PackedBinaryField2x32b, BinaryField32b, u64, 5;
+	PackedBinaryField1x64b, BinaryField64b, u64, 6;
 );
-
 
 // Define multiplication
 impl_mul_with!(PackedBinaryField32x2b @ PackedStrategy);

@@ -1030,6 +1030,27 @@ mod tests {
 		test_serialize_then_deserialize::<PackedBinaryField4x128b>();
 	}
 
+	#[test]
+	fn test_serialize_deserialize_different_packing_width() {
+		let mode = SerializationMode::Native;
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let packed0 = PackedBinaryField1x128b::random(&mut rng);
+		let packed1 = PackedBinaryField1x128b::random(&mut rng);
+
+		let mut buffer = BytesMut::new();
+		packed0.serialize(&mut buffer, mode).unwrap();
+		packed1.serialize(&mut buffer, mode).unwrap();
+
+		let mut read_buffer = buffer.freeze();
+		let packed01 = PackedBinaryField2x128b::deserialize(&mut read_buffer, mode).unwrap();
+
+		assert!(packed01
+			.iter()
+			.zip([packed0, packed1])
+			.all(|(x, y)| x == y.get(0)));
+	}
+
 	// TODO: Generate lots more proptests using macros
 	proptest! {
 		#[test]
