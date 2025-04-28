@@ -1,12 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use crate::tower::{ProverTowerFamily, TowerFamily};
+use crate::tower::TowerFamily;
 
 /// The cryptographic extension field that the constraint system protocol is defined over.
 pub type FExt<Tower> = <Tower as TowerFamily>::B128;
-
-/// Field with fast multiplication and isomorphism to FExt<Tower>.
-pub type FFastExt<Tower> = <Tower as ProverTowerFamily>::FastB128;
 
 /// The evaluation domain used in sumcheck protocols.
 ///
