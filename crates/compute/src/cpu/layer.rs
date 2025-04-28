@@ -77,9 +77,15 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		a_in: &'a [T::B128],
 		b_in: &'a [T::B128],
 	) -> Result<T::B128, Error> {
-		// TODO: Assertions to input errors
-		assert!(a_edeg <= T::B128::TOWER_LEVEL);
-		assert_eq!(a_in.len() << (T::B128::TOWER_LEVEL - a_edeg), b_in.len());
+		if a_edeg > T::B128::TOWER_LEVEL
+			|| a_in.len() << (T::B128::TOWER_LEVEL - a_edeg) != b_in.len()
+		{
+			return Err(Error::InputValidation(format!(
+				"invalid input: a_edeg={a_edeg} |a|={} |b|={}",
+				a_in.len(),
+				b_in.len()
+			)));
+		}
 
 		let result = match a_edeg {
 			0 => inner_product_unchecked(
@@ -127,8 +133,10 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		coordinates: &[T::B128],
 		data: &mut &'a mut [T::B128],
 	) -> Result<(), Error> {
-		// TODO: Assertions to input errors
-		assert_eq!(data.len(), 1 << (log_n + coordinates.len()));
+		if data.len() != 1 << (log_n + coordinates.len()) {
+			return Err(Error::InputValidation(format!("invalid data length: {}", data.len())));
+		}
+
 		for (i, r_i) in coordinates.iter().enumerate() {
 			let (lhs, rest) = data.split_at_mut(1 << (log_n + i));
 			let (rhs, _rest) = rest.split_at_mut(1 << (log_n + i));
