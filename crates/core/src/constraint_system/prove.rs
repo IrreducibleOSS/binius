@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp::Reverse, env, marker::PhantomData, slice::from_mut};
+use std::{cmp::Reverse, collections::HashMap, env, marker::PhantomData, slice::from_mut};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -12,7 +12,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -20,7 +20,7 @@ use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use either::Either;
 use itertools::{chain, izip};
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 use super::{
 	channel::Boundary,
@@ -50,9 +50,10 @@ use crate::{
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
 			prove::{
-				eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, UnivariateZerocheckProver,
+				eq_ind::EqIndSumcheckProverBuilder, RegularSumcheckProver, SumcheckProver,
+				UnivariateZerocheckProver,
 			},
-			standard_switchover_heuristic, zerocheck,
+			standard_switchover_heuristic, zerocheck, EqIndSumcheckClaim,
 		},
 	},
 	ring_switch,
@@ -60,6 +61,135 @@ use crate::{
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct MLEData {
+	n_vars: usize,
+	log_extension_degree: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MultilinearsData(HashMap<MLEData, usize>);
+
+impl MultilinearsData {
+	fn new<'a, P>(
+		iter: impl IntoIterator<Item = &'a (dyn MultilinearPoly<P> + Send + Sync)>,
+	) -> Self
+	where
+		P: PackedField,
+	{
+		let mut data = HashMap::new();
+		for mle in iter {
+			let n_vars = mle.n_vars();
+			let log_extension_degree = mle.log_extension_degree();
+			*data
+				.entry(MLEData {
+					n_vars,
+					log_extension_degree,
+				})
+				.or_default() += 1;
+		}
+
+		Self(data)
+	}
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct EqIndData {
+	eq_ind_claim_n_vars: usize,
+	eq_ind_n_multilinears: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MLECheckData {
+	tail_provers_n_vars: HashMap<usize, usize>,
+	eq_ind_data: HashMap<EqIndData, usize>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MLEFoldHighDimensionsData {
+	query_length: usize,
+	multilinears: MultilinearsData,
+}
+
+impl MLEFoldHighDimensionsData {
+	fn new<'a, P>(
+		query_length: usize,
+		multilinears: impl IntoIterator<Item = &'a (dyn MultilinearPoly<P> + Send + Sync)>,
+	) -> Self
+	where
+		P: PackedField,
+	{
+		let multilinears_data = MultilinearsData::new(multilinears);
+		Self {
+			query_length,
+			multilinears: multilinears_data,
+		}
+	}
+}
+
+impl MLECheckData {
+	fn new<'a, F: Field, Composition: CompositionPoly<F> + 'a>(
+		sumcheck_provers: impl IntoIterator<Item = &'a dyn SumcheckProver<F>>,
+		eq_ind_claims: impl IntoIterator<Item = &'a EqIndSumcheckClaim<F, Composition>>,
+	) -> Self {
+		let mut tail_provers_n_vars = HashMap::new();
+		for prover in sumcheck_provers {
+			*tail_provers_n_vars.entry(prover.n_vars()).or_default() += 1;
+		}
+
+		let mut eq_ind_data = HashMap::new();
+		for eq_ind_claim in eq_ind_claims {
+			*eq_ind_data
+				.entry(EqIndData {
+					eq_ind_claim_n_vars: eq_ind_claim.n_vars(),
+					eq_ind_n_multilinears: eq_ind_claim.n_multilinears(),
+				})
+				.or_default() += 1;
+		}
+
+		Self {
+			tail_provers_n_vars,
+			eq_ind_data,
+		}
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct SmallRegularSumchecksDimensionsData {
+	reduction_prover_n_vars: HashMap<usize, usize>,
+}
+
+impl SmallRegularSumchecksDimensionsData {
+	fn new<'a, F, FDomain, P, Composition, M, Backend>(
+		sumcheck_provers: impl IntoIterator<
+			Item = &'a RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>,
+		>,
+	) -> Self
+	where
+		F: TowerField + ExtensionField<FDomain>,
+		FDomain: Field,
+		P: PackedField<Scalar = F>
+			+ PackedExtension<F, PackedSubfield = P>
+			+ PackedExtension<FDomain>,
+		Composition: CompositionPoly<P> + 'a,
+		M: MultilinearPoly<P> + Send + Sync + 'a,
+		Backend: ComputationBackend + 'a,
+	{
+		let mut reduction_prover_n_vars = HashMap::new();
+		for prover in sumcheck_provers {
+			*reduction_prover_n_vars.entry(prover.n_vars()).or_default() += 1;
+		}
+
+		Self {
+			reduction_prover_n_vars,
+		}
+	}
+}
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
@@ -141,11 +271,6 @@ where
 	let commit_span =
 		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
 			.entered();
-	for mle in &committed_multilins {
-		event!(name: "[data_dimensions]", Level::TRACE, {
-			phase = "Commit",
-			n_vars = mle.n_vars(), log_extension_degree = mle.log_extension_degree()});
-	}
 	let CommitOutput {
 		commitment,
 		committed,
@@ -326,7 +451,7 @@ where
 	let zerocheck_span = tracing::info_span!(
 		"[phase] Zerocheck",
 		phase = "zerocheck",
-		perfetto_category = "phase.main"
+		perfetto_category = "phase.main",
 	)
 	.entered();
 
@@ -339,15 +464,8 @@ where
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
-
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
-	event!(name: "[data_dimensions]", Level::TRACE, {
-		phase = "Zerocheck",
-		max_n_vars,
-		skip_rounds,
-		n_claims = table_constraints.len(),
-	});
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
@@ -415,24 +533,22 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
+	let mle_check_data = MLECheckData::new(
+		tail_regular_zerocheck_provers.iter().map(|x| x.as_ref()),
+		eq_ind_sumcheck_claims.iter(),
+	);
 	let zerocheck_mle_check_span = tracing::debug_span!(
 		"[step] MLE-check",
 		phase = "zerocheck",
-		perfetto_category = "phase.sub"
+		perfetto_category = "phase.sub",
+		data_dimensions = ?mle_check_data,
 	)
 	.entered();
-	for tail_prover in &tail_regular_zerocheck_provers {
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Check", tail_prover_n_vars = tail_prover.n_vars() });
-	}
 	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
 		&mut transcript,
 	)?;
-
-	for eq_ind_claim in &eq_ind_sumcheck_claims {
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Check", eq_ind_claim_n_vars = eq_ind_claim.n_vars(), eq_ind_n_multilinears = eq_ind_claim.n_multilinears() });
-	}
 	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
 		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
@@ -460,20 +576,17 @@ where
 		let skip_challenges = (max_n_vars - claim_n_vars).saturating_sub(skip_rounds);
 		let challenges = &zerocheck_output.challenges[skip_challenges..];
 
+		let multilinears_data = MLEFoldHighDimensionsData::new(
+			challenges.len(),
+			multilinears.iter().map(|mle| mle.as_ref()),
+		);
 		let zerocheck_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Zerocheck) MLE Fold High",
 			phase = "zerocheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			data_dimensions = ?multilinears_data,
 		)
 		.entered();
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) MLE Fold High", query_length = challenges.len() });
-		for mle in &multilinears {
-			event!(name: "[data_dimensions]", Level::TRACE, {
-				task = "(Zerocheck) MLE Fold High",
-				mle_n_vars = mle.n_vars(),
-			});
-		}
-
 		let reduced_multilinears =
 			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
 		drop(zerocheck_mle_fold_high_span);
@@ -496,22 +609,18 @@ where
 		reduction_provers.push(reduction_prover);
 	}
 
+	let dimensions_data = SmallRegularSumchecksDimensionsData::new(reduction_provers.iter());
 	let zerocheck_regular_sumcheck_small_span = tracing::debug_span!(
 		"[task] (Zerocheck) Regular Sumcheck (Small)",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		data_dimensions = ?dimensions_data,
 	)
 	.entered();
-	for reduction_prover in &reduction_provers {
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Regular Sumcheck (Small)", reduction_prover_n_vars = reduction_prover.n_vars() });
-	}
 
 	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
 	drop(zerocheck_regular_sumcheck_small_span);
 
-	for reduction_claim in &reduction_claims {
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Regular Sumcheck (Small)", reduction_claim_n_vars = reduction_claim.n_vars(), reduction_claim_n_multilinears = reduction_claim.n_multilinears() });
-	}
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
 		univariate_challenge,

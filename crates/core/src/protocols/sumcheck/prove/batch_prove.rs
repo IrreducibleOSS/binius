@@ -1,11 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter;
+use std::{collections::HashMap, iter};
 
 use binius_field::{Field, TowerField};
 use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -124,6 +124,30 @@ pub struct BatchProveStart<F: Field, Prover> {
 	pub reduction_provers: Vec<Prover>,
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+struct ZerocheckDimensionsData {
+	prover_n_vars: HashMap<usize, usize>,
+	round: usize,
+}
+
+impl ZerocheckDimensionsData {
+	fn new<'a, F: Field, Prover: SumcheckProver<F> + 'a>(
+		round: usize,
+		constraints: impl IntoIterator<Item = &'a Prover>,
+	) -> Self {
+		let mut prover_n_vars = HashMap::new();
+		for constraint in constraints {
+			*prover_n_vars.entry(constraint.n_vars()).or_default() += 1;
+		}
+
+		Self {
+			prover_n_vars,
+			round,
+		}
+	}
+}
+
 /// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
 pub fn batch_prove_with_start<F, Prover, Challenger_>(
 	start: BatchProveStart<F, Prover>,
@@ -190,10 +214,12 @@ where
 			active_index += 1;
 		}
 
+		let dimensions_data = ZerocheckDimensionsData::new(round_no, &provers[0..active_index]);
 		let calculate_coeffs_span = tracing::debug_span!(
 			"[task] (Zerocheck) Calculate Coeffs",
 			phase = "zerocheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
 		// Process the active provers
@@ -201,7 +227,6 @@ where
 		for (&batch_coeff, prover) in
 			iter::zip(batch_coeffs.iter(), provers[..active_index].iter_mut())
 		{
-			event!(name: "[data_dimensions]", Level::TRACE, { task = "(Zerocheck) Calculate Coeffs", n_vars = prover.n_vars() });
 			let prover_coeffs = prover.execute(batch_coeff)?;
 			round_coeffs += &(prover_coeffs * batch_coeff);
 		}
@@ -219,11 +244,11 @@ where
 		let fold_span = tracing::debug_span!(
 			"[task] Fold",
 			phase = "zerocheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
 		for prover in &mut provers[..active_index] {
-			event!(name: "[data_dimensions]", Level::TRACE, { task = "Fold", n_vars = prover.n_vars() });
 			prover.fold(challenge)?;
 		}
 		drop(fold_span);

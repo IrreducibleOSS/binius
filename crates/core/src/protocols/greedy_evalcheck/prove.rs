@@ -1,16 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::collections::HashMap;
+
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
-use tracing::{event, Level};
 
 use super::error::Error;
 use crate::{
 	fiat_shamir::Challenger,
-	oracle::MultilinearOracleSet,
+	oracle::{ConstraintSet, MultilinearOracleSet},
 	protocols::evalcheck::{
 		serialize_evalcheck_proof,
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
@@ -23,6 +24,23 @@ use crate::{
 pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
 	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	pub memoized_data: MemoizedData<'a, P, Backend>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct RegularSumcheckDimensionsData {
+	claim_n_vars: HashMap<usize, usize>,
+}
+
+impl RegularSumcheckDimensionsData {
+	fn new<'a, F: Field>(constraints: impl IntoIterator<Item = &'a ConstraintSet<F>>) -> Self {
+		let mut claim_n_vars = HashMap::new();
+		for constraint in constraints {
+			*claim_n_vars.entry(constraint.n_vars).or_default() += 1;
+		}
+
+		Self { claim_n_vars }
+	}
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -56,11 +74,6 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
-	event!(
-		name: "[data_dimensions]",
-		Level::DEBUG,
-		{ phase = "(Evalcheck) Initial Round", n_claims = claims.len() }
-	);
 
 	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
 	drop(initial_evalcheck_round_span);
@@ -82,17 +95,13 @@ where
 			break;
 		}
 
-		event!(
-			name: "[data_dimensions]",
-			Level::DEBUG,
-			{ step = "Evalcheck Round", n_claims = new_sumchecks.len() }
-		);
-
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
+		let dimensions_data = RegularSumcheckDimensionsData::new(new_sumchecks.iter());
 		let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Evalcheck) Regular Sumcheck (Small)",
 			phase = "evalcheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
 		let new_evalcheck_claims =

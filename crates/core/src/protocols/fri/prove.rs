@@ -10,7 +10,7 @@ use binius_utils::{bail, SerializeBytes};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 use super::{
 	common::{vcs_optimal_layers_depths_iter, FRIParams},
@@ -197,6 +197,61 @@ where
 	})
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+struct SortAndMergeDimensionData {
+	log_elems: usize,
+	element_size: usize,
+}
+
+impl SortAndMergeDimensionData {
+	fn new<F: BinaryField>(log_elems: usize) -> Self {
+		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
+		Self {
+			log_elems,
+			element_size,
+		}
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct RSEncodeDimensionData {
+	log_elems: usize,
+	element_size: usize,
+	log_batch_size: usize,
+}
+
+impl RSEncodeDimensionData {
+	fn new<F: BinaryField>(log_elems: usize, log_batch_size: usize) -> Self {
+		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
+		Self {
+			log_elems,
+			element_size,
+			log_batch_size,
+		}
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MerkleTreeDimensionData {
+	log_elems: usize,
+	element_size: usize,
+	coset_log_len: usize,
+}
+
+impl MerkleTreeDimensionData {
+	fn new<F: BinaryField>(log_elems: usize, coset_log_len: usize) -> Self {
+		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
+		Self {
+			log_elems,
+			element_size,
+			coset_log_len,
+		}
+	}
+}
+
 /// Encodes and commits the input message with a closure for writing the message.
 ///
 /// ## Arguments
@@ -227,16 +282,15 @@ where
 
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
-	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
+	let dimensions_data = SortAndMergeDimensionData::new::<F>(log_elems);
+	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
 		.in_scope(|| {
-			event!(name: "[data_dimensions]", Level::TRACE, {task = "Sort & Merge", log_elems = log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE });
 			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 		});
 
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
+	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
+	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
 		.in_scope(|| {
-			event!(name: "[data_dimensions]", Level::TRACE, { task = "RS Encode", log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE, log_batch_size });
-
 			rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)
 	})?;
 
@@ -244,14 +298,14 @@ where
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
-
+	let dimension_data = MerkleTreeDimensionData::new::<F>(log_len, coset_log_len);
 	let merkle_tree_span = tracing::debug_span!(
 		"[task] Merkle Tree",
 		phase = "commit",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimension_data
 	)
 	.entered();
-	event!(name: "[data_dimensions]", Level::TRACE, {task = "Merkle Tree", log_elems, element_size = <F as ExtensionField<BinaryField1b>>::DEGREE, coset_log_len });
 	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
 		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, 1 << coset_log_len);
 

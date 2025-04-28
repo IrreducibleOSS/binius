@@ -1,8 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::collections::HashMap;
+
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::{event, Level};
 
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -90,6 +91,35 @@ pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
 	pub batch_prove_start: BatchProveStart<F, Prover>,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct ProverData {
+	n_vars: usize,
+	domain_size: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct FoldLowDimensionsData(HashMap<ProverData, usize>);
+
+impl FoldLowDimensionsData {
+	fn new<'a, 'b, F: Field, Prover: UnivariateZerocheckProver<'a, F> + 'b>(
+		skip_rounds: usize,
+		constraints: impl IntoIterator<Item = &'b Prover>,
+	) -> Self {
+		let mut claim_n_vars = HashMap::new();
+		for constraint in constraints {
+			*claim_n_vars
+				.entry(ProverData {
+					n_vars: constraint.n_vars(),
+					domain_size: constraint.domain_size(skip_rounds),
+				})
+				.or_default() += 1;
+		}
+
+		Self(claim_n_vars)
+	}
+}
+
 /// Prove a batched univariate zerocheck round.
 ///
 /// Batching principle is entirely analogous to the multilinear case: all the provers are right aligned
@@ -151,16 +181,16 @@ where
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
+	let dimensions_data = FoldLowDimensionsData::new(skip_rounds, &provers);
 	let mle_fold_low_span = tracing::debug_span!(
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
 	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "Initial MLE Fold Low", n_vars = prover.n_vars(), domain_size = prover.domain_size(skip_rounds) });
-
 		let regular_prover = Box::new(prover).fold_univariate_round(univariate_challenge)?;
 		reduction_provers.push(regular_prover);
 	}

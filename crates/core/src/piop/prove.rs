@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{borrow::Cow, ops::Deref};
+use std::{borrow::Cow, collections::HashMap, ops::Deref};
 
 use binius_field::{
 	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
@@ -21,7 +21,6 @@ use binius_utils::{
 };
 use either::Either;
 use itertools::{chain, Itertools};
-use tracing::{event, Level};
 
 use super::{
 	error::Error,
@@ -265,6 +264,48 @@ where
 	Ok(())
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+struct SumcheckBatchProverDimensionsData {
+	prover_n_vars: HashMap<usize, usize>,
+	round: usize,
+}
+
+impl SumcheckBatchProverDimensionsData {
+	fn new<'a, F, Prover>(round: usize, provers: impl IntoIterator<Item = &'a Prover>) -> Self
+	where
+		F: TowerField,
+		Prover: SumcheckProver<F> + 'a,
+	{
+		let mut prover_n_vars = HashMap::new();
+		for prover in provers {
+			prover_n_vars.insert(prover.n_vars(), prover.n_vars());
+		}
+		Self {
+			prover_n_vars,
+			round,
+		}
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct FriFoldRoundsData {
+	round: usize,
+	log_batch_size: usize,
+	codeword_len: usize,
+}
+
+impl FriFoldRoundsData {
+	fn new(round: usize, log_batch_size: usize, codeword_len: usize) -> Self {
+		Self {
+			round,
+			log_batch_size,
+			codeword_len,
+		}
+	}
+}
+
 fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
@@ -298,56 +339,45 @@ where
 			perfetto_category = "phase.sub"
 		)
 		.entered();
+		let provers_dimensions_data =
+			SumcheckBatchProverDimensionsData::new(round, sumcheck_batch_prover.provers());
 		let bivariate_sumcheck_calculate_coeffs_span = tracing::debug_span!(
 			"[task] (PIOP Compiler) Calculate Coeffs",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
 		)
 		.entered();
-		for prover in &mut sumcheck_batch_prover.provers() {
-			event!(
-				name: "[data_dimensions]",
-				Level::TRACE,
-				{ task = "(PIOP Compiler) Calculate Coeffs", sumcheck_n_vars = prover.n_vars(), round = round }
-			);
-		}
-
 		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
 		drop(bivariate_sumcheck_calculate_coeffs_span);
+
 		let challenge = transcript.sample();
 		let bivariate_sumcheck_all_folds_span = tracing::debug_span!(
 			"[task] (PIOP Compiler) Fold (All Rounds)",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
 		)
 		.entered();
-		for prover in &mut sumcheck_batch_prover.provers() {
-			event!(
-				name: "[data_dimensions]",
-				Level::DEBUG,
-				{ task = "(PIOP Compiler) Calculate Coeffs", sumcheck_n_vars = prover.n_vars(), round = round }
-			);
-		}
-
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 		drop(bivariate_sumcheck_all_folds_span);
 		drop(bivariate_sumcheck_span);
 
+		let dimensions_data = FriFoldRoundsData::new(
+			round,
+			fri_params.log_batch_size(),
+			fri_prover.current_codeword_len(),
+		);
 		let fri_fold_rounds_span = tracing::debug_span!(
 			"[step] FRI Fold Rounds",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "phase.sub"
+			perfetto_category = "phase.sub",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
-		event!(
-			name: "[data_dimensions]",
-			Level::TRACE,
-			{ task = "FRI Fold Rounds", codeword_len = fri_prover.current_codeword_len(), round = round, log_batch_size = fri_params.log_batch_size() }
-		);
-
 		match fri_prover.execute_fold_round(challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {

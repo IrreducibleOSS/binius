@@ -8,7 +8,7 @@ use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
 use itertools::izip;
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 use super::{
 	error::Error,
@@ -226,14 +226,14 @@ where
 			.collect::<Result<Vec<_>, Error>>();
 
 		// Step 3: Process projected_bivariate_claims
+		let dimensions_data = MLEFoldHighDimensionsData::new(self.projected_bivariate_claims.len());
 		let evalcheck_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Evalcheck) MLE Fold High",
 			phase = "evalcheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
-		event!(name: "[data_dimensions]", Level::TRACE, { task = "(Evalcheck) MLE Fold High", n_claims = self.projected_bivariate_claims.len() });
-
 		let projected_bivariate_metas = self
 			.projected_bivariate_claims
 			.iter()
@@ -629,5 +629,17 @@ where
 			eval_point,
 			eval,
 		})
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MLEFoldHighDimensionsData {
+	n_claims: usize,
+}
+
+impl MLEFoldHighDimensionsData {
+	fn new(n_claims: usize) -> Self {
+		Self { n_claims }
 	}
 }

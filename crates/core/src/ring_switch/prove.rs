@@ -1,13 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter, sync::Arc};
+use std::{collections::HashMap, iter, sync::Arc};
 
 use binius_field::{PackedField, PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
@@ -31,6 +31,53 @@ type FExt<Tower> = <Tower as TowerFamily>::B128;
 pub struct ReducedWitness<P: PackedField> {
 	pub transparents: Vec<MultilinearWitness<'static, P>>,
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct MLEFoldHisgDimensionsData {
+	witness_n_vars: HashMap<usize, usize>,
+}
+
+impl MLEFoldHisgDimensionsData {
+	fn new<'a, P: PackedField, M: MultilinearPoly<P> + 'a>(
+		multilinears: impl IntoIterator<Item = &'a M>,
+	) -> Self {
+		let mut witness_n_vars = HashMap::new();
+		for multilinear in multilinears {
+			*witness_n_vars.entry(multilinear.n_vars()).or_default() += 1;
+		}
+
+		Self { witness_n_vars }
+	}
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct EvalClaimSuffixData {
+	suffix_desc_kappa: usize,
+	suffix_len: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct CalculateRingSwitchEqIndData(HashMap<EvalClaimSuffixData, usize>);
+
+impl CalculateRingSwitchEqIndData {
+	fn new<'a, F: TowerField>(
+		constraints: impl IntoIterator<Item = &'a EvalClaimSuffixDesc<F>>,
+	) -> Self {
+		let mut claim_n_vars = HashMap::new();
+		for constraint in constraints {
+			*claim_n_vars
+				.entry(EvalClaimSuffixData {
+					suffix_desc_kappa: constraint.kappa,
+					suffix_len: constraint.suffix.len(),
+				})
+				.or_default() += 1;
+		}
+
+		Self(claim_n_vars)
+	}
 }
 
 pub fn prove<F, P, M, Tower, Challenger_, Backend>(
@@ -58,19 +105,14 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
+	let dimensions_data = MLEFoldHisgDimensionsData::new(witnesses);
 	let mle_fold_high_span = tracing::debug_span!(
 		"[task] (Ring Switch) MLE Fold High",
 		phase = "ring_switch",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
-	for witness in witnesses {
-		event!(
-			name: "[data_dimensions]",
-			Level::DEBUG,
-			{ task = "(Ring Switch) MLE Fold High", n_vars = witness.n_vars() }
-		);
-	}
 
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
@@ -101,19 +143,14 @@ where
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
+	let dimensions_data = CalculateRingSwitchEqIndData::new(system.suffix_descs.iter());
 	let calculate_ring_switch_eq_ind_span = tracing::debug_span!(
 		"[task] Calculate Ring Switch Eq Ind",
 		phase = "ring_switch",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
-	for suffix_desc in &system.suffix_descs {
-		event!(
-			name: "[data_dimensions]",
-			Level::DEBUG,
-			{ task = "Calculate Ring Switch Eq Ind", suffix_desc_kappa = suffix_desc.kappa, suffix_len = suffix_desc.suffix.len() }
-		);
-	}
 
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
