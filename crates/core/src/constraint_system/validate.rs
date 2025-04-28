@@ -219,11 +219,11 @@ where
 		MultilinearPolyVariant::ZeroPadded(padded) => {
 			let inner_id = padded.id();
 			let unpadded_poly = witness.get_multilin_poly(inner_id)?;
-			let new_n_vars = padded.new_n_vars();
+			let n_pad_vars = padded.n_pad_vars();
 			let start_index = padded.start_index();
 			let nonzero_index = padded.nonzero_index();
-			let padded_poly = unpadded_poly.zero_pad(new_n_vars, start_index, nonzero_index)?;
-			for i in 0..1 << new_n_vars {
+			let padded_poly = unpadded_poly.zero_pad(n_pad_vars, start_index, nonzero_index)?;
+			for i in 0..1 << n_pad_vars {
 				check_eval(
 					oracle_label,
 					i,

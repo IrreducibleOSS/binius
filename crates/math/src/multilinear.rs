@@ -65,7 +65,7 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 
 	fn zero_pad(
 		&self,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		start_index: usize,
 		nonzero_index: usize,
 	) -> Result<MultilinearExtension<P>, Error>;
@@ -191,11 +191,11 @@ where
 
 	fn zero_pad(
 		&self,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		start_index: usize,
 		nonzero_index: usize,
 	) -> Result<MultilinearExtension<P>, Error> {
-		either::for_both!(self, inner => inner.zero_pad(new_n_vars, start_index, nonzero_index))
+		either::for_both!(self, inner => inner.zero_pad(n_pad_vars, start_index, nonzero_index))
 	}
 
 	fn subcube_partial_low_evals(

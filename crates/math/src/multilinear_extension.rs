@@ -332,7 +332,7 @@ where
 
 	pub fn zero_pad<PE>(
 		&self,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		start_index: usize,
 		nonzero_index: usize,
 	) -> Result<MultilinearExtension<PE>, Error>
@@ -344,14 +344,10 @@ where
 		if start_index >= init_n_vars {
 			bail!(Error::IncorrectStartIndex { expected: self.mu })
 		}
-		if new_n_vars < init_n_vars {
-			bail!(Error::IncorrectPadSize {
-				expected: new_n_vars,
-			});
-		}
-		if nonzero_index >= 1 << (new_n_vars - init_n_vars) {
+		let new_n_vars = init_n_vars + n_pad_vars;
+		if nonzero_index >= 1 << n_pad_vars {
 			bail!(Error::IncorrectNonZeroIndex {
-				expected: 1 << (new_n_vars - init_n_vars),
+				expected: 1 << n_pad_vars,
 			});
 		}
 
@@ -645,14 +641,14 @@ mod tests {
 		let poly = MultilinearExtension::from_values(values).unwrap();
 
 		// Quadruple the number of elements.
-		let new_n_vars = poly.n_vars() + 2;
+		let n_pad_vars = 2;
 		// Pad each block of 8 consecutive bits to 32 bits.
 		let start_index = 3;
 		// Pad to the right.
 		let nonzero_index = 0;
 		// Pad the polynomial.
 		let padded_poly = poly
-			.zero_pad::<BinaryField1b>(new_n_vars, start_index, nonzero_index)
+			.zero_pad::<BinaryField1b>(n_pad_vars, start_index, nonzero_index)
 			.unwrap();
 
 		// Now, project to the first quarter of each block of 32 bits.

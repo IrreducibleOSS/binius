@@ -121,11 +121,11 @@ where
 
 	fn zero_pad(
 		&self,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		start_index: usize,
 		nonzero_index: usize,
 	) -> Result<MultilinearExtension<PE>, Error> {
-		self.0.zero_pad(new_n_vars, start_index, nonzero_index)
+		self.0.zero_pad(n_pad_vars, start_index, nonzero_index)
 	}
 
 	fn subcube_partial_low_evals(
@@ -419,11 +419,11 @@ where
 
 	fn zero_pad(
 		&self,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		start_index: usize,
 		nonzero_padding: usize,
 	) -> Result<MultilinearExtension<P>, Error> {
-		self.0.zero_pad(new_n_vars, start_index, nonzero_padding)
+		self.0.zero_pad(n_pad_vars, start_index, nonzero_padding)
 	}
 
 	fn subcube_partial_low_evals(

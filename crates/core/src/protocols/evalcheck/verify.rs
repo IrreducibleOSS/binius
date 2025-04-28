@@ -268,10 +268,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 			MultilinearPolyVariant::ZeroPadded(padded) => {
 				let inner = padded.id();
-				let inner_n_vars = self.oracles.n_vars(inner);
 
 				let start_index = padded.start_index();
-				let extra_n_vars = padded.new_n_vars() - inner_n_vars;
+				let extra_n_vars = padded.n_pad_vars();
 
 				let (inner_eval, subproof) = match evalcheck_proof {
 					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
@@ -285,7 +284,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = [first_subclaim_eval_point, second_subclaim].concat();
 
 				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
-				let expected_eval = inner_eval * select_row.evaluate(zs).unwrap();
+				let expected_eval = inner_eval
+					* select_row
+						.evaluate(zs)
+						.expect("select_row is constructor with zs.len() variables");
 
 				if expected_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());

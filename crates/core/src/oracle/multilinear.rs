@@ -307,7 +307,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	pub fn zero_padded(
 		self,
 		inner_id: OracleId,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<OracleId, Error> {
@@ -319,13 +319,12 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		}
 
 		let inner = self.mut_ref.get_from_set(inner_id);
-		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let padded = ZeroPadded::new(&inner, new_n_vars, nonzero_index, start_index)?;
+		let padded = ZeroPadded::new(&inner, n_pad_vars, nonzero_index, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars: new_n_vars,
+			n_vars: inner_n_vars + n_pad_vars,
 			tower_level,
 			name: self.name,
 			variant: MultilinearPolyVariant::ZeroPadded(padded),
@@ -489,12 +488,12 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn add_zero_padded(
 		&mut self,
 		id: OracleId,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<OracleId, Error> {
 		self.add()
-			.zero_padded(id, new_n_vars, nonzero_index, start_index)
+			.zero_padded(id, n_pad_vars, nonzero_index, start_index)
 	}
 
 	pub fn add_composite_mle(
@@ -691,7 +690,7 @@ pub struct ZeroPadded {
 	#[get_copy = "pub"]
 	id: OracleId,
 	#[get_copy = "pub"]
-	new_n_vars: usize,
+	n_pad_vars: usize,
 	#[get_copy = "pub"]
 	nonzero_index: usize,
 	#[get_copy = "pub"]
@@ -701,7 +700,7 @@ pub struct ZeroPadded {
 impl ZeroPadded {
 	fn new<F: TowerField>(
 		oracle: &MultilinearPolyOracle<F>,
-		new_n_vars: usize,
+		n_pad_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<Self, Error> {
@@ -711,9 +710,15 @@ impl ZeroPadded {
 			});
 		}
 
+		if nonzero_index > 1 << n_pad_vars {
+			bail!(Error::InvalidNonzeroIndex {
+				expected: 1 << n_pad_vars,
+			});
+		}
+
 		Ok(Self {
 			id: oracle.id(),
-			new_n_vars,
+			n_pad_vars,
 			nonzero_index,
 			start_index,
 		})

@@ -248,13 +248,13 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
 		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
 		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
-		let num_extra_variables = log_new_values_per_row - log_values_per_row;
-		let nonzero_index = (1 << num_extra_variables) - 1;
+		let n_pad_vars = log_new_values_per_row - log_values_per_row;
+		let nonzero_index = (1 << n_pad_vars) - 1;
 		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::ZeroPadded {
 				col: col.id(),
-				new_n_vars: log_new_values_per_row,
+				n_pad_vars,
 				start_index: log_values_per_row,
 				nonzero_index,
 			},
