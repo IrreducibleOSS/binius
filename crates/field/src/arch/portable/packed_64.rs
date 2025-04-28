@@ -50,41 +50,54 @@ use crate::{
 // impl_broadcast!(u64, BinaryField32b);
 // impl_broadcast!(u64, BinaryField64b);
 
-macro_rules! define_packed_field {
-    ($($name:ident, $bits:ident, $prim:ty);* $(;)?) => {
-        $(
-			// Define packed field types
-            pub type $name = PackedPrimitiveType<$prim, $bits>;
+// // Define operations for height 0
+// impl_ops_for_zero_height!(PackedBinaryField64x1b);
 
+// // Define constants
+// impl_tower_constants!(BinaryField1b, u64, { alphas!(u64, 0) });
+// impl_tower_constants!(BinaryField2b, u64, { alphas!(u64, 1) });
+// impl_tower_constants!(BinaryField4b, u64, { alphas!(u64, 2) });
+// impl_tower_constants!(BinaryField8b, u64, { alphas!(u64, 3) });
+// impl_tower_constants!(BinaryField16b, u64, { alphas!(u64, 4) });
+// impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
+
+macro_rules! define_packed_field {
+    ($($name:ident, $bits:ident, $prim:ty, $alpha_idx:expr);* $(;)?) => {
+        $(
+            // Define packed field types
+			pub type $name = PackedPrimitiveType<$prim, $bits>;
+            
 			// Define serialization and deserialization
-            serialize_deserialize!($name);
+			serialize_deserialize!($name);
 
 			// Define broadcast
             impl_broadcast!($prim, $bits);
+
+			// Define operations for height 0
+            define_packed_field!(@maybe_impl_ops $name);
+
+			// Define constants
+			impl_tower_constants!($bits, $prim, { alphas!($prim, $alpha_idx) });
         )*
     };
+
+	(@maybe_impl_ops PackedBinaryField64x1b) => {
+        impl_ops_for_zero_height!(PackedBinaryField64x1b);
+    };
+    (@maybe_impl_ops $_other:ident) => {};
 }
 
+
 define_packed_field!(
-    PackedBinaryField64x1b, BinaryField1b, u64;
-    PackedBinaryField32x2b, BinaryField2b, u64;
-    PackedBinaryField16x4b, BinaryField4b, u64;
-    PackedBinaryField8x8b, BinaryField8b, u64;
-    PackedBinaryField4x16b, BinaryField16b, u64;
-    PackedBinaryField2x32b, BinaryField32b, u64;
-    PackedBinaryField1x64b, BinaryField64b, u64;
+    PackedBinaryField64x1b, BinaryField1b, u64, 0;
+    PackedBinaryField32x2b, BinaryField2b, u64, 1;
+    PackedBinaryField16x4b, BinaryField4b, u64, 2;
+    PackedBinaryField8x8b, BinaryField8b, u64, 3;
+    PackedBinaryField4x16b, BinaryField16b, u64, 4;
+    PackedBinaryField2x32b, BinaryField32b, u64, 5;
+    PackedBinaryField1x64b, BinaryField64b, u64, 6;
 );
 
-// Define operations for height 0
-impl_ops_for_zero_height!(PackedBinaryField64x1b);
-
-// Define constants
-impl_tower_constants!(BinaryField1b, u64, { alphas!(u64, 0) });
-impl_tower_constants!(BinaryField2b, u64, { alphas!(u64, 1) });
-impl_tower_constants!(BinaryField4b, u64, { alphas!(u64, 2) });
-impl_tower_constants!(BinaryField8b, u64, { alphas!(u64, 3) });
-impl_tower_constants!(BinaryField16b, u64, { alphas!(u64, 4) });
-impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 
 // Define multiplication
 impl_mul_with!(PackedBinaryField32x2b @ PackedStrategy);
