@@ -64,7 +64,8 @@ fn benchmark_evaluate(c: &mut Criterion) {
 	let arith_circuit_poly = ArithCircuitPoly::new(
 		(Expr::Var(0) * Expr::Var(1)
 			+ (Expr::Const(BinaryField1b::ONE) - Expr::Var(0)) * Expr::Var(2)
-			- Expr::Var(3)).into(),
+			- Expr::Var(3))
+		.into(),
 	);
 	let arith_circuit_poly_cached =
 		arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch, BinaryField1b);

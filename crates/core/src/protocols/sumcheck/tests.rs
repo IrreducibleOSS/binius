@@ -17,7 +17,9 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_hash::groestl::Groestl256;
 use binius_math::{
-	ArithCircuit, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery
+	ArithCircuit, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;

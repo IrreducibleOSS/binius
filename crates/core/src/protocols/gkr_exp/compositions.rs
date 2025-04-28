@@ -56,7 +56,8 @@ where
 				(ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
 					+ ArithExpr::Var(1) * ArithExpr::Var(0)
 			}
-		}.into()
+		}
+		.into()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

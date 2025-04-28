@@ -14,7 +14,8 @@ use std::collections::{HashMap, HashSet};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithCircuit, ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension, MultilinearQuery
+	ArithCircuit, ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;

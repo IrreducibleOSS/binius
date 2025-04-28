@@ -3,7 +3,7 @@
 use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{ArithCircuitStep, ArithCircuit, CompositionPoly, Error, RowsBatchRef};
+use binius_math::{ArithCircuit, ArithCircuitStep, CompositionPoly, Error, RowsBatchRef};
 use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
@@ -11,7 +11,9 @@ use stackalloc::{
 };
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
-fn convert_circuit_steps<F: Field>(expr: &ArithCircuit<F>) -> (Vec<CircuitStep<F>>, CircuitStepArgument<F>) {
+fn convert_circuit_steps<F: Field>(
+	expr: &ArithCircuit<F>,
+) -> (Vec<CircuitStep<F>>, CircuitStepArgument<F>) {
 	/// This struct is used to the steps in the original circuit and the converted one and back.
 	struct StepsMapping {
 		original_to_converted: Vec<Option<usize>>,
@@ -663,8 +665,7 @@ mod tests {
 		type P = PackedBinaryField8x16b;
 
 		// x0^2 * (x1 + 123)
-		let expr =
-			ArithExpr::Var(0).pow(2) * (ArithExpr::Var(1) + ArithExpr::Const(F::new(123)));
+		let expr = ArithExpr::Var(0).pow(2) * (ArithExpr::Var(1) + ArithExpr::Const(F::new(123)));
 		let circuit = ArithCircuitPoly::<F>::new(expr.into());
 
 		let typed_circuit: &dyn CompositionPoly<P> = &circuit;

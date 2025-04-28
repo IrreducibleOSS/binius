@@ -5,7 +5,7 @@ use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sy
 use auto_impl::auto_impl;
 use binius_field::{Field, PackedField};
 use binius_math::{
-	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef
+	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
 use binius_utils::{bail, SerializationError, SerializationMode};
 use bytes::BufMut;

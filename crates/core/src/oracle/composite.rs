@@ -93,7 +93,8 @@ mod tests {
 
 		fn expression(&self) -> ArithCircuit<BinaryField128b> {
 			(ArithExpr::Var(0) * ArithExpr::Var(1)
-				+ ArithExpr::Var(2) * ArithExpr::Const(BinaryField128b::new(125))).into()
+				+ ArithExpr::Var(2) * ArithExpr::Const(BinaryField128b::new(125)))
+			.into()
 		}
 
 		fn evaluate(

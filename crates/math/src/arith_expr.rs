@@ -6,7 +6,8 @@ use std::{
 	fmt::{self, Display},
 	hash::{Hash, Hasher},
 	iter::{Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign}, sync::Arc,
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	sync::Arc,
 };
 
 use binius_field::{Field, PackedField, TowerField};
@@ -14,14 +15,11 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;
 
-/// Arithmetic expressions that can be evaluated symbolically.
+/// A builder for arithmetic expressions.
 ///
-/// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
-/// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
-/// specific representations of multivariate polynomials.
-///
-/// The `Arc`'s are not guaranteed to be unique, so the expression tree may contain duplicate nodes.
-/// Use `deduplicate_nodes` to remove duplicate nodes from the expression tree.
+/// This is a simple representation of multivariate polynomials. The user can explicitly
+/// specify which subexpressions are shared by using `Arc` to wrap them. The same subexpressions
+/// are guaranteed to be converted to the same steps `ArithCircuit` after the conversion.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
@@ -197,7 +195,6 @@ impl<F: Field> Product for ArithExpr<F> {
 		iter.reduce(|acc, item| acc * item).unwrap_or(Self::one())
 	}
 }
-
 
 #[derive(Clone, Copy, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub enum ArithCircuitStep<F: Field> {
@@ -501,6 +498,7 @@ impl<F: Field> ArithCircuit<F> {
 		usage
 	}
 
+	/// Fold constants in the circuit.
 	fn optimize_constants(&mut self) {
 		for step_index in 0..self.steps.len() {
 			let (prev_steps, curr_steps) = self.steps.split_at_mut(step_index);
@@ -557,6 +555,7 @@ impl<F: Field> ArithCircuit<F> {
 		}
 	}
 
+	/// Deduplicate steps in the circuit by using a single instance of each step.
 	fn deduplicate_steps(&mut self) {
 		let mut step_map = HashMap::new();
 		let mut step_indices = Vec::with_capacity(self.steps.len());
@@ -588,6 +587,7 @@ impl<F: Field> ArithCircuit<F> {
 		}
 	}
 
+	/// Remove the unused steps from the circuit.
 	fn compress_unused_steps(&mut self) {
 		fn mark_used<F: Field>(step: usize, steps: &[ArithCircuitStep<F>], used: &mut [bool]) {
 			if used[step] {
@@ -632,12 +632,17 @@ impl<F: Field> ArithCircuit<F> {
 		self.steps.truncate(target_index);
 	}
 
+	/// Optimize the current instance of the circuit:
+	/// - Fold constants
+	/// - Extract common steps
+	/// - Remove unused steps
 	pub fn optimize_in_place(&mut self) {
 		self.optimize_constants();
 		self.deduplicate_steps();
 		self.compress_unused_steps();
 	}
 
+	/// Same as `optimize_in_place`, but returns a new instance of the circuit.
 	pub fn optimize(mut self) -> Self {
 		self.optimize_constants();
 		self.deduplicate_steps();
@@ -932,6 +937,9 @@ impl<F: Field> From<SparseLinearNormalForm<F>> for LinearNormalForm<F> {
 	}
 }
 
+/// A helper structure to be used for by-value comparison and hashing of the subexpressions
+/// regardless if they are in the same ArithCircuit or not.
+#[derive(Eq)]
 struct StepNode<'a, F: Field> {
 	index: usize,
 	steps: &'a [ArithCircuitStep<F>],
@@ -970,8 +978,6 @@ impl<F: Field> PartialEq for StepNode<'_, F> {
 		}
 	}
 }
-
-impl<F: Field> Eq for StepNode<'_, F> {}
 
 impl<F: Field> Hash for StepNode<'_, F> {
 	fn hash<H: Hasher>(&self, state: &mut H) {
@@ -1021,7 +1027,8 @@ mod tests {
 		let expr: ArithCircuit<BinaryField8b> = ArithCircuit::var(0).pow(7);
 		assert_eq!(expr.degree(), 7);
 
-		let expr: ArithCircuit<BinaryField8b> = (ArithCircuit::var(0) * ArithCircuit::var(1)).pow(7);
+		let expr: ArithCircuit<BinaryField8b> =
+			(ArithCircuit::var(0) * ArithCircuit::var(1)).pow(7);
 		assert_eq!(expr.degree(), 14);
 	}
 
@@ -1054,14 +1061,16 @@ mod tests {
 	#[test]
 	fn test_remap_vars_with_too_few_vars() {
 		type F = BinaryField8b;
-		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
+		let expr =
+			((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		assert_matches!(expr.remap_vars(&[5]), Err(Error::IncorrectArgumentLength { .. }));
 	}
 
 	#[test]
 	fn test_remap_vars_works() {
 		type F = BinaryField8b;
-		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
+		let expr =
+			((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		let new_expr = expr.remap_vars(&[5, 3]);
 
 		let expected =
@@ -1091,7 +1100,8 @@ mod tests {
 	fn test_const_subst_and_optimize() {
 		// NB: this is FlushSumcheckComposition from the constraint_system
 		type F = BinaryField8b;
-		let expr = ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::one() - ArithCircuit::var(1);
+		let expr = ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::one()
+			- ArithCircuit::var(1);
 		assert_eq!(expr.const_subst(1, F::ZERO).optimize().get_constant(), Some(F::ONE));
 	}
 
@@ -1143,9 +1153,9 @@ mod tests {
 				},
 			},
 			Case {
-				expr: (ArithCircuit::constant(F::new(2)) * ArithCircuit::constant(F::new(3))).pow(2)
-					+ ArithCircuit::constant(F::new(3))
-						* (ArithCircuit::constant(F::new(4)) + ArithCircuit::var(0)),
+				expr: (ArithCircuit::constant(F::new(2)) * ArithCircuit::constant(F::new(3)))
+					.pow(2) + ArithCircuit::constant(F::new(3))
+					* (ArithCircuit::constant(F::new(4)) + ArithCircuit::var(0)),
 				expected: LinearNormalForm {
 					constant: (F::new(2) * F::new(3)).pow(2) + F::new(3) * F::new(4),
 					var_coeffs: vec![F::new(3)],
@@ -1223,7 +1233,8 @@ mod tests {
 	#[test]
 	fn test_binary_tower_level() {
 		type F = BinaryField128b;
-		let expr = ArithCircuit::constant(F::ONE) + ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR);
+		let expr =
+			ArithCircuit::constant(F::ONE) + ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR);
 		assert_eq!(expr.binary_tower_level(), F::MULTIPLICATIVE_GENERATOR.min_tower_level());
 	}
 
@@ -1250,8 +1261,9 @@ mod tests {
 			+ (ArithCircuit::var(5) + ArithCircuit::var(5));
 		circuit.optimize_constants();
 
-		let expected_ciruit =
-			ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::var(2) + ArithCircuit::constant(F::ONE);
+		let expected_ciruit = ArithCircuit::var(0) * ArithCircuit::var(1)
+			+ ArithCircuit::var(2)
+			+ ArithCircuit::constant(F::ONE);
 
 		assert_eq!(circuit, expected_ciruit);
 	}
