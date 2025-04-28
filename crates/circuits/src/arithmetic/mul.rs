@@ -46,22 +46,22 @@ where
 
 	// $g^x$
 	let xin_exp_result_id =
-		builder.add_committed(format!("{} xin_exp_result", name), log_rows, FExpBase::TOWER_LEVEL);
+		builder.add_committed(format!("{name} xin_exp_result"), log_rows, FExpBase::TOWER_LEVEL);
 
 	// $(g^x)^y$
 	let yin_exp_result_id =
-		builder.add_committed(format!("{} yin_exp_result", name), log_rows, FExpBase::TOWER_LEVEL);
+		builder.add_committed(format!("{name} yin_exp_result"), log_rows, FExpBase::TOWER_LEVEL);
 
 	// $g^{clow}$
 	let cout_low_exp_result_id = builder.add_committed(
-		format!("{} cout_low_exp_result", name),
+		format!("{name} cout_low_exp_result"),
 		log_rows,
 		FExpBase::TOWER_LEVEL,
 	);
 
 	// $(g^{2^{len(clow)}})^{chigh}$
 	let cout_high_exp_result_id = builder.add_committed(
-		format!("{} cout_high_exp_result", name),
+		format!("{name} cout_high_exp_result"),
 		log_rows,
 		FExpBase::TOWER_LEVEL,
 	);
@@ -75,7 +75,7 @@ where
 	let cout_bits = (0..result_bits)
 		.map(|i| {
 			builder.add_committed(
-				format!("{} bit of {}", i, name),
+				format!("{i} bit of {name}"),
 				log_rows,
 				BinaryField1b::TOWER_LEVEL,
 			)
@@ -255,7 +255,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 	//$(g^{x})^{y}$
 	let yin_exp_result_id = builder.add_committed(
-		format!("{} yin_exp_result", name),
+		format!("{name} yin_exp_result"),
 		log_rows,
 		BinaryField64b::TOWER_LEVEL,
 	);
@@ -330,7 +330,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 			u16_static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 				builder,
-				format!("cout_exp_result_id {}", i),
+				format!("cout_exp_result_id {i}"),
 				cout[i],
 				exp_pow2(BinaryField64b::MULTIPLICATIVE_GENERATOR, 16 * i),
 				g_table,
@@ -425,13 +425,13 @@ mod tests {
 
 		let in_a = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{}", i), log_n_muls)
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{i}"), log_n_muls)
 					.unwrap()
 			})
 			.collect::<Vec<_>>();
 		let in_b = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{}", i), log_n_muls)
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{i}"), log_n_muls)
 					.unwrap()
 			})
 			.collect::<Vec<_>>();

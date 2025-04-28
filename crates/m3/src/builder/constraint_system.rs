@@ -6,6 +6,7 @@ pub use binius_core::constraint_system::channel::{
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, OracleOrConst},
+		exp::Exp,
 		ConstraintSystem as CompiledConstraintSystem,
 	},
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
@@ -114,7 +115,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			for log_values_per_row in table.partitions.keys() {
 				let values_per_row = 1 << log_values_per_row;
 				let selector_type_str = if values_per_row > 1 {
-					format!("B1x{}", values_per_row)
+					format!("B1x{values_per_row}")
 				} else {
 					"B1".to_string()
 				};
@@ -175,25 +176,17 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut table_constraints = Vec::new();
 		let mut compiled_flushes = Vec::new();
 		let mut non_zero_oracle_ids = Vec::new();
+		let mut exponents = Vec::new();
 
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized {
-				if !count.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id: table.id,
-						size: count,
-					});
-				}
-				if count != 1 << table.log_capacity(count) {
-					panic!(
-						"Tables with required power-of-two size currently cannot have capacity \
-						exceeding their count. This is because the flushes do not have automatic \
-						selectors applied, and so the table would flush invalid events"
-					);
-				}
+			if table.power_of_two_sized && !count.is_power_of_two() {
+				return Err(Error::TableSizePowerOfTwoRequired {
+					table_id: table.id,
+					size: count,
+				});
 			}
 
 			let mut oracle_lookup = Vec::new();
@@ -240,6 +233,41 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.iter()
 					.map(|&index| oracle_lookup[index])
 					.collect::<Vec<_>>();
+
+				// Add Exponents with the same pack factor for the compiled constraint system.
+				columns.iter().for_each(|&index| {
+					let col_info = &table.columns[index].col;
+					if let ColumnDef::StaticExp {
+						bit_cols,
+						base,
+						base_tower_level,
+					} = col_info
+					{
+						let bits_ids = bit_cols
+							.iter()
+							.map(|&partition_idx| partition_oracle_ids[partition_idx])
+							.collect();
+						exponents.push(Exp {
+							base: OracleOrConst::Const {
+								base: *base,
+								tower_level: *base_tower_level,
+							},
+							bits_ids,
+							exp_result_id: oracle_lookup[index],
+						});
+					}
+					if let ColumnDef::DynamicExp { bit_cols, base, .. } = col_info {
+						let bits_ids = bit_cols
+							.iter()
+							.map(|&partition_idx| partition_oracle_ids[partition_idx])
+							.collect();
+						exponents.push(Exp {
+							base: OracleOrConst::Oracle(partition_oracle_ids[*base]),
+							bits_ids,
+							exp_result_id: oracle_lookup[index],
+						})
+					}
+				});
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 				let step_down = (!table.power_of_two_sized)
@@ -307,7 +335,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
 			max_channel_id: self.channels.len().saturating_sub(1),
-			exponents: Vec::new(),
+			exponents,
 		})
 	}
 }
@@ -407,6 +435,12 @@ fn add_oracle_for_column<F: TowerField>(
 			transparent_single[id.table_index].unwrap(),
 			n_vars - shape.log_values_per_row,
 		)?,
+		ColumnDef::StaticExp {
+			base_tower_level, ..
+		} => addition.committed(n_vars, *base_tower_level),
+		ColumnDef::DynamicExp {
+			base_tower_level, ..
+		} => addition.committed(n_vars, *base_tower_level),
 	};
 	Ok(oracle_id)
 }

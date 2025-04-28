@@ -61,7 +61,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			Some(s) => {
 				let x: [usize; N] = array::from_fn(|i| i);
 				x.map(|i| {
-					self.add_committed_with_name(n_vars, tower_level, Some(format!("{}_{}", s, i)))
+					self.add_committed_with_name(n_vars, tower_level, Some(format!("{s}_{i}")))
 				})
 			}
 		}

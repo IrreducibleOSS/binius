@@ -483,13 +483,13 @@ pub fn blake3_compress(
 		.enumerate()
 	{
 		builder.assert_zero(
-			format!("sum{}", idx),
+			format!("sum{idx}"),
 			[xin, yin, cin[idx], zout],
 			arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
 		);
 
 		builder.assert_zero(
-			format!("carry{}", idx),
+			format!("carry{idx}"),
 			[xin, yin, cin[idx], cout[idx]],
 			arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout)
 				.convert_field(),
