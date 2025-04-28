@@ -7,6 +7,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::zeroed_vec;
+use tracing::debug_span;
 
 use crate::{
 	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
@@ -189,6 +190,8 @@ where
 						for (subcube_index, subcube_evals) in
 							folded.chunks_exact_mut(packed_len).enumerate()
 						{
+							let _span =
+								debug_span!("multilinear_subcube_partial_high_evals").entered();
 							multilinear.subcube_partial_high_evals(
 								*tensor_query,
 								subcube_vars,
@@ -200,6 +203,7 @@ where
 						folded.truncate(folded_scalars.div_ceil(P::WIDTH));
 						folded
 					} else {
+						let _span = debug_span!("multilinear_evaluate_partial_high").entered();
 						multilinear
 							.evaluate_partial_high(*tensor_query)?
 							.into_evals()
