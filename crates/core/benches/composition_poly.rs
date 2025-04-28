@@ -62,9 +62,9 @@ fn benchmark_evaluate(c: &mut Criterion) {
 	let mut results1x128b = vec![PackedBinaryField1x128b::zero(); BATCH_SIZE];
 
 	let arith_circuit_poly = ArithCircuitPoly::new(
-		Expr::var(0) * Expr::var(1)
-			+ (Expr::constant(BinaryField1b::ONE) - Expr::var(0)) * Expr::var(2)
-			- Expr::var(3),
+		(Expr::Var(0) * Expr::Var(1)
+			+ (Expr::Const(BinaryField1b::ONE) - Expr::Var(0)) * Expr::Var(2)
+			- Expr::Var(3)).into(),
 	);
 	let arith_circuit_poly_cached =
 		arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch, BinaryField1b);

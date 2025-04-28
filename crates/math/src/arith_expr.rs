@@ -6,13 +6,198 @@ use std::{
 	fmt::{self, Display},
 	hash::{Hash, Hasher},
 	iter::{Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign}, sync::Arc,
 };
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;
+
+/// Arithmetic expressions that can be evaluated symbolically.
+///
+/// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
+/// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
+/// specific representations of multivariate polynomials.
+///
+/// The `Arc`'s are not guaranteed to be unique, so the expression tree may contain duplicate nodes.
+/// Use `deduplicate_nodes` to remove duplicate nodes from the expression tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ArithExpr<F: Field> {
+	Const(F),
+	Var(usize),
+	Add(Arc<ArithExpr<F>>, Arc<ArithExpr<F>>),
+	Mul(Arc<ArithExpr<F>>, Arc<ArithExpr<F>>),
+	Pow(Arc<ArithExpr<F>>, u64),
+}
+
+impl<F: Field + Display> Display for ArithExpr<F> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Const(v) => write!(f, "{v}"),
+			Self::Var(i) => write!(f, "x{i}"),
+			Self::Add(x, y) => write!(f, "({} + {})", &**x, &**y),
+			Self::Mul(x, y) => write!(f, "({} * {})", &**x, &**y),
+			Self::Pow(x, p) => write!(f, "({})^{p}", &**x),
+		}
+	}
+}
+
+impl<F: Field> ArithExpr<F> {
+	pub fn pow(self, exp: u64) -> Self {
+		Self::Pow(Arc::new(self), exp)
+	}
+
+	pub const fn zero() -> Self {
+		Self::Const(F::ZERO)
+	}
+
+	pub const fn one() -> Self {
+		Self::Const(F::ONE)
+	}
+}
+
+impl<F> Default for ArithExpr<F>
+where
+	F: Field,
+{
+	fn default() -> Self {
+		Self::zero()
+	}
+}
+
+impl<F> Add for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn add(self, rhs: Self) -> Self {
+		Self::Add(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Add<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn add(self, rhs: Arc<Self>) -> Self {
+		Self::Add(Arc::new(self), rhs)
+	}
+}
+
+impl<F> AddAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn add_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) + rhs;
+	}
+}
+
+impl<F> AddAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn add_assign(&mut self, rhs: Arc<Self>) {
+		*self = std::mem::take(self) + rhs;
+	}
+}
+
+impl<F> Sub for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn sub(self, rhs: Self) -> Self {
+		Self::Add(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Sub<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn sub(self, rhs: Arc<Self>) -> Self {
+		Self::Add(Arc::new(self), rhs)
+	}
+}
+
+impl<F> SubAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn sub_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) - rhs;
+	}
+}
+
+impl<F> SubAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn sub_assign(&mut self, rhs: Arc<Self>) {
+		*self = std::mem::take(self) - rhs;
+	}
+}
+
+impl<F> Mul for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn mul(self, rhs: Self) -> Self {
+		Self::Mul(Arc::new(self), Arc::new(rhs))
+	}
+}
+
+impl<F> Mul<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	type Output = Self;
+
+	fn mul(self, rhs: Arc<Self>) -> Self {
+		Self::Mul(Arc::new(self), rhs)
+	}
+}
+
+impl<F> MulAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn mul_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) * rhs;
+	}
+}
+
+impl<F> MulAssign<Arc<Self>> for ArithExpr<F>
+where
+	F: Field,
+{
+	fn mul_assign(&mut self, rhs: Arc<Self>) {
+		*self = std::mem::take(self) * rhs;
+	}
+}
+
+impl<F: Field> Sum for ArithExpr<F> {
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| acc + item).unwrap_or(Self::zero())
+	}
+}
+
+impl<F: Field> Product for ArithExpr<F> {
+	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| acc * item).unwrap_or(Self::one())
+	}
+}
+
 
 #[derive(Clone, Copy, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub enum ArithCircuitStep<F: Field> {
@@ -39,11 +224,11 @@ impl<F: Field> Default for ArithCircuitStep<F> {
 /// This implementation isn't optimized for performance, but rather for simplicity
 /// to allow easy conversion and preservation of the common subexpressions
 #[derive(Clone, Debug, SerializeBytes, DeserializeBytes, Eq)]
-pub struct ArithExpr<F: Field> {
+pub struct ArithCircuit<F: Field> {
 	steps: Vec<ArithCircuitStep<F>>,
 }
 
-impl<F: Field> ArithExpr<F> {
+impl<F: Field> ArithCircuit<F> {
 	pub fn var(index: usize) -> Self {
 		Self {
 			steps: vec![ArithCircuitStep::Var(index)],
@@ -161,8 +346,8 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
-	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithExpr<FTgt> {
-		ArithExpr {
+	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithCircuit<FTgt> {
+		ArithCircuit {
 			steps: self
 				.steps
 				.iter()
@@ -179,7 +364,7 @@ impl<F: Field> ArithExpr<F> {
 
 	pub fn try_convert_field<FTgt: Field + TryFrom<F>>(
 		&self,
-	) -> Result<ArithExpr<FTgt>, <FTgt as TryFrom<F>>::Error> {
+	) -> Result<ArithCircuit<FTgt>, <FTgt as TryFrom<F>>::Error> {
 		let steps = self
 			.steps
 			.iter()
@@ -197,7 +382,7 @@ impl<F: Field> ArithExpr<F> {
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		Ok(ArithExpr { steps })
+		Ok(ArithCircuit { steps })
 	}
 
 	/// Creates a new expression with the variable indices remapped.
@@ -462,7 +647,77 @@ impl<F: Field> ArithExpr<F> {
 	}
 }
 
-impl<F: Field> Display for ArithExpr<F> {
+impl<F: Field> From<&ArithExpr<F>> for ArithCircuit<F> {
+	fn from(expr: &ArithExpr<F>) -> Self {
+		fn visit_node<F: Field>(
+			node: &Arc<ArithExpr<F>>,
+			node_to_index: &mut HashMap<*const ArithExpr<F>, usize>,
+			steps: &mut Vec<ArithCircuitStep<F>>,
+		) -> usize {
+			if let Some(index) = node_to_index.get(&Arc::as_ptr(node)) {
+				return *index;
+			}
+
+			let step = match &**node {
+				ArithExpr::Const(value) => ArithCircuitStep::Const(*value),
+				ArithExpr::Var(index) => ArithCircuitStep::Var(*index),
+				ArithExpr::Add(left, right) => {
+					let left = visit_node(left, node_to_index, steps);
+					let right = visit_node(right, node_to_index, steps);
+					ArithCircuitStep::Add(left, right)
+				}
+				ArithExpr::Mul(left, right) => {
+					let left = visit_node(left, node_to_index, steps);
+					let right = visit_node(right, node_to_index, steps);
+					ArithCircuitStep::Mul(left, right)
+				}
+				ArithExpr::Pow(base, exp) => {
+					let base = visit_node(base, node_to_index, steps);
+					ArithCircuitStep::Pow(base, *exp)
+				}
+			};
+
+			steps.push(step);
+			node_to_index.insert(Arc::as_ptr(node), steps.len() - 1);
+			steps.len() - 1
+		}
+
+		let mut steps = Vec::new();
+		let mut node_to_index = HashMap::new();
+		match expr {
+			ArithExpr::Const(c) => {
+				steps.push(ArithCircuitStep::Const(*c));
+			}
+			ArithExpr::Var(var) => {
+				steps.push(ArithCircuitStep::Var(*var));
+			}
+			ArithExpr::Add(left, right) => {
+				let left = visit_node(left, &mut node_to_index, &mut steps);
+				let right = visit_node(right, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Add(left, right));
+			}
+			ArithExpr::Mul(left, right) => {
+				let left = visit_node(left, &mut node_to_index, &mut steps);
+				let right = visit_node(right, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Mul(left, right));
+			}
+			ArithExpr::Pow(base, exp) => {
+				let base = visit_node(base, &mut node_to_index, &mut steps);
+				steps.push(ArithCircuitStep::Pow(base, *exp));
+			}
+		}
+
+		Self { steps }
+	}
+}
+
+impl<F: Field> From<ArithExpr<F>> for ArithCircuit<F> {
+	fn from(expr: ArithExpr<F>) -> Self {
+		Self::from(&expr)
+	}
+}
+
+impl<F: Field> Display for ArithCircuit<F> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
 		fn display_step<F: Field>(
 			step: usize,
@@ -498,7 +753,7 @@ impl<F: Field> Display for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> PartialEq for ArithExpr<F> {
+impl<F: Field> PartialEq for ArithCircuit<F> {
 	fn eq(&self, other: &Self) -> bool {
 		StepNode {
 			index: self.steps.len() - 1,
@@ -510,7 +765,7 @@ impl<F: Field> PartialEq for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> Add for ArithExpr<F> {
+impl<F: Field> Add for ArithCircuit<F> {
 	type Output = Self;
 
 	fn add(mut self, rhs: Self) -> Self {
@@ -519,7 +774,7 @@ impl<F: Field> Add for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> AddAssign for ArithExpr<F> {
+impl<F: Field> AddAssign for ArithCircuit<F> {
 	fn add_assign(&mut self, mut rhs: Self) {
 		let old_len = self.steps.len();
 		add_offset(&mut rhs.steps, old_len);
@@ -529,7 +784,7 @@ impl<F: Field> AddAssign for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> Sub for ArithExpr<F> {
+impl<F: Field> Sub for ArithCircuit<F> {
 	type Output = Self;
 
 	fn sub(mut self, rhs: Self) -> Self {
@@ -538,14 +793,14 @@ impl<F: Field> Sub for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> SubAssign for ArithExpr<F> {
+impl<F: Field> SubAssign for ArithCircuit<F> {
 	#[allow(clippy::suspicious_op_assign_impl)]
 	fn sub_assign(&mut self, rhs: Self) {
 		*self += rhs;
 	}
 }
 
-impl<F: Field> Mul for ArithExpr<F> {
+impl<F: Field> Mul for ArithCircuit<F> {
 	type Output = Self;
 
 	fn mul(mut self, rhs: Self) -> Self {
@@ -554,7 +809,7 @@ impl<F: Field> Mul for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> MulAssign for ArithExpr<F> {
+impl<F: Field> MulAssign for ArithCircuit<F> {
 	fn mul_assign(&mut self, mut rhs: Self) {
 		let old_len = self.steps.len();
 		add_offset(&mut rhs.steps, old_len);
@@ -564,13 +819,13 @@ impl<F: Field> MulAssign for ArithExpr<F> {
 	}
 }
 
-impl<F: Field> Sum for ArithExpr<F> {
+impl<F: Field> Sum for ArithCircuit<F> {
 	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.fold(Self::zero(), |sum, item| sum + item)
 	}
 }
 
-impl<F: Field> Product for ArithExpr<F> {
+impl<F: Field> Product for ArithCircuit<F> {
 	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.fold(Self::one(), |product, item| product * item)
 	}
@@ -760,38 +1015,38 @@ mod tests {
 
 	#[test]
 	fn test_degree_with_pow() {
-		let expr = ArithExpr::constant(BinaryField8b::new(6)).pow(7);
+		let expr = ArithCircuit::constant(BinaryField8b::new(6)).pow(7);
 		assert_eq!(expr.degree(), 0);
 
-		let expr: ArithExpr<BinaryField8b> = ArithExpr::var(0).pow(7);
+		let expr: ArithCircuit<BinaryField8b> = ArithCircuit::var(0).pow(7);
 		assert_eq!(expr.degree(), 7);
 
-		let expr: ArithExpr<BinaryField8b> = (ArithExpr::var(0) * ArithExpr::var(1)).pow(7);
+		let expr: ArithCircuit<BinaryField8b> = (ArithCircuit::var(0) * ArithCircuit::var(1)).pow(7);
 		assert_eq!(expr.degree(), 14);
 	}
 
 	#[test]
 	fn test_n_vars() {
 		type F = BinaryField8b;
-		let expr = ArithExpr::<F>::var(0) * ArithExpr::constant(F::MULTIPLICATIVE_GENERATOR)
-			+ ArithExpr::var(2).pow(2);
+		let expr = ArithCircuit::<F>::var(0) * ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR)
+			+ ArithCircuit::var(2).pow(2);
 		assert_eq!(expr.n_vars(), 3);
 	}
 
 	#[test]
 	fn test_leading_term_with_degree() {
-		let expr = ArithExpr::var(0)
-			* (ArithExpr::var(1)
-				* ArithExpr::var(2)
-				* ArithExpr::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR)
-				+ ArithExpr::var(4))
-			+ ArithExpr::var(5).pow(3)
-			+ ArithExpr::constant(BinaryField8b::ONE);
+		let expr = ArithCircuit::var(0)
+			* (ArithCircuit::var(1)
+				* ArithCircuit::var(2)
+				* ArithCircuit::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR)
+				+ ArithCircuit::var(4))
+			+ ArithCircuit::var(5).pow(3)
+			+ ArithCircuit::constant(BinaryField8b::ONE);
 
-		let expected_expr = ArithExpr::var(0)
-			* ((ArithExpr::var(1) * ArithExpr::var(2))
-				* ArithExpr::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR))
-			+ ArithExpr::var(5).pow(3);
+		let expected_expr = ArithCircuit::var(0)
+			* ((ArithCircuit::var(1) * ArithCircuit::var(2))
+				* ArithCircuit::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR))
+			+ ArithCircuit::var(5).pow(3);
 
 		assert_eq!(expr.leading_term_with_degree(expr.steps().len() - 1), (3, expected_expr));
 	}
@@ -799,44 +1054,44 @@ mod tests {
 	#[test]
 	fn test_remap_vars_with_too_few_vars() {
 		type F = BinaryField8b;
-		let expr = ((ArithExpr::var(0) + ArithExpr::constant(F::ONE)) * ArithExpr::var(1)).pow(3);
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		assert_matches!(expr.remap_vars(&[5]), Err(Error::IncorrectArgumentLength { .. }));
 	}
 
 	#[test]
 	fn test_remap_vars_works() {
 		type F = BinaryField8b;
-		let expr = ((ArithExpr::var(0) + ArithExpr::constant(F::ONE)) * ArithExpr::var(1)).pow(3);
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		let new_expr = expr.remap_vars(&[5, 3]);
 
 		let expected =
-			((ArithExpr::var(5) + ArithExpr::constant(F::ONE)) * ArithExpr::var(3)).pow(3);
+			((ArithCircuit::var(5) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(3)).pow(3);
 		assert_eq!(new_expr.unwrap(), expected);
 	}
 
 	#[test]
 	fn test_optimize_identity_handling() {
 		type F = BinaryField8b;
-		let zero = ArithExpr::<F>::zero();
-		let one = ArithExpr::<F>::one();
+		let zero = ArithCircuit::<F>::zero();
+		let one = ArithCircuit::<F>::one();
 
-		assert_eq!((zero.clone() * ArithExpr::<F>::var(0)).optimize(), zero);
-		assert_eq!((ArithExpr::<F>::var(0) * zero.clone()).optimize(), zero);
+		assert_eq!((zero.clone() * ArithCircuit::<F>::var(0)).optimize(), zero);
+		assert_eq!((ArithCircuit::<F>::var(0) * zero.clone()).optimize(), zero);
 
-		assert_eq!((ArithExpr::<F>::var(0) * one.clone()).optimize(), ArithExpr::var(0));
-		assert_eq!((one * ArithExpr::<F>::var(0)).optimize(), ArithExpr::var(0));
+		assert_eq!((ArithCircuit::<F>::var(0) * one.clone()).optimize(), ArithCircuit::var(0));
+		assert_eq!((one * ArithCircuit::<F>::var(0)).optimize(), ArithCircuit::var(0));
 
-		assert_eq!((ArithExpr::<F>::var(0) + zero.clone()).optimize(), ArithExpr::var(0));
-		assert_eq!((zero.clone() + ArithExpr::<F>::var(0)).optimize(), ArithExpr::var(0));
+		assert_eq!((ArithCircuit::<F>::var(0) + zero.clone()).optimize(), ArithCircuit::var(0));
+		assert_eq!((zero.clone() + ArithCircuit::<F>::var(0)).optimize(), ArithCircuit::var(0));
 
-		assert_eq!((ArithExpr::<F>::var(0) + ArithExpr::var(0)).optimize(), zero);
+		assert_eq!((ArithCircuit::<F>::var(0) + ArithCircuit::var(0)).optimize(), zero);
 	}
 
 	#[test]
 	fn test_const_subst_and_optimize() {
 		// NB: this is FlushSumcheckComposition from the constraint_system
 		type F = BinaryField8b;
-		let expr = ArithExpr::var(0) * ArithExpr::var(1) + ArithExpr::one() - ArithExpr::var(1);
+		let expr = ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::one() - ArithCircuit::var(1);
 		assert_eq!(expr.const_subst(1, F::ZERO).optimize().get_constant(), Some(F::ONE));
 	}
 
@@ -845,12 +1100,12 @@ mod tests {
 		type F8 = BinaryField8b;
 		type F = BinaryField128b;
 
-		let expr = ((ArithExpr::var(0) + ArithExpr::constant(F8::ONE))
-			* ArithExpr::constant(F8::new(222)))
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F8::ONE))
+			* ArithCircuit::constant(F8::new(222)))
 		.pow(3);
 
-		let expected = ((ArithExpr::var(0) + ArithExpr::constant(F::ONE))
-			* ArithExpr::constant(F::new(222)))
+		let expected = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* ArithCircuit::constant(F::new(222)))
 		.pow(3);
 		assert_eq!(expr.convert_field::<F>(), expected);
 	}
@@ -860,14 +1115,14 @@ mod tests {
 		type F8 = BinaryField8b;
 		type F = BinaryField128b;
 
-		let expr = ((ArithExpr::var(0) + ArithExpr::constant(F::ONE))
-			* ArithExpr::constant(F::new(222)))
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* ArithCircuit::constant(F::new(222)))
 		.pow(3);
 
 		assert!(expr.try_convert_field::<BinaryField1b>().is_err());
 
-		let expected = ((ArithExpr::var(0) + ArithExpr::constant(F8::ONE))
-			* ArithExpr::constant(F8::new(222)))
+		let expected = ((ArithCircuit::var(0) + ArithCircuit::constant(F8::ONE))
+			* ArithCircuit::constant(F8::new(222)))
 		.pow(3);
 		assert_eq!(expr.try_convert_field::<BinaryField8b>().unwrap(), expected);
 	}
@@ -876,33 +1131,33 @@ mod tests {
 	fn test_linear_normal_form() {
 		type F = BinaryField128b;
 		struct Case {
-			expr: ArithExpr<F>,
+			expr: ArithCircuit<F>,
 			expected: LinearNormalForm<F>,
 		}
 		let cases = vec![
 			Case {
-				expr: ArithExpr::constant(F::ONE),
+				expr: ArithCircuit::constant(F::ONE),
 				expected: LinearNormalForm {
 					constant: F::ONE,
 					var_coeffs: vec![],
 				},
 			},
 			Case {
-				expr: (ArithExpr::constant(F::new(2)) * ArithExpr::constant(F::new(3))).pow(2)
-					+ ArithExpr::constant(F::new(3))
-						* (ArithExpr::constant(F::new(4)) + ArithExpr::var(0)),
+				expr: (ArithCircuit::constant(F::new(2)) * ArithCircuit::constant(F::new(3))).pow(2)
+					+ ArithCircuit::constant(F::new(3))
+						* (ArithCircuit::constant(F::new(4)) + ArithCircuit::var(0)),
 				expected: LinearNormalForm {
 					constant: (F::new(2) * F::new(3)).pow(2) + F::new(3) * F::new(4),
 					var_coeffs: vec![F::new(3)],
 				},
 			},
 			Case {
-				expr: ArithExpr::constant(F::new(133))
-					+ ArithExpr::constant(F::new(42)) * ArithExpr::var(0)
-					+ ArithExpr::var(2)
-					+ ArithExpr::constant(F::new(11))
-						* ArithExpr::constant(F::new(37))
-						* ArithExpr::var(3),
+				expr: ArithCircuit::constant(F::new(133))
+					+ ArithCircuit::constant(F::new(42)) * ArithCircuit::var(0)
+					+ ArithCircuit::var(2)
+					+ ArithCircuit::constant(F::new(11))
+						* ArithCircuit::constant(F::new(37))
+						* ArithCircuit::var(3),
 				expected: LinearNormalForm {
 					constant: F::new(133),
 					var_coeffs: vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)],
@@ -916,7 +1171,7 @@ mod tests {
 		}
 	}
 
-	fn unique_nodes_count<F: Field>(expr: &ArithExpr<F>) -> usize {
+	fn unique_nodes_count<F: Field>(expr: &ArithCircuit<F>) -> usize {
 		let mut unique_nodes = HashSet::new();
 
 		for step in 0..expr.steps.len() {
@@ -929,13 +1184,13 @@ mod tests {
 		unique_nodes.len()
 	}
 
-	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExpr<F>) {
+	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithCircuit<F>) {
 		let mut buf = Vec::new();
 
 		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
 			.unwrap();
 		let deserialized =
-			ArithExpr::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
+			ArithCircuit::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
 		assert_eq!(expr, deserialized);
 		assert_eq!(unique_nodes_count(&expr), unique_nodes_count(&deserialized));
 	}
@@ -943,13 +1198,13 @@ mod tests {
 	#[test]
 	fn test_serialize_bytes_roundtrip() {
 		type F = BinaryField128b;
-		let expr = ArithExpr::var(0)
-			* (ArithExpr::var(1)
-				* ArithExpr::var(2)
-				* ArithExpr::constant(F::MULTIPLICATIVE_GENERATOR)
-				+ ArithExpr::var(4))
-			+ ArithExpr::var(5).pow(3)
-			+ ArithExpr::constant(F::ONE);
+		let expr = ArithCircuit::var(0)
+			* (ArithCircuit::var(1)
+				* ArithCircuit::var(2)
+				* ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR)
+				+ ArithCircuit::var(4))
+			+ ArithCircuit::var(5).pow(3)
+			+ ArithCircuit::constant(F::ONE);
 
 		check_serialize_bytes_roundtrip(expr);
 	}
@@ -957,10 +1212,10 @@ mod tests {
 	#[test]
 	fn test_serialize_bytes_rountrip_with_duplicates() {
 		type F = BinaryField128b;
-		let expr = (ArithExpr::var(0) + ArithExpr::constant(F::ONE))
-			* (ArithExpr::var(0) + ArithExpr::constant(F::ONE))
-			+ (ArithExpr::var(0) + ArithExpr::constant(F::ONE))
-			+ ArithExpr::var(1);
+		let expr = (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			+ (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			+ ArithCircuit::var(1);
 
 		check_serialize_bytes_roundtrip(expr);
 	}
@@ -968,14 +1223,14 @@ mod tests {
 	#[test]
 	fn test_binary_tower_level() {
 		type F = BinaryField128b;
-		let expr = ArithExpr::constant(F::ONE) + ArithExpr::constant(F::MULTIPLICATIVE_GENERATOR);
+		let expr = ArithCircuit::constant(F::ONE) + ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR);
 		assert_eq!(expr.binary_tower_level(), F::MULTIPLICATIVE_GENERATOR.min_tower_level());
 	}
 
 	#[test]
 	fn test_arith_circuit_steps() {
 		type F = BinaryField8b;
-		let expr = (ArithExpr::<F>::var(0) + ArithExpr::var(1)) * ArithExpr::var(2);
+		let expr = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1)) * ArithCircuit::var(2);
 		let steps = expr.steps();
 		assert_eq!(steps.len(), 5); // 3 variables, 1 addition, 1 multiplication
 		assert!(matches!(steps[0], ArithCircuitStep::Var(0)));
@@ -988,15 +1243,15 @@ mod tests {
 	#[test]
 	fn test_optimize_constants() {
 		type F = BinaryField8b;
-		let mut circuit = (ArithExpr::<F>::var(0) + ArithExpr::constant(F::ZERO))
-			* ArithExpr::var(1)
-			+ ArithExpr::constant(F::ONE) * ArithExpr::var(2)
-			+ ArithExpr::constant(F::ONE).pow(4).pow(5)
-			+ (ArithExpr::var(5) + ArithExpr::var(5));
+		let mut circuit = (ArithCircuit::<F>::var(0) + ArithCircuit::constant(F::ZERO))
+			* ArithCircuit::var(1)
+			+ ArithCircuit::constant(F::ONE) * ArithCircuit::var(2)
+			+ ArithCircuit::constant(F::ONE).pow(4).pow(5)
+			+ (ArithCircuit::var(5) + ArithCircuit::var(5));
 		circuit.optimize_constants();
 
 		let expected_ciruit =
-			ArithExpr::var(0) * ArithExpr::var(1) + ArithExpr::var(2) + ArithExpr::constant(F::ONE);
+			ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::var(2) + ArithCircuit::constant(F::ONE);
 
 		assert_eq!(circuit, expected_ciruit);
 	}
@@ -1004,12 +1259,12 @@ mod tests {
 	#[test]
 	fn test_deduplicate_steps() {
 		type F = BinaryField8b;
-		let mut circuit = (ArithExpr::<F>::var(0) + ArithExpr::var(1))
-			* (ArithExpr::var(0) + ArithExpr::var(1))
-			+ (ArithExpr::var(0) + ArithExpr::var(1));
+		let mut circuit = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1))
+			* (ArithCircuit::var(0) + ArithCircuit::var(1))
+			+ (ArithCircuit::var(0) + ArithCircuit::var(1));
 		circuit.deduplicate_steps();
 
-		let expected_circuit = ArithExpr::<F> {
+		let expected_circuit = ArithCircuit::<F> {
 			steps: vec![
 				ArithCircuitStep::Var(0),
 				ArithCircuitStep::Var(1),
@@ -1024,7 +1279,7 @@ mod tests {
 	#[test]
 	fn test_compress_unused_steps() {
 		type F = BinaryField8b;
-		let mut circuit = ArithExpr::<F> {
+		let mut circuit = ArithCircuit::<F> {
 			steps: vec![
 				ArithCircuitStep::Var(0),
 				ArithCircuitStep::Var(1),
@@ -1038,7 +1293,7 @@ mod tests {
 		};
 		circuit.compress_unused_steps();
 
-		let expected_circuit = ArithExpr::<F> {
+		let expected_circuit = ArithCircuit::<F> {
 			steps: vec![
 				ArithCircuitStep::Var(0),
 				ArithCircuitStep::Var(1),
@@ -1047,5 +1302,15 @@ mod tests {
 			],
 		};
 		assert_eq!(circuit.steps, expected_circuit.steps);
+	}
+
+	#[test]
+	fn test_conversion_from_expr_node_doesnt_create_duplicated_steps() {
+		type F = BinaryField8b;
+		let sub_expr = Arc::new(ArithExpr::<F>::Var(0) + ArithExpr::<F>::Var(1));
+		let expr = ArithExpr::Mul(sub_expr.clone(), sub_expr.clone()) + sub_expr;
+		let circuit = ArithCircuit::<F>::from(&expr);
+		assert_eq!(circuit.steps.len(), 5);
+		assert_eq!(unique_nodes_count(&circuit), 5);
 	}
 }

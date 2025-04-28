@@ -9,7 +9,7 @@ pub(crate) struct ArithExprItem(syn::Expr);
 impl ToTokens for ArithExprItem {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let Self(expr) = self;
-		tokens.extend(quote!(#expr));
+		tokens.extend(quote!(binius_math::ArithCircuit::from(#expr)));
 	}
 }
 
@@ -45,7 +45,7 @@ fn rewrite_expr(
 				}
 			}
 			if let Some(i) = var_index {
-				*expr = parse_quote!(binius_math::ArithExpr::<#field>::var(#i));
+				*expr = parse_quote!(binius_math::ArithExpr::<#field>::Var(#i));
 			} else {
 				return Err(syn::Error::new(path.span(), "Unknown variable"));
 			}
@@ -60,7 +60,7 @@ fn rewrite_expr(
 						_ => return Err(syn::Error::new(expr.span(), "You need to specify an explicit field to use constants other than 0 or 1"))
 					}
 				};
-				*expr = parse_quote!(binius_math::ArithExpr::<#field>::constant(#value));
+				*expr = parse_quote!(binius_math::ArithExpr::<#field>::Const(#value));
 			}
 		}
 		syn::Expr::Paren(paren) => {

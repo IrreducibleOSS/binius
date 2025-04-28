@@ -18,7 +18,7 @@ impl ToTokens for ArithCircuitPolyItem {
 				use binius_field::Field;
 				use binius_math::ArithExpr as Expr;
 
-				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new(#poly)
+				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new((#poly).into())
 			}
 		});
 	}
@@ -49,8 +49,8 @@ fn flatten_expr(expr: &syn::Expr, vars: &[syn::Ident]) -> Result<syn::Expr, syn:
 		syn::Expr::Lit(exprlit) => {
 			if let syn::Lit::Int(int) = &exprlit.lit {
 				match &*int.to_string() {
-					"0" => Ok(parse_quote!(Expr::constant(Field::ZERO))),
-					"1" => Ok(parse_quote!(Expr::constant(Field::ONE))),
+					"0" => Ok(parse_quote!(Expr::Const(Field::ZERO))),
+					"1" => Ok(parse_quote!(Expr::Const(Field::ONE))),
 					_ => Err(syn::Error::new(expr.span(), "Unsupported integer")),
 				}
 			} else {
@@ -60,7 +60,7 @@ fn flatten_expr(expr: &syn::Expr, vars: &[syn::Ident]) -> Result<syn::Expr, syn:
 		syn::Expr::Path(p) => {
 			for (i, var) in vars.iter().enumerate() {
 				if p.path.is_ident(var) {
-					return Ok(parse_quote!(Expr::var(#i)));
+					return Ok(parse_quote!(Expr::Var(#i)));
 				}
 			}
 			Err(syn::Error::new(expr.span(), "Unknown variable"))

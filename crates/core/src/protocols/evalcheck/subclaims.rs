@@ -14,8 +14,7 @@ use std::collections::{HashMap, HashSet};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
-	MultilinearExtension, MultilinearQuery,
+	ArithCircuit, ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension, MultilinearQuery
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -147,8 +146,8 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
 	}
-	let bivariate_product = ArithExpr::var(0) * ArithExpr::var(1);
-	constraint_builders[n_vars - 1].add_sumcheck(meta.oracle_ids(), bivariate_product, eval);
+	let bivariate_product = ArithExpr::Var(0) * ArithExpr::Var(1);
+	constraint_builders[n_vars - 1].add_sumcheck(meta.oracle_ids(), bivariate_product.into(), eval);
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
@@ -162,7 +161,7 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	oracle_ids.push(meta.multiplier_id); // eq
 
 	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
-	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::var(comp.n_polys());
+	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithCircuit::var(comp.n_polys());
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
 	}

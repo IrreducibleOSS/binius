@@ -59,8 +59,8 @@ impl ToTokens for CompositionPolyItem {
 					0
 				}
 
-				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
-					(#expr).convert_field()
+				fn expression(&self) -> binius_math::ArithCircuit<P::Scalar> {
+					binius_math::ArithCircuit::from(#expr).convert_field()
 				}
 
 				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -121,7 +121,7 @@ impl Parse for CompositionPolyItem {
 		let degree = poly_degree(&poly_packed)?;
 		rewrite_literals(&mut poly_packed, &replace_packed_literals)?;
 
-		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::var(#i)))?;
+		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::Var(#i)))?;
 		rewrite_literals(&mut expr, &replace_expr_literals)?;
 
 		let scalar_type = if input.is_empty() {

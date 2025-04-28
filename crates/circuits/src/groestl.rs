@@ -319,14 +319,14 @@ fn mix_column_expr() -> ArithExpr<AESTowerField8b> {
 	let mixed = MIX_BYTES_VEC
 		.into_iter()
 		.enumerate()
-		.map(|(i, coeff)| ArithExpr::var(i + 1) * ArithExpr::constant(coeff))
+		.map(|(i, coeff)| ArithExpr::Var(i + 1) * ArithExpr::Const(coeff))
 		.sum::<ArithExpr<_>>();
 	mixed - output
 }
 
 fn s_box_expr<F: TowerField>() -> Result<ArithExpr<F>> {
-	let x = ArithExpr::var(0);
-	let inv = ArithExpr::var(1);
+	let x = ArithExpr::Var(0);
+	let inv = ArithExpr::Var(1);
 
 	// x * inv == 1
 	let non_zero_case = x.clone() * inv.clone() - ArithExpr::one();
@@ -334,7 +334,7 @@ fn s_box_expr<F: TowerField>() -> Result<ArithExpr<F>> {
 	// x == 0 AND inv == 0
 	// TODO: Implement `mul_primitive` expression for ArithExpr
 	let beta = <F as ExtensionField<BinaryField1b>>::basis(1 << 3)?;
-	let zero_case = x + inv * ArithExpr::constant(beta);
+	let zero_case = x + inv * ArithExpr::Const(beta);
 
 	// (x * inv == 1) OR (x == 0 AND inv == 0)
 	Ok(non_zero_case * zero_case)

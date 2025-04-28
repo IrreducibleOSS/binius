@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithCircuit, CompositionPoly};
 use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::{izip, Either};
@@ -199,8 +199,8 @@ where
 		self.inner.degree() + 1
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::var(self.inner.n_vars())
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		self.inner.expression() * ArithCircuit::var(self.inner.n_vars())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

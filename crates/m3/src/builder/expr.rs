@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, TowerField};
-use binius_math::{ArithCircuitStep, ArithExpr};
+use binius_math::{ArithCircuit, ArithCircuitStep};
 use getset::{CopyGetters, Getters};
 
 use super::{column::Col, table::TableId};
@@ -10,7 +10,7 @@ use super::{column::Col, table::TableId};
 #[derive(Debug)]
 pub struct ZeroConstraint<F: Field> {
 	pub name: String,
-	pub expr: ArithExpr<F>,
+	pub expr: ArithCircuit<F>,
 }
 
 /// A type representing an arithmetic expression composed over some table columns.
@@ -21,7 +21,7 @@ pub struct Expr<F: TowerField, const V: usize> {
 	#[get_copy = "pub"]
 	table_id: TableId,
 	#[get = "pub"]
-	expr: ArithExpr<F>,
+	expr: ArithCircuit<F>,
 }
 
 impl<F: TowerField, const V: usize> Expr<F, V> {
@@ -43,7 +43,7 @@ impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
 	fn from(value: Col<F, V>) -> Self {
 		Expr {
 			table_id: value.table_id,
-			expr: ArithExpr::var(value.partition_index),
+			expr: ArithCircuit::var(value.partition_index),
 		}
 	}
 }
@@ -54,8 +54,8 @@ impl<F: TowerField, const V: usize> std::ops::Add<Self> for Col<F, V> {
 	fn add(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let lhs_expr = ArithExpr::var(self.partition_index);
-		let rhs_expr = ArithExpr::var(rhs.partition_index);
+		let lhs_expr = ArithCircuit::var(self.partition_index);
+		let rhs_expr = ArithCircuit::var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
@@ -70,7 +70,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let rhs_expr = ArithExpr::var(rhs.partition_index);
+		let rhs_expr = ArithCircuit::var(rhs.partition_index);
 		Expr {
 			table_id: self.table_id,
 			expr: self.expr + rhs_expr,
@@ -96,7 +96,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 	fn add(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr + ArithExpr::constant(rhs),
+			expr: self.expr + ArithCircuit::constant(rhs),
 		}
 	}
 }
@@ -122,8 +122,8 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Self> for Col<F, V> {
 
 	fn sub(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		let lhs_expr = ArithExpr::var(self.partition_index);
-		let rhs_expr = ArithExpr::var(rhs.partition_index);
+		let lhs_expr = ArithCircuit::var(self.partition_index);
+		let rhs_expr = ArithCircuit::var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
@@ -158,7 +158,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	fn sub(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr - ArithExpr::constant(rhs),
+			expr: self.expr - ArithCircuit::constant(rhs),
 		}
 	}
 }
@@ -213,7 +213,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 	fn mul(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr * ArithExpr::constant(rhs),
+			expr: self.expr * ArithCircuit::constant(rhs),
 		}
 	}
 }
@@ -248,7 +248,7 @@ where
 }
 
 /// This exists only to implement Display for ArithExpr with named variables.
-pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithExpr<F>, pub &'a [String]);
+pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithCircuit<F>, pub &'a [String]);
 
 impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{ArithCircuit, CompositionPoly, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
 
 use crate::polynomial::Error as PolynomialError;
@@ -36,8 +36,8 @@ where
 		self.inner.binary_tower_level()
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() + ArithExpr::one()
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		self.inner.expression() + ArithCircuit::one()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -72,8 +72,8 @@ where
 		0
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		(0..self.arity).map(ArithExpr::var).product()
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		(0..self.arity).map(ArithCircuit::var).product()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

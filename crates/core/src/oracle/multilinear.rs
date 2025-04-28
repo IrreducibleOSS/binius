@@ -4,7 +4,7 @@ use std::{array, fmt::Debug, sync::Arc};
 
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use getset::{CopyGetters, Getters};
 
@@ -270,7 +270,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		self,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
-		comp: ArithExpr<F>,
+		comp: ArithCircuit<F>,
 	) -> Result<OracleId, Error> {
 		let inner = inner
 			.into_iter()
@@ -488,7 +488,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		&mut self,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
-		comp: ArithExpr<F>,
+		comp: ArithCircuit<F>,
 	) -> Result<OracleId, Error> {
 		self.add().composite_mle(n_vars, inner, comp)
 	}
@@ -804,7 +804,7 @@ impl<F: TowerField> CompositeMLE<F> {
 	pub fn new(
 		n_vars: usize,
 		inner: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
-		c: ArithExpr<F>,
+		c: ArithCircuit<F>,
 	) -> Result<Self, Error> {
 		let inner = inner
 			.into_iter()

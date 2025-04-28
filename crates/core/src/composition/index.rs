@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use binius_field::PackedField;
-use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef};
+use binius_math::{ArithCircuit, CompositionPoly, RowsBatchRef};
 use binius_utils::bail;
 
 use crate::polynomial::Error;
@@ -45,7 +45,7 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		self.composition.degree()
 	}
 
-	fn expression(&self) -> ArithExpr<<P as PackedField>::Scalar> {
+	fn expression(&self) -> ArithCircuit<<P as PackedField>::Scalar> {
 		self.composition
 			.expression()
 			.remap_vars(&self.indices)
@@ -152,7 +152,7 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 		}
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
 		match self {
 			Self::Trivariate(index_composition) => {
 				CompositionPoly::<P>::expression(index_composition)
@@ -173,8 +173,8 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 
 #[cfg(test)]
 mod tests {
-
 	use binius_field::{BinaryField1b, Field};
+	use binius_math::ArithExpr;
 
 	use super::*;
 	use crate::polynomial::ArithCircuitPoly;
@@ -182,8 +182,8 @@ mod tests {
 	#[test]
 	fn tests_expr() {
 		let expr =
-			ArithExpr::var(0) * (ArithExpr::var(1) + ArithExpr::constant(BinaryField1b::ONE));
-		let circuit = ArithCircuitPoly::new(expr);
+			ArithExpr::Var(0) * (ArithExpr::Var(1) + ArithExpr::Const(BinaryField1b::ONE));
+		let circuit = ArithCircuitPoly::new((&expr).into());
 
 		let composition = IndexComposition {
 			n_vars: 3,
@@ -193,7 +193,7 @@ mod tests {
 
 		assert_eq!(
 			(&composition as &dyn CompositionPoly<BinaryField1b>).expression(),
-			ArithExpr::var(1) * (ArithExpr::var(2) + ArithExpr::constant(BinaryField1b::ONE))
+			ArithCircuit::from(&(ArithExpr::Var(1) * (ArithExpr::Var(2) + ArithExpr::Const(BinaryField1b::ONE)))),
 		);
 	}
 }
