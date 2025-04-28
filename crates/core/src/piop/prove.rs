@@ -3,7 +3,7 @@
 use std::{any::TypeId, borrow::Cow, ops::Deref};
 
 use binius_field::{
-	packed::{PackedSliceMut, RepackFromCanonical},
+	packed::{pack_slice, PackedSliceMut, RepackFromCanonical},
 	Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -22,6 +22,7 @@ use binius_utils::{
 };
 use either::Either;
 use itertools::{chain, Itertools};
+use tracing::instrument;
 
 use super::{
 	error::Error,
@@ -456,6 +457,7 @@ where
 		.sum()
 }
 
+#[instrument(skip_all, name = "canonical_packed", level = "debug")]
 fn canonical_packed<P, PC, M>(poly: &M, id: usize) -> Result<Cow<'_, [P]>, Error>
 where
 	P: PackedField + RepackFromCanonical<PC>,
@@ -469,10 +471,14 @@ where
 	// <PackedAesBinaryField as PackedExtension<BinaryField1b>>::cast_bases_mut doesn't work correctly.
 	// This temporary workaround allows us to fix it.
 	if poly.log_extension_degree() == 7 && TypeId::of::<P>() != TypeId::of::<PC>() {
-		let packed_evals_canonical: &[PC] = unsafe { std::mem::transmute(packed_evals) };
+		let scalars = P::iter_slice(packed_evals).collect::<Vec<_>>();
 
-		let non_canonical_packed = P::repack(packed_evals_canonical);
-		Ok(Cow::Owned(non_canonical_packed))
+		let scalars: &[PC::Scalar] = unsafe { std::mem::transmute(scalars.as_slice()) };
+
+		let packed_scalars = pack_slice(&scalars);
+
+		let non_canonical_packed = P::repack(&packed_scalars);
+		Ok(Cow::Owned(non_canonical_packed.to_vec()))
 	} else {
 		Ok(Cow::Borrowed(packed_evals))
 	}

@@ -19,7 +19,7 @@ use crate::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
 	make_binary_to_aes_packed_transformer,
-	packed::TryRepackSliceInplace,
+	packed::{RepackFromCanonical, TryRepackSliceInplace},
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
@@ -397,6 +397,43 @@ macro_rules! define_byte_sliced_3d {
 				Ok(bytemuck::cast_slice_mut(
 					underliers,
 				))
+			}
+		}
+
+		impl RepackFromCanonical<<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed> for $name {
+			#[inline(always)]
+			#[allow(clippy::modulo_one)]
+			fn repack(
+				slice: &[<<$packed_storage as WithUnderlier>::Underlier as PackScalar<<$scalar_type as TowerField>::Canonical>>::Packed],
+			) -> Vec<Self> {
+				// if slice.len() % Self::HEIGHT_BYTES != 0 {
+				// 	return Err(crate::Error::MismatchedLengths);
+				// }
+
+				let mut slice = slice.to_vec();
+
+				let underliers: &mut [<$packed_storage as WithUnderlier>::Underlier] =
+					WithUnderlier::to_underliers_ref_mut(&mut slice);
+				let transformation = make_binary_to_aes_packed_transformer::<
+					PackedType<<$packed_storage as WithUnderlier>::Underlier, BinaryField8b>,
+					$packed_storage
+				>();
+
+				for chunk in underliers.chunks_exact_mut(Self::HEIGHT_BYTES) {
+					let chunk_array: &mut [<$packed_storage as WithUnderlier>::Underlier; Self::HEIGHT_BYTES] =
+						chunk.try_into().expect("slice length is correct");
+					<<$packed_storage as WithUnderlier>::Underlier>::transpose_bytes_to_byte_sliced::<$storage_tower_level>(chunk_array);
+
+					for v in chunk_array.iter_mut() {
+						let transformed_to_aes: $packed_storage = transformation.transform(PackedType::<<$packed_storage as WithUnderlier>::Underlier, BinaryField8b>::from_underlier_ref(v));
+						*v = transformed_to_aes.to_underlier();
+					}
+				}
+
+				// This cast won't panic because the slice length is divisible by `storage_tower_level::WIDTH`.
+				bytemuck::cast_slice_mut(
+					underliers,
+				).to_vec()
 			}
 		}
 	};

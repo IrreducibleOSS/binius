@@ -4,7 +4,7 @@ use std::{cmp::Reverse, env, marker::PhantomData, slice::from_mut};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	packed::RepackFromCanonical,
+	packed::{RepackFromCanonical, TryRepackSliceInplace},
 	BinaryField, BinaryField128b, ExtensionField, Field, PackedExtension, PackedField,
 	RepackedExtension, TowerField,
 };
@@ -62,7 +62,7 @@ use crate::{
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
+pub fn prove<U, PC, Tower, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -71,7 +71,8 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
-	U: TowerUnderlier<Tower> + PackScalar<BinaryField128b>,
+	U: TowerUnderlier<Tower>,
+	PC: PackedField,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
@@ -80,7 +81,8 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ RepackFromCanonical<PackedType<U, BinaryField128b>>
+		+ RepackFromCanonical<PC>
+		+ TryRepackSliceInplace<PC>
 		+ PackedField // REVIEW: remove this bound after piop::commit is adjusted
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
@@ -139,11 +141,7 @@ where
 		commitment,
 		committed,
 		codeword,
-	} = piop::commit::<_, _, _, PackedType<U, BinaryField128b>, _, _, _>(
-		&fri_params,
-		&merkle_prover,
-		&committed_multilins,
-	)?;
+	} = piop::commit::<_, _, _, PC, _, _, _>(&fri_params, &merkle_prover, &committed_multilins)?;
 
 	// Observe polynomial commitment
 	let mut writer = transcript.message();
@@ -484,7 +482,7 @@ where
 	)?;
 
 	// Prove evaluation claims using PIOP compiler
-	piop::prove::<_, FDomain<Tower>, _, _, PackedType<U, BinaryField128b>, _, _, _, _, _, _>(
+	piop::prove::<_, FDomain<Tower>, _, _, PC, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
 		domain_factory,

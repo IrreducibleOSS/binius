@@ -6,15 +6,15 @@ use anyhow::Result;
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	tower::{
-		AESOptimalPackedTowerFamily, AESTowerFamily, CanonicalOptimalPackedTowerFamily,
-		CanonicalTowerFamily,
+		AESOptimalByteSlicedPackedTowerFamily, AESOptimalPackedTowerFamily, AESTowerFamily,
+		CanonicalOptimalPackedTowerFamily, CanonicalTowerFamily,
 	},
 };
 use binius_field::{
-	arch::{OptimalUnderlier, OptimalUnderlier128b},
+	arch::{OptimalUnderlier, OptimalUnderlier128b, OptimalUnderlierByteSliced},
 	as_packed_field::PackedType,
 	linear_transformation::PackedTransformationFactory,
-	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
+	BinaryField128b, Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
@@ -118,15 +118,18 @@ fn main() -> Result<()> {
 	let prover_cs = cs.convert_to_tower::<CanonicalTowerFamily, AESTowerFamily>();
 
 	let witness = witness
-		.repack::<CanonicalOptimalPackedTowerFamily, AESOptimalPackedTowerFamily>(&prover_cs)
+		.repack::<CanonicalOptimalPackedTowerFamily, AESOptimalByteSlicedPackedTowerFamily>(
+			&prover_cs,
+		)
 		.unwrap();
 
 	let ccs = prover_cs
-		.compile::<AESOptimalPackedTowerFamily>(&statement)
+		.compile::<AESOptimalByteSlicedPackedTowerFamily>(&statement)
 		.unwrap();
 
 	let proof = binius_core::constraint_system::prove::<
-		OptimalUnderlier,
+		OptimalUnderlierByteSliced,
+		PackedType<OptimalUnderlier, BinaryField128b>,
 		AESTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
@@ -137,7 +140,7 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&statement.boundaries,
-		witness.into_multilinear_extension_index::<AESOptimalPackedTowerFamily>(),
+		witness.into_multilinear_extension_index::<AESOptimalByteSlicedPackedTowerFamily>(),
 		&binius_hal::make_portable_backend(),
 	)
 	.unwrap();
