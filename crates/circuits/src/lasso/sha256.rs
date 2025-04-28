@@ -107,7 +107,7 @@ impl SeveralBitwise {
 			let zin_u32 = witness.get::<B1>(zin)?.as_slice::<u32>();
 
 			// The following code works only if packed width is at least 8.
-			// Which should be true in real life cases, becasue we don't use
+			// Which should be true in real life cases, because we don't use
 			// packed types with less than 128 bits size.
 			if PackedType::<U, B16>::LOG_WIDTH < 3 {
 				return Err(anyhow::anyhow!(
