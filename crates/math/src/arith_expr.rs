@@ -730,8 +730,8 @@ impl<F: Field> Display for ArithCircuit<F> {
 			f: &mut fmt::Formatter<'_>,
 		) -> Result<(), fmt::Error> {
 			match &steps[step] {
-				ArithCircuitStep::Const(value) => write!(f, "{}", value),
-				ArithCircuitStep::Var(index) => write!(f, "x{}", index),
+				ArithCircuitStep::Const(value) => write!(f, "{value}"),
+				ArithCircuitStep::Var(index) => write!(f, "x{index}"),
 				ArithCircuitStep::Add(left, right) => {
 					write!(f, "(")?;
 					display_step(*left, steps, f)?;
@@ -749,7 +749,7 @@ impl<F: Field> Display for ArithCircuit<F> {
 				ArithCircuitStep::Pow(base, exp) => {
 					write!(f, "(")?;
 					display_step(*base, steps, f)?;
-					write!(f, ")^{}", exp)
+					write!(f, ")^{exp}")
 				}
 			}
 		}
