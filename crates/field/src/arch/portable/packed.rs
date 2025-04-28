@@ -22,12 +22,16 @@ use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	as_packed_field::PackedType,
-	packed::{pack_slice, RepackFromCanonical, TryRepackSliceInplace},
+	linear_transformation::{PackedTransformationFactory, Transformation},
+	make_binary_to_aes_packed_transformer,
+	packed::{RepackFromCanonical, TryRepackSliceInplace},
 	underlier::{
 		IterationMethods, IterationStrategy, NumCast, UnderlierType, UnderlierWithBitOps,
 		WithUnderlier, U1, U2, U4,
 	},
-	BinaryField, PackedField, TowerField,
+	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b,
+	BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Default, bytemuck::TransparentWrapper)]
@@ -384,44 +388,122 @@ where
 
 use crate::as_packed_field::PackScalar;
 
-// TODO: improve transformation
-unsafe impl<U: UnderlierType + Pod + PackScalar<Scalar::Canonical>, Scalar: TowerField>
-	TryRepackSliceInplace<PackedType<U, Scalar::Canonical>> for PackedPrimitiveType<U, Scalar>
-where
-	Self: PackedField,
-	Self::Scalar: From<Scalar::Canonical>,
-{
-	fn try_repack_slice(
-		slice: &mut [PackedType<U, Scalar::Canonical>],
-	) -> Result<&mut [Self], crate::Error> {
-		let temp = PackedType::<U, Scalar::Canonical>::iter_slice(slice)
-			.map(Self::Scalar::from)
-			.collect::<Vec<_>>();
+macro_rules! impl_aes_repack {
+	($scalar:ty, $canonical:ty) => {
+		unsafe impl<U> TryRepackSliceInplace<PackedType<U, $canonical>>
+			for PackedPrimitiveType<U, $scalar>
+		where
+			PackedType<U, $canonical>:
+				PackedExtension<BinaryField8b, PackedSubfield = PackedType<U, BinaryField8b>>,
+			PackedPrimitiveType<U, $scalar>: PackedExtension<AESTowerField8b>,
+			$canonical: ExtensionField<BinaryField8b>,
+			$scalar: ExtensionField<AESTowerField8b> + TowerField,
+			U: UnderlierType
+				+ Pod
+				+ PackScalar<$scalar>
+				+ PackScalar<$canonical>
+				+ PackScalar<AESTowerField8b>
+				+ PackScalar<BinaryField8b>,
+			PackedType<U, BinaryField8b>:
+				PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+		{
+			fn try_repack_slice(
+				slice: &mut [PackedType<U, $canonical>],
+			) -> Result<&mut [Self], crate::Error> {
+				let transform = make_binary_to_aes_packed_transformer::<
+					PackedType<U, $canonical>,
+					PackedType<U, $scalar>,
+				>();
 
-		let temp: Vec<Self> = pack_slice(&temp);
+				let underliers = WithUnderlier::to_underliers_ref_mut(slice);
 
-		let underliers = WithUnderlier::to_underliers_ref_mut(slice);
+				for underlier in &mut *underliers {
+					let transformed: PackedType<U, $scalar> = transform
+						.transform(PackedType::<U, $canonical>::from_underlier_ref(underlier));
+					*underlier = transformed.to_underlier();
+				}
 
-		underliers.copy_from_slice(WithUnderlier::to_underliers_ref(&temp));
+				Ok(bytemuck::cast_slice_mut(underliers))
+			}
+		}
 
-		Ok(bytemuck::cast_slice_mut(underliers))
-	}
+		impl<U> RepackFromCanonical<PackedType<U, $canonical>> for PackedPrimitiveType<U, $scalar>
+		where
+			PackedType<U, $canonical>:
+				PackedExtension<BinaryField8b, PackedSubfield = PackedType<U, BinaryField8b>>,
+			PackedPrimitiveType<U, $scalar>: PackedExtension<AESTowerField8b>,
+			$canonical: ExtensionField<BinaryField8b>,
+			$scalar: ExtensionField<AESTowerField8b> + TowerField,
+			U: UnderlierType
+				+ Pod
+				+ PackScalar<$scalar>
+				+ PackScalar<$canonical>
+				+ PackScalar<AESTowerField8b>
+				+ PackScalar<BinaryField8b>,
+			PackedType<U, BinaryField8b>:
+				PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+		{
+			fn repack(slice: &[PackedType<U, $canonical>]) -> Vec<Self> {
+				let transform = make_binary_to_aes_packed_transformer::<
+					PackedType<U, $canonical>,
+					PackedType<U, $scalar>,
+				>();
+
+				slice
+					.iter()
+					.map(|packed| {
+						let transformed: PackedType<U, $scalar> = transform.transform(packed);
+						bytemuck::cast(transformed.to_underlier())
+					})
+					.collect()
+			}
+		}
+	};
 }
 
-impl<U: UnderlierType + Pod + PackScalar<Scalar::Canonical>, Scalar: TowerField>
-	RepackFromCanonical<PackedType<U, Scalar::Canonical>> for PackedPrimitiveType<U, Scalar>
-where
-	Self: PackedField,
-	Self::Scalar: From<Scalar::Canonical>,
-{
-	fn repack(slice: &[PackedType<U, Scalar::Canonical>]) -> Vec<Self> {
-		let temp = PackedType::<U, Scalar::Canonical>::iter_slice(slice)
-			.map(Self::Scalar::from)
-			.collect::<Vec<_>>();
+impl_aes_repack!(AESTowerField8b, BinaryField8b);
+impl_aes_repack!(AESTowerField16b, BinaryField16b);
+impl_aes_repack!(AESTowerField32b, BinaryField32b);
+impl_aes_repack!(AESTowerField64b, BinaryField64b);
+impl_aes_repack!(AESTowerField128b, BinaryField128b);
 
-		pack_slice(&temp)
-	}
+macro_rules! impl_trivial_repack {
+	($scalar:ty) => {
+		unsafe impl<U> TryRepackSliceInplace<PackedType<U, $scalar>>
+			for PackedPrimitiveType<U, $scalar>
+		where
+			U: UnderlierType + Pod + PackScalar<$scalar>,
+			PackedPrimitiveType<U, $scalar>: PackedField,
+		{
+			#[inline]
+			fn try_repack_slice(
+				slice: &mut [PackedType<U, $scalar>],
+			) -> Result<&mut [Self], crate::Error> {
+				let underliers = WithUnderlier::to_underliers_ref_mut(slice);
+				Ok(bytemuck::cast_slice_mut(underliers))
+			}
+		}
+
+		impl<U> RepackFromCanonical<PackedType<U, $scalar>> for PackedPrimitiveType<U, $scalar>
+		where
+			U: UnderlierType + Pod + PackScalar<$scalar>,
+			PackedPrimitiveType<U, $scalar>: PackedField,
+		{
+			#[inline]
+			fn repack(slice: &[PackedType<U, $scalar>]) -> Vec<Self> {
+				let underliers = WithUnderlier::to_underliers_ref(slice);
+				bytemuck::cast_slice(underliers).to_vec()
+			}
+		}
+	};
 }
+
+impl_trivial_repack!(BinaryField1b);
+impl_trivial_repack!(BinaryField8b);
+impl_trivial_repack!(BinaryField16b);
+impl_trivial_repack!(BinaryField32b);
+impl_trivial_repack!(BinaryField64b);
+impl_trivial_repack!(BinaryField128b);
 
 macro_rules! impl_broadcast {
 	($name:ty, BinaryField1b) => {
