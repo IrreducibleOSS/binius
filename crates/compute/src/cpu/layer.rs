@@ -7,7 +7,7 @@ use binius_field::{util::inner_product_unchecked, ExtensionField, Field, TowerFi
 use super::memory::CpuMemory;
 use crate::{
 	layer::{ComputeLayer, Error, FSlice, FSliceMut},
-	tower::{CanonicalTowerFamily, TowerFamily},
+	tower::TowerFamily,
 };
 
 #[derive(Debug)]
@@ -89,33 +89,33 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 		let result = match a_edeg {
 			0 => inner_product_unchecked(
-				b_in.iter().cloned(),
+				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(|ext| <T::B128 as ExtensionField<T::B1>>::iter_bases(ext)),
+					.flat_map(<T::B128 as ExtensionField<T::B1>>::iter_bases),
 			),
 			3 => inner_product_unchecked(
-				b_in.iter().cloned(),
+				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(|ext| <T::B128 as ExtensionField<T::B8>>::iter_bases(ext)),
+					.flat_map(<T::B128 as ExtensionField<T::B8>>::iter_bases),
 			),
 			4 => inner_product_unchecked(
-				b_in.iter().cloned(),
+				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(|ext| <T::B128 as ExtensionField<T::B16>>::iter_bases(ext)),
+					.flat_map(<T::B128 as ExtensionField<T::B16>>::iter_bases),
 			),
 			5 => inner_product_unchecked(
-				b_in.iter().cloned(),
+				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(|ext| <T::B128 as ExtensionField<T::B32>>::iter_bases(ext)),
+					.flat_map(<T::B128 as ExtensionField<T::B32>>::iter_bases),
 			),
 			6 => inner_product_unchecked(
-				b_in.iter().cloned(),
+				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(|ext| <T::B128 as ExtensionField<T::B64>>::iter_bases(ext)),
+					.flat_map(<T::B128 as ExtensionField<T::B64>>::iter_bases),
 			),
 			7 => inner_product_unchecked::<T::B128, T::B128>(
-				a_in.iter().cloned(),
-				b_in.iter().cloned(),
+				a_in.iter().copied(),
+				b_in.iter().copied(),
 			),
 			_ => {
 				return Err(Error::InputValidation(format!(
@@ -126,12 +126,12 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(result)
 	}
 
-	fn tensor_expand<'a>(
+	fn tensor_expand(
 		&self,
 		_exec: &mut Self::Exec,
 		log_n: usize,
 		coordinates: &[T::B128],
-		data: &mut &'a mut [T::B128],
+		data: &mut &mut [T::B128],
 	) -> Result<(), Error> {
 		if data.len() != 1 << (log_n + coordinates.len()) {
 			return Err(Error::InputValidation(format!("invalid data length: {}", data.len())));
@@ -163,7 +163,7 @@ mod tests {
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::memory::ComputeMemory;
+	use crate::{memory::ComputeMemory, tower::CanonicalTowerFamily};
 
 	#[test]
 	fn test_exec_single_tensor_expand() {
@@ -180,7 +180,7 @@ mod tests {
 		let mut buffer_clone = buffer.clone();
 
 		fn compute_single_tensor_expand<F, C: ComputeLayer<F>>(
-			compute: &mut C,
+			compute: &C,
 			coordinates: &[F],
 			buffer: &mut <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		) {
@@ -192,8 +192,8 @@ mod tests {
 				.unwrap();
 		}
 
-		let mut compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		compute_single_tensor_expand(&mut compute, &coordinates, &mut buffer.as_mut());
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		compute_single_tensor_expand(&compute, &coordinates, &mut buffer.as_mut());
 
 		tensor_prod_eq_ind(2, &mut buffer_clone, &coordinates[2..]).unwrap();
 		assert_eq!(buffer, buffer_clone);
@@ -213,7 +213,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		fn compute_single_inner_product<F, C: ComputeLayer<F>>(
-			compute: &mut C,
+			compute: &C,
 			a_deg: usize,
 			a: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
 			b: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
@@ -227,10 +227,9 @@ mod tests {
 			Ok(results.remove(0))
 		}
 
-		let mut compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let actual =
-			compute_single_inner_product(&mut compute, BinaryField16b::TOWER_LEVEL, &a, &b)
-				.unwrap();
+			compute_single_inner_product(&compute, BinaryField16b::TOWER_LEVEL, &a, &b).unwrap();
 
 		let expected = std::iter::zip(
 			PackedField::iter_slice(
@@ -264,8 +263,9 @@ mod tests {
 
 		let mut eq_ind_buffer = zeroed_vec(1 << n_vars);
 
+		#[allow(clippy::too_many_arguments)]
 		fn compute_multiple_multilinear_evaluations<F, C: ComputeLayer<F>>(
-			compute: &mut C,
+			compute: &C,
 			a_deg_1: usize,
 			a_deg_2: usize,
 			coordinates: &[F],
@@ -285,7 +285,7 @@ mod tests {
 						compute.copy_h2d(&[new_first_elt], &mut first_elt)?;
 					}
 
-					compute.tensor_expand(exec, 0, &coordinates, eq_ind)?;
+					compute.tensor_expand(exec, 0, coordinates, eq_ind)?;
 
 					let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(eq_ind);
 					let (eval1, eval2) = compute.join(
@@ -296,13 +296,14 @@ mod tests {
 					Ok(vec![eval1, eval2])
 				})
 				.unwrap();
-			let [eval1, eval2] = results.try_into().expect("expected two evaluations");
-			Ok((eval1, eval2))
+			Ok(TryInto::<[F; 2]>::try_into(results)
+				.expect("expected two evaluations")
+				.into())
 		}
 
-		let mut compute = CL::default();
+		let compute = CL::default();
 		let (eval1, eval2) = compute_multiple_multilinear_evaluations(
-			&mut compute,
+			&compute,
 			BinaryField16b::TOWER_LEVEL,
 			BinaryField32b::TOWER_LEVEL,
 			&coordinates,
