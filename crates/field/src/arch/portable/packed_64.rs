@@ -24,31 +24,56 @@ use crate::{
 	BinaryField8b,
 };
 
-// Define 64 bit packed field types
-pub type PackedBinaryField64x1b = PackedPrimitiveType<u64, BinaryField1b>;
-pub type PackedBinaryField32x2b = PackedPrimitiveType<u64, BinaryField2b>;
-pub type PackedBinaryField16x4b = PackedPrimitiveType<u64, BinaryField4b>;
-pub type PackedBinaryField8x8b = PackedPrimitiveType<u64, BinaryField8b>;
-pub type PackedBinaryField4x16b = PackedPrimitiveType<u64, BinaryField16b>;
-pub type PackedBinaryField2x32b = PackedPrimitiveType<u64, BinaryField32b>;
-pub type PackedBinaryField1x64b = PackedPrimitiveType<u64, BinaryField64b>;
+// // Define 64 bit packed field types
+// pub type PackedBinaryField64x1b = PackedPrimitiveType<u64, BinaryField1b>;
+// pub type PackedBinaryField32x2b = PackedPrimitiveType<u64, BinaryField2b>;
+// pub type PackedBinaryField16x4b = PackedPrimitiveType<u64, BinaryField4b>;
+// pub type PackedBinaryField8x8b = PackedPrimitiveType<u64, BinaryField8b>;
+// pub type PackedBinaryField4x16b = PackedPrimitiveType<u64, BinaryField16b>;
+// pub type PackedBinaryField2x32b = PackedPrimitiveType<u64, BinaryField32b>;
+// pub type PackedBinaryField1x64b = PackedPrimitiveType<u64, BinaryField64b>;
 
-serialize_deserialize!(PackedBinaryField64x1b);
-serialize_deserialize!(PackedBinaryField32x2b);
-serialize_deserialize!(PackedBinaryField16x4b);
-serialize_deserialize!(PackedBinaryField8x8b);
-serialize_deserialize!(PackedBinaryField4x16b);
-serialize_deserialize!(PackedBinaryField2x32b);
-serialize_deserialize!(PackedBinaryField1x64b);
+// serialize_deserialize!(PackedBinaryField64x1b);
+// serialize_deserialize!(PackedBinaryField32x2b);
+// serialize_deserialize!(PackedBinaryField16x4b);
+// serialize_deserialize!(PackedBinaryField8x8b);
+// serialize_deserialize!(PackedBinaryField4x16b);
+// serialize_deserialize!(PackedBinaryField2x32b);
+// serialize_deserialize!(PackedBinaryField1x64b);
 
-// Define broadcast
-impl_broadcast!(u64, BinaryField1b);
-impl_broadcast!(u64, BinaryField2b);
-impl_broadcast!(u64, BinaryField4b);
-impl_broadcast!(u64, BinaryField8b);
-impl_broadcast!(u64, BinaryField16b);
-impl_broadcast!(u64, BinaryField32b);
-impl_broadcast!(u64, BinaryField64b);
+// // Define broadcast
+// impl_broadcast!(u64, BinaryField1b);
+// impl_broadcast!(u64, BinaryField2b);
+// impl_broadcast!(u64, BinaryField4b);
+// impl_broadcast!(u64, BinaryField8b);
+// impl_broadcast!(u64, BinaryField16b);
+// impl_broadcast!(u64, BinaryField32b);
+// impl_broadcast!(u64, BinaryField64b);
+
+macro_rules! define_packed_field {
+    ($($name:ident, $bits:ident, $prim:ty);* $(;)?) => {
+        $(
+			// Define packed field types
+            pub type $name = PackedPrimitiveType<$prim, $bits>;
+
+			// Define serialization and deserialization
+            serialize_deserialize!($name);
+
+			// Define broadcast
+            impl_broadcast!($prim, $bits);
+        )*
+    };
+}
+
+define_packed_field!(
+    PackedBinaryField64x1b, BinaryField1b, u64;
+    PackedBinaryField32x2b, BinaryField2b, u64;
+    PackedBinaryField16x4b, BinaryField4b, u64;
+    PackedBinaryField8x8b, BinaryField8b, u64;
+    PackedBinaryField4x16b, BinaryField16b, u64;
+    PackedBinaryField2x32b, BinaryField32b, u64;
+    PackedBinaryField1x64b, BinaryField64b, u64;
+);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField64x1b);
