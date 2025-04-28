@@ -22,6 +22,7 @@ use bytemuck::fill_zeroes;
 use itertools::izip;
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
+use tracing::instrument;
 
 use crate::Error;
 
@@ -591,6 +592,7 @@ where
 /// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
 /// use more efficient optimizations for special cases. If we ever need a parallel version of this
 /// function, we can implement it separately.
+#[instrument(level = "debug")]
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
 	non_const_prefix: usize,

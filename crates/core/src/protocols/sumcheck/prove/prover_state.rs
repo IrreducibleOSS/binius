@@ -54,6 +54,7 @@ where
 	n_vars: usize,
 	#[getset(get_copy = "pub")]
 	evaluation_order: EvaluationOrder,
+	// Make new ProverState with FSlice_Multilinears.
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	nontrivial_evaluation_points: Vec<FDomain>,
 	challenges: Vec<P::Scalar>,

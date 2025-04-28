@@ -251,6 +251,21 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
+	// Where do FSlices come from?
+	// Do we need to kill HALv1 and create HALv2 here?
+	// Hacks happen here
+	/*
+	prove_interleaved_fri_sumcheck(
+		commit_meta.total_vars(),
+		fri_params,
+		merkle_prover,
+		sumcheck_provers,
+		codeword,
+		&committed,
+		transcript,
+	)?;
+	*/
+
 	prove_interleaved_fri_sumcheck(
 		commit_meta.total_vars(),
 		fri_params,
@@ -281,6 +296,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
+	// Or do hacks here.
 	let mut fri_prover = FRIFolder::new(fri_params, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
