@@ -120,7 +120,7 @@ thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 trait-set = "0.3.0"
 tracing = "0.1.38"
-tracing-profile = "0.10.3"
+tracing-profile = "0.10.5"
 transpose = "0.2.2"
 
 [profile.release]
