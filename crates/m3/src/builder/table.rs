@@ -168,7 +168,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.expr()
 			.convert_field()
 			.remap_vars(&var_remapping)
-			.expect("var_remapping should be large enought");
+			.expect("var_remapping should be large enough");
 
 		self.table.new_column(
 			self.namespaced_name(name),
