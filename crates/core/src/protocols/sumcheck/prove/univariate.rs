@@ -8,10 +8,10 @@ use binius_field::{
 	util::inner_product_unchecked,
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
 };
-use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_hal::ComputationBackend;
 use binius_math::{
-	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, EvaluationOrder,
-	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly, RowsBatchRef,
+	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, MLEDirectAdapter,
+	MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, NTTShape, OddInterpolate, SingleThreadedNTT};
@@ -24,51 +24,12 @@ use tracing::instrument;
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		common::{
-			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
-		},
-		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
-		univariate::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
-		},
-		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
-		Error, VerificationError,
+		common::{equal_n_vars_check, small_field_embedding_degree_check},
+		prove::RegularSumcheckProver,
+		zerocheck::{domain_size, extrapolated_scalars_count},
+		Error,
 	},
 };
-
-/// Helper method to reduce the witness to skipped variables via a partial high projection.
-#[instrument(skip_all, level = "debug")]
-pub fn reduce_to_skipped_projection<F, P, M, Backend>(
-	multilinears: Vec<M>,
-	sumcheck_challenges: &[F],
-	backend: &'_ Backend,
-) -> Result<Vec<MLEDirectAdapter<P>>, Error>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	let n_vars = equal_n_vars_check(&multilinears)?;
-
-	if sumcheck_challenges.len() > n_vars {
-		bail!(Error::IncorrectNumberOfChallenges);
-	}
-
-	let query = backend.multilinear_query(sumcheck_challenges)?;
-
-	let reduced_multilinears = multilinears
-		.par_iter()
-		.map(|multilinear| {
-			backend
-				.evaluate_partial_high(multilinear, query.to_ref())
-				.expect("0 <= sumcheck_challenges.len() < n_vars")
-				.into()
-		})
-		.collect();
-
-	Ok(reduced_multilinears)
-}
 
 pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	'a,
@@ -78,54 +39,6 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	MLEDirectAdapter<P>,
 	Backend,
 >;
-
-/// Create the sumcheck prover for the univariatizing reduction of multilinears
-/// (see [verifier side](crate::protocols::sumcheck::univariate::univariatizing_reduction_claim))
-///
-/// This method takes multilinears projected to first `skip_rounds` variables, constructs a multilinear
-/// extension of Lagrange evaluations at `univariate_challenge`, and creates a regular sumcheck prover,
-/// placing Lagrange evaluation in the last witness column.
-///
-/// Note that `univariatized_multilinear_evals` come from a previous sumcheck with a univariate first round.
-pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
-	mut reduced_multilinears: Vec<MLEDirectAdapter<P>>,
-	univariatized_multilinear_evals: &[F],
-	univariate_challenge: F,
-	backend: &'a Backend,
-) -> Result<Prover<'a, FDomain, P, Backend>, Error>
-where
-	F: TowerField,
-	FDomain: TowerField,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
-	Backend: ComputationBackend,
-{
-	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
-
-	if univariatized_multilinear_evals.len() != reduced_multilinears.len() {
-		bail!(VerificationError::NumberOfFinalEvaluations);
-	}
-
-	let subspace =
-		BinarySubspace::<FDomain::Canonical>::with_dim(skip_rounds)?.isomorphic::<FDomain>();
-	let ntt_domain = EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
-
-	reduced_multilinears
-		.push(lagrange_evals_multilinear_extension(&ntt_domain, univariate_challenge)?.into());
-
-	let composite_sum_claims =
-		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
-
-	let prover = RegularSumcheckProver::new(
-		EvaluationOrder::LowToHigh,
-		reduced_multilinears,
-		composite_sum_claims,
-		IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
-		immediate_switchover_heuristic,
-		backend,
-	)?;
-
-	Ok(prover)
-}
 
 #[derive(Debug)]
 struct ParFoldStates<FBase: Field, P: PackedExtension<FBase>> {
@@ -199,7 +112,7 @@ where
 	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
-	pub skip_rounds: usize,
+	pub remaining_rounds: usize,
 	pub subcube_lagrange_coeffs: Vec<F>,
 	pub claimed_sums: Vec<F>,
 	pub partial_eq_ind_evals: Backend::Vec<P>,
@@ -230,7 +143,7 @@ where
 			skip_rounds,
 			remaining_rounds,
 			max_domain_size,
-			mut partial_eq_ind_evals,
+			partial_eq_ind_evals,
 		} = self;
 
 		// REVIEW: consider using novel basis for the univariate round representation
@@ -250,13 +163,6 @@ where
 		)?
 		.lagrange_evals(challenge);
 
-		// Zerocheck tensor expansion for the reduced zerocheck should be one variable less
-		fold_partial_eq_ind::<P, Backend>(
-			EvaluationOrder::LowToHigh,
-			remaining_rounds,
-			&mut partial_eq_ind_evals,
-		);
-
 		// Lagrange extrapolation for the entire univariate domain
 		let round_evals_lagrange_coeffs = max_domain.lagrange_evals(challenge);
 
@@ -273,7 +179,7 @@ where
 			.collect();
 
 		Ok(ZerocheckUnivariateFoldResult {
-			skip_rounds,
+			remaining_rounds,
 			subcube_lagrange_coeffs,
 			claimed_sums,
 			partial_eq_ind_evals,
@@ -301,7 +207,7 @@ where
 /// section 3.2 trick to avoid multiplication by the equality indicator), which is comparable to
 /// what a regular non-skipping zerocheck prover would do. The only issue is that we normally don't
 /// have an oracle for $\hat{M}$, which necessitates an extra sumcheck reduction to multilinear claims
-/// (see [univariatizing_reduction_claim](`super::super::univariate::univariatizing_reduction_claim`)).
+/// (see [univariatizing_reduction_claim](`super::super::zerocheck::univariatizing_reduction_claim`)).
 ///
 /// One special trick of the univariate round is that round polynomial is represented in Lagrange form:
 ///  1. Honest prover evaluates to zero on $2^k$ domain points mapping to $\mathcal{B}_k$, reducing proof size

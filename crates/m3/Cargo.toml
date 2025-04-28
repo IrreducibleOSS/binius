@@ -9,6 +9,8 @@ anyhow.workspace = true
 array-util.workspace = true
 binius_core = { path = "../core", default-features = false }
 binius_field = { path = "../field", default-features = false }
+binius_hal = { path = "../hal", default-features = false, optional = true }
+binius_hash = { path = "../hash", default-features = false, optional = true }
 binius_math = { path = "../math", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
@@ -22,12 +24,12 @@ thiserror.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
-binius_hal = { path = "../hal", default-features = false }
-binius_hash = { path = "../hash", default-features = false }
+binius_m3 = { path = ".", default-features = false, features = ["test_utils"] }
 rand.workspace = true
 
 [features]
 default = ["nightly_features"]
+test_utils = ["binius_hal", "binius_hash"]
 nightly_features = [
     "binius_core/nightly_features",
     "binius_hal/nightly_features",

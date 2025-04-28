@@ -14,16 +14,18 @@ mod oracles;
 pub mod prove;
 #[cfg(test)]
 mod tests;
-pub mod univariate;
-pub mod univariate_zerocheck;
-pub mod verify;
+pub mod verify_sumcheck;
+pub mod verify_zerocheck;
 pub mod zerocheck;
 
-pub use common::*;
+pub use common::{
+	equal_n_vars_check, immediate_switchover_heuristic, standard_switchover_heuristic,
+	BatchSumcheckOutput, CompositeSumClaim, RoundCoeffs, RoundProof, SumcheckClaim,
+};
 pub use eq_ind::EqIndSumcheckClaim;
 pub use error::*;
 pub use oracles::*;
-pub use prove::batch_prove;
-pub use univariate_zerocheck::batch_verify_zerocheck_univariate_round;
-pub use verify::{batch_verify, batch_verify_with_start};
-pub use zerocheck::ZerocheckClaim;
+pub use prove::{batch_prove, batch_prove_zerocheck};
+pub use verify_sumcheck::batch_verify;
+pub use verify_zerocheck::batch_verify as batch_verify_zerocheck;
+pub use zerocheck::{BatchZerocheckOutput, ZerocheckClaim};
