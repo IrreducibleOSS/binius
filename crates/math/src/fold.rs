@@ -22,7 +22,7 @@ use bytemuck::fill_zeroes;
 use itertools::izip;
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
-use tracing::instrument;
+use tracing::{debug_span, instrument};
 
 use crate::Error;
 
@@ -592,7 +592,6 @@ where
 /// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
 /// use more efficient optimizations for special cases. If we ever need a parallel version of this
 /// function, we can implement it separately.
-#[instrument(level = "debug")]
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
 	non_const_prefix: usize,
@@ -606,6 +605,7 @@ where
 	check_left_lerp_fold_arguments::<_, P, _>(evals, non_const_prefix, log_evals_size, evals)?;
 
 	if log_evals_size > P::LOG_WIDTH {
+		let _span = debug_span!("fold_left_lerp_inplace_large").entered();
 		let pivot = non_const_prefix
 			.saturating_sub(1 << (log_evals_size - 1))
 			.div_ceil(P::WIDTH);
@@ -627,6 +627,7 @@ where
 
 		evals.truncate(upper_bound);
 	} else if non_const_prefix > 0 {
+		let _span = debug_span!("fold_left_lerp_inplace_small_non_const_prefix").entered();
 		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 		let half_size = 1 << (log_evals_size - 1);
