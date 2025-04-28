@@ -209,9 +209,13 @@ pub struct Proof<F: Field> {
 	pub multilinear_evals: Vec<Vec<F>>,
 }
 
+/// Output of the batched sumcheck reduction
 #[derive(Debug, PartialEq, Eq)]
 pub struct BatchSumcheckOutput<F: Field> {
+	/// Sumcheck challenges - an evaluation point for the reduced claim.
 	pub challenges: Vec<F>,
+	/// Values of each multilinear (per claim, in descending `n_vars` order) at a suffix
+	/// of `challenges` of appropriate length.
 	pub multilinear_evals: Vec<Vec<F>>,
 }
 

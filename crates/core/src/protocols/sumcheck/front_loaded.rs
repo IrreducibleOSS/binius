@@ -10,7 +10,7 @@ use bytes::Buf;
 use super::{
 	common::batch_weighted_value,
 	error::{Error, VerificationError},
-	verify::compute_expected_batch_composite_evaluation_single_claim,
+	verify_sumcheck::compute_expected_batch_composite_evaluation_single_claim,
 	RoundCoeffs, RoundProof,
 };
 use crate::{
@@ -29,10 +29,10 @@ enum CoeffsOrSums<F: Field> {
 /// combinations over the claimed sums and polynomials. When the sumcheck instances are not all
 /// over polynomials with the same number of variables, we can still batch them together.
 ///
-/// This version of the protocols sharing the round challenges of the early rounds across sumcheck
+/// This version of the protocol is sharing the round challenges of the early rounds across sumcheck
 /// claims with different numbers of variables. In contrast, the
-/// [`crate::protocols::sumcheck::verify`] module implements batches sumcheck sharing later
-/// round challenges. We call this version a "front-loaded" sumcheck.
+/// [`crate::protocols::sumcheck::verify_sumcheck`] module implements batches sumcheck sharing
+/// later round challenges. We call this version a "front-loaded" sumcheck.
 ///
 /// For each sumcheck claim, we sample one random mixing coefficient. The multiple composite claims
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
@@ -68,7 +68,7 @@ where
 	///
 	/// ## Throws
 	///
-	/// * if the claims are not sorted in ascending order by number of variables
+	/// * if the claims are not sorted in non-descending order by number of variables
 	pub fn new<Transcript>(
 		claims: &[SumcheckClaim<F, C>],
 		transcript: &mut Transcript,
@@ -76,10 +76,6 @@ where
 	where
 		Transcript: CanSample<F>,
 	{
-		if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars())) {
-			return Err(Error::ClaimsOutOfOrder);
-		}
-
 		// Sample batch mixing coefficients
 		let batch_coeffs = transcript.sample_vec(claims.len());
 
@@ -95,6 +91,28 @@ where
 				)
 			})
 			.sum();
+
+		Self::new_prebatched(batch_coeffs, sum, claims)
+	}
+
+	/// Constructs a new verifier for the front-loaded batched sumcheck with
+	/// specified batching coefficients and a batched claims sum.
+	///
+	/// ## Throws
+	///
+	/// * if the claims are not sorted in non-descending order by number of variables
+	pub fn new_prebatched(
+		batch_coeffs: Vec<F>,
+		sum: F,
+		claims: &[SumcheckClaim<F, C>],
+	) -> Result<Self, Error> {
+		if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars())) {
+			return Err(Error::ClaimsOutOfOrder);
+		}
+
+		if batch_coeffs.len() != claims.len() {
+			return Err(Error::IncorrectNumberOfBatchCoeffs);
+		}
 
 		let mut claims = iter::zip(claims.iter().cloned(), batch_coeffs)
 			.map(|(claim, batch_coeff)| {
@@ -147,7 +165,6 @@ where
 					claim, batch_coeff, ..
 				} = self.claims.pop_front().expect("front returned Some");
 				let multilinear_evals = transcript.read_scalar_slice(claim.n_multilinears())?;
-
 				match self.last_coeffs_or_sum {
 					CoeffsOrSums::Coeffs(_) => {
 						return Err(Error::ExpectedFinishRound);

@@ -13,7 +13,9 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{self, CompositeSumClaim, EqIndSumcheckClaim},
+	protocols::sumcheck::{
+		self, eq_ind::ClaimsSortingOrder, CompositeSumClaim, EqIndSumcheckClaim,
+	},
 	transcript::VerifierTranscript,
 };
 
@@ -152,6 +154,7 @@ where
 		sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
 
 	let batch_sumcheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		ClaimsSortingOrder::DescendingVars,
 		&eq_ind_sumcheck_claims,
 		curr_layer_challenge,
 		batch_sumcheck_output,
