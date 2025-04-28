@@ -119,6 +119,15 @@ where
 		self.0.evaluate_partial(query, start_index)
 	}
 
+	fn zero_pad(
+		&self,
+		n_pad_vars: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	) -> Result<MultilinearExtension<PE>, Error> {
+		self.0.zero_pad(n_pad_vars, start_index, nonzero_index)
+	}
+
 	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<PE>,
@@ -406,6 +415,15 @@ where
 		start_index: usize,
 	) -> Result<MultilinearExtension<P>, Error> {
 		self.0.evaluate_partial(query, start_index)
+	}
+
+	fn zero_pad(
+		&self,
+		n_pad_vars: usize,
+		start_index: usize,
+		nonzero_padding: usize,
+	) -> Result<MultilinearExtension<P>, Error> {
+		self.0.zero_pad(n_pad_vars, start_index, nonzero_padding)
 	}
 
 	fn subcube_partial_low_evals(
