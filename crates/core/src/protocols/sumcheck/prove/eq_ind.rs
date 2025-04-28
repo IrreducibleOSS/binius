@@ -488,7 +488,6 @@ where
 						value,
 						value_at_inf,
 					};
-
 					break;
 				}
 			}

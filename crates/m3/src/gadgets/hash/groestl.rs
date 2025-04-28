@@ -65,7 +65,7 @@ impl Permutation {
 	) -> Self {
 		let rounds = array::from_fn(|i| {
 			let round = PermutationRound::new(
-				&mut table.with_namespace(format!("round[{}]", i)),
+				&mut table.with_namespace(format!("round[{i}]")),
 				pq,
 				state_in,
 				i,
@@ -326,7 +326,7 @@ struct SBox<const V: usize> {
 
 impl<const V: usize> SBox<V> {
 	pub fn new(table: &mut TableBuilder, input: Expr<B8, V>) -> Self {
-		let inv_bits = array::from_fn(|i| table.add_committed(format!("inv_bits[{}]", i)));
+		let inv_bits = array::from_fn(|i| table.add_committed(format!("inv_bits[{i}]")));
 		let inv = table.add_computed("inv", pack_b8(inv_bits));
 
 		// input * inv == 1 OR inv == 0

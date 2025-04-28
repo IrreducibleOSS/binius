@@ -55,20 +55,17 @@ pub fn u16_static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 
 	let name = name.to_string();
 
-	let exp_result = builder.add_committed(
-		format!("{} exp_result", name),
-		log_rows,
-		BinaryField64b::TOWER_LEVEL,
-	);
+	let exp_result =
+		builder.add_committed(format!("{name} exp_result"), log_rows, BinaryField64b::TOWER_LEVEL);
 
 	let g_lookup_table = if let Some(id) = g_lookup_table {
 		id
 	} else {
-		build_exp_table(g, builder, format!("{} g_lookup_table", name))?
+		build_exp_table(g, builder, format!("{name} g_lookup_table"))?
 	};
 
 	let lookup_values = builder.add_linear_combination(
-		format!("{} lookup_values", name),
+		format!("{name} lookup_values"),
 		log_rows,
 		[
 			(xin, <F as TowerField>::basis(4, 4)?),

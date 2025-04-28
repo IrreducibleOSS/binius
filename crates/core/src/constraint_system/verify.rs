@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp::Reverse, iter};
+use std::cmp::Reverse;
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
@@ -32,8 +32,8 @@ use crate::{
 		gkr_gpa::{self, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, zerocheck, BatchSumcheckOutput,
-			CompositeSumClaim, EqIndSumcheckClaim, ZerocheckClaim,
+			self, constraint_set_zerocheck_claim, BatchSumcheckOutput, CompositeSumClaim,
+			EqIndSumcheckClaim, ZerocheckClaim,
 		},
 	},
 	ring_switch,
@@ -69,8 +69,8 @@ where
 		..
 	} = constraint_system.clone();
 
-	// Stable sort constraint sets in descending order by number of variables.
-	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	let Proof { transcript } = proof;
 
@@ -236,71 +236,14 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let (max_n_vars, skip_rounds) =
+	let (_max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, <FDomain<Tower>>::N_BITS);
 
-	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
+	let zerocheck_output =
+		sumcheck::batch_verify_zerocheck(&zerocheck_claims, skip_rounds, &mut transcript)?;
 
-	let univariate_cnt = zerocheck_claims
-		.partition_point(|zerocheck_claim| zerocheck_claim.n_vars() > max_n_vars - skip_rounds);
-
-	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
-		&zerocheck_claims[..univariate_cnt],
-		skip_rounds,
-		&mut transcript,
-	)?;
-
-	let univariate_challenge = univariate_output.univariate_challenge;
-
-	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
-	let regular_sumcheck_claims =
-		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
-
-	let sumcheck_output = sumcheck::batch_verify_with_start(
-		EvaluationOrder::LowToHigh,
-		univariate_output.batch_verify_start,
-		&regular_sumcheck_claims,
-		&mut transcript,
-	)?;
-
-	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
-		&eq_ind_sumcheck_claims,
-		&zerocheck_challenges,
-		sumcheck_output,
-	)?;
-
-	let univariate_cnt =
-		zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
-
-	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
-	for (claim, univariatized_multilinear_evals) in
-		iter::zip(&zerocheck_claims, &zerocheck_output.multilinear_evals)
-	{
-		let claim_skip_rounds = claim.n_vars().saturating_sub(max_n_vars - skip_rounds);
-
-		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
-			claim_skip_rounds,
-			univariatized_multilinear_evals,
-		)?;
-
-		reduction_claims.push(reduction_claim);
-	}
-
-	let univariatizing_output =
-		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &reduction_claims, &mut transcript)?;
-
-	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
-		&reduction_claims,
-		univariate_challenge,
-		&zerocheck_output.challenges,
-		univariatizing_output,
-	)?;
-
-	let zerocheck_eval_claims = sumcheck::make_eval_claims(
-		EvaluationOrder::LowToHigh,
-		zerocheck_oracle_metas,
-		multilinear_zerocheck_output,
-	)?;
+	let zerocheck_eval_claims =
+		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(
@@ -356,13 +299,11 @@ where
 
 	// Univariate skip zerocheck domain size is degree * 2^skip_rounds, which
 	// limits skip_rounds to ceil(log2(degree)) less than domain field bits.
-	// We also do back-loaded batching and need to align last skip rounds
-	// according to individual claim initial rounds.
 	let domain_max_skip_rounds = zerocheck_claims
 		.iter()
 		.map(|claim| {
 			let log_degree = log2_ceil_usize(claim.max_individual_degree());
-			max_n_vars - claim.n_vars() + domain_bits.saturating_sub(log_degree)
+			domain_bits.saturating_sub(log_degree)
 		})
 		.min()
 		.unwrap_or(0);

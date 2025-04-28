@@ -32,7 +32,7 @@ use super::{
 	prove::{
 		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
 	},
-	verify::batch_verify,
+	verify_sumcheck::batch_verify,
 	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
