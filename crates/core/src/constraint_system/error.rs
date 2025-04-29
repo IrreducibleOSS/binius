@@ -11,6 +11,14 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error(
+		"flush selector with id {oracle} must have tower level 0 instead of {got_tower_level}"
+	)]
+	FlushSelectorTowerLevel {
+		oracle: OracleId,
+		got_tower_level: usize,
+	},
+
 	#[error("flushes must have a non-empty list of oracles")]
 	EmptyFlushOracles,
 

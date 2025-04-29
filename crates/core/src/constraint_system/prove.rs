@@ -489,12 +489,6 @@ where
 						unreachable!("We added composite with two inner polynomials");
 					}
 
-					let MultilinearPolyVariant::Transparent(_) =
-						oracles.oracle(inner_polys[0]).variant
-					else {
-						unreachable!("We added composite with an inner transparent selector")
-					};
-
 					let MultilinearPolyVariant::LinearCombination(lincom) =
 						oracles.oracle(inner_polys[1]).variant
 					else {

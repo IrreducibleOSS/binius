@@ -321,6 +321,9 @@ fn verify_channels_balance<F: TowerField>(
 	Ok(())
 }
 
+/// For each flush,
+/// - if there is a selector `S`, we are taking the Grand product of the composite `1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)`
+/// - otherwise the product is over the linear combination `r + F_0 + F_1 s + F_2 s^1 + …`
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	flushes: &[Flush<F>],
@@ -346,6 +349,16 @@ pub fn make_flush_oracles<F: TowerField>(
 
 					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
+
+					if let Some(selector_id) = &flush.selector {
+						let got_tower_level = oracles.oracle(*selector_id).tower_level;
+						if got_tower_level != 0 {
+							return Err(Error::FlushSelectorTowerLevel {
+								oracle: *selector_id,
+								got_tower_level,
+							});
+						}
+					}
 
 					for oracle_id in non_const_oracles {
 						let oracle_n_vars = oracles.n_vars(oracle_id);
@@ -378,12 +391,14 @@ pub fn make_flush_oracles<F: TowerField>(
 						})
 						.sum::<F>();
 
+					let add_one = flush.selector.map(|_| F::ONE).unwrap_or(F::ZERO);
+
 					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
 					let inner_linear = oracles
 						.add_named(format!("flush channel_id={channel_id} linear combination"))
 						.linear_combination_with_offset(
 							n_vars,
-							*permutation_challenge + const_linear_combination + F::ONE,
+							*permutation_challenge + const_linear_combination + add_one,
 							flush
 								.oracles
 								.iter()
