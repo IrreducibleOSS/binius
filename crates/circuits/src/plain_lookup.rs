@@ -339,7 +339,8 @@ mod count_multiplicity_tests {
 
 #[cfg(test)]
 mod tests {
-	use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+	use binius_core::fiat_shamir::HasherChallenger;
+	use binius_field::tower::CanonicalTowerFamily;
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 

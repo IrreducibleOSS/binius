@@ -5,6 +5,7 @@ use std::{cmp::Ordering, iter::repeat_with};
 use binius_field::{
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
+	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -32,7 +33,6 @@ use crate::{
 		fri::CommitOutput,
 	},
 	ring_switch::prove::ReducedWitness,
-	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };

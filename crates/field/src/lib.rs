@@ -35,6 +35,7 @@ mod packed_polyval;
 pub mod polyval;
 #[cfg(test)]
 mod tests;
+pub mod tower;
 pub mod tower_levels;
 mod tracing;
 pub mod transpose;

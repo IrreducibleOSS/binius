@@ -1,10 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_field::tower::{PackedTop, TowerFamily};
+
 use super::error::Error;
-use crate::{
-	tensor_algebra::TensorAlgebra,
-	tower::{PackedTop, TowerFamily},
-};
+use crate::tensor_algebra::TensorAlgebra;
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;
 

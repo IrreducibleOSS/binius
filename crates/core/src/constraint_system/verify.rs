@@ -2,7 +2,10 @@
 
 use std::cmp::Reverse;
 
-use binius_field::{BinaryField, PackedField, TowerField};
+use binius_field::{
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
+	BinaryField, PackedField, TowerField,
+};
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
@@ -37,7 +40,6 @@ use crate::{
 		},
 	},
 	ring_switch,
-	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::VerifierTranscript,
 	transparent::eq_ind::EqIndPartialEval,
 };

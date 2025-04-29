@@ -2,8 +2,10 @@
 
 use std::iter::repeat_with;
 
-use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
+use binius_core::fiat_shamir::HasherChallenger;
+use binius_field::{
+	arch::OptimalUnderlier128b, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{ConstraintSystem, Statement, WitnessIndex, B128, B32, B64},

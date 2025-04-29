@@ -3,13 +3,11 @@
 //! Utilities for testing M3 constraint systems and gadgets.
 
 use anyhow::Result;
-use binius_core::{
-	constraint_system::channel::Boundary, fiat_shamir::HasherChallenger,
-	tower::CanonicalTowerFamily,
-};
+use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::PackedTransformationFactory,
+	tower::CanonicalTowerFamily,
 	underlier::UnderlierType,
 	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
 };
