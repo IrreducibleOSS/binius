@@ -56,7 +56,7 @@ pub trait ProverTowerFamily: TowerFamily {
 }
 
 /// The canonical Fan-Paar tower family.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CanonicalTowerFamily;
 
 impl TowerFamily for CanonicalTowerFamily {
