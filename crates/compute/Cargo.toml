@@ -15,4 +15,3 @@ thiserror.workspace = true
 assert_matches.workspace = true
 binius_math = { path = "../math", default-features = false }
 rand = { workspace = true, features = ["std"] }
-bytemuck.workspace = true

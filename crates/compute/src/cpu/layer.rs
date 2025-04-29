@@ -159,7 +159,6 @@ mod tests {
 		PackedField, TowerField,
 	};
 	use binius_math::{tensor_prod_eq_ind, MultilinearExtension, MultilinearQuery};
-	use bytemuck::zeroed_vec;
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
@@ -210,148 +209,195 @@ mod tests {
 		assert_eq!(buffer, buffer_clone);
 	}
 
+	fn test_generic_single_inner_product<
+		F2: TowerField,
+		F: Field + PackedExtension<F2> + ExtensionField<F2>,
+		C: ComputeLayer<F>,
+	>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		n_vars: usize,
+		// log_degree: usize,
+	) {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		// Allocate buffers a and b to be device mapped
+		let mut a_buffer = compute.host_alloc(1 << (n_vars - F::LOG_DEGREE));
+		let a_buffer = a_buffer.as_mut();
+		for x_i in a_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let a = a_buffer.to_vec();
+
+		let mut b_buffer = compute.host_alloc(1 << n_vars);
+		let b_buffer = b_buffer.as_mut();
+		for x_i in b_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let b = b_buffer.to_vec();
+
+		// Copy a and b to device (creating F-slices)
+		let (mut a_slice, device_memory) = C::DevMem::split_at_mut(device_memory, a_buffer.len());
+		compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
+		let a_slice = C::DevMem::as_const(&a_slice);
+
+		let (mut b_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, b_buffer.len());
+		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
+		let b_slice = C::DevMem::as_const(&b_slice);
+
+		// Run the HAL operation to compute the inner product
+		let actual = compute
+			.execute(|exec| {
+				Ok(vec![compute.inner_product(exec, F2::TOWER_LEVEL, a_slice, b_slice)?])
+			})
+			.unwrap()
+			.remove(0);
+
+		// Compute the expected value and compare
+		let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
+			.map(|(a_i, &b_i)| b_i * a_i)
+			.sum::<F>();
+		assert_eq!(actual, expected);
+	}
+
+	fn test_generic_multiple_multilinear_evaluations<
+		F1: TowerField,
+		F2: TowerField,
+		F: Field
+			+ PackedField<Scalar = F>
+			+ PackedExtension<F1>
+			+ ExtensionField<F1>
+			+ PackedExtension<F2>
+			+ ExtensionField<F2>,
+		C: ComputeLayer<F>,
+	>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		n_vars: usize,
+	) {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		// Allocate buffers to be device mapped
+		let mut mle1_buffer =
+			compute.host_alloc(1 << (n_vars - <F as ExtensionField<F1>>::LOG_DEGREE));
+		let mle1_buffer = mle1_buffer.as_mut();
+		for x_i in mle1_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let mle1 = mle1_buffer.to_vec();
+
+		let mut mle2_buffer =
+			compute.host_alloc(1 << (n_vars - <F as ExtensionField<F2>>::LOG_DEGREE));
+		let mle2_buffer = mle2_buffer.as_mut();
+		for x_i in mle2_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let mle2 = mle2_buffer.to_vec();
+
+		let mut eq_ind_buffer = compute.host_alloc(1 << n_vars);
+		let eq_ind_buffer = eq_ind_buffer.as_mut();
+		for x_i in eq_ind_buffer.iter_mut() {
+			*x_i = F::ZERO;
+		}
+
+		// Copy data to device (creating F-slices)
+		let (mut mle1_slice, device_memory) =
+			C::DevMem::split_at_mut(device_memory, mle1_buffer.len());
+		compute.copy_h2d(mle1_buffer, &mut mle1_slice).unwrap();
+		let mle1_slice = C::DevMem::as_const(&mle1_slice);
+
+		let (mut mle2_slice, device_memory) =
+			C::DevMem::split_at_mut(device_memory, mle2_buffer.len());
+		compute.copy_h2d(mle2_buffer, &mut mle2_slice).unwrap();
+		let mle2_slice = C::DevMem::as_const(&mle2_slice);
+
+		let (mut eq_ind_slice, _device_memory) =
+			C::DevMem::split_at_mut(device_memory, eq_ind_buffer.len());
+		compute.copy_h2d(eq_ind_buffer, &mut eq_ind_slice).unwrap();
+
+		let coordinates = repeat_with(|| <F as Field>::random(&mut rng))
+			.take(n_vars)
+			.collect::<Vec<_>>();
+
+		// Run the HAL operation
+		let results = compute
+			.execute(|exec| {
+				{
+					// Swap first element on the device buffer
+					let mut first_elt =
+						<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
+					compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				}
+
+				compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
+
+				let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
+				let (eval1, eval2) = compute.join(
+					exec,
+					|exec| compute.inner_product(exec, F1::TOWER_LEVEL, mle1_slice, eq_ind),
+					|exec| compute.inner_product(exec, F2::TOWER_LEVEL, mle2_slice, eq_ind),
+				)?;
+				Ok(vec![eval1, eval2])
+			})
+			.unwrap();
+		let (eval1, eval2) = TryInto::<[F; 2]>::try_into(results)
+			.expect("expected two evaluations")
+			.into();
+
+		// Compute the expected value
+		let query = MultilinearQuery::<F>::expand(&coordinates);
+		let expected_eval1 =
+			MultilinearExtension::new(n_vars, <F as PackedExtension<F1>>::cast_bases(&mle1))
+				.unwrap()
+				.evaluate(&query)
+				.unwrap();
+		let expected_eval2 =
+			MultilinearExtension::new(n_vars, <F as PackedExtension<F2>>::cast_bases(&mle2))
+				.unwrap()
+				.evaluate(&query)
+				.unwrap();
+
+		// Copy eq_ind back from the device
+		let eq_ind_slice = C::DevMem::as_const(&eq_ind_slice);
+		compute.copy_d2h(eq_ind_slice, eq_ind_buffer).unwrap();
+
+		// Compare the results
+		assert_eq!(eq_ind_buffer, query.into_expansion());
+		assert_eq!(eval1, expected_eval1);
+		assert_eq!(eval2, expected_eval2);
+	}
+
 	#[test]
 	fn test_exec_single_tensor_expand() {
 		type F = BinaryField128b;
 		let n_vars = 8;
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		let mut device_memory = vec![F::ONE; 1 << n_vars];
+		let mut device_memory = vec![F::ZERO; 1 << n_vars];
 		test_generic_single_tensor_expand(compute, &mut device_memory, n_vars);
 	}
 
 	#[test]
 	fn test_exec_single_inner_product() {
+		type F = BinaryField128b;
+		type F2 = BinaryField16b;
 		let n_vars = 8;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let a = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
-			.take(1 << (n_vars - <BinaryField128b as ExtensionField<BinaryField16b>>::LOG_DEGREE))
-			.collect::<Vec<_>>();
-		let b = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<_>>();
-
-		fn compute_single_inner_product<F, C: ComputeLayer<F>>(
-			compute: &C,
-			a_deg: usize,
-			a: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
-			b: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
-		) -> Result<F, Error> {
-			let mut results = compute
-				.execute(|exec| {
-					let ret = compute.inner_product(exec, a_deg, a, b)?;
-					Ok(vec![ret])
-				})
-				.unwrap();
-			Ok(results.remove(0))
-		}
-
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		let actual =
-			compute_single_inner_product(&compute, BinaryField16b::TOWER_LEVEL, &a, &b).unwrap();
-
-		let expected = std::iter::zip(
-			PackedField::iter_slice(
-				<BinaryField128b as PackedExtension<BinaryField16b>>::cast_bases(&a),
-			),
-			&b,
-		)
-		.map(|(a_i, &b_i)| b_i * a_i)
-		.sum::<BinaryField128b>();
-
-		assert_eq!(actual, expected);
+		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
+		test_generic_single_inner_product::<F2, _, _>(compute, &mut device_memory, n_vars);
 	}
 
 	#[test]
 	fn test_exec_multiple_multilinear_evaluations() {
-		type CL = CpuLayer<CanonicalTowerFamily>;
-
+		type F = BinaryField128b;
+		type F1 = BinaryField16b;
+		type F2 = BinaryField32b;
 		let n_vars = 8;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let mle1 = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
-			.take(1 << (n_vars - <BinaryField128b as ExtensionField<BinaryField16b>>::LOG_DEGREE))
-			.collect::<Vec<_>>();
-		let mle2 = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
-			.take(1 << (n_vars - <BinaryField128b as ExtensionField<BinaryField32b>>::LOG_DEGREE))
-			.collect::<Vec<_>>();
-		let coordinates = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
-			.take(n_vars)
-			.collect::<Vec<_>>();
-
-		let mut eq_ind_buffer = zeroed_vec(1 << n_vars);
-
-		#[allow(clippy::too_many_arguments)]
-		fn compute_multiple_multilinear_evaluations<F, C: ComputeLayer<F>>(
-			compute: &C,
-			a_deg_1: usize,
-			a_deg_2: usize,
-			coordinates: &[F],
-			mle1: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
-			mle2: <C::DevMem as ComputeMemory<F>>::FSlice<'_>,
-			eq_ind: &mut <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-			new_first_elt: F,
-		) -> Result<(F, F), Error>
-		where
-			F: std::fmt::Debug,
-		{
-			let results = compute
-				.execute(|exec| {
-					{
-						// Swap first element on the device buffer
-						let mut first_elt = <C::DevMem as ComputeMemory<F>>::slice_mut(eq_ind, ..1);
-						compute.copy_h2d(&[new_first_elt], &mut first_elt)?;
-					}
-
-					compute.tensor_expand(exec, 0, coordinates, eq_ind)?;
-
-					let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(eq_ind);
-					let (eval1, eval2) = compute.join(
-						exec,
-						|exec| compute.inner_product(exec, a_deg_1, mle1, eq_ind),
-						|exec| compute.inner_product(exec, a_deg_2, mle2, eq_ind),
-					)?;
-					Ok(vec![eval1, eval2])
-				})
-				.unwrap();
-			Ok(TryInto::<[F; 2]>::try_into(results)
-				.expect("expected two evaluations")
-				.into())
-		}
-
-		let compute = CL::default();
-		let (eval1, eval2) = compute_multiple_multilinear_evaluations(
-			&compute,
-			BinaryField16b::TOWER_LEVEL,
-			BinaryField32b::TOWER_LEVEL,
-			&coordinates,
-			&mle1,
-			&mle2,
-			&mut eq_ind_buffer.as_mut(),
-			BinaryField128b::ONE,
-		)
-		.unwrap();
-
-		let query = MultilinearQuery::<BinaryField128b>::expand(&coordinates);
-		let expected_eval1 = MultilinearExtension::new(
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
+		test_generic_multiple_multilinear_evaluations::<F1, F2, _, _>(
+			compute,
+			&mut device_memory,
 			n_vars,
-			<BinaryField128b as PackedExtension<BinaryField16b>>::cast_bases(&mle1),
-		)
-		.unwrap()
-		.evaluate(&query)
-		.unwrap();
-		let expected_eval2 = MultilinearExtension::new(
-			n_vars,
-			<BinaryField128b as PackedExtension<BinaryField32b>>::cast_bases(&mle2),
-		)
-		.unwrap()
-		.evaluate(&query)
-		.unwrap();
-
-		assert_eq!(eq_ind_buffer, query.into_expansion());
-		assert_eq!(eval1, expected_eval1);
-		assert_eq!(eval2, expected_eval2);
+		);
 	}
 }
