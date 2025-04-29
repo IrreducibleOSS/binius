@@ -342,6 +342,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(
 		&fri_params,
+		&ntt,
 		merkle_prover,
 		domain_factory,
 		&commit_meta,

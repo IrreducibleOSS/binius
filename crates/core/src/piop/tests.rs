@@ -157,6 +157,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
 	prove(
 		&fri_params,
+		&ntt,
 		merkle_prover,
 		domain_factory,
 		commit_meta,

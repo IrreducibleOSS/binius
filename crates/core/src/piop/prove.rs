@@ -167,8 +167,21 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
+pub fn prove<
+	F,
+	FDomain,
+	FEncode,
+	P,
+	M,
+	NTT,
+	DomainFactory,
+	MTScheme,
+	MTProver,
+	Challenger_,
+	Backend,
+>(
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	domain_factory: DomainFactory,
 	commit_meta: &CommitMeta,
@@ -189,6 +202,7 @@ where
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -245,6 +259,7 @@ where
 	prove_interleaved_fri_sumcheck(
 		commit_meta.total_vars(),
 		fri_params,
+		ntt,
 		merkle_prover,
 		sumcheck_provers,
 		codeword,
@@ -255,9 +270,11 @@ where
 	Ok(())
 }
 
-fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_>(
+#[allow(clippy::too_many_arguments)]
+fn prove_interleaved_fri_sumcheck<F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	sumcheck_provers: Vec<impl SumcheckProver<F>>,
 	codeword: &[P],
@@ -268,11 +285,12 @@ where
 	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover = FRIFolder::new(fri_params, merkle_prover, codeword, committed)?;
+	let mut fri_prover = FRIFolder::new(fri_params, ntt, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

@@ -463,8 +463,9 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
+	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
 		&fri_params,
+		&ntt,
 		&merkle_prover,
 		domain_factory,
 		&commit_meta,

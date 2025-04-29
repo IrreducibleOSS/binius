@@ -11,54 +11,45 @@
 //! [LCH14]: <https://arxiv.org/abs/1404.3458>
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
+use binius_math::BinarySubspace;
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
+use binius_ntt::{AdditiveNTT, Error, NTTShape};
 use binius_utils::bail;
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 
-#[derive(Debug, CopyGetters)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct ReedSolomonCode<F: BinaryField> {
-	ntt: DynamicDispatchNTT<F>,
+	#[get = "pub"]
+	subspace: BinarySubspace<F>,
 	log_dimension: usize,
-	#[getset(get_copy = "pub")]
+	#[get_copy = "pub"]
 	log_inv_rate: usize,
-	multithreaded: bool,
 }
 
 impl<F: BinaryField> ReedSolomonCode<F> {
-	pub fn new(
-		log_dimension: usize,
-		log_inv_rate: usize,
-		ntt_options: &NTTOptions,
-	) -> Result<Self, Error> {
-		// Since we split work between log_inv_rate threads, we need to decrease the number of threads per each NTT transformation.
-		let ntt_log_threads = ntt_options
-			.thread_settings
-			.log_threads_count()
-			.saturating_sub(log_inv_rate);
-		let ntt = DynamicDispatchNTT::new(
-			log_dimension + log_inv_rate,
-			&NTTOptions {
-				thread_settings: ThreadingSettings::ExplicitThreadsCount {
-					log_threads: ntt_log_threads,
-				},
-				precompute_twiddles: ntt_options.precompute_twiddles,
-			},
-		)?;
-
-		let multithreaded =
-			!matches!(ntt_options.thread_settings, ThreadingSettings::SingleThreaded);
-
-		Ok(Self {
-			ntt,
+	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
+		Self::with_subspace(
+			BinarySubspace::with_dim(log_dimension + log_inv_rate)?,
 			log_dimension,
 			log_inv_rate,
-			multithreaded,
-		})
+		)
 	}
 
-	pub const fn get_ntt(&self) -> &impl AdditiveNTT<F> {
-		&self.ntt
+	pub fn with_subspace(
+		subspace: BinarySubspace<F>,
+		log_dimension: usize,
+		log_inv_rate: usize,
+	) -> Result<Self, Error> {
+		if subspace.dim() != log_dimension + log_inv_rate {
+			return Err(Error::DomainTooSmall {
+				log_required_domain_size: log_dimension + log_inv_rate,
+			});
+		}
+		Ok(Self {
+			subspace,
+			log_dimension,
+			log_inv_rate,
+		})
 	}
 
 	/// The dimension.
@@ -132,16 +123,10 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 			log_y: self.log_dim(),
 			..Default::default()
 		};
-		if self.multithreaded {
-			(0..(1 << self.log_inv_rate))
-				.into_par_iter()
-				.zip(code.par_chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
-		} else {
-			(0..(1 << self.log_inv_rate))
-				.zip(code.chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
-		}
+		(0..(1 << self.log_inv_rate))
+			.into_par_iter()
+			.zip(code.par_chunks_exact_mut(msgs_len))
+			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
 	}
 
 	/// Encode a batch of interleaved messages of extension field elements in-place in a provided
