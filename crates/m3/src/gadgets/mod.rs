@@ -3,6 +3,6 @@
 pub mod barrel_shifter;
 pub mod hash;
 pub mod lookup;
-pub mod u32;
-
 pub mod mul;
+pub mod structured;
+pub mod u32;

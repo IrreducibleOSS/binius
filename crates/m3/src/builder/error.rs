@@ -5,7 +5,7 @@ use std::cell::{BorrowError, BorrowMutError};
 use binius_core::{oracle::Error as OracleError, polynomial::Error as PolynomialError};
 use binius_math::Error as MathError;
 
-use super::{column::ColumnId, table::TableId};
+use super::{column::ColumnId, structured::Error as StructuredError, table::TableId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -22,6 +22,8 @@ pub enum Error {
 	},
 	#[error("cannot construct witness index for empty table {table_id}")]
 	EmptyTable { table_id: TableId },
+	#[error("structured column error: {0}")]
+	Structured(#[from] StructuredError),
 	#[error("table {table_id} index has already been initialized")]
 	TableIndexAlreadyInitialized { table_id: TableId },
 	#[error("column is not in table; column table ID: {column_table_id}, witness table ID: {witness_table_id}")]

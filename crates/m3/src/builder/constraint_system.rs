@@ -13,7 +13,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
-use binius_math::LinearNormalForm;
+use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
 use itertools::chain;
@@ -455,6 +455,10 @@ fn add_oracle_for_column<F: TowerField>(
 			transparent_single[id.table_index].unwrap(),
 			n_vars - shape.log_values_per_row,
 		)?,
+		ColumnDef::StructuredDynSize(structured) => {
+			let expr = structured.expr(n_vars)?;
+			addition.transparent(ArithCircuit::from(&expr))?
+		}
 		ColumnDef::StaticExp {
 			base_tower_level, ..
 		} => addition.committed(n_vars, *base_tower_level),
