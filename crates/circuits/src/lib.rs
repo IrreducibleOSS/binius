@@ -33,11 +33,11 @@ mod tests {
 		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
 		polynomial::ArithCircuitPoly,
-		tower::CanonicalTowerFamily,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier,
-		BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field, TowerField,
+		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+		underlier::WithUnderlier, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b,
+		Field, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};

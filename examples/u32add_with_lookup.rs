@@ -2,9 +2,10 @@
 
 use anyhow::Result;
 use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField1b, BinaryField8b,
+	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+	BinaryField1b, BinaryField8b,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};

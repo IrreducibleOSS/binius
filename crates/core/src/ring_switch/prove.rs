@@ -2,7 +2,10 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{
+	tower::{PackedTop, TowerFamily},
+	PackedField, PackedFieldIndexable, TowerField,
+};
 use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
@@ -20,7 +23,6 @@ use crate::{
 	piop::PIOPSumcheckClaim,
 	protocols::evalcheck::subclaims::MemoizedData,
 	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
-	tower::{PackedTop, TowerFamily},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };

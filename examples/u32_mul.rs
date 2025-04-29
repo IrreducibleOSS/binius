@@ -12,8 +12,9 @@ use binius_circuits::{
 	},
 	transparent,
 };
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
+	tower::CanonicalTowerFamily,
 	tower_levels::{TowerLevel4, TowerLevel8},
 	BinaryField1b, BinaryField32b, BinaryField8b, Field,
 };
