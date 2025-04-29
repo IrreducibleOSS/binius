@@ -21,7 +21,6 @@ either.workspace = true
 getset.workspace = true
 itertools.workspace = true
 thiserror.workspace = true
-log = "0.4.27"
 
 [dev-dependencies]
 assert_matches.workspace = true
