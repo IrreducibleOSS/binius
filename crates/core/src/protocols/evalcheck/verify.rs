@@ -97,7 +97,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<(), Error> {
-		let evalcheck_proof = deserialize_evalcheck_proof::<_, F>(&mut transcript.message())?;
+		let evalcheck_proof = deserialize_evalcheck_proof(&mut transcript.message())?;
 
 		// If the proof is a duplicate claim, we need to check if the claim is already in the round
 		// claims, which have been verified.
@@ -106,8 +106,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				if *expected_claim == evalcheck_claim {
 					return Ok(());
 				}
-				return Err(VerificationError::DuplicateClaimMismatch.into());
 			}
+			return Err(VerificationError::DuplicateClaimMismatch.into());
 		}
 
 		self.verify_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
@@ -263,7 +263,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		// If the subproof is a duplicate claim, we need to check if the claim is
 		// already in the round claims which has been verified otherwise, we verify the
 		// subclaim by DFS.
-		let subproof = deserialize_evalcheck_proof::<_, F>(&mut transcript.message())?;
+		let subproof = deserialize_evalcheck_proof(&mut transcript.message())?;
 		match subproof {
 			EvalcheckProof::DuplicateClaim(index) => {
 				if self.round_claims[index].id != oracle_id
@@ -274,7 +274,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				Ok(self.round_claims[index].eval)
 			}
-			_ => {
+			EvalcheckProof::NewClaim => {
 				let eval = transcript.message().read_scalar()?;
 				let subclaim = EvalcheckMultilinearClaim {
 					id: oracle_id,

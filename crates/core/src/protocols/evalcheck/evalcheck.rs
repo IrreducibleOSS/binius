@@ -7,7 +7,7 @@ use std::{
 	sync::Arc,
 };
 
-use binius_field::{Field, TowerField};
+use binius_field::Field;
 use bytes::{Buf, BufMut};
 
 use super::error::Error;
@@ -30,153 +30,56 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 #[repr(u8)]
 #[derive(Debug)]
 enum EvalcheckNumerics {
-	Transparent = 1,
-	Committed,
-	Shifted,
-	Packed,
-	Repeating,
-	LinearCombination,
-	ZeroPadded,
-	CompositeMLE,
-	Projected,
+	NewClaim = 1,
 	DuplicateClaim,
 }
 
 /// The proof output of a given claim which may recursively contain proofs of subclaims arising from a given claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalcheckProof<F: Field> {
-	Transparent,
-	Committed,
-	Shifted,
-	Packed,
-	Repeating(Box<EvalcheckProof<F>>),
-	LinearCombination {
-		subproofs: Vec<(Option<F>, EvalcheckProof<F>)>,
-	},
-	ZeroPadded(F, Box<EvalcheckProof<F>>),
-	CompositeMLE,
-	Projected(Box<EvalcheckProof<F>>),
+pub enum EvalcheckProof {
+	NewClaim,
 	DuplicateClaim(usize),
 }
 
 impl EvalcheckNumerics {
 	const fn from(x: u8) -> Result<Self, Error> {
 		match x {
-			1 => Ok(Self::Transparent),
-			2 => Ok(Self::Committed),
-			3 => Ok(Self::Shifted),
-			4 => Ok(Self::Packed),
-			5 => Ok(Self::Repeating),
-			6 => Ok(Self::LinearCombination),
-			7 => Ok(Self::ZeroPadded),
-			8 => Ok(Self::CompositeMLE),
-			9 => Ok(Self::Projected),
-			10 => Ok(Self::DuplicateClaim),
+			1 => Ok(Self::NewClaim),
+			2 => Ok(Self::DuplicateClaim),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
 }
 
 /// Serializes the `EvalcheckProof` into the transcript
-pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
+pub fn serialize_evalcheck_proof<B: BufMut>(
 	transcript: &mut TranscriptWriter<B>,
-	evalcheck: &EvalcheckProof<F>,
+	evalcheck: &EvalcheckProof,
 ) {
 	match evalcheck {
-		EvalcheckProof::Transparent => {
-			transcript.write_bytes(&[EvalcheckNumerics::Transparent as u8]);
-		}
-		EvalcheckProof::Committed => {
-			transcript.write_bytes(&[EvalcheckNumerics::Committed as u8]);
-		}
-		EvalcheckProof::Shifted => {
-			transcript.write_bytes(&[EvalcheckNumerics::Shifted as u8]);
-		}
-		EvalcheckProof::Packed => {
-			transcript.write_bytes(&[EvalcheckNumerics::Packed as u8]);
-		}
-		EvalcheckProof::Repeating(inner) => {
-			transcript.write_bytes(&[EvalcheckNumerics::Repeating as u8]);
-			serialize_evalcheck_proof(transcript, inner);
-		}
-		EvalcheckProof::LinearCombination { subproofs } => {
-			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
-			let len_u64 = subproofs.len() as u64;
-			transcript.write_bytes(&len_u64.to_le_bytes());
-			for (scalar, subproof) in subproofs {
-				serialize_evalcheck_proof(transcript, subproof);
-				if let Some(scalar) = scalar {
-					transcript.write_scalar(*scalar);
-				}
-			}
-		}
-		EvalcheckProof::ZeroPadded(val, subproof) => {
-			transcript.write_bytes(&[EvalcheckNumerics::ZeroPadded as u8]);
-			transcript.write_scalar(*val);
-			serialize_evalcheck_proof(transcript, subproof);
-		}
-		EvalcheckProof::CompositeMLE => {
-			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
+		EvalcheckProof::NewClaim => {
+			transcript.write_bytes(&[EvalcheckNumerics::NewClaim as u8]);
 		}
 		EvalcheckProof::DuplicateClaim(index) => {
 			transcript.write_bytes(&[EvalcheckNumerics::DuplicateClaim as u8]);
 			transcript.write(index);
 		}
-		EvalcheckProof::Projected(subproof) => {
-			transcript.write_bytes(&[EvalcheckNumerics::Projected as u8]);
-			serialize_evalcheck_proof(transcript, subproof);
-		}
 	}
 }
 
 /// Deserializes the `EvalcheckProof` object from the given transcript.
-pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
+pub fn deserialize_evalcheck_proof<B: Buf>(
 	transcript: &mut TranscriptReader<B>,
-) -> Result<EvalcheckProof<F>, Error> {
+) -> Result<EvalcheckProof, Error> {
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
 
 	match as_enum {
-		EvalcheckNumerics::Transparent => Ok(EvalcheckProof::Transparent),
-		EvalcheckNumerics::Committed => Ok(EvalcheckProof::Committed),
-		EvalcheckNumerics::Shifted => Ok(EvalcheckProof::Shifted),
-		EvalcheckNumerics::Packed => Ok(EvalcheckProof::Packed),
-		EvalcheckNumerics::Repeating => {
-			let inner = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::Repeating(Box::new(inner)))
-		}
-		EvalcheckNumerics::LinearCombination => {
-			let mut len = [0u8; 8];
-			transcript.read_bytes(&mut len)?;
-			let len = u64::from_le_bytes(len) as usize;
-			let mut subproofs = Vec::new();
-			for _ in 0..len {
-				let subproof = deserialize_evalcheck_proof(transcript)?;
-
-				let scalar = if let EvalcheckProof::DuplicateClaim(_) = subproof {
-					None
-				} else {
-					Some(transcript.read_scalar()?)
-				};
-
-				subproofs.push((scalar, subproof));
-			}
-			Ok(EvalcheckProof::LinearCombination { subproofs })
-		}
-		EvalcheckNumerics::ZeroPadded => {
-			let scalar = transcript.read_scalar()?;
-			let subproof = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
-		}
-		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
+		EvalcheckNumerics::NewClaim => Ok(EvalcheckProof::NewClaim),
 		EvalcheckNumerics::DuplicateClaim => {
 			let index = transcript.read()?;
 			Ok(EvalcheckProof::DuplicateClaim(index))
-		}
-		EvalcheckNumerics::Projected => {
-			let subproof = deserialize_evalcheck_proof(transcript)?;
-			Ok(EvalcheckProof::Projected(Box::new(subproof)))
 		}
 	}
 }

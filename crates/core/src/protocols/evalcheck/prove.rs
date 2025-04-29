@@ -396,11 +396,11 @@ where
 		if let Some(claim_id) = claim_id {
 			serialize_evalcheck_proof(
 				&mut transcript.message(),
-				&EvalcheckProof::<F>::DuplicateClaim(*claim_id),
+				&EvalcheckProof::DuplicateClaim(*claim_id),
 			);
 			return Ok(());
 		}
-		serialize_evalcheck_proof(&mut transcript.message(), &EvalcheckProof::<F>::Committed);
+		serialize_evalcheck_proof(&mut transcript.message(), &EvalcheckProof::NewClaim);
 
 		self.prove_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
 	}
@@ -478,12 +478,12 @@ where
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
-							&EvalcheckProof::<F>::DuplicateClaim(*claim_index),
+							&EvalcheckProof::DuplicateClaim(*claim_index),
 						);
 					} else {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
-							&EvalcheckProof::<F>::Committed,
+							&EvalcheckProof::NewClaim,
 						);
 
 						let eval = *self

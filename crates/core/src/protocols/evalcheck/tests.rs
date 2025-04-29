@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with, slice};
+use std::{array, iter::repeat_with};
 
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
@@ -16,7 +16,7 @@ use binius_math::{
 };
 use bytemuck::{cast_slice_mut, Pod};
 use itertools::Either;
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
 	fiat_shamir::HasherChallenger,
@@ -652,52 +652,19 @@ fn test_evalcheck_zero_padded() {
 // Test evalcheck serialization
 #[test]
 fn test_evalcheck_serialization() {
-	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Committed)
-	}
-
-	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Transparent)
-	}
-
-	fn rand_composite<'a, F: TowerField>(
-		elems: impl Iterator<Item = &'a EvalcheckProof<F>>,
-	) -> EvalcheckProof<F> {
-		let mut rng = thread_rng();
-		EvalcheckProof::LinearCombination {
-			subproofs: elems
-				.map(|x| (Some(F::random(&mut rng)), x.clone()))
-				.collect::<Vec<_>>(),
-		}
-	}
-
-	fn rand_repeating<F: TowerField>(inner: &EvalcheckProof<F>) -> EvalcheckProof<F> {
-		EvalcheckProof::Repeating(Box::new(inner.clone()))
-	}
-
-	let committed = rand_committed::<BinaryField128b, 10>();
-	let transparent = rand_transparent::<_, 20>();
-	let repeating = transparent.clone().map(|x| rand_repeating(&x));
-	let first_linear_combination =
-		rand_composite(committed[..10].iter().chain(repeating[..2].iter()));
-	let second_linear_combination = rand_composite(
-		slice::from_ref(&first_linear_combination)
-			.iter()
-			.chain(transparent[..20].iter()),
-	);
-
-	let mut transcript = crate::transcript::ProverTranscript::<
-		crate::fiat_shamir::HasherChallenger<Groestl256>,
-	>::new();
-
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut writer = transcript.message();
-	serialize_evalcheck_proof(&mut writer, &second_linear_combination);
+	serialize_evalcheck_proof(&mut writer, &EvalcheckProof::NewClaim);
+	serialize_evalcheck_proof(&mut writer, &EvalcheckProof::DuplicateClaim(6));
+
 	let mut transcript = transcript.into_verifier();
 	let mut reader = transcript.message();
 
-	let out_deserialized = deserialize_evalcheck_proof::<_, BinaryField128b>(&mut reader).unwrap();
+	let out_1 = deserialize_evalcheck_proof(&mut reader).unwrap();
+	let out_2 = deserialize_evalcheck_proof(&mut reader).unwrap();
 
-	assert_eq!(out_deserialized, second_linear_combination);
+	assert_eq!(out_1, EvalcheckProof::NewClaim);
+	assert_eq!(out_2, EvalcheckProof::DuplicateClaim(6));
 
 	transcript.finalize().unwrap()
 }
