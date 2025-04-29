@@ -62,7 +62,7 @@ use crate::{
 // impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 
 macro_rules! define_packed_field {
-    ($($name:ident, $bits:ident, $prim:ty, $alpha_idx:expr);* $(;)?) => {
+    ($($name:ident, $bits:ident, $prim:ty, $alpha_idx:tt);* $(;)?) => {
         $(
             // Define packed field types
 			pub type $name = PackedPrimitiveType<$prim, $bits>;
@@ -74,17 +74,18 @@ macro_rules! define_packed_field {
             impl_broadcast!($prim, $bits);
 
 			// Define operations for height 0
-            define_packed_field!(@maybe_impl_ops $name);
+            define_packed_field!(@maybe_impl_ops $name, $alpha_idx);
 
 			// Define constants
 			impl_tower_constants!($bits, $prim, { alphas!($prim, $alpha_idx) });
         )*
     };
 
-	(@maybe_impl_ops PackedBinaryField64x1b) => {
-        impl_ops_for_zero_height!(PackedBinaryField64x1b);
+    // Conditional ops impl if alpha_idx == 0
+    (@maybe_impl_ops $name:ident, 0) => {
+        impl_ops_for_zero_height!($name);
     };
-    (@maybe_impl_ops $_other:ident) => {};
+    (@maybe_impl_ops $name:ident, $other_idx:tt) => {};
 }
 
 define_packed_field!(
