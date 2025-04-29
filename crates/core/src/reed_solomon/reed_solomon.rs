@@ -2,21 +2,26 @@
 
 //! [Reed–Solomon] codes over binary fields.
 //!
-//! The Reed–Solomon code admits an efficient encoding algorithm over binary fields due to [LCH14].
-//! The additive NTT encoding algorithm encodes messages interpreted as the coefficients of a
-//! polynomial in a non-standard, novel polynomial basis and the codewords are the polynomial
-//! evaluations over a linear subspace of the field. See the [binius_ntt] crate for more details.
-//!
-//! [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
-//! [LCH14]: <https://arxiv.org/abs/1404.3458>
+//! See [`ReedSolomonCode`] for details.
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
 use binius_math::BinarySubspace;
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, Error, NTTShape};
+use binius_ntt::{AdditiveNTT, Error as NTTError, NTTShape};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 
+use super::error::Error;
+
+/// [Reed–Solomon] codes over binary fields.
+///
+/// The Reed–Solomon code admits an efficient encoding algorithm over binary fields due to [LCH14].
+/// The additive NTT encoding algorithm encodes messages interpreted as the coefficients of a
+/// polynomial in a non-standard, novel polynomial basis and the codewords are the polynomial
+/// evaluations over a linear subspace of the field. See the [binius_ntt] crate for more details.
+///
+/// [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
+/// [LCH14]: <https://arxiv.org/abs/1404.3458>
 #[derive(Debug, Getters, CopyGetters)]
 pub struct ReedSolomonCode<F: BinaryField> {
 	#[get = "pub"]
@@ -41,9 +46,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		log_inv_rate: usize,
 	) -> Result<Self, Error> {
 		if subspace.dim() != log_dimension + log_inv_rate {
-			return Err(Error::DomainTooSmall {
-				log_required_domain_size: log_dimension + log_inv_rate,
-			});
+			return Err(Error::SubspaceDimensionMismatch);
 		}
 		Ok(Self {
 			subspace,
@@ -97,6 +100,9 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		code: &mut [P],
 		log_batch_size: usize,
 	) -> Result<(), Error> {
+		if ntt.subspace(ntt.log_domain_size() - self.log_len()) != self.subspace {
+			bail!(Error::EncoderSubspaceMismatch);
+		}
 		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
@@ -105,12 +111,12 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		)
 		.entered();
 		if (code.len() << log_batch_size) < self.len() {
-			bail!(Error::BufferTooSmall {
+			bail!(Error::NTT(NTTError::BufferTooSmall {
 				log_code_len: self.len(),
-			});
+			}));
 		}
 		if self.dim() % P::WIDTH != 0 {
-			bail!(Error::PackingWidthMustDivideDimension);
+			bail!(Error::NTT(NTTError::PackingWidthMustDivideDimension));
 		}
 
 		let msgs_len = (self.dim() / P::WIDTH) << log_batch_size;
@@ -126,7 +132,8 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		(0..(1 << self.log_inv_rate))
 			.into_par_iter()
 			.zip(code.par_chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
+			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))?;
+		Ok(())
 	}
 
 	/// Encode a batch of interleaved messages of extension field elements in-place in a provided

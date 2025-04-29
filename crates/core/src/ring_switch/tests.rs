@@ -299,7 +299,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		log_inv_rate,
 	)
 	.unwrap();
-	let ntt = SingleThreadedNTT::new(fri_params.log_len()).unwrap();
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
 	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
 	let committed_multilins = piop::collect_committed_witnesses::<U, FExt<Tower>>(

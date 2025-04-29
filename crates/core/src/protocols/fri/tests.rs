@@ -53,7 +53,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 			.unwrap();
 
 	let committed_rs_code = ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate).unwrap();
-	let ntt = SingleThreadedNTT::new(params.log_len()).unwrap();
+	let ntt = SingleThreadedNTT::new(params.rs_code().log_len()).unwrap();
 
 	let n_round_commitments = arities.len();
 
