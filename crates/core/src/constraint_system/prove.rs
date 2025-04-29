@@ -13,7 +13,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -481,89 +481,78 @@ where
 	// The function is on the critical path, parallelize.
 	let indices_to_update: Vec<(OracleId, MultilinearWitness<'a, _>)> = flush_oracle_ids
 		.par_iter()
-		.map(|&flush_oracle| {
-			let (lincom, lincom_id, selector) = match oracles.oracle(flush_oracle).variant {
-				MultilinearPolyVariant::Composite(composite) => {
-					let inner_polys = composite.inner();
-					if inner_polys.len() != 2 {
-						unreachable!("We added composite with two inner polynomials");
-					}
+		.map(|&flush_oracle| match oracles.oracle(flush_oracle).variant {
+			MultilinearPolyVariant::Composite(composite) => {
+				let inner_polys = composite.inner();
 
-					let MultilinearPolyVariant::LinearCombination(lincom) =
-						oracles.oracle(inner_polys[1]).variant
-					else {
-						unreachable!("We added composite with an inner linear combination");
-					};
+				let polys = inner_polys
+					.iter()
+					.map(|id| witness.get_multilin_poly(*id))
+					.collect::<Result<Vec<_>, _>>()?;
 
-					(lincom, inner_polys[1], Some(inner_polys[0]))
-				}
-				MultilinearPolyVariant::LinearCombination(lincom) => (lincom, flush_oracle, None),
-				_ => unreachable!("flush_oracles must either be composite or linear combinations"),
-			};
-			let polys = lincom
-				.polys()
-				.map(|id| witness.get_multilin_poly(id))
-				.collect::<Result<Vec<_>, _>>()?;
+				let n_vars = composite.n_vars();
+				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
 
-			let packed_len = 1
-				<< lincom
-					.n_vars()
-					.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
-			let lin_comb_data = (0..packed_len)
-				.into_par_iter()
-				.map(|i| {
-					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-						let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-						polys.iter().zip(lincom.coefficients()).fold(
-							lincom.offset(),
-							|sum, (poly, coeff)| {
-								sum + poly
-									.evaluate_on_hypercube_and_scale(index, coeff)
-									.unwrap_or(<FExt<Tower>>::ZERO)
-							},
-						)
-					})
-				})
-				.collect::<Vec<_>>();
+				let packed_len = 1 << n_vars.saturating_sub(log_width);
 
-			if let Some(selector) = selector {
-				let selector_data = witness.get_multilin_poly(selector)?;
+				let inner_c = composite.c();
 
-				let composite_data = lin_comb_data
-					.par_iter()
-					.enumerate()
-					.map(|(i, inner)| {
+				let composite_data = (0..packed_len)
+					.into_par_iter()
+					.map(|i| {
 						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
 							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+							let evals = polys
+								.iter()
+								.map(|poly| poly.evaluate_on_hypercube(index).unwrap_or_default())
+								.collect::<Vec<_>>();
 
-							<FExt<Tower>>::ONE
-								+ inner.get(j)
-									* selector_data
-										.evaluate_on_hypercube(index)
-										.unwrap_or(<FExt<Tower>>::ZERO)
+							inner_c
+								.evaluate(&evals)
+								.expect("query length is the same as poly length")
 						})
 					})
 					.collect::<Vec<_>>();
 
-				let composite_poly = MultilinearExtension::new(lincom.n_vars(), composite_data)
-					.expect("data is constructed with the correct length with respect to n_vars");
-				let lincom_poly = MultilinearExtension::new(lincom.n_vars(), lin_comb_data)
+				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
 					.expect("data is constructed with the correct length with respect to n_vars");
 
-				Ok(vec![
-					(lincom_id, MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn()),
-					(flush_oracle, MLEDirectAdapter::from(composite_poly).upcast_arc_dyn()),
-				])
-			} else {
+				Ok((flush_oracle, MLEDirectAdapter::from(composite_poly).upcast_arc_dyn()))
+			}
+			MultilinearPolyVariant::LinearCombination(lincom) => {
+				let polys = lincom
+					.polys()
+					.map(|id| witness.get_multilin_poly(id))
+					.collect::<Result<Vec<_>, _>>()?;
+
+				let packed_len = 1
+					<< lincom
+						.n_vars()
+						.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
+				let lin_comb_data = (0..packed_len)
+					.into_par_iter()
+					.map(|i| {
+						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+							polys.iter().zip(lincom.coefficients()).fold(
+								lincom.offset(),
+								|sum, (poly, coeff)| {
+									sum + poly
+										.evaluate_on_hypercube_and_scale(index, coeff)
+										.unwrap_or(<FExt<Tower>>::ZERO)
+								},
+							)
+						})
+					})
+					.collect::<Vec<_>>();
+
 				let lincom_poly = MultilinearExtension::new(lincom.n_vars(), lin_comb_data)
 					.expect("data is constructed with the correct length with respect to n_vars");
-				Ok(vec![(lincom_id, MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn())])
+				Ok((flush_oracle, MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn()))
 			}
+			_ => unreachable!("flush_oracles must either be composite or linear combinations"),
 		})
-		.collect::<Result<Vec<_>, Error>>()?
-		.into_iter()
-		.flatten()
-		.collect::<Vec<_>>();
+		.collect::<Result<Vec<_>, Error>>()?;
 
 	witness.update_multilin_poly(indices_to_update.into_iter())?;
 	Ok(())

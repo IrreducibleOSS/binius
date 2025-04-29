@@ -1,12 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::iter;
+
 use binius_field::{
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	BinaryField, PackedField, TowerField,
 };
 use binius_hash::PseudoCompressionFunction;
-use binius_macros::arith_expr;
-use binius_math::{CompositionPoly, EvaluationOrder};
+use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{chain, Itertools};
@@ -322,8 +323,8 @@ fn verify_channels_balance<F: TowerField>(
 }
 
 /// For each flush,
-/// - if there is a selector `S`, we are taking the Grand product of the composite `1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)`
-/// - otherwise the product is over the linear combination `r + F_0 + F_1 s + F_2 s^1 + …`
+/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)$
+/// - otherwise the product is over the linear combination $r + F_0 + F_1 s + F_2 s^1 + …$
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	flushes: &[Flush<F>],
@@ -391,35 +392,57 @@ pub fn make_flush_oracles<F: TowerField>(
 						})
 						.sum::<F>();
 
-					let add_one = flush.selector.map(|_| F::ONE).unwrap_or(F::ZERO);
-
-					//To store a linear combination with constants and actual oracles, we add in the factor corresponding to the constant values into the offset.
-					let inner_linear = oracles
-						.add_named(format!("flush channel_id={channel_id} linear combination"))
-						.linear_combination_with_offset(
-							n_vars,
-							*permutation_challenge + const_linear_combination + add_one,
-							flush
+					let poly = match flush.selector {
+						Some(selector_id) => {
+							let offset = *permutation_challenge + const_linear_combination + F::ONE;
+							let arith_expr_linear = ArithExpr::Const(offset);
+							let var_offset = 1; // Var(0) represents the selector column.
+							let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
 								.oracles
 								.iter()
 								.zip(mixing_powers.iter().copied())
 								.filter_map(|(id, coeff)| match id {
-									OracleOrConst::Oracle(oracle_id) => Some((*oracle_id, coeff)),
+									OracleOrConst::Oracle(id) => Some((*id, coeff)),
 									_ => None,
-								}),
-						)?;
-					let poly = match flush.selector {
-						Some(selector_id) => oracles
-							.add_named(format!("flush channel_id={channel_id} composite"))
-							.composite_mle(
+								})
+								.unzip();
+
+							// Build the linear combination of the non-constant oracles.
+							let arith_expr_linear = coeffs.into_iter().enumerate().fold(
+								arith_expr_linear,
+								|linear, (offset, coeff)| {
+									linear
+										+ ArithExpr::Var(offset + var_offset)
+											* ArithExpr::Const(coeff)
+								},
+							);
+
+							// The ArithExpr is of the form 1 + S * linear_factors
+							oracles
+								.add_named(format!("flush channel_id={channel_id} composite"))
+								.composite_mle(
+									n_vars,
+									iter::once(selector_id).chain(non_const_oracles),
+									ArithExpr::Const(F::ONE)
+										+ ArithExpr::Var(0) * arith_expr_linear,
+								)?
+						}
+						None => oracles
+							.add_named(format!("flush channel_id={channel_id} linear combination"))
+							.linear_combination_with_offset(
 								n_vars,
-								[selector_id, inner_linear],
-								arith_expr!(
-									[selector_id, inner_linear] = 1 + selector_id * inner_linear
-								)
-								.convert_field(),
+								*permutation_challenge + const_linear_combination,
+								flush
+									.oracles
+									.iter()
+									.zip(mixing_powers.iter().copied())
+									.filter_map(|(id, coeff)| match id {
+										OracleOrConst::Oracle(oracle_id) => {
+											Some((*oracle_id, coeff))
+										}
+										_ => None,
+									}),
 							)?,
-						None => inner_linear,
 					};
 					Ok(poly)
 				})
