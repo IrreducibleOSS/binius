@@ -5,6 +5,7 @@ use std::{env, marker::PhantomData, slice::from_mut};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
+	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -53,7 +54,6 @@ use crate::{
 		},
 	},
 	ring_switch,
-	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
