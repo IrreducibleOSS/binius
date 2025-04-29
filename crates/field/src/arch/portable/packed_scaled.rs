@@ -36,6 +36,44 @@ impl<PT, const N: usize> ScaledPackedField<PT, N> {
 	pub fn from_direct_packed_fn(f: impl FnMut(usize) -> PT) -> Self {
 		Self(std::array::from_fn(f))
 	}
+
+	/// We put implementation here to be able to use in the generic code.
+	/// (`PackedField` is only implemented for certain types via macro).
+	#[inline]
+	pub(crate) unsafe fn spread_unchecked(self, log_block_len: usize, block_idx: usize) -> Self
+	where
+		PT: PackedField,
+	{
+		let log_n = checked_log_2(N);
+		let values = if log_block_len >= PT::LOG_WIDTH {
+			let offset = block_idx << (log_block_len - PT::LOG_WIDTH);
+			let log_packed_block = log_block_len - PT::LOG_WIDTH;
+			let log_smaller_block = PT::LOG_WIDTH.saturating_sub(log_n - log_packed_block);
+			let smaller_block_index_mask = (1 << (PT::LOG_WIDTH - log_smaller_block)) - 1;
+			array::from_fn(|i| {
+				self.0
+					.get_unchecked(offset + (i >> (log_n - log_packed_block)))
+					.spread_unchecked(
+						log_smaller_block,
+						(i >> log_n.saturating_sub(log_block_len)) & smaller_block_index_mask,
+					)
+			})
+		} else {
+			let value_index = block_idx >> (PT::LOG_WIDTH - log_block_len);
+			let log_inner_block_len = log_block_len.saturating_sub(log_n);
+			let block_offset = block_idx & ((1 << (PT::LOG_WIDTH - log_block_len)) - 1);
+			let block_offset = block_offset << (log_block_len - log_inner_block_len);
+
+			array::from_fn(|i| {
+				self.0.get_unchecked(value_index).spread_unchecked(
+					log_inner_block_len,
+					block_offset + (i >> (log_n + log_inner_block_len - log_block_len)),
+				)
+			})
+		};
+
+		Self(values)
+	}
 }
 
 impl<PT, const N: usize> Default for ScaledPackedField<PT, N>
@@ -292,32 +330,7 @@ where
 
 	#[inline]
 	unsafe fn spread_unchecked(self, log_block_len: usize, block_idx: usize) -> Self {
-		let log_n = checked_log_2(N);
-		let values = if log_block_len >= PT::LOG_WIDTH {
-			let offset = block_idx << (log_block_len - PT::LOG_WIDTH);
-			let log_packed_block = log_block_len - PT::LOG_WIDTH;
-			let log_smaller_block = PT::LOG_WIDTH.saturating_sub(log_n - log_packed_block);
-			let smaller_block_index_mask = (1 << (PT::LOG_WIDTH - log_smaller_block)) - 1;
-			array::from_fn(|i| {
-				self.0
-					.get_unchecked(offset + (i >> (log_n - log_packed_block)))
-					.spread_unchecked(log_smaller_block, i & smaller_block_index_mask)
-			})
-		} else {
-			let value_index = block_idx >> (PT::LOG_WIDTH - log_block_len);
-			let log_inner_block_len = log_block_len.saturating_sub(log_n);
-			let block_offset = block_idx & ((1 << (PT::LOG_WIDTH - log_block_len)) - 1);
-			let block_offset = block_offset << (log_block_len - log_inner_block_len);
-
-			array::from_fn(|i| {
-				self.0.get_unchecked(value_index).spread_unchecked(
-					log_inner_block_len,
-					block_offset + (i >> (log_n + log_inner_block_len - log_block_len)),
-				)
-			})
-		};
-
-		Self(values)
+		ScaledPackedField::spread_unchecked(self, log_block_len, block_idx)
 	}
 
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
