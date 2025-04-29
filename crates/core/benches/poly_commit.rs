@@ -64,15 +64,6 @@ where
 {
 	let (fri_params, merkle_prover, committed_multilins) =
 		create_poly_commit::<F, P, FEncode>(LOG_SIZE);
-	// let rs_code = ReedSolomonCode::new(
-	// 	fri_params.rs_code().log_dim(),
-	// 	fri_params.rs_code().log_inv_rate(),
-	// 	&NTTOptions {
-	// 		precompute_twiddles: true,
-	// 		thread_settings: ThreadingSettings::MultithreadedDefault,
-	// 	},
-	// )
-	// .unwrap();
 	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())
 		.unwrap()
 		.precompute_twiddles()

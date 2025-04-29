@@ -260,15 +260,12 @@ where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
 {
-	<FRIParams<F, FA>>::fold_arities(fri_params)
-		//.fold_arities()
+	fri_params
+		.fold_arities()
 		.iter()
-		.scan(<FRIParams<F, FA>>::log_len(fri_params), |log_n_cosets, arity| {
+		.scan(fri_params.log_len(), |log_n_cosets, arity| {
 			*log_n_cosets -= arity;
-			Some(vcs.optimal_verify_layer(
-				<FRIParams<F, FA>>::n_test_queries(fri_params),
-				*log_n_cosets,
-			))
+			Some(vcs.optimal_verify_layer(fri_params.n_test_queries(), *log_n_cosets))
 		})
 }
 
