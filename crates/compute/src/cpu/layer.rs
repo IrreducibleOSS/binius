@@ -165,38 +165,58 @@ mod tests {
 	use super::*;
 	use crate::{memory::ComputeMemory, tower::CanonicalTowerFamily};
 
-	#[test]
-	fn test_exec_single_tensor_expand() {
-		let n_vars = 8;
+	fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		n_vars: usize,
+	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let coordinates = repeat_with(|| <BinaryField128b as Field>::random(&mut rng))
+
+		let coordinates = repeat_with(|| F::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let mut buffer = vec![BinaryField128b::ZERO; 1 << n_vars];
-		for x_i in &mut buffer[..4] {
-			*x_i = <BinaryField128b as Field>::random(&mut rng);
+		// Allocate buffer to be device mapped
+		let mut buffer = compute.host_alloc(1 << n_vars);
+		let buffer = buffer.as_mut();
+		for (i, x_i) in buffer.iter_mut().enumerate() {
+			if i >= 4 {
+				*x_i = F::ZERO;
+			} else {
+				*x_i = F::random(&mut rng);
+			}
 		}
-		let mut buffer_clone = buffer.clone();
+		let mut buffer_clone = buffer.to_vec();
 
-		fn compute_single_tensor_expand<F, C: ComputeLayer<F>>(
-			compute: &C,
-			coordinates: &[F],
-			buffer: &mut <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-		) {
-			compute
-				.execute(|exec| {
-					compute.tensor_expand(exec, 2, &coordinates[2..], buffer)?;
-					Ok(vec![])
-				})
-				.unwrap();
-		}
+		// Copy the buffer to device slice
+		let (mut buffer_slice, _device_memory) =
+			C::DevMem::split_at_mut(device_memory, buffer.len());
+		compute.copy_h2d(buffer, &mut buffer_slice).unwrap();
 
-		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
-		compute_single_tensor_expand(&compute, &coordinates, &mut buffer.as_mut());
+		// Run the HAL operation
+		compute
+			.execute(|exec| {
+				compute.tensor_expand(exec, 2, &coordinates[2..], &mut buffer_slice)?;
+				Ok(vec![])
+			})
+			.unwrap();
 
+		// Copy the buffer back to host
+		let buffer_slice = C::DevMem::as_const(&buffer_slice);
+		compute.copy_d2h(buffer_slice, buffer).unwrap();
+
+		// Compute the expected result and compare
 		tensor_prod_eq_ind(2, &mut buffer_clone, &coordinates[2..]).unwrap();
 		assert_eq!(buffer, buffer_clone);
+	}
+
+	#[test]
+	fn test_exec_single_tensor_expand() {
+		type F = BinaryField128b;
+		let n_vars = 8;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ONE; 1 << n_vars];
+		test_generic_single_tensor_expand(compute, &mut device_memory, n_vars);
 	}
 
 	#[test]
