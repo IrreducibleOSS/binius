@@ -87,7 +87,7 @@ fn process_finished_claims<F: Field>(
 			break;
 		}
 
-		debug_assert!(layer_no > 0);
+		debug_assert!(!layer_claims.is_empty());
 		debug_assert_eq!(sorted_claims.len(), layer_claims.len());
 		let finished_layer_claim = layer_claims.pop().expect("must exist");
 		let _ = sorted_claims.pop().expect("must exist");
