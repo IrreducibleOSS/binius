@@ -4,22 +4,27 @@ use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
 use getset::{Getters, MutGetters};
+use itertools::chain;
 use tracing::instrument;
 
 use super::{
+	deserialize_evalcheck_proof,
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
 		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
+	EvalPoint,
 };
 use crate::{
+	fiat_shamir::Challenger,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyVariant, OracleId,
 	},
 	polynomial::MultivariatePoly,
+	transcript::VerifierTranscript,
 	transparent::select_row::SelectRow,
 };
 
@@ -75,28 +80,25 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	/// For each claim, we verify the proof by recursively verifying the subclaims in a DFS manner deduplicating previously verified claims
 	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for more details.
 	#[instrument(skip_all, name = "EvalcheckVerifierState::verify", level = "debug")]
-	pub fn verify(
+	pub fn verify<Challenger_: Challenger>(
 		&mut self,
-		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-		evalcheck_proofs: Vec<EvalcheckProof<F>>,
+		evalcheck_claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
+		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<(), Error> {
 		self.round_claims.clear();
-
-		for (claim, proof) in evalcheck_claims
-			.into_iter()
-			.zip(evalcheck_proofs.into_iter())
-		{
-			self.verify_multilinear(claim, proof)?;
+		for claim in evalcheck_claims {
+			self.verify_multilinear(claim, transcript)?;
 		}
-
 		Ok(())
 	}
 
-	fn verify_multilinear(
+	fn verify_multilinear<Challenger_: Challenger>(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-		evalcheck_proof: EvalcheckProof<F>,
+		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<(), Error> {
+		let evalcheck_proof = deserialize_evalcheck_proof::<_, F>(&mut transcript.message())?;
+
 		// If the proof is a duplicate claim, we need to check if the claim is already in the round claims which has been verified
 		if let EvalcheckProof::DuplicateClaim(index) = evalcheck_proof {
 			if let Some(expected_claim) = self.round_claims.get(index) {
@@ -107,9 +109,17 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 		}
 
-		// If the proof is not a duplicate claim, we need to add the claim to the round claims
+		// If the proof is not a duplicate claim, we need to add the claim to the round claims.
 		self.round_claims.push(evalcheck_claim.clone());
 
+		self.verify_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
+	}
+
+	fn verify_multilinear_skip_duplicate_check<Challenger_: Challenger>(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		transcript: &mut VerifierTranscript<Challenger_>,
+	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
@@ -117,81 +127,54 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		} = evalcheck_claim;
 
 		let multilinear = self.oracles.oracle(id);
-
-		match multilinear.variant.clone() {
+		let multilinear_label = multilinear.label();
+		match multilinear.variant {
 			MultilinearPolyVariant::Transparent(inner) => {
-				if evalcheck_proof != EvalcheckProof::Transparent {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
 				let actual_eval = inner.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(
-						self.oracles.oracle(id).label(),
-					)
-					.into());
+					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
 				}
 			}
 
 			MultilinearPolyVariant::Committed => {
-				if evalcheck_proof != EvalcheckProof::Committed {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
-				let claim = EvalcheckMultilinearClaim {
-					id: multilinear.id(),
+				self.committed_eval_claims.push(EvalcheckMultilinearClaim {
+					id,
 					eval_point,
 					eval,
-				};
-
-				self.committed_eval_claims.push(claim);
+				});
 			}
 
-			MultilinearPolyVariant::Repeating { id, .. } => {
-				let subproof = match evalcheck_proof {
-					EvalcheckProof::Repeating(subproof) => subproof,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
-				let n_vars = self.oracles.n_vars(id);
-				let subclaim = EvalcheckMultilinearClaim {
-					id,
-					eval_point: eval_point[..n_vars].into(),
-					eval,
-				};
-
-				self.verify_multilinear(subclaim, *subproof)?;
+			MultilinearPolyVariant::Repeating { id, log_count } => {
+				let n_vars = eval_point.len() - log_count;
+				self.verify_multilinear(
+					EvalcheckMultilinearClaim {
+						id,
+						eval_point: eval_point.slice(0..n_vars),
+						eval,
+					},
+					transcript,
+				)?;
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
-				let subproof = match evalcheck_proof {
-					EvalcheckProof::Projected(subproof) => subproof,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
-
 				let (id, values) = (projected.id(), projected.values());
 
 				let new_eval_point = {
-					let idx = projected.start_index();
-					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.clone());
-					new_eval_point.extend(eval_point[idx..].to_vec());
-					new_eval_point
+					let (lo, hi) = eval_point.split_at(projected.start_index());
+					chain!(lo, values, hi).copied().collect::<Vec<_>>()
 				};
 
-				let new_claim = EvalcheckMultilinearClaim {
-					id,
-					eval_point: new_eval_point.into(),
-					eval,
-				};
-
-				self.verify_multilinear(new_claim, *subproof)?;
+				self.verify_multilinear(
+					EvalcheckMultilinearClaim {
+						id,
+						eval_point: new_eval_point.into(),
+						eval,
+					},
+					transcript,
+				)?;
 			}
 
 			MultilinearPolyVariant::Shifted(shifted) => {
-				if evalcheck_proof != EvalcheckProof::Shifted {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
 				let meta = shifted_sumcheck_meta(self.oracles, &shifted, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					&meta,
@@ -202,10 +185,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Packed(packed) => {
-				if evalcheck_proof != EvalcheckProof::Packed {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
 				let meta = packed_sumcheck_meta(self.oracles, &packed, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					&meta,
@@ -216,66 +195,30 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				let subproofs = match evalcheck_proof {
-					EvalcheckProof::LinearCombination { subproofs } => subproofs,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
-
-				if subproofs.len() != linear_combination.n_polys() {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
-				let mut evals = Vec::new();
-
-				for (subproof, sub_oracle_id) in subproofs.iter().zip(linear_combination.polys()) {
-					// If the subproof is a duplicate claim, we need to check if the claim is already in the round claims which has been verified
-					// otherwise, we verify the subclaim by DFS
-					match subproof {
-						(None, EvalcheckProof::DuplicateClaim(index)) => {
-							if self.round_claims[*index].id != sub_oracle_id
-								|| self.round_claims[*index].eval_point != eval_point
-							{
-								return Err(VerificationError::DuplicateClaimMismatch.into());
-							}
-
-							evals.push(self.round_claims[*index].eval);
-						}
-						(Some(eval), _) => {
-							evals.push(*eval);
-						}
-						_ => return Err(VerificationError::MissingLinearCombinationEval.into()),
-					}
-				}
+				let evals = linear_combination
+					.polys()
+					.map(|sub_oracle_id| {
+						self.verify_multilinear_subclaim(
+							sub_oracle_id,
+							eval_point.clone(),
+							transcript,
+						)
+					})
+					.collect::<Result<Vec<_>, _>>()?;
 
 				// Verify the evaluation of the linear combination over the claimed evaluations
 				let actual_eval = linear_combination.offset()
 					+ inner_product_unchecked::<F, F>(evals, linear_combination.coefficients());
 
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
+					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
 				}
-
-				subproofs
-					.into_iter()
-					.zip(linear_combination.polys())
-					.try_for_each(|(subclaim, suboracle_id)| match subclaim {
-						(None, EvalcheckProof::DuplicateClaim(_)) => Ok(()),
-						(Some(eval), proof) => {
-							self.verify_multilinear_subclaim(eval, proof, suboracle_id, &eval_point)
-						}
-						_ => Err(VerificationError::MissingLinearCombinationEval.into()),
-					})?;
 			}
 			MultilinearPolyVariant::ZeroPadded(padded) => {
 				let inner = padded.id();
 
 				let start_index = padded.start_index();
 				let extra_n_vars = padded.n_pad_vars();
-
-				let (inner_eval, subproof) = match evalcheck_proof {
-					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
 
 				let (first_subclaim_eval_point, zs_second_subclaim) =
 					eval_point.split_at(start_index);
@@ -284,27 +227,22 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = [first_subclaim_eval_point, second_subclaim].concat();
 
 				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
-				let expected_eval = inner_eval
-					* select_row
-						.evaluate(zs)
-						.expect("select_row is constructor with zs.len() variables");
+				let select_row_term = select_row
+					.evaluate(zs)
+					.expect("select_row is constructor with zs.len() variables");
 
-				if expected_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
-				}
+				let inner_eval = eval * select_row_term.invert_or_zero();
 
-				self.verify_multilinear_subclaim(
-					inner_eval,
-					*subproof,
-					inner,
-					&subclaim_eval_point,
+				self.verify_multilinear(
+					EvalcheckMultilinearClaim {
+						id: inner,
+						eval_point: subclaim_eval_point.into(),
+						eval: inner_eval,
+					},
+					transcript,
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {
-				if evalcheck_proof != EvalcheckProof::CompositeMLE {
-					return Err(VerificationError::SubproofMismatch.into());
-				}
-
 				let meta = composite_sumcheck_meta(self.oracles, &eval_point)?;
 				add_composite_sumcheck_to_constraints(
 					&meta,
@@ -318,18 +256,36 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		Ok(())
 	}
 
-	fn verify_multilinear_subclaim(
+	fn verify_multilinear_subclaim<Challenger_: Challenger>(
 		&mut self,
-		eval: F,
-		subproof: EvalcheckProof<F>,
 		oracle_id: OracleId,
-		eval_point: &[F],
-	) -> Result<(), Error> {
-		let subclaim = EvalcheckMultilinearClaim {
-			id: oracle_id,
-			eval_point: eval_point.into(),
-			eval,
-		};
-		self.verify_multilinear(subclaim, subproof)
+		eval_point: EvalPoint<F>,
+		transcript: &mut VerifierTranscript<Challenger_>,
+	) -> Result<F, Error> {
+		// If the subproof is a duplicate claim, we need to check if the claim is
+		// already in the round claims which has been verified otherwise, we verify the
+		// subclaim by DFS.
+		let subproof = deserialize_evalcheck_proof::<_, F>(&mut transcript.message())?;
+		match subproof {
+			EvalcheckProof::DuplicateClaim(index) => {
+				if self.round_claims[index].id != oracle_id
+					|| self.round_claims[index].eval_point != eval_point
+				{
+					return Err(VerificationError::DuplicateClaimMismatch.into());
+				}
+
+				Ok(self.round_claims[index].eval)
+			}
+			_ => {
+				let eval = transcript.message().read_scalar()?;
+				let subclaim = EvalcheckMultilinearClaim {
+					id: oracle_id,
+					eval_point,
+					eval,
+				};
+				self.verify_multilinear_skip_duplicate_check(subclaim, transcript)?;
+				Ok(eval)
+			}
+		}
 	}
 }

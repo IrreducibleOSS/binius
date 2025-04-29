@@ -20,12 +20,14 @@ use itertools::Either;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{
+	fiat_shamir::HasherChallenger,
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
 		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
 		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
 	},
+	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
 };
@@ -109,12 +111,15 @@ where
 		])
 		.unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	let _proof = prover_state.prove(claims.clone()).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+
+	verifier_state.verify(claims, &mut transcript).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -186,12 +191,14 @@ where
 		])
 		.unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	let _proof = prover_state.prove(claims.clone()).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+	verifier_state.verify(claims, &mut transcript).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -282,11 +289,14 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -353,11 +363,14 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -454,11 +467,14 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -514,13 +530,16 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
 	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
 	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
 
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -604,13 +623,14 @@ where
 	};
 
 	let backend = make_portable_backend();
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::ZeroPadded { .. });
-
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
