@@ -99,7 +99,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	) -> Result<(), Error> {
 		let evalcheck_proof = deserialize_evalcheck_proof::<_, F>(&mut transcript.message())?;
 
-		// If the proof is a duplicate claim, we need to check if the claim is already in the round claims which has been verified
+		// If the proof is a duplicate claim, we need to check if the claim is already in the round
+		// claims, which have been verified.
 		if let EvalcheckProof::DuplicateClaim(index) = evalcheck_proof {
 			if let Some(expected_claim) = self.round_claims.get(index) {
 				if *expected_claim == evalcheck_claim {
@@ -109,9 +110,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 		}
 
-		// If the proof is not a duplicate claim, we need to add the claim to the round claims.
-		self.round_claims.push(evalcheck_claim.clone());
-
 		self.verify_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
 	}
 
@@ -120,6 +118,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<(), Error> {
+		self.round_claims.push(evalcheck_claim.clone());
+
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
@@ -157,16 +157,16 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Projected(projected) => {
-				let (id, values) = (projected.id(), projected.values());
-
 				let new_eval_point = {
 					let (lo, hi) = eval_point.split_at(projected.start_index());
-					chain!(lo, values, hi).copied().collect::<Vec<_>>()
+					chain!(lo, projected.values(), hi)
+						.copied()
+						.collect::<Vec<_>>()
 				};
 
 				self.verify_multilinear(
 					EvalcheckMultilinearClaim {
-						id,
+						id: projected.id(),
 						eval_point: new_eval_point.into(),
 						eval,
 					},
@@ -215,17 +215,15 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				}
 			}
 			MultilinearPolyVariant::ZeroPadded(padded) => {
-				let inner = padded.id();
+				let subclaim_eval_point = chain!(
+					&eval_point[..padded.start_index()],
+					&eval_point[padded.start_index() + padded.n_pad_vars()..],
+				)
+				.copied()
+				.collect::<Vec<_>>();
 
-				let start_index = padded.start_index();
-				let extra_n_vars = padded.n_pad_vars();
-
-				let (first_subclaim_eval_point, zs_second_subclaim) =
-					eval_point.split_at(start_index);
-
-				let (zs, second_subclaim) = zs_second_subclaim.split_at(extra_n_vars);
-				let subclaim_eval_point = [first_subclaim_eval_point, second_subclaim].concat();
-
+				let zs =
+					&eval_point[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
 				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
 				let select_row_term = select_row
 					.evaluate(zs)
@@ -235,7 +233,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				self.verify_multilinear(
 					EvalcheckMultilinearClaim {
-						id: inner,
+						id: padded.id(),
 						eval_point: subclaim_eval_point.into(),
 						eval: inner_eval,
 					},

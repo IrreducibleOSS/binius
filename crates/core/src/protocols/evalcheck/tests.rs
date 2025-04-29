@@ -2,7 +2,6 @@
 
 use std::{array, iter::repeat_with, slice};
 
-use assert_matches::assert_matches;
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	AESTowerField128b, BinaryField128b, BinaryField1b, ByteSliced16x128x1b, ByteSlicedAES16x128b,
@@ -113,7 +112,7 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(claims.clone()).unwrap();
+	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut transcript = transcript.into_verifier();
@@ -193,7 +192,7 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(claims.clone()).unwrap();
+	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut transcript = transcript.into_verifier();
@@ -292,7 +291,9 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
@@ -366,7 +367,9 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
@@ -470,7 +473,9 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
@@ -533,9 +538,9 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
-
-	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
@@ -626,7 +631,9 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let _proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);

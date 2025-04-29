@@ -7,12 +7,13 @@ use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
-use itertools::izip;
+use itertools::{chain, izip};
 use tracing::instrument;
 
 use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
+	serialize_evalcheck_proof,
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
 		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta,
@@ -20,6 +21,7 @@ use super::{
 	EvalPoint, EvalPointOracleIdMap,
 };
 use crate::{
+	fiat_shamir::Challenger,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
@@ -28,6 +30,7 @@ use crate::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
 		shifted_sumcheck_meta,
 	},
+	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };
 
@@ -131,10 +134,11 @@ where
 	///  * they are always a product of two multilins (composition polynomial is `BivariateProduct`)
 	///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 	///  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
-	pub fn prove(
+	pub fn prove<Challenger_: Challenger>(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	) -> Result<Vec<EvalcheckProof<F>>, Error> {
+		transcript: &mut ProverTranscript<Challenger_>,
+	) -> Result<(), Error> {
 		// Reset the prover state for a new round.
 		self.round_claim_index = 0;
 		self.visited_claims.clear();
@@ -219,11 +223,9 @@ where
 
 		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the subclaims by stepping through subclaims in a DFS manner
 		// and deduplicating claims.
-		let proofs = evalcheck_claims
-			.iter()
-			.cloned()
-			.map(|claim| self.prove_multilinear(claim))
-			.collect::<Result<Vec<_>, Error>>();
+		for claim in evalcheck_claims {
+			self.prove_multilinear(claim, transcript)?;
+		}
 
 		// Step 3: Process projected_bivariate_claims
 		let evalcheck_mle_fold_high_span = tracing::debug_span!(
@@ -271,7 +273,7 @@ where
 			self.witness_index,
 		);
 
-		proofs
+		Ok(())
 	}
 
 	#[instrument(
@@ -340,6 +342,16 @@ where
 					Some((suboracle_id, coeff)) if n_polys == 1 && !coeff.is_zero() => {
 						let eval = (eval - linear_combination.offset())
 							* coeff.invert().expect("not zero");
+
+						if self
+							.evals_memoization
+							.get(suboracle_id, &eval_point)
+							.is_none()
+						{
+							self.evals_memoization
+								.insert(suboracle_id, eval_point.clone(), eval);
+						}
+
 						let subclaim = EvalcheckMultilinearClaim {
 							id: suboracle_id,
 							eval_point,
@@ -372,21 +384,37 @@ where
 		name = "EvalcheckProverState::prove_multilinear",
 		level = "debug"
 	)]
-	fn prove_multilinear(
+	fn prove_multilinear<Challenger_: Challenger>(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
-	) -> Result<EvalcheckProof<F>, Error> {
+		transcript: &mut ProverTranscript<Challenger_>,
+	) -> Result<(), Error> {
+		let EvalcheckMultilinearClaim { id, eval_point, .. } = &evalcheck_claim;
+
+		let claim_id = self.claim_to_index.get(*id, eval_point);
+
+		if let Some(claim_id) = claim_id {
+			serialize_evalcheck_proof(
+				&mut transcript.message(),
+				&EvalcheckProof::<F>::DuplicateClaim(*claim_id),
+			);
+			return Ok(());
+		}
+		serialize_evalcheck_proof(&mut transcript.message(), &EvalcheckProof::<F>::Committed);
+
+		self.prove_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
+	}
+
+	fn prove_multilinear_skip_duplicate_check<Challenger_: Challenger>(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		transcript: &mut ProverTranscript<Challenger_>,
+	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
 			eval_point,
 			eval,
-		} = evalcheck_claim.clone();
-
-		let claim_id = self.claim_to_index.get(id, &eval_point);
-
-		if let Some(claim_id) = claim_id {
-			return Ok(EvalcheckProof::DuplicateClaim(*claim_id));
-		}
+		} = evalcheck_claim;
 
 		self.claim_to_index
 			.insert(id, eval_point.clone(), self.round_claim_index);
@@ -395,143 +423,111 @@ where
 
 		let multilinear = self.oracles.oracle(id);
 
-		let proof = match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => EvalcheckProof::Transparent,
-
+		match multilinear.variant {
+			MultilinearPolyVariant::Transparent { .. } => {}
 			MultilinearPolyVariant::Committed => {
-				let subclaim = EvalcheckMultilinearClaim {
+				self.committed_eval_claims.push(EvalcheckMultilinearClaim {
 					id: multilinear.id,
 					eval_point,
 					eval,
-				};
-
-				self.committed_eval_claims.push(subclaim);
-				EvalcheckProof::Committed
+				});
 			}
-			MultilinearPolyVariant::Repeating { id, .. } => {
-				let n_vars = self.oracles.n_vars(id);
-				let inner_eval_point = eval_point.slice(0..n_vars);
-				let subclaim = EvalcheckMultilinearClaim {
-					id,
-					eval_point: inner_eval_point,
-					eval,
-				};
-
-				let subproof = self.prove_multilinear(subclaim)?;
-				EvalcheckProof::Repeating(Box::new(subproof))
+			MultilinearPolyVariant::Repeating {
+				id: inner_id,
+				log_count,
+			} => {
+				let n_vars = eval_point.len() - log_count;
+				self.prove_multilinear(
+					EvalcheckMultilinearClaim {
+						id: inner_id,
+						eval_point: eval_point.slice(0..n_vars),
+						eval,
+					},
+					transcript,
+				)?;
 			}
 			MultilinearPolyVariant::Projected(projected) => {
-				let (id, values) = (projected.id(), projected.values());
 				let new_eval_point = {
-					let idx = projected.start_index();
-					let mut new_eval_point = eval_point[0..idx].to_vec();
-					new_eval_point.extend(values.clone());
-					new_eval_point.extend(eval_point[idx..].to_vec());
-					new_eval_point
+					let (lo, hi) = eval_point.split_at(projected.start_index());
+					chain!(lo, projected.values(), hi)
+						.copied()
+						.collect::<Vec<_>>()
 				};
 
-				let subclaim = EvalcheckMultilinearClaim {
-					id,
-					eval_point: new_eval_point.into(),
-					eval,
-				};
-
-				EvalcheckProof::Projected(Box::new(self.prove_multilinear(subclaim)?))
+				self.prove_multilinear(
+					EvalcheckMultilinearClaim {
+						id: projected.id(),
+						eval_point: new_eval_point.into(),
+						eval,
+					},
+					transcript,
+				)?;
 			}
-			MultilinearPolyVariant::Shifted { .. } => {
-				self.projected_bivariate_claims.push(evalcheck_claim);
-				EvalcheckProof::Shifted
-			}
-			MultilinearPolyVariant::Packed { .. } => {
-				self.projected_bivariate_claims.push(evalcheck_claim);
-				EvalcheckProof::Packed
-			}
-			MultilinearPolyVariant::Composite { .. } => {
-				self.projected_bivariate_claims.push(evalcheck_claim);
-				EvalcheckProof::CompositeMLE
+			MultilinearPolyVariant::Shifted { .. }
+			| MultilinearPolyVariant::Packed { .. }
+			| MultilinearPolyVariant::Composite { .. } => {
+				self.projected_bivariate_claims
+					.push(EvalcheckMultilinearClaim {
+						id,
+						eval_point,
+						eval,
+					});
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				let n_polys = linear_combination.n_polys();
+				for suboracle_id in linear_combination.polys() {
+					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
+						serialize_evalcheck_proof(
+							&mut transcript.message(),
+							&EvalcheckProof::<F>::DuplicateClaim(*claim_index),
+						);
+					} else {
+						serialize_evalcheck_proof(
+							&mut transcript.message(),
+							&EvalcheckProof::<F>::Committed,
+						);
 
-				let subproofs = match linear_combination
-					.polys()
-					.zip(linear_combination.coefficients())
-					.next()
-				{
-					Some((suboracle_id, coeff)) if n_polys == 1 && !coeff.is_zero() => {
-						let subclaim = if let Some(claim_index) =
-							self.claim_to_index.get(suboracle_id, &eval_point)
-						{
-							(None, EvalcheckProof::DuplicateClaim(*claim_index))
-						} else {
-							let eval = (eval - linear_combination.offset())
-								* coeff.invert().expect("not zero");
-							let subclaim = EvalcheckMultilinearClaim {
+						let eval = *self
+							.evals_memoization
+							.get(suboracle_id, &eval_point)
+							.expect("precomputed above");
+
+						transcript.message().write_scalar(eval);
+
+						self.prove_multilinear_skip_duplicate_check(
+							EvalcheckMultilinearClaim {
 								id: suboracle_id,
-								eval_point,
+								eval_point: eval_point.clone(),
 								eval,
-							};
-
-							let proof = self.prove_multilinear(subclaim).unwrap();
-
-							(Some(eval), proof)
-						};
-
-						vec![subclaim]
+							},
+							transcript,
+						)?;
 					}
-					_ => linear_combination
-						.polys()
-						.map(|suboracle_id| {
-							let eval = *self
-								.evals_memoization
-								.get(suboracle_id, &eval_point)
-								.expect("precomputed above");
-
-							let subclaim = if let Some(claim_index) =
-								self.claim_to_index.get(suboracle_id, &eval_point)
-							{
-								(None, EvalcheckProof::DuplicateClaim(*claim_index))
-							} else {
-								let subclaim = EvalcheckMultilinearClaim {
-									id: suboracle_id,
-									eval_point: eval_point.clone(),
-									eval,
-								};
-
-								let proof = self.prove_multilinear(subclaim).unwrap();
-
-								(Some(eval), proof)
-							};
-							Ok(subclaim)
-						})
-						.collect::<Result<Vec<_>, Error>>()?,
-				};
-
-				EvalcheckProof::LinearCombination { subproofs }
+				}
 			}
 			MultilinearPolyVariant::ZeroPadded(padded) => {
-				let id = padded.id();
-				let inner_n_vars = self.oracles.n_vars(id);
+				let inner_eval_point = chain!(
+					&eval_point[..padded.start_index()],
+					&eval_point[padded.start_index() + padded.n_pad_vars()..],
+				)
+				.copied()
+				.collect::<Vec<_>>();
 
-				let inner_eval_point = &eval_point[..inner_n_vars];
-
-				let eval = *self
+				let inner_eval = *self
 					.evals_memoization
-					.get(id, inner_eval_point)
+					.get(padded.id(), &inner_eval_point)
 					.expect("precomputed above");
 
-				let subclaim = EvalcheckMultilinearClaim {
-					id,
-					eval_point: inner_eval_point.into(),
-					eval,
-				};
-
-				let subproof = self.prove_multilinear(subclaim)?;
-
-				EvalcheckProof::ZeroPadded(eval, Box::new(subproof))
+				self.prove_multilinear(
+					EvalcheckMultilinearClaim {
+						id: padded.id(),
+						eval_point: inner_eval_point.into(),
+						eval: inner_eval,
+					},
+					transcript,
+				)?;
 			}
-		};
-		Ok(proof)
+		}
+		Ok(())
 	}
 
 	fn projected_bivariate_meta(
