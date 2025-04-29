@@ -15,6 +15,7 @@ use binius_math::{
 	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
+use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::prelude::*;
 
@@ -298,6 +299,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		log_inv_rate,
 	)
 	.unwrap();
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
 	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
 	let committed_multilins = piop::collect_committed_witnesses::<U, FExt<Tower>>(
@@ -312,7 +314,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		commitment,
 		committed,
 		codeword,
-	} = piop::commit(&fri_params, merkle_prover, &committed_multilins).unwrap();
+	} = piop::commit(&fri_params, &ntt, merkle_prover, &committed_multilins).unwrap();
 
 	let eval_claims = setup_test_eval_claims::<U, FExt<Tower>>(&mut rng, oracles, &witness_index);
 
@@ -340,6 +342,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(
 		&fri_params,
+		&ntt,
 		merkle_prover,
 		domain_factory,
 		&commit_meta,

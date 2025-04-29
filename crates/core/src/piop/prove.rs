@@ -11,7 +11,7 @@ use binius_math::{
 	MultilinearPoly,
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
-use binius_ntt::{NTTOptions, ThreadingSettings};
+use binius_ntt::AdditiveNTT;
 use binius_utils::{
 	bail,
 	checked_arithmetics::checked_log_2,
@@ -42,7 +42,6 @@ use crate::{
 			},
 		},
 	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::ProverTranscript,
 };
 
@@ -132,8 +131,9 @@ fn merge_multilins<F, P, Data>(
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
 ///   defined over subfields of `F`. They must be in ascending order by the number of variables
 ///   in the packed multilinear (ie. number of variables minus log extension degree).
-pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
+pub fn commit<F, FEncode, P, M, NTT, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	multilins: &[M],
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
@@ -142,6 +142,7 @@ where
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 {
@@ -154,19 +155,9 @@ where
 		return Err(Error::CommittedsNotSorted);
 	}
 
-	// TODO: this should be passed in to avoid recomputing twiddles
-	let rs_code = ReedSolomonCode::new(
-		fri_params.rs_code().log_dim(),
-		fri_params.rs_code().log_inv_rate(),
-		&NTTOptions {
-			precompute_twiddles: true,
-			thread_settings: ThreadingSettings::MultithreadedDefault,
-		},
-	)?;
-	let output =
-		fri::commit_interleaved_with(&rs_code, fri_params, merkle_prover, |message_buffer| {
-			merge_multilins(&packed_multilins, message_buffer)
-		})?;
+	let output = fri::commit_interleaved_with(fri_params, ntt, merkle_prover, |message_buffer| {
+		merge_multilins(&packed_multilins, message_buffer)
+	})?;
 
 	Ok(output)
 }
@@ -176,8 +167,21 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
+pub fn prove<
+	F,
+	FDomain,
+	FEncode,
+	P,
+	M,
+	NTT,
+	DomainFactory,
+	MTScheme,
+	MTProver,
+	Challenger_,
+	Backend,
+>(
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	domain_factory: DomainFactory,
 	commit_meta: &CommitMeta,
@@ -198,6 +202,7 @@ where
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
@@ -254,6 +259,7 @@ where
 	prove_interleaved_fri_sumcheck(
 		commit_meta.total_vars(),
 		fri_params,
+		ntt,
 		merkle_prover,
 		sumcheck_provers,
 		codeword,
@@ -264,9 +270,11 @@ where
 	Ok(())
 }
 
-fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_>(
+#[allow(clippy::too_many_arguments)]
+fn prove_interleaved_fri_sumcheck<F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	sumcheck_provers: Vec<impl SumcheckProver<F>>,
 	codeword: &[P],
@@ -277,11 +285,12 @@ where
 	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover = FRIFolder::new(fri_params, merkle_prover, codeword, committed)?;
+	let mut fri_prover = FRIFolder::new(fri_params, ntt, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

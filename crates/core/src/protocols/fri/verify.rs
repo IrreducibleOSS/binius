@@ -4,6 +4,7 @@ use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_ntt::SingleThreadedNTT;
 use binius_utils::{bail, DeserializeBytes};
 use bytes::Buf;
 use itertools::izip;
@@ -99,6 +100,8 @@ where
 	where
 		Challenger_: Challenger,
 	{
+		let ntt = SingleThreadedNTT::with_subspace(self.params.rs_code().subspace())?;
+
 		// Verify that the last oracle sent is a codeword.
 		let terminate_codeword_len =
 			1 << (self.params.n_final_challenges() + self.params.rs_code().log_inv_rate());
@@ -106,7 +109,7 @@ where
 		let terminate_codeword = advice
 			.read_scalar_slice(terminate_codeword_len)
 			.map_err(Error::TranscriptError)?;
-		let final_value = self.verify_last_oracle(&terminate_codeword)?;
+		let final_value = self.verify_last_oracle(&ntt, &terminate_codeword)?;
 
 		// Verify that the provided layers match the commitments.
 		let layers = vcs_optimal_layers_depths_iter(self.params, self.vcs)
@@ -129,6 +132,7 @@ where
 			let index = transcript.sample_bits(self.params.index_bits()) as usize;
 			self.verify_query_internal(
 				index,
+				&ntt,
 				&terminate_codeword,
 				&layers,
 				&mut transcript.decommitment(),
@@ -142,7 +146,11 @@ where
 	/// Verifies that the last oracle sent is a codeword.
 	///
 	/// Returns the fully-folded message value.
-	pub fn verify_last_oracle(&self, terminate_codeword: &[F]) -> Result<F, Error> {
+	pub fn verify_last_oracle(
+		&self,
+		ntt: &SingleThreadedNTT<FA>,
+		terminate_codeword: &[F],
+	) -> Result<F, Error> {
 		let n_final_challenges = self.params.n_final_challenges();
 
 		self.vcs
@@ -165,7 +173,7 @@ where
 				.enumerate()
 				.map(|(i, coset_values)| {
 					fold_chunk(
-						self.params.rs_code(),
+						ntt,
 						n_prior_challenges,
 						i,
 						coset_values,
@@ -185,7 +193,7 @@ where
 				.enumerate()
 				.map(|(i, chunk)| {
 					fold_interleaved_chunk(
-						self.params.rs_code(),
+						ntt,
 						self.params.log_batch_size(),
 						i,
 						chunk,
@@ -223,12 +231,14 @@ where
 	pub fn verify_query<B: Buf>(
 		&self,
 		index: usize,
+		ntt: &SingleThreadedNTT<FA>,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
 		advice: &mut TranscriptReader<B>,
 	) -> Result<(), Error> {
 		self.verify_query_internal(
 			index,
+			ntt,
 			terminate_codeword,
 			layers,
 			advice,
@@ -240,6 +250,7 @@ where
 	fn verify_query_internal<B: Buf>(
 		&self,
 		mut index: usize,
+		ntt: &SingleThreadedNTT<FA>,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
 		advice: &mut TranscriptReader<B>,
@@ -278,7 +289,7 @@ where
 			advice,
 		)?;
 		let mut next_value = fold_interleaved_chunk(
-			self.params.rs_code(),
+			ntt,
 			self.params.log_batch_size(),
 			index,
 			&values,
@@ -314,7 +325,7 @@ where
 			}
 
 			next_value = fold_chunk(
-				self.params.rs_code(),
+				ntt,
 				fold_round,
 				coset_index,
 				&values,
