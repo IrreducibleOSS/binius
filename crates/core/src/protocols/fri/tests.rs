@@ -13,7 +13,7 @@ use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::ParallelIterator;
-use binius_ntt::NTTOptions;
+use binius_ntt::{NTTOptions, SingleThreadedNTT};
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use rand::prelude::*;
 
@@ -55,6 +55,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	let committed_rs_code =
 		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, &NTTOptions::default()).unwrap();
+	let ntt = SingleThreadedNTT::new(params.log_len()).unwrap();
 
 	let n_round_commitments = arities.len();
 
@@ -68,7 +69,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		commitment: mut codeword_commitment,
 		committed: codeword_committed,
 		codeword,
-	} = fri::commit_interleaved(&committed_rs_code, &params, &merkle_prover, &msg).unwrap();
+	} = fri::commit_interleaved(&committed_rs_code, &params, &ntt, &merkle_prover, &msg).unwrap();
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =

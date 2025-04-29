@@ -100,8 +100,9 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
 	///   elements.
-	fn encode_batch_inplace<P: PackedField<Scalar = F>>(
+	fn encode_batch_inplace<P: PackedField<Scalar = F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
+		ntt: &NTT,
 		code: &mut [P],
 		log_batch_size: usize,
 	) -> Result<(), Error> {
@@ -135,11 +136,11 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 			(0..(1 << self.log_inv_rate))
 				.into_par_iter()
 				.zip(code.par_chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
+				.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
 		} else {
 			(0..(1 << self.log_inv_rate))
 				.zip(code.chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
+				.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))
 		}
 	}
 
@@ -156,11 +157,16 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 	/// ## Throws
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
-	pub fn encode_ext_batch_inplace<PE: PackedExtension<F>>(
+	pub fn encode_ext_batch_inplace<PE: PackedExtension<F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
+		ntt: &NTT,
 		code: &mut [PE],
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + PE::Scalar::LOG_DEGREE)
+		self.encode_batch_inplace(
+			ntt,
+			PE::cast_bases_mut(code),
+			log_batch_size + PE::Scalar::LOG_DEGREE,
+		)
 	}
 }

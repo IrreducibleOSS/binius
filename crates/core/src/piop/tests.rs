@@ -11,6 +11,7 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
+use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -121,6 +122,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		log_inv_rate,
 	)
 	.unwrap();
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
 	let backend = make_portable_backend();
 	let mut rng = StdRng::seed_from_u64(0);
@@ -133,7 +135,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		commitment,
 		committed,
 		codeword,
-	} = commit(&fri_params, merkle_prover, &committed_multilins).unwrap();
+	} = commit(&fri_params, &ntt, merkle_prover, &committed_multilins).unwrap();
 
 	let transparent_multilins_by_vars = commit_meta
 		.n_multilins_by_vars()

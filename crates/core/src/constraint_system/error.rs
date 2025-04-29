@@ -79,6 +79,9 @@ pub enum Error {
 	#[error("math error: {0}")]
 	MathError(#[from] binius_math::Error),
 
+	#[error("ntt error: {0}")]
+	NTTError(#[from] binius_ntt::Error),
+
 	#[error("polynomial commitment error: {0}")]
 	PolyCommitError(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 

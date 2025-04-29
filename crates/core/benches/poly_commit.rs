@@ -7,7 +7,6 @@ use binius_core::{
 	piop,
 	piop::CommitMeta,
 	protocols::{fri, fri::FRIParams},
-	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
 	packed::set_packed_slice, AESTowerField128b, AESTowerField32b, BinaryField, BinaryField128b,
@@ -16,7 +15,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
-use binius_ntt::{NTTOptions, ThreadingSettings};
+use binius_ntt::SingleThreadedNTT;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itertools::Itertools;
 use rand::thread_rng;
@@ -65,22 +64,26 @@ where
 {
 	let (fri_params, merkle_prover, committed_multilins) =
 		create_poly_commit::<F, P, FEncode>(LOG_SIZE);
-	let rs_code = ReedSolomonCode::new(
-		fri_params.rs_code().log_dim(),
-		fri_params.rs_code().log_inv_rate(),
-		&NTTOptions {
-			precompute_twiddles: true,
-			thread_settings: ThreadingSettings::MultithreadedDefault,
-		},
-	)
-	.unwrap();
+	// let rs_code = ReedSolomonCode::new(
+	// 	fri_params.rs_code().log_dim(),
+	// 	fri_params.rs_code().log_inv_rate(),
+	// 	&NTTOptions {
+	// 		precompute_twiddles: true,
+	// 		thread_settings: ThreadingSettings::MultithreadedDefault,
+	// 	},
+	// )
+	// .unwrap();
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())
+		.unwrap()
+		.precompute_twiddles()
+		.multithreaded();
 	let mut group = c.benchmark_group("Polynomial Commitment");
 	group.throughput(Throughput::Bytes(
 		((1 << LOG_SIZE) * committed_multilins.len() * std::mem::size_of::<F>()) as u64,
 	));
 	group.bench_function(BenchmarkId::new(format!("{name}/log_size"), LOG_SIZE), |b| {
 		b.iter(|| {
-			fri::commit_interleaved_with(&rs_code, &fri_params, &merkle_prover, |message_buffer| {
+			fri::commit_interleaved_with(&fri_params, &ntt, &merkle_prover, |message_buffer| {
 				merge_multilins(&committed_multilins, message_buffer)
 			})
 			.unwrap();

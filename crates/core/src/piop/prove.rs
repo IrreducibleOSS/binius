@@ -11,7 +11,7 @@ use binius_math::{
 	MultilinearPoly,
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
-use binius_ntt::{NTTOptions, ThreadingSettings};
+use binius_ntt::AdditiveNTT;
 use binius_utils::{
 	bail,
 	checked_arithmetics::checked_log_2,
@@ -42,7 +42,6 @@ use crate::{
 			},
 		},
 	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::ProverTranscript,
 };
 
@@ -132,8 +131,9 @@ fn merge_multilins<F, P, Data>(
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
 ///   defined over subfields of `F`. They must be in ascending order by the number of variables
 ///   in the packed multilinear (ie. number of variables minus log extension degree).
-pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
+pub fn commit<F, FEncode, P, M, NTT, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
 	merkle_prover: &MTProver,
 	multilins: &[M],
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
@@ -142,6 +142,7 @@ where
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
+	NTT: AdditiveNTT<FEncode> + Sync,
 	MTScheme: MerkleTreeScheme<F>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 {
@@ -154,19 +155,9 @@ where
 		return Err(Error::CommittedsNotSorted);
 	}
 
-	// TODO: this should be passed in to avoid recomputing twiddles
-	let rs_code = ReedSolomonCode::new(
-		fri_params.rs_code().log_dim(),
-		fri_params.rs_code().log_inv_rate(),
-		&NTTOptions {
-			precompute_twiddles: true,
-			thread_settings: ThreadingSettings::MultithreadedDefault,
-		},
-	)?;
-	let output =
-		fri::commit_interleaved_with(&rs_code, fri_params, merkle_prover, |message_buffer| {
-			merge_multilins(&packed_multilins, message_buffer)
-		})?;
+	let output = fri::commit_interleaved_with(fri_params, ntt, merkle_prover, |message_buffer| {
+		merge_multilins(&packed_multilins, message_buffer)
+	})?;
 
 	Ok(output)
 }
