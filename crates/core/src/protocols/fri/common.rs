@@ -279,13 +279,13 @@ pub type TerminateCodeword<F> = Vec<F>;
 ///
 /// Throws [`Error::ParameterError`] if the security level is unattainable given the code
 /// parameters.
-pub fn calculate_n_test_queries<F, PS>(
+pub fn calculate_n_test_queries<F, FEncode>(
 	security_bits: usize,
-	code: &ReedSolomonCode<PS>,
+	code: &ReedSolomonCode<FEncode>,
 ) -> Result<usize, Error>
 where
-	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedField<Scalar: BinaryField>,
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
 {
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
 	let sumcheck_err = (2 * code.log_dim()) as f64 / field_size;

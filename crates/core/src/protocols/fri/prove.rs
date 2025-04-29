@@ -172,7 +172,7 @@ where
 /// * `message` - the interleaved message to encode and commit
 #[instrument(skip_all, level = "debug")]
 pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
-	rs_code: &ReedSolomonCode<PA>,
+	rs_code: &ReedSolomonCode<FA>,
 	params: &FRIParams<F, FA>,
 	merkle_prover: &MerkleProver,
 	message: &[P],
@@ -206,7 +206,7 @@ where
 /// * `merkle_prover` - the Merkle tree prover to use for committing
 /// * `message_writer` - a closure that writes the interleaved message to encode and commit
 pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
-	rs_code: &ReedSolomonCode<PA>,
+	rs_code: &ReedSolomonCode<FA>,
 	params: &FRIParams<F, FA>,
 	merkle_prover: &MerkleProver,
 	message_writer: impl FnOnce(&mut [P]),

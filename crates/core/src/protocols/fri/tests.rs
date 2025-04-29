@@ -43,13 +43,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let committed_rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
-		log_dimension,
-		log_inv_rate,
-		&NTTOptions::default(),
-	)
-	.unwrap();
-
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let committed_rs_code =
@@ -60,11 +53,14 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		FRIParams::new(committed_rs_code, log_batch_size, arities.to_vec(), n_test_queries)
 			.unwrap();
 
+	let committed_rs_code =
+		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, &NTTOptions::default()).unwrap();
+
 	let n_round_commitments = arities.len();
 
 	// Generate a random message
 	let msg = repeat_with(|| <PackedType<U, F>>::random(&mut rng))
-		.take(committed_rs_code_packed.dim() << log_batch_size >> <PackedType<U, F>>::LOG_WIDTH)
+		.take(committed_rs_code.dim() << log_batch_size >> <PackedType<U, F>>::LOG_WIDTH)
 		.collect::<Vec<_>>();
 
 	// Prover commits the message
@@ -72,7 +68,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		commitment: mut codeword_commitment,
 		committed: codeword_committed,
 		codeword,
-	} = fri::commit_interleaved(&committed_rs_code_packed, &params, &merkle_prover, &msg).unwrap();
+	} = fri::commit_interleaved(&committed_rs_code, &params, &merkle_prover, &msg).unwrap();
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =

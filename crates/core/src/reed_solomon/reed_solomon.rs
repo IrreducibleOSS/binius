@@ -10,32 +10,22 @@
 //! [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
 //! [LCH14]: <https://arxiv.org/abs/1404.3458>
 
-use std::marker::PhantomData;
-
-use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
+use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
 
 #[derive(Debug, CopyGetters)]
-pub struct ReedSolomonCode<P>
-where
-	P: PackedField,
-	P::Scalar: BinaryField,
-{
-	ntt: DynamicDispatchNTT<P::Scalar>,
+pub struct ReedSolomonCode<F: BinaryField> {
+	ntt: DynamicDispatchNTT<F>,
 	log_dimension: usize,
 	#[getset(get_copy = "pub")]
 	log_inv_rate: usize,
 	multithreaded: bool,
-	_p_marker: PhantomData<P>,
 }
 
-impl<P> ReedSolomonCode<P>
-where
-	P: PackedField<Scalar: BinaryField>,
-{
+impl<F: BinaryField> ReedSolomonCode<F> {
 	pub fn new(
 		log_dimension: usize,
 		log_inv_rate: usize,
@@ -64,11 +54,10 @@ where
 			log_dimension,
 			log_inv_rate,
 			multithreaded,
-			_p_marker: PhantomData,
 		})
 	}
 
-	pub const fn get_ntt(&self) -> &impl AdditiveNTT<P::Scalar> {
+	pub const fn get_ntt(&self) -> &impl AdditiveNTT<F> {
 		&self.ntt
 	}
 
@@ -111,12 +100,16 @@ where
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
 	///   elements.
-	fn encode_batch_inplace(&self, code: &mut [P], log_batch_size: usize) -> Result<(), Error> {
+	fn encode_batch_inplace<P: PackedField<Scalar = F>>(
+		&self,
+		code: &mut [P],
+		log_batch_size: usize,
+	) -> Result<(), Error> {
 		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
 			log_batch_size = log_batch_size,
-			symbol_bits = P::Scalar::N_BITS,
+			symbol_bits = F::N_BITS,
 		)
 		.entered();
 		if (code.len() << log_batch_size) < self.len() {
@@ -163,7 +156,7 @@ where
 	/// ## Throws
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
-	pub fn encode_ext_batch_inplace<PE: RepackedExtension<P>>(
+	pub fn encode_ext_batch_inplace<PE: PackedExtension<F>>(
 		&self,
 		code: &mut [PE],
 		log_batch_size: usize,
