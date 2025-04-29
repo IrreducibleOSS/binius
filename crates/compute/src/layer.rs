@@ -142,14 +142,13 @@ pub type FSliceMut<'a, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, Field, TowerField};
+	use binius_field::{tower::CanonicalTowerFamily, BinaryField128b, Field, TowerField};
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::{
 		alloc::{BumpAllocator, ComputeAllocator, Error as AllocError, HostBumpAllocator},
 		cpu::CpuLayer,
-		tower::CanonicalTowerFamily,
 	};
 
 	/// Test showing how to allocate host memory and create a sub-allocator over it.

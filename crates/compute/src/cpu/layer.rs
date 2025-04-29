@@ -2,13 +2,12 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{util::inner_product_unchecked, ExtensionField, Field, TowerField};
+use binius_field::{
+	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
+};
 
 use super::memory::CpuMemory;
-use crate::{
-	layer::{ComputeLayer, Error, FSlice, FSliceMut},
-	tower::TowerFamily,
-};
+use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
 
 #[derive(Debug)]
 pub struct CpuExecutor;
@@ -155,14 +154,14 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField, Field, PackedExtension,
-		PackedField, TowerField,
+		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
+		ExtensionField, Field, PackedExtension, PackedField, TowerField,
 	};
 	use binius_math::{tensor_prod_eq_ind, MultilinearExtension, MultilinearQuery};
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::{memory::ComputeMemory, tower::CanonicalTowerFamily};
+	use crate::memory::ComputeMemory;
 
 	fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 		compute: C,
