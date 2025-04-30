@@ -165,7 +165,7 @@ where
 		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
 	} else {
 		let folded_values = values
-			.chunks(1 << log_batch_size - P::LOG_WIDTH)
+			.chunks(1 << (log_batch_size - P::LOG_WIDTH))
 			.map(|chunk| {
 				iter::zip(chunk, tensor)
 					.map(|(&a_i, &b_i)| a_i * b_i)
