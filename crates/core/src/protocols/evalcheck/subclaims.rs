@@ -9,7 +9,10 @@
 //!  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 //!  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 
-use std::collections::{HashMap, HashSet};
+use std::{
+	collections::{HashMap, HashSet},
+	iter,
+};
 
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
@@ -125,17 +128,12 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	})
 }
 
-pub fn composite_sumcheck_meta<F: TowerField>(
+pub fn composite_mlecheck_meta<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	eval_point: &[F],
-) -> Result<ProjectedBivariateMeta, Error> {
-	Ok(ProjectedBivariateMeta {
-		multiplier_id: oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?,
-		inner_id: None,
-		projected_id: None,
-		// not used in case of composite
-		projected_n_vars: 0,
-	})
+) -> Result<CompositeMLECheckMeta, Error> {
+	let eq_ind_id = oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?;
+	Ok(CompositeMLECheckMeta { eq_ind_id })
 }
 
 pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
@@ -152,16 +150,16 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
-	meta: &ProjectedBivariateMeta,
+	meta: CompositeMLECheckMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	comp: &CompositeMLE<F>,
 	eval: F,
 ) {
 	let n_vars = comp.n_vars();
 	let mut oracle_ids = comp.inner().clone();
-	oracle_ids.push(meta.multiplier_id); // eq
+	oracle_ids.push(meta.eq_ind_id); // eq
 
-	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
+	// Var(comp.n_polys()) corresponds to the eq MLE
 	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithCircuit::var(comp.n_polys());
 	if n_vars >= constraint_builders.len() {
 		constraint_builders.resize_with(n_vars + 1, || ConstraintSetBuilder::new());
@@ -204,10 +202,15 @@ where
 	Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CompositeMLECheckMeta {
+	pub eq_ind_id: OracleId,
+}
+
+/// Metadata about a sumcheck over a bivariate product of two multilinears.
 #[derive(Clone, Copy)]
 pub struct ProjectedBivariateMeta {
-	/// `Some` if shifted / packed, `None` if composite
-	inner_id: Option<OracleId>,
+	inner_id: OracleId,
 	projected_id: Option<OracleId>,
 	multiplier_id: OracleId,
 	projected_n_vars: usize,
@@ -216,10 +219,7 @@ pub struct ProjectedBivariateMeta {
 impl ProjectedBivariateMeta {
 	pub fn oracle_ids(&self) -> [OracleId; 2] {
 		[
-			self.projected_id.unwrap_or_else(|| {
-				self.inner_id
-					.expect("oracle_ids() is only defined for shifted / packed")
-			}),
+			self.projected_id.unwrap_or(self.inner_id),
 			self.multiplier_id,
 		]
 	}
@@ -249,7 +249,7 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 		oracles.add_transparent(multiplier_transparent_ctr(projected_eval_point)?)?;
 
 	let meta = ProjectedBivariateMeta {
-		inner_id: Some(inner_id),
+		inner_id,
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
@@ -320,19 +320,16 @@ where
 {
 	let mut queries_to_memoize = Vec::new();
 	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
-		if meta.inner_id.is_some() {
-			// packed / shifted
-			queries_to_memoize.push(&claim.eval_point[meta.projected_n_vars..]);
-		}
+		queries_to_memoize.push(&claim.eval_point[meta.projected_n_vars..]);
 	}
-	memoized_queries.memoize_query_par(&queries_to_memoize, backend)?;
+	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
 
 	projected_bivariate_claims
 		.par_iter()
 		.zip(metas)
-		.map(|(claim, meta)| match (meta.inner_id, meta.projected_id) {
-			(Some(inner_id), Some(_)) => {
-				let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
+		.map(|(claim, meta)| match meta.projected_id {
+			Some(_) => {
+				let inner_multilin = witness_index.get_multilin_poly(meta.inner_id)?;
 				let eval_point = &claim.eval_point[meta.projected_n_vars..];
 				let query = memoized_queries
 					.full_query_readonly(eval_point)
@@ -350,9 +347,9 @@ where
 
 /// Each composite oracle induces a new eq oracle, for which we need to fill the witness
 pub fn fill_eq_witness_for_composites<F, P, Backend>(
-	metas: &[ProjectedBivariateMeta],
+	metas: &[CompositeMLECheckMeta],
 	memoized_queries: &mut MemoizedData<P, Backend>,
-	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	composite_mle_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &mut MultilinearExtensionIndex<P>,
 	backend: &Backend,
 ) -> Result<(), Error>
@@ -361,15 +358,12 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
-	let dedup_eval_points = metas
+	let dedup_eval_points = composite_mle_claims
 		.iter()
-		.zip(projected_bivariate_claims)
-		.filter(|(meta, _)| meta.inner_id.is_none())
-		.map(|(_, claim)| claim.eval_point.as_ref())
+		.map(|claim| claim.eval_point.as_ref())
 		.collect::<HashSet<_>>();
 
-	memoized_queries
-		.memoize_query_par(&dedup_eval_points.iter().copied().collect::<Vec<_>>(), backend)?;
+	memoized_queries.memoize_query_par(dedup_eval_points.iter().copied(), backend)?;
 
 	let eq_indicators = dedup_eval_points
 		.into_iter()
@@ -387,16 +381,12 @@ where
 		})
 		.collect::<Result<HashMap<_, _>, Error>>()?;
 
-	for (meta, claim) in metas
-		.iter()
-		.zip(projected_bivariate_claims)
-		.filter(|(meta, _)| meta.inner_id.is_none())
-	{
+	for (claim, meta) in iter::zip(composite_mle_claims, metas) {
 		let eq_ind = eq_indicators
 			.get(claim.eval_point.as_ref())
 			.expect("was added above");
 
-		witness_index.update_multilin_poly(vec![(meta.multiplier_id, eq_ind.clone())])?;
+		witness_index.update_multilin_poly(vec![(meta.eq_ind_id, eq_ind.clone())])?;
 	}
 
 	Ok(())
@@ -454,12 +444,12 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 	}
 
 	#[instrument(skip_all, name = "Evalcheck::memoize_query_par", level = "debug")]
-	pub fn memoize_query_par(
+	pub fn memoize_query_par<'b>(
 		&mut self,
-		eval_points: &[&[P::Scalar]],
+		eval_points: impl IntoIterator<Item = &'b [P::Scalar]>,
 		backend: &Backend,
 	) -> Result<(), binius_hal::Error> {
-		let deduplicated_eval_points = eval_points.iter().collect::<HashSet<_>>();
+		let deduplicated_eval_points = eval_points.into_iter().collect::<HashSet<_>>();
 
 		let new_queries = deduplicated_eval_points
 			.into_par_iter()
@@ -488,9 +478,8 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 		projected_bivariate_claims
 			.iter()
 			.zip(metas)
-			.filter(|(_, meta)| meta.inner_id.is_some())
 			.for_each(|(claim, meta)| {
-				let inner_id = meta.inner_id.expect("filtered by Some");
+				let inner_id = meta.inner_id;
 				if matches!(oracles.oracle(inner_id).variant, MultilinearPolyVariant::Committed)
 					&& meta.projected_id.is_some()
 				{

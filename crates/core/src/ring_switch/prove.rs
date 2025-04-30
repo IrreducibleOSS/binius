@@ -148,7 +148,7 @@ where
 		.map(|desc| Arc::as_ref(&desc.suffix))
 		.collect::<Vec<_>>();
 
-	memoized_data.memoize_query_par(&suffixes, backend)?;
+	memoized_data.memoize_query_par(suffixes, backend)?;
 
 	let tensor_elems = system
 		.sumcheck_claim_descs
