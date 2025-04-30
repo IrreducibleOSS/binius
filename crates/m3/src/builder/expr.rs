@@ -11,6 +11,7 @@ use super::{column::Col, table::TableId};
 pub struct ZeroConstraint<F: Field> {
 	pub name: String,
 	pub expr: ArithCircuit<F>,
+	pub tower_level: usize,
 }
 
 /// A type representing an arithmetic expression composed over some table columns.

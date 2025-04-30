@@ -310,6 +310,27 @@ impl<F: Field> ArithCircuit<F> {
 			.unwrap_or(0)
 	}
 
+	/// Returns the evaluation cost of the circuit.
+	pub fn eval_cost(&self) -> EvalCost {
+		self.steps
+			.iter()
+			.fold(EvalCost::default(), |acc, step| match *step {
+				ArithCircuitStep::Const(_) | ArithCircuitStep::Var(_) => acc,
+				ArithCircuitStep::Add(_, _) => acc + EvalCost::add(1),
+				ArithCircuitStep::Mul(_, _) => acc + EvalCost::mul(1),
+				// To exponentiate b^e the square-and-multiply method is used.
+				//
+				// That takes:
+				// 1. log2(e) squarings.
+				// 1. popcount(e) - 1 multiplications.
+				ArithCircuitStep::Pow(_, exp) => {
+					let n_squares = exp.ilog2() as usize;
+					let n_muls = exp.count_ones().saturating_sub(1) as usize;
+					acc + EvalCost::mul(n_muls) + EvalCost::square(n_squares)
+				}
+			})
+	}
+
 	/// Return a new arithmetic expression that contains only the terms of highest degree
 	/// (useful for interpolation at Karatsuba infinity point).
 	pub fn leading_term(&self) -> Self {
@@ -1065,6 +1086,67 @@ impl<F: Field> Hash for StepNode<'_, F> {
 				self.prev_step(base).hash(state);
 				exp.hash(state);
 			}
+		}
+	}
+}
+
+/// The breakdown of the number of operations it takes to evaluate this circuit.
+#[derive(Default)]
+pub struct EvalCost {
+	/// Number of additions.
+	///
+	/// Addition is a relatively cheap operation.
+	pub n_adds: usize,
+	/// Number of multiplications.
+	///
+	/// Multiplications are a dominating factor in the evaluation cost.
+	pub n_muls: usize,
+	/// Number of squares.
+	///
+	/// Squares are a relatively cheap operation. Generally we assume that squaring takes the 1/5th
+	/// of a single multiplication.
+	pub n_squares: usize,
+}
+
+impl EvalCost {
+	pub fn add(n_adds: usize) -> Self {
+		Self {
+			n_adds,
+			..Self::default()
+		}
+	}
+
+	pub fn mul(n_muls: usize) -> Self {
+		Self {
+			n_muls,
+			..Self::default()
+		}
+	}
+
+	pub fn square(n_squares: usize) -> Self {
+		Self {
+			n_squares,
+			..Self::default()
+		}
+	}
+
+	/// Returns an approximate cost to evaluate an expression as a single number.
+	///
+	/// Since the evaluation time is dominated by the number of multiplications we can roughly
+	/// gauge the cost by the number of the multiplications. We count the number of squares
+	/// as 1/5th of a single multiplication.
+	pub fn mult_cost_approx(&self) -> usize {
+		self.n_muls + self.n_squares.div_ceil(5)
+	}
+}
+
+impl Add for EvalCost {
+	type Output = Self;
+	fn add(self, other: Self) -> Self {
+		Self {
+			n_adds: self.n_adds + other.n_adds,
+			n_muls: self.n_muls + other.n_muls,
+			n_squares: self.n_squares + other.n_squares,
 		}
 	}
 }

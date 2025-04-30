@@ -23,6 +23,7 @@ use super::{
 	channel::Flush,
 	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
+	stat::TableStat,
 	structured::StructuredDynSize,
 	types::B128,
 	upcast_col, ColumnIndex, FlushOpts, B1,
@@ -601,9 +602,8 @@ impl<F: TowerField> TablePartition<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		// TODO: Should we dynamically keep track of FSub::TOWER_LEVEL?
-		// On the other hand, ArithExpr does introspect that already
 		self.zero_constraints.push(ZeroConstraint {
+			tower_level: FSub::TOWER_LEVEL,
 			name: name.to_string(),
 			expr: ArithCircuit::from(expr.expr()).convert_field(),
 		});
@@ -704,6 +704,10 @@ impl<F: TowerField> Table<F> {
 
 	pub fn is_power_of_two_sized(&self) -> bool {
 		matches!(self.table_size_spec, TableSizeSpec::PowerOfTwo)
+	}
+
+	pub fn stat(&self) -> TableStat {
+		TableStat::new(self)
 	}
 }
 
