@@ -20,8 +20,8 @@ use super::{
 };
 use crate::{
 	arch::{
-		portable::packed::impl_serialize_deserialize_for_packed_canonical, PackedStrategy, PairwiseRecursiveStrategy,
-		PairwiseStrategy, SimdStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_canonical, PackedStrategy,
+		PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,

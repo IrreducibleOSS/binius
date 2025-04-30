@@ -13,9 +13,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::{
-	checked_arithmetics::checked_int_div, iter::IterExtensions,
-};
+use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
@@ -38,9 +36,7 @@ pub struct PackedPrimitiveType<U: UnderlierType, Scalar: BinaryField>(
 	pub PhantomData<Scalar>,
 );
 
-impl<U: UnderlierType, Scalar: BinaryField>
-	PackedPrimitiveType<U, Scalar>
-{
+impl<U: UnderlierType, Scalar: BinaryField> PackedPrimitiveType<U, Scalar> {
 	pub const WIDTH: usize = {
 		assert!(U::BITS % Scalar::N_BITS == 0);
 
