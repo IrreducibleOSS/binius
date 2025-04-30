@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
 	arch::{
-		portable::packed::serialize_deserialize, PackedStrategy, PairwiseRecursiveStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_canonical, PackedStrategy, PairwiseRecursiveStrategy,
 		PairwiseStrategy,
 	},
 	arithmetic_traits::{
@@ -32,12 +32,12 @@ pub type PackedBinaryField4x8b = PackedPrimitiveType<u32, BinaryField8b>;
 pub type PackedBinaryField2x16b = PackedPrimitiveType<u32, BinaryField16b>;
 pub type PackedBinaryField1x32b = PackedPrimitiveType<u32, BinaryField32b>;
 
-serialize_deserialize!(PackedBinaryField32x1b);
-serialize_deserialize!(PackedBinaryField16x2b);
-serialize_deserialize!(PackedBinaryField8x4b);
-serialize_deserialize!(PackedBinaryField4x8b);
-serialize_deserialize!(PackedBinaryField2x16b);
-serialize_deserialize!(PackedBinaryField1x32b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField32x1b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField16x2b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField8x4b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField4x8b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField2x16b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField1x32b);
 
 // Define broadcast
 impl_broadcast!(u32, BinaryField1b);

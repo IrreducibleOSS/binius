@@ -14,7 +14,7 @@ use std::{
 };
 
 use binius_utils::{
-	checked_arithmetics::checked_int_div, iter::IterExtensions, DeserializeBytes, SerializeBytes,
+	checked_arithmetics::checked_int_div, iter::IterExtensions,
 };
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
@@ -38,7 +38,7 @@ pub struct PackedPrimitiveType<U: UnderlierType, Scalar: BinaryField>(
 	pub PhantomData<Scalar>,
 );
 
-impl<U: UnderlierType + SerializeBytes + DeserializeBytes, Scalar: BinaryField>
+impl<U: UnderlierType, Scalar: BinaryField>
 	PackedPrimitiveType<U, Scalar>
 {
 	pub const WIDTH: usize = {
@@ -460,7 +460,7 @@ macro_rules! impl_ops_for_zero_height {
 
 pub(crate) use impl_ops_for_zero_height;
 
-macro_rules! serialize_deserialize {
+macro_rules! impl_serialize_deserialize_for_packed_canonical {
 	($bin_type:ty) => {
 		impl SerializeBytes for $bin_type {
 			fn serialize(
@@ -483,7 +483,7 @@ macro_rules! serialize_deserialize {
 	};
 }
 
-pub(crate) use serialize_deserialize;
+pub(crate) use impl_serialize_deserialize_for_packed_canonical;
 
 /// Multiply `PT1` values by upcasting to wider `PT2` type with the same scalar.
 /// This is useful for the cases when SIMD multiplication is faster.

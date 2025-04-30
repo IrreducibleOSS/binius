@@ -10,7 +10,7 @@ use cfg_if::cfg_if;
 
 use super::{
 	packed::{
-		impl_broadcast, impl_ops_for_zero_height, serialize_deserialize, PackedPrimitiveType,
+		impl_broadcast, impl_ops_for_zero_height, impl_serialize_deserialize_for_packed_canonical, PackedPrimitiveType,
 	},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
@@ -87,7 +87,7 @@ macro_rules! define_packed_field {
 			pub type $name = PackedPrimitiveType<$prim, $bits>;
 
 			// Define serialization and deserialization
-			serialize_deserialize!($name);
+			impl_serialize_deserialize_for_packed_canonical!($name);
 
 			// Define broadcast
             impl_broadcast!($prim, $bits);

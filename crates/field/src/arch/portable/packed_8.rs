@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
 	arch::{
-		portable::packed::serialize_deserialize, PackedStrategy, PairwiseRecursiveStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_canonical, PackedStrategy, PairwiseRecursiveStrategy,
 		PairwiseStrategy, PairwiseTableStrategy,
 	},
 	arithmetic_traits::{
@@ -29,10 +29,10 @@ pub type PackedBinaryField4x2b = PackedPrimitiveType<u8, BinaryField2b>;
 pub type PackedBinaryField2x4b = PackedPrimitiveType<u8, BinaryField4b>;
 pub type PackedBinaryField1x8b = PackedPrimitiveType<u8, BinaryField8b>;
 
-serialize_deserialize!(PackedBinaryField8x1b);
-serialize_deserialize!(PackedBinaryField4x2b);
-serialize_deserialize!(PackedBinaryField2x4b);
-serialize_deserialize!(PackedBinaryField1x8b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField8x1b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField4x2b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField2x4b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField1x8b);
 
 // Define broadcast
 impl_broadcast!(u8, BinaryField1b);
