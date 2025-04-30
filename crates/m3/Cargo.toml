@@ -25,6 +25,7 @@ thiserror.workspace = true
 [dev-dependencies]
 assert_matches.workspace = true
 binius_m3 = { path = ".", default-features = false, features = ["test_utils"] }
+proptest.workspace = true
 rand.workspace = true
 
 [features]
