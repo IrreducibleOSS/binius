@@ -29,6 +29,8 @@ pub enum Error {
 	ExpectedExecution,
 	#[error("expected call to fold")]
 	ExpectedFold,
+	#[error("expected call to project_to_skipped_variables")]
+	ExpectedProjection,
 	#[error("the number of variables for the prover multilinears must all be equal")]
 	NumberOfVariablesMismatch,
 	#[error(
@@ -81,18 +83,24 @@ pub enum Error {
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
 	IncorrectNumberOfChallenges,
+	#[error("either too many or too few batching coefficients")]
+	IncorrectNumberOfBatchCoeffs,
 	#[error("cannot skip more rounds than the total number of variables")]
 	TooManySkippedRounds,
-	#[error("there are more prebatched coefficients than claims")]
-	TooManyPrebatchedCoeffs,
+	#[error(
+		"univariatizing reduction claim count does not match sumcheck, or n_vars is incorrect"
+	)]
+	IncorrectUnivariatizingReductionClaims,
+	#[error("univariatizing reduction sumcheck of incorrect length")]
+	IncorrectUnivariatizingReductionSumcheck,
+	#[error("the presampled batched coeffs count does not equal the number of claims")]
+	IncorrectPrebatchedCoeffCount,
 	#[error(
 		"specified Lagrange evaluation domain is too small to uniquely recover round polynomial"
 	)]
 	LagrangeDomainTooSmall,
 	#[error("adding together Lagrange basis evaluations over domains of different sizes")]
 	LagrangeRoundEvalsSizeMismatch,
-	#[error("length of the zero prefix does not match the expected value")]
-	IncorrectZerosPrefixLen,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]

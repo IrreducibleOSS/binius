@@ -9,8 +9,9 @@ use binius_circuits::{
 	lasso::big_integer_ops::{byte_sliced_modular_mul, byte_sliced_test_utils::random_u512},
 	transparent,
 };
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
+	tower::CanonicalTowerFamily,
 	tower_levels::{TowerLevel4, TowerLevel8},
 	BinaryField1b, BinaryField8b, Field, TowerField,
 };

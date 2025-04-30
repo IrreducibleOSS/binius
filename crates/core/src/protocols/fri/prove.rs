@@ -6,6 +6,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
+use binius_ntt::AdditiveNTT;
 use binius_utils::{bail, SerializeBytes};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
@@ -26,7 +27,8 @@ use crate::{
 };
 
 #[instrument(skip_all, level = "debug")]
-pub fn fold_codeword<F, FS>(
+pub fn fold_codeword<F, FS, NTT>(
+	ntt: &NTT,
 	rs_code: &ReedSolomonCode<FS>,
 	codeword: &[F],
 	// Round is the number of total folding challenges received so far.
@@ -36,6 +38,7 @@ pub fn fold_codeword<F, FS>(
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	NTT: AdditiveNTT<FS> + Sync,
 {
 	// Preconditions
 	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
@@ -56,14 +59,7 @@ where
 		.map_init(
 			|| vec![F::default(); chunk_size],
 			|scratch_buffer, (chunk_index, chunk)| {
-				fold_chunk(
-					rs_code,
-					start_round,
-					chunk_index,
-					chunk,
-					folding_challenges,
-					scratch_buffer,
-				)
+				fold_chunk(ntt, start_round, chunk_index, chunk, folding_challenges, scratch_buffer)
 			},
 		)
 		.collect()
@@ -78,7 +74,8 @@ where
 /// * `challenges` - the folding challenges. The length must be at least `log_batch_size`.
 /// * `log_batch_size` - the base-2 logarithm of the batch size of the interleaved code.
 #[instrument(skip_all, level = "debug")]
-fn fold_interleaved<F, FS, P>(
+fn fold_interleaved<F, FS, NTT, P>(
+	ntt: &NTT,
 	rs_code: &ReedSolomonCode<FS>,
 	codeword: &[P],
 	challenges: &[F],
@@ -87,6 +84,7 @@ fn fold_interleaved<F, FS, P>(
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	NTT: AdditiveNTT<FS> + Sync,
 	P: PackedField<Scalar = F>,
 {
 	assert_eq!(len_packed_slice(codeword), 1 << (rs_code.log_len() + log_batch_size));
@@ -110,7 +108,7 @@ where
 			|| vec![F::default(); 2 * fold_chunk_size],
 			|scratch_buffer, (i, chunk)| {
 				fold_interleaved_chunk(
-					rs_code,
+					ntt,
 					log_batch_size,
 					i,
 					chunk,
@@ -171,9 +169,10 @@ where
 /// * `merkle_prover` - the merke tree prover to use for committing
 /// * `message` - the interleaved message to encode and commit
 #[instrument(skip_all, level = "debug")]
-pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
-	rs_code: &ReedSolomonCode<PA>,
+pub fn commit_interleaved<F, FA, P, PA, NTT, MerkleProver, VCS>(
+	rs_code: &ReedSolomonCode<FA>,
 	params: &FRIParams<F, FA>,
+	ntt: &NTT,
 	merkle_prover: &MerkleProver,
 	message: &[P],
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
@@ -182,6 +181,7 @@ where
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
+	NTT: AdditiveNTT<FA> + Sync,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
@@ -192,7 +192,7 @@ where
 		));
 	}
 
-	commit_interleaved_with(rs_code, params, merkle_prover, move |buffer| {
+	commit_interleaved_with(params, ntt, merkle_prover, move |buffer| {
 		buffer.copy_from_slice(message)
 	})
 }
@@ -205,9 +205,9 @@ where
 /// * `params` - common FRI protocol parameters.
 /// * `merkle_prover` - the Merkle tree prover to use for committing
 /// * `message_writer` - a closure that writes the interleaved message to encode and commit
-pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
-	rs_code: &ReedSolomonCode<PA>,
+pub fn commit_interleaved_with<F, FA, P, PA, NTT, MerkleProver, VCS>(
 	params: &FRIParams<F, FA>,
+	ntt: &NTT,
 	merkle_prover: &MerkleProver,
 	message_writer: impl FnOnce(&mut [P]),
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
@@ -216,9 +216,11 @@ where
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
+	NTT: AdditiveNTT<FA> + Sync,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
+	let rs_code = params.rs_code();
 	let log_batch_size = params.log_batch_size();
 	let log_elems = rs_code.log_dim() + log_batch_size;
 	if log_elems < P::LOG_WIDTH {
@@ -233,7 +235,7 @@ where
 		});
 
 	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
-		.in_scope(|| rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size))?;
+		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
@@ -274,7 +276,7 @@ pub enum FoldRoundOutput<VCSCommitment> {
 }
 
 /// A stateful prover for the FRI fold phase.
-pub struct FRIFolder<'a, F, FA, P, MerkleProver, VCS>
+pub struct FRIFolder<'a, F, FA, P, NTT, MerkleProver, VCS>
 where
 	FA: BinaryField,
 	F: BinaryField,
@@ -283,6 +285,7 @@ where
 	VCS: MerkleTreeScheme<F>,
 {
 	params: &'a FRIParams<F, FA>,
+	ntt: &'a NTT,
 	merkle_prover: &'a MerkleProver,
 	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
@@ -292,17 +295,19 @@ where
 	unprocessed_challenges: Vec<F>,
 }
 
-impl<'a, F, FA, P, MerkleProver, VCS> FRIFolder<'a, F, FA, P, MerkleProver, VCS>
+impl<'a, F, FA, P, NTT, MerkleProver, VCS> FRIFolder<'a, F, FA, P, NTT, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	P: PackedField<Scalar = F>,
+	NTT: AdditiveNTT<FA> + Sync,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
 {
 	/// Constructs a new folder.
 	pub fn new(
 		params: &'a FRIParams<F, FA>,
+		ntt: &'a NTT,
 		merkle_prover: &'a MerkleProver,
 		committed_codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
@@ -316,6 +321,7 @@ where
 		let next_commit_round = params.fold_arities().first().copied();
 		Ok(Self {
 			params,
+			ntt,
 			merkle_prover,
 			codeword: committed_codeword,
 			codeword_committed: committed,
@@ -368,6 +374,7 @@ where
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
 				fold_codeword(
+					self.ntt,
 					self.params.rs_code(),
 					prev_codeword,
 					self.curr_round - self.params.log_batch_size(),
@@ -379,6 +386,7 @@ where
 				// codeword with the same or reduced block length, depending on the sequence of
 				// fold rounds.
 				fold_interleaved(
+					self.ntt,
 					self.params.rs_code(),
 					self.codeword,
 					&self.unprocessed_challenges,

@@ -25,6 +25,59 @@ use stackalloc::helpers::slice_assume_init_mut;
 
 use crate::Error;
 
+pub fn zero_pad<P, PE>(
+	evals: &[P],
+	log_evals_size: usize,
+	log_new_vals: usize,
+	start_index: usize,
+	nonzero_index: usize,
+	out: &mut [PE],
+) -> Result<(), Error>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	if start_index > log_evals_size {
+		bail!(Error::IncorrectStartIndex {
+			expected: log_evals_size
+		});
+	}
+
+	let extra_vars = log_new_vals - log_evals_size;
+	if nonzero_index > 1 << extra_vars {
+		bail!(Error::IncorrectNonZeroIndex {
+			expected: 1 << extra_vars
+		});
+	}
+
+	let block_size = 1 << start_index;
+	let nb_elts_per_row = 1 << (start_index + extra_vars);
+	let length = 1 << start_index;
+
+	let start_index_in_row = nonzero_index * block_size;
+	for (outer_index, packed_result_eval) in out.iter_mut().enumerate() {
+		// Index of the Scalar at the start of the current Packed element in `out`.
+		let outer_word_start = outer_index << PE::LOG_WIDTH;
+		for inner_index in 0..min(PE::WIDTH, 1 << log_evals_size) {
+			// Index of the current Scalar in `out`.
+			let outer_scalar_index = outer_word_start + inner_index;
+			// Column index, within the reshaped `evals`, where we start the dot-product with the query elements.
+			let inner_col = outer_scalar_index % nb_elts_per_row;
+			// Row index.
+			let inner_row = outer_scalar_index / nb_elts_per_row;
+
+			if inner_col >= start_index_in_row && inner_col < start_index_in_row + block_size {
+				let eval_index = inner_row * length + inner_col - start_index_in_row;
+				let result_eval = get_packed_slice(evals, eval_index).into();
+				unsafe {
+					packed_result_eval.set_unchecked(inner_index, result_eval);
+				}
+			}
+		}
+	}
+	Ok(())
+}
+
 /// Execute the right fold operation.
 ///
 /// Every consequent `1 << log_query_size` scalar values are dot-producted with the corresponding
@@ -901,7 +954,7 @@ mod tests {
 	use binius_field::{
 		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
 		PackedBinaryField16x8b, PackedBinaryField32x1b, PackedBinaryField512x1b,
-		PackedBinaryField64x8b,
+		PackedBinaryField64x8b, PackedBinaryField8x1b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
 
@@ -1095,6 +1148,51 @@ mod tests {
 			let second_higher = evals[2 * i + 1].0 >> 16;
 			let expected_out = first_higher + (second_higher << 16);
 			assert!(out_val.0 == expected_out);
+		}
+	}
+
+	#[test]
+	fn test_zeropad_bits() {
+		const LOG_EVALS_SIZE: usize = 5;
+		let mut rng = StdRng::seed_from_u64(0);
+		// We have four elements of 32 bits each. Overall, that gives us 128 bits.
+		let evals = [
+			PackedBinaryField8x1b::random(&mut rng),
+			PackedBinaryField8x1b::random(&mut rng),
+			PackedBinaryField8x1b::random(&mut rng),
+			PackedBinaryField8x1b::random(&mut rng),
+		];
+
+		// We double the size of each element by padding each element to the left.
+		let num_extra_vars = 2;
+		let start_index = 3;
+
+		for nonzero_index in 0..1 << num_extra_vars {
+			let mut out =
+				vec![
+					PackedBinaryField8x1b::zero();
+					1usize << (LOG_EVALS_SIZE + num_extra_vars - PackedBinaryField8x1b::LOG_WIDTH)
+				];
+			zero_pad(
+				&evals,
+				LOG_EVALS_SIZE,
+				LOG_EVALS_SIZE + num_extra_vars,
+				start_index,
+				nonzero_index,
+				&mut out,
+			)
+			.unwrap();
+
+			// Every `1 << start_index` consecutive bits from the original `evals` are placed at index `nonzero_index`
+			// within a block of size `1 << (LOGS_EVALS_SIZE + num_extra_vals)`.
+			for (i, out_val) in out.iter().enumerate() {
+				let expansion = 1 << num_extra_vars;
+				if i % expansion == nonzero_index {
+					assert!(out_val.0 == evals[i / expansion].0);
+				} else {
+					assert!(out_val.0 == 0);
+				}
+			}
 		}
 	}
 

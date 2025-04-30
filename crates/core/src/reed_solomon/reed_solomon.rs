@@ -2,74 +2,57 @@
 
 //! [Reed–Solomon] codes over binary fields.
 //!
-//! The Reed–Solomon code admits an efficient encoding algorithm over binary fields due to [LCH14].
-//! The additive NTT encoding algorithm encodes messages interpreted as the coefficients of a
-//! polynomial in a non-standard, novel polynomial basis and the codewords are the polynomial
-//! evaluations over a linear subspace of the field. See the [binius_ntt] crate for more details.
-//!
-//! [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
-//! [LCH14]: <https://arxiv.org/abs/1404.3458>
+//! See [`ReedSolomonCode`] for details.
 
-use std::marker::PhantomData;
-
-use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
+use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
+use binius_math::BinarySubspace;
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, NTTShape, ThreadingSettings};
+use binius_ntt::{AdditiveNTT, Error as NTTError, NTTShape};
 use binius_utils::bail;
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 
-#[derive(Debug, CopyGetters)]
-pub struct ReedSolomonCode<P>
-where
-	P: PackedField,
-	P::Scalar: BinaryField,
-{
-	ntt: DynamicDispatchNTT<P::Scalar>,
+use super::error::Error;
+
+/// [Reed–Solomon] codes over binary fields.
+///
+/// The Reed–Solomon code admits an efficient encoding algorithm over binary fields due to [LCH14].
+/// The additive NTT encoding algorithm encodes messages interpreted as the coefficients of a
+/// polynomial in a non-standard, novel polynomial basis and the codewords are the polynomial
+/// evaluations over a linear subspace of the field. See the [binius_ntt] crate for more details.
+///
+/// [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
+/// [LCH14]: <https://arxiv.org/abs/1404.3458>
+#[derive(Debug, Getters, CopyGetters)]
+pub struct ReedSolomonCode<F: BinaryField> {
+	#[get = "pub"]
+	subspace: BinarySubspace<F>,
 	log_dimension: usize,
-	#[getset(get_copy = "pub")]
+	#[get_copy = "pub"]
 	log_inv_rate: usize,
-	multithreaded: bool,
-	_p_marker: PhantomData<P>,
 }
 
-impl<P> ReedSolomonCode<P>
-where
-	P: PackedField<Scalar: BinaryField>,
-{
-	pub fn new(
-		log_dimension: usize,
-		log_inv_rate: usize,
-		ntt_options: &NTTOptions,
-	) -> Result<Self, Error> {
-		// Since we split work between log_inv_rate threads, we need to decrease the number of threads per each NTT transformation.
-		let ntt_log_threads = ntt_options
-			.thread_settings
-			.log_threads_count()
-			.saturating_sub(log_inv_rate);
-		let ntt = DynamicDispatchNTT::new(
-			log_dimension + log_inv_rate,
-			&NTTOptions {
-				thread_settings: ThreadingSettings::ExplicitThreadsCount {
-					log_threads: ntt_log_threads,
-				},
-				precompute_twiddles: ntt_options.precompute_twiddles,
-			},
-		)?;
-
-		let multithreaded =
-			!matches!(ntt_options.thread_settings, ThreadingSettings::SingleThreaded);
-
-		Ok(Self {
-			ntt,
+impl<F: BinaryField> ReedSolomonCode<F> {
+	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
+		Self::with_subspace(
+			BinarySubspace::with_dim(log_dimension + log_inv_rate)?,
 			log_dimension,
 			log_inv_rate,
-			multithreaded,
-			_p_marker: PhantomData,
-		})
+		)
 	}
 
-	pub const fn get_ntt(&self) -> &impl AdditiveNTT<P::Scalar> {
-		&self.ntt
+	pub fn with_subspace(
+		subspace: BinarySubspace<F>,
+		log_dimension: usize,
+		log_inv_rate: usize,
+	) -> Result<Self, Error> {
+		if subspace.dim() != log_dimension + log_inv_rate {
+			return Err(Error::SubspaceDimensionMismatch);
+		}
+		Ok(Self {
+			subspace,
+			log_dimension,
+			log_inv_rate,
+		})
 	}
 
 	/// The dimension.
@@ -111,21 +94,29 @@ where
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
 	///   elements.
-	fn encode_batch_inplace(&self, code: &mut [P], log_batch_size: usize) -> Result<(), Error> {
+	fn encode_batch_inplace<P: PackedField<Scalar = F>, NTT: AdditiveNTT<F> + Sync>(
+		&self,
+		ntt: &NTT,
+		code: &mut [P],
+		log_batch_size: usize,
+	) -> Result<(), Error> {
+		if ntt.subspace(ntt.log_domain_size() - self.log_len()) != self.subspace {
+			bail!(Error::EncoderSubspaceMismatch);
+		}
 		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
 			log_batch_size = log_batch_size,
-			symbol_bits = P::Scalar::N_BITS,
+			symbol_bits = F::N_BITS,
 		)
 		.entered();
 		if (code.len() << log_batch_size) < self.len() {
-			bail!(Error::BufferTooSmall {
+			bail!(Error::NTT(NTTError::BufferTooSmall {
 				log_code_len: self.len(),
-			});
+			}));
 		}
 		if self.dim() % P::WIDTH != 0 {
-			bail!(Error::PackingWidthMustDivideDimension);
+			bail!(Error::NTT(NTTError::PackingWidthMustDivideDimension));
 		}
 
 		let msgs_len = (self.dim() / P::WIDTH) << log_batch_size;
@@ -138,16 +129,11 @@ where
 			log_y: self.log_dim(),
 			..Default::default()
 		};
-		if self.multithreaded {
-			(0..(1 << self.log_inv_rate))
-				.into_par_iter()
-				.zip(code.par_chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
-		} else {
-			(0..(1 << self.log_inv_rate))
-				.zip(code.chunks_exact_mut(msgs_len))
-				.try_for_each(|(i, data)| self.ntt.forward_transform(data, shape, i))
-		}
+		(0..(1 << self.log_inv_rate))
+			.into_par_iter()
+			.zip(code.par_chunks_exact_mut(msgs_len))
+			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))?;
+		Ok(())
 	}
 
 	/// Encode a batch of interleaved messages of extension field elements in-place in a provided
@@ -163,11 +149,16 @@ where
 	/// ## Throws
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
-	pub fn encode_ext_batch_inplace<PE: RepackedExtension<P>>(
+	pub fn encode_ext_batch_inplace<PE: PackedExtension<F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
+		ntt: &NTT,
 		code: &mut [PE],
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + PE::Scalar::LOG_DEGREE)
+		self.encode_batch_inplace(
+			ntt,
+			PE::cast_bases_mut(code),
+			log_batch_size + PE::Scalar::LOG_DEGREE,
+		)
 	}
 }

@@ -20,12 +20,12 @@ use binius_utils::{
 
 use super::{
 	channel::Flush,
-	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
+	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
+	structured::StructuredDynSize,
 	types::B128,
 	upcast_col, ColumnIndex, FlushOpts, B1,
 };
-use crate::builder::column::ColumnId;
 
 pub type TableId = usize;
 
@@ -231,6 +231,69 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables) by left
+	/// padding each FSub element with zeroes.
+	pub fn add_zero_pad_upcast<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let n_pad_vars = log_new_values_per_row - log_values_per_row;
+		let nonzero_index = (1 << n_pad_vars) - 1;
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::ZeroPadded {
+				col: col.id(),
+				n_pad_vars,
+				start_index: log_values_per_row,
+				nonzero_index,
+			},
+		)
+	}
+
+	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables).
+	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to 0.
+	/// Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
+	pub fn add_zero_pad<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		nonzero_index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let n_pad_vars = log_new_values_per_row - log_values_per_row;
+		assert!(nonzero_index < 1 << n_pad_vars);
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::ZeroPadded {
+				col: col.id(),
+				n_pad_vars,
+				start_index: log_values_per_row,
+				nonzero_index,
+			},
+		)
+	}
+
 	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -329,6 +392,28 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
+	}
+
+	/// Add a structured column to a table.
+	///
+	/// A structured column is one that has sufficient structure that its multilinear extension
+	/// can be evaluated succinctly. See [`StructuredDynSize`] for more information.
+	pub fn add_structured<FSub>(
+		&mut self,
+		name: impl ToString,
+		variant: StructuredDynSize,
+	) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(
+			self.table.power_of_two_sized,
+			"Structured columns may only be added to tables that are power of two sized"
+		);
+		let namespaced_name = self.namespaced_name(name);
+		self.table
+			.new_column(namespaced_name, ColumnDef::StructuredDynSize(variant))
 	}
 
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
@@ -516,25 +601,6 @@ impl<F: TowerField> Table<F> {
 		self.id
 	}
 
-	/// Returns the binary logarithm of the minimum capacity.
-	///
-	/// This value is chosen so that every committed column fills at least one large field element
-	/// in packed representation. This is because the polynomial commitment scheme requires full
-	/// packed field elements.
-	pub fn min_log_capacity(&self) -> usize {
-		let min_cell_size = self
-			.columns
-			.iter()
-			.filter_map(|col| match col.col {
-				ColumnDef::Committed { .. } => Some(col.shape.log_cell_size()),
-				_ => None,
-			})
-			.min()
-			// return 0 if table has no columns
-			.unwrap_or(F::TOWER_LEVEL);
-		F::TOWER_LEVEL.saturating_sub(min_cell_size)
-	}
-
 	/// Returns the binary logarithm of the table capacity required to accommodate the given number
 	/// of rows.
 	///
@@ -543,7 +609,7 @@ impl<F: TowerField> Table<F> {
 	/// This will normally be the next power of two greater than the table size, but could require
 	/// more padding to get a minimum capacity.
 	pub fn log_capacity(&self, table_size: usize) -> usize {
-		log2_ceil_usize(table_size).max(self.min_log_capacity())
+		log2_ceil_usize(table_size)
 	}
 
 	fn new_column<FSub, const V: usize>(

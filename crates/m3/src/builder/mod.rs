@@ -7,7 +7,9 @@ pub mod error;
 pub mod expr;
 mod multi_iter;
 pub mod statement;
+pub mod structured;
 pub mod table;
+#[cfg(feature = "test_utils")]
 pub mod test_utils;
 pub mod types;
 pub mod witness;
@@ -18,6 +20,7 @@ pub use constraint_system::*;
 pub use error::*;
 pub use expr::*;
 pub use statement::*;
+pub use structured::StructuredDynSize;
 pub use table::*;
 pub use types::*;
 pub use witness::*;

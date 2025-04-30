@@ -2,7 +2,10 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{Field, TowerField};
+use binius_field::{
+	tower::{PackedTop, TowerFamily},
+	Field, TowerField,
+};
 use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytes::Buf;
@@ -17,7 +20,6 @@ use crate::{
 		eq_ind::RingSwitchEqInd, tower_tensor_algebra::TowerTensorAlgebra, Error,
 		EvalClaimSuffixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc, VerificationError,
 	},
-	tower::{PackedTop, TowerFamily},
 	transcript::{TranscriptReader, VerifierTranscript},
 };
 

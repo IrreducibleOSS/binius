@@ -9,7 +9,7 @@ use super::error::Error;
 ///
 /// The subspace is defined by a basis of elements from a binary field. The basis elements are
 /// ordered, which implies an ordering on the subspace elements.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinarySubspace<F: BinaryField> {
 	basis: Vec<F>,
 }

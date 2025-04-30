@@ -4,7 +4,6 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
-use binius_ntt::NTTOptions;
 use binius_utils::{bail, DeserializeBytes};
 use getset::CopyGetters;
 use tracing::instrument;
@@ -136,7 +135,7 @@ where
 	let log_batch_size = fold_arities.first().copied().unwrap_or(0);
 	let log_dim = commit_meta.total_vars - log_batch_size;
 
-	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, &NTTOptions::default())?;
+	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
 	let n_test_queries = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
 	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
 	Ok(fri_params)

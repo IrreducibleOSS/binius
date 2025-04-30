@@ -4,6 +4,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	packed::get_packed_slice,
+	tower::{ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
 	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
@@ -25,7 +26,6 @@ use crate::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_exp::{self, BaseExpReductionOutput, BaseExpWitness, ExpClaim},
 	},
-	tower::{ProverTowerFamily, ProverTowerUnderlier},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 

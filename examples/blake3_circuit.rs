@@ -7,7 +7,8 @@ use binius_circuits::{
 	blake3::Blake3CompressState,
 	builder::{types::U, ConstraintSystemBuilder},
 };
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
+use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;

@@ -63,13 +63,10 @@ mod model {
 }
 
 mod arithmetization {
-	use binius_core::{
-		constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger,
-		tower::CanonicalTowerFamily,
-	};
+	use binius_core::{constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, PackedExtension,
-		PackedFieldIndexable,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+		PackedExtension, PackedFieldIndexable,
 	};
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
