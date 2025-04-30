@@ -421,27 +421,16 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.new_column(namespaced_name, ColumnDef::StructuredDynSize(variant))
 	}
 
-	pub fn add_fixed_size_structured<FSub>(
-		&mut self,
-		name: impl ToString,
-		expr: ArithCircuit<F>,
-	) -> Col<FSub>
+	/// Add a structured fixed-size column to a table.
+	pub fn add_fixed<FSub>(&mut self, name: impl ToString, expr: ArithCircuit<F>) -> Col<FSub>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
 		assert!(
-			matches!(self.table.table_size_spec, TableSizeSpec::Fixed { .. }),
-			"Structured fixed size columns may only be added to tables of fixed size"
+			matches!(self.table.table_size_spec, TableSizeSpec::Fixed { log_size } if log_size == expr.n_vars()),
+			"Structured fixed-size columns may only be added to tables with a fixed log_size that matches the n_vars of the expression"
 		);
-
-		if let TableSizeSpec::Fixed { log_size } = self.table.table_size_spec {
-			assert_eq!(
-				log_size,
-				expr.n_vars(),
-				"n_vars of expr must match the size of the fixed table."
-			);
-		}
 
 		let namespaced_name = self.namespaced_name(name);
 		self.table
@@ -545,7 +534,7 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	/// Whether the table size is required to be a power of two.
+	/// the size specification of a table
 	table_size_spec: TableSizeSpec,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }

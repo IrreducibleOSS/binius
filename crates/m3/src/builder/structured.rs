@@ -145,8 +145,7 @@ mod tests {
 
 		let expr = lookup_index + and_res;
 
-		let structured_col =
-			table.add_fixed_size_structured::<B16>("a|b|res", ArithCircuit::from(&expr));
+		let structured_col = table.add_fixed::<B16>("a|b|res", ArithCircuit::from(&expr));
 
 		table.assert_zero("reference = structured", expected_col - structured_col);
 
