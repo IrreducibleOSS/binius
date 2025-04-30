@@ -63,6 +63,13 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		start_index: usize,
 	) -> Result<MultilinearExtension<P>, Error>;
 
+	fn zero_pad(
+		&self,
+		n_pad_vars: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	) -> Result<MultilinearExtension<P>, Error>;
+
 	/// Get a subcube of the boolean hypercube after `evaluate_partial_low`.
 	///
 	/// Equivalent computation is `evaluate_partial_low(query)` followed by a `subcube_evals`
@@ -180,6 +187,15 @@ where
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error> {
 		either::for_both!(self, inner => inner.evaluate_partial_high(query))
+	}
+
+	fn zero_pad(
+		&self,
+		n_pad_vars: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	) -> Result<MultilinearExtension<P>, Error> {
+		either::for_both!(self, inner => inner.zero_pad(n_pad_vars, start_index, nonzero_index))
 	}
 
 	fn subcube_partial_low_evals(

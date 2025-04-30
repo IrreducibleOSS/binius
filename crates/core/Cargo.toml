@@ -29,7 +29,6 @@ rand.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-trait-set.workspace = true
 transpose.workspace = true
 
 [dev-dependencies]

@@ -7,6 +7,12 @@ pub trait ComputeLayer<F> {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
+	/// The executor that can execute operations on the device.
+	type Exec;
+
+	/// The operation (scalar) value type.
+	type OpValue;
+
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
 	/// Depending on the compute layer, this may perform steps beyond just allocating memory. For
@@ -42,6 +48,80 @@ pub trait ComputeLayer<F> {
 		src: FSlice<'_, F, Self>,
 		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
+
+	/// Executes an operation.
+	///
+	/// A HAL operation is an abstract function that runs with an executor reference.
+	fn execute(
+		&self,
+		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<Self::OpValue>, Error>,
+	) -> Result<Vec<F>, Error>;
+
+	/// Creates an operation that depends on the concurrent execution of two inner operations.
+	fn join<Out1, Out2>(
+		&self,
+		exec: &mut Self::Exec,
+		op1: impl FnOnce(&mut Self::Exec) -> Result<Out1, Error>,
+		op2: impl FnOnce(&mut Self::Exec) -> Result<Out2, Error>,
+	) -> Result<(Out1, Out2), Error> {
+		let out1 = op1(exec)?;
+		let out2 = op2(exec)?;
+		Ok((out1, out2))
+	}
+
+	/// Returns the inner product of a vector of subfield elements with big field elements.
+	///
+	/// ## Arguments
+	///
+	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements that `a_in` contains.
+	/// * `a_in` - the first input slice of subfield elements.
+	/// * `b_in` - the second input slice of `F` elements.
+	///
+	/// ## Throws
+	///
+	/// * if `a_edeg` is greater than `F::LOG_BITS`
+	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of two
+	///
+	/// ## Returns
+	///
+	/// Returns the inner product of `a_in` and `b_in`.
+	fn inner_product(
+		&self,
+		exec: &mut Self::Exec,
+		a_edeg: usize,
+		a_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		b_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+	) -> Result<Self::OpValue, Error>;
+
+	/// Computes the iterative tensor product of the input with the given coordinates.
+	///
+	/// This operation modifies the data buffer in place.
+	///
+	/// ## Mathematical Definition
+	///
+	/// This operation accepts parameters
+	///
+	/// * $n \in \mathbb{N}$ (`log_n`),
+	/// * $k \in \mathbb{N}$ (`coordinates.len()`),
+	/// * $v \in L^{2^n}$ (`data[..1 << log_n]`),
+	/// * $r \in L^k$ (`coordinates`),
+	///
+	/// and computes the vector
+	///
+	/// $$
+	/// v \otimes (1 - r_0, r_0) \otimes \ldots \otimes (1 - r_{k-1}, r_{k-1})
+	/// $$
+	///
+	/// ## Throws
+	///
+	/// * unless `2**(log_n + coordinates.len())` equals `data.len()`
+	fn tensor_expand(
+		&self,
+		exec: &mut Self::Exec,
+		log_n: usize,
+		coordinates: &[F],
+		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,7 +142,7 @@ pub type FSliceMut<'a, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, Field, TowerField};
+	use binius_field::{tower::CanonicalTowerFamily, BinaryField128b, Field, TowerField};
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
@@ -114,12 +194,12 @@ mod tests {
 
 	#[test]
 	fn test_cpu_host_alloc() {
-		test_host_alloc(CpuLayer::<BinaryField128b>::default());
+		test_host_alloc(CpuLayer::<CanonicalTowerFamily>::default());
 	}
 
 	#[test]
 	fn test_cpu_copy_host_device() {
 		let mut dev_mem = vec![BinaryField128b::ZERO; 256];
-		test_copy_host_device(CpuLayer::<BinaryField128b>::default(), dev_mem.as_mut_slice());
+		test_copy_host_device(CpuLayer::<CanonicalTowerFamily>::default(), dev_mem.as_mut_slice());
 	}
 }

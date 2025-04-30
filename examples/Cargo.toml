@@ -31,6 +31,10 @@ name = "keccakf_circuit"
 path = "keccakf_circuit.rs"
 
 [[example]]
+name = "keccak"
+path = "keccak.rs"
+
+[[example]]
 name = "u8mul"
 path = "u8mul.rs"
 

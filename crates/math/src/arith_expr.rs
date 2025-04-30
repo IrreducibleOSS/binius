@@ -343,6 +343,24 @@ impl<F: Field> ArithCircuit<F> {
 		}
 	}
 
+	pub fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		let mut step_evals = Vec::with_capacity(self.steps.len());
+		for step in &self.steps {
+			match step {
+				ArithCircuitStep::Add(left, right) => {
+					step_evals.push(step_evals[*left] + step_evals[*right])
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					step_evals.push(step_evals[*left] * step_evals[*right])
+				}
+				ArithCircuitStep::Pow(base, exp) => step_evals.push(query[*base].pow(*exp)),
+				ArithCircuitStep::Const(value) => step_evals.push(*value),
+				ArithCircuitStep::Var(index) => step_evals.push(query[*index]),
+			}
+		}
+		Ok(step_evals.pop().unwrap_or_default())
+	}
+
 	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithCircuit<FTgt> {
 		ArithCircuit {
 			steps: self

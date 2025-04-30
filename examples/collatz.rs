@@ -8,8 +8,8 @@ use binius_circuits::{
 use binius_core::{
 	constraint_system::{self, Proof},
 	fiat_shamir::HasherChallenger,
-	tower::CanonicalTowerFamily,
 };
+use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;

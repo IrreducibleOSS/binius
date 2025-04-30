@@ -304,25 +304,30 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
-	pub fn zero_padded(self, inner_id: OracleId, n_vars: usize) -> Result<OracleId, Error> {
-		if inner_id >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
+	pub fn zero_padded(
+		self,
+		inner_id: OracleId,
+		n_pad_vars: usize,
+		nonzero_index: usize,
+		start_index: usize,
+	) -> Result<OracleId, Error> {
+		let inner_n_vars = self.mut_ref.n_vars(inner_id);
+		if start_index > inner_n_vars {
+			bail!(Error::InvalidStartIndex {
+				expected: inner_n_vars
+			});
 		}
 
-		if self.mut_ref.n_vars(inner_id) > n_vars {
-			bail!(Error::IncorrectNumberOfVariables {
-				expected: self.mut_ref.n_vars(inner_id),
-			});
-		};
-
 		let inner = self.mut_ref.get_from_set(inner_id);
+		let tower_level = inner.binary_tower_level();
+		let padded = ZeroPadded::new(&inner, n_pad_vars, nonzero_index, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars,
-			tower_level: inner.tower_level,
+			n_vars: inner_n_vars + n_pad_vars,
+			tower_level,
 			name: self.name,
-			variant: MultilinearPolyVariant::ZeroPadded(inner_id),
+			variant: MultilinearPolyVariant::ZeroPadded(padded),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -480,8 +485,15 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			.linear_combination_with_offset(n_vars, offset, inner)
 	}
 
-	pub fn add_zero_padded(&mut self, id: OracleId, n_vars: usize) -> Result<OracleId, Error> {
-		self.add().zero_padded(id, n_vars)
+	pub fn add_zero_padded(
+		&mut self,
+		id: OracleId,
+		n_pad_vars: usize,
+		nonzero_index: usize,
+		start_index: usize,
+	) -> Result<OracleId, Error> {
+		self.add()
+			.zero_padded(id, n_pad_vars, nonzero_index, start_index)
 	}
 
 	pub fn add_composite_mle(
@@ -550,7 +562,7 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	Shifted(Shifted),
 	Packed(Packed),
 	LinearCombination(LinearCombination<F>),
-	ZeroPadded(OracleId),
+	ZeroPadded(ZeroPadded),
 	Composite(CompositeMLE<F>),
 }
 
@@ -668,6 +680,46 @@ impl<F: TowerField> Projected<F> {
 		Ok(Self {
 			id: oracle.id(),
 			values,
+			start_index,
+		})
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
+pub struct ZeroPadded {
+	#[get_copy = "pub"]
+	id: OracleId,
+	#[get_copy = "pub"]
+	n_pad_vars: usize,
+	#[get_copy = "pub"]
+	nonzero_index: usize,
+	#[get_copy = "pub"]
+	start_index: usize,
+}
+
+impl ZeroPadded {
+	fn new<F: TowerField>(
+		oracle: &MultilinearPolyOracle<F>,
+		n_pad_vars: usize,
+		nonzero_index: usize,
+		start_index: usize,
+	) -> Result<Self, Error> {
+		if start_index > oracle.n_vars() {
+			bail!(Error::InvalidStartIndex {
+				expected: oracle.n_vars(),
+			});
+		}
+
+		if nonzero_index > 1 << n_pad_vars {
+			bail!(Error::InvalidNonzeroIndex {
+				expected: 1 << n_pad_vars,
+			});
+		}
+
+		Ok(Self {
+			id: oracle.id(),
+			n_pad_vars,
+			nonzero_index,
 			start_index,
 		})
 	}

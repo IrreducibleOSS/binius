@@ -206,9 +206,7 @@ mod tests {
 		});
 	}
 
-	// TODO: Fix this test
 	#[test]
-	#[ignore]
 	fn test_lookup_producer_no_zero_counts() {
 		with_lookup_test_instance(true, |cs, witness| {
 			validate_system_witness::<OptimalUnderlier128b>(cs, witness, vec![])

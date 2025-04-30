@@ -22,19 +22,14 @@ use crate::{
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
-fn fold_pair<F, FS>(
-	rs_code: &ReedSolomonCode<FS>,
-	round: usize,
-	index: usize,
-	values: (F, F),
-	r: F,
-) -> F
+fn fold_pair<F, FS, NTT>(ntt: &NTT, round: usize, index: usize, values: (F, F), r: F) -> F
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	NTT: AdditiveNTT<FS>,
 {
 	// Perform inverse additive NTT butterfly
-	let t = rs_code.get_ntt().get_subspace_eval(round, index);
+	let t = ntt.get_subspace_eval(round, index);
 	let (mut u, mut v) = values;
 	v += u;
 	u += v * t;
@@ -56,8 +51,8 @@ where
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
-pub fn fold_chunk<F, FS>(
-	rs_code: &ReedSolomonCode<FS>,
+pub fn fold_chunk<F, FS, NTT>(
+	ntt: &NTT,
 	start_round: usize,
 	chunk_index: usize,
 	values: &[F],
@@ -67,10 +62,11 @@ pub fn fold_chunk<F, FS>(
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	NTT: AdditiveNTT<FS>,
 {
 	// Preconditions
 	debug_assert!(!folding_challenges.is_empty());
-	debug_assert!(start_round + folding_challenges.len() <= rs_code.log_dim());
+	debug_assert!(start_round + folding_challenges.len() <= ntt.log_domain_size());
 	debug_assert_eq!(values.len(), 1 << folding_challenges.len());
 	debug_assert!(scratch_buffer.len() >= values.len());
 
@@ -89,14 +85,14 @@ where
 				let values =
 					(scratch_buffer[index_offset << 1], scratch_buffer[(index_offset << 1) + 1]);
 				scratch_buffer[index_offset] =
-					fold_pair(rs_code, round, index_start + index_offset, values, r)
+					fold_pair(ntt, round, index_start + index_offset, values, r)
 			});
 		} else {
 			// For the first round, we read values directly from the `values` slice.
 			(0..new_scratch_buffer_len).for_each(|index_offset| {
 				let values = (values[index_offset << 1], values[(index_offset << 1) + 1]);
 				scratch_buffer[index_offset] =
-					fold_pair(rs_code, round, index_start + index_offset, values, r)
+					fold_pair(ntt, round, index_start + index_offset, values, r)
 			});
 		}
 	}
@@ -127,8 +123,8 @@ where
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
-pub fn fold_interleaved_chunk<F, FS, P>(
-	rs_code: &ReedSolomonCode<FS>,
+pub fn fold_interleaved_chunk<F, FS, P, NTT>(
+	ntt: &NTT,
 	log_batch_size: usize,
 	chunk_index: usize,
 	values: &[P],
@@ -139,10 +135,11 @@ pub fn fold_interleaved_chunk<F, FS, P>(
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
+	NTT: AdditiveNTT<FS>,
 	P: PackedField<Scalar = F>,
 {
 	// Preconditions
-	debug_assert!(fold_challenges.len() <= rs_code.log_dim());
+	debug_assert!(fold_challenges.len() <= ntt.log_domain_size() + log_batch_size);
 	debug_assert_eq!(len_packed_slice(values), 1 << (log_batch_size + fold_challenges.len()));
 	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
 	debug_assert!(scratch_buffer.len() >= 2 * (values.len() >> log_batch_size));
@@ -170,7 +167,7 @@ where
 	if fold_challenges.is_empty() {
 		buffer1[0]
 	} else {
-		fold_chunk(rs_code, 0, chunk_index, buffer1, fold_challenges, buffer2)
+		fold_chunk(ntt, 0, chunk_index, buffer1, fold_challenges, buffer2)
 	}
 }
 
@@ -279,13 +276,13 @@ pub type TerminateCodeword<F> = Vec<F>;
 ///
 /// Throws [`Error::ParameterError`] if the security level is unattainable given the code
 /// parameters.
-pub fn calculate_n_test_queries<F, PS>(
+pub fn calculate_n_test_queries<F, FEncode>(
 	security_bits: usize,
-	code: &ReedSolomonCode<PS>,
+	code: &ReedSolomonCode<FEncode>,
 ) -> Result<usize, Error>
 where
-	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedField<Scalar: BinaryField>,
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
 {
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
 	let sumcheck_err = (2 * code.log_dim()) as f64 / field_size;
@@ -336,20 +333,19 @@ pub fn estimate_optimal_arity(
 mod tests {
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField128b, BinaryField32b};
-	use binius_ntt::NTTOptions;
 
 	use super::*;
 
 	#[test]
 	fn test_calculate_n_test_queries() {
 		let security_bits = 96;
-		let rs_code = ReedSolomonCode::new(28, 1, &NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
 				.unwrap();
 		assert_eq!(n_test_queries, 232);
 
-		let rs_code = ReedSolomonCode::new(28, 2, &NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
 				.unwrap();
@@ -359,9 +355,9 @@ mod tests {
 	#[test]
 	fn test_calculate_n_test_queries_unsatisfiable() {
 		let security_bits = 128;
-		let rs_code = ReedSolomonCode::new(28, 1, &NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::<BinaryField32b>::new(28, 1).unwrap();
 		assert_matches!(
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code),
+			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code),
 			Err(Error::ParameterError)
 		);
 	}

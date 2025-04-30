@@ -1,16 +1,14 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with};
+use std::iter::repeat_with;
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::{OptimalUnderlier, OptimalUnderlier128b},
-	as_packed_field::PackedType,
-	linear_transformation::PackedTransformationFactory,
-	tower::CanonicalTowerFamily,
-	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
+	arch::OptimalUnderlier, as_packed_field::PackedType,
+	linear_transformation::PackedTransformationFactory, tower::CanonicalTowerFamily,
+	PackedExtension, PackedFieldIndexable, PackedSubfield,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
@@ -18,12 +16,12 @@ use binius_m3::{
 		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
 		B128, B8,
 	},
-	gadgets::hash::groestl,
+	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
-use rand::thread_rng;
+use rand::{thread_rng, RngCore};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -36,22 +34,21 @@ struct Args {
 	log_inv_rate: u32,
 }
 
-#[derive(Debug)]
 pub struct PermutationTable {
 	table_id: TableId,
-	permutation: groestl::Permutation,
+	keccakf: Keccakf,
 }
 
 impl PermutationTable {
-	pub fn new(cs: &mut ConstraintSystem, pq: groestl::PermutationVariant) -> Self {
-		let mut table = cs.add_table(format!("Grøstl {pq} permutation"));
+	pub fn new(cs: &mut ConstraintSystem) -> Self {
+		let mut table = cs.add_table("Keccak permutation");
 
-		let state_in_bytes = table.add_committed_multiple::<B8, 8, 8>("state_in_bytes");
-		let permutation = groestl::Permutation::new(&mut table, pq, state_in_bytes);
+		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
+		let keccakf = keccak::Keccakf::new(&mut table, state_in);
 
 		Self {
 			table_id: table.id(),
-			permutation,
+			keccakf,
 		}
 	}
 }
@@ -61,7 +58,7 @@ where
 	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
-	type Event = [B8; 64];
+	type Event = StateMatrix<u64>;
 
 	fn id(&self) -> TableId {
 		self.table_id
@@ -72,8 +69,8 @@ where
 		rows: impl Iterator<Item = &'a Self::Event>,
 		witness: &mut TableWitnessSegment<P>,
 	) -> Result<()> {
-		self.permutation.populate_state_in(witness, rows)?;
-		self.permutation.populate(witness)?;
+		self.keccakf.populate_state_in(witness, rows)?;
+		self.keccakf.populate(witness)?;
 		Ok(())
 	}
 }
@@ -90,11 +87,11 @@ fn main() -> Result<()> {
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
 	let n_permutations = args.n_permutations as usize;
-	println!("Verifying {n_permutations} Grøstl-256 P permutations");
+	println!("Verifying {n_permutations} Keccakf permutations");
 
 	let allocator = bumpalo::Bump::new();
 	let mut cs = ConstraintSystem::new();
-	let table = PermutationTable::new(&mut cs, groestl::PermutationVariant::P);
+	let table = PermutationTable::new(&mut cs);
 
 	let statement = Statement {
 		boundaries: vec![],
@@ -102,12 +99,13 @@ fn main() -> Result<()> {
 	};
 
 	let mut rng = thread_rng();
-	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
+	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+	//witness.fill_table_parallel(&table, &events)?;
 	witness.fill_table_sequential(&table, &events)?;
 	drop(trace_gen_scope);
 
@@ -134,7 +132,7 @@ fn main() -> Result<()> {
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	binius_core::constraint_system::verify::<
-		OptimalUnderlier128b,
+		U,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

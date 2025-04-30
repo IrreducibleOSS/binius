@@ -2,7 +2,9 @@
 
 //! Traits for working with field towers.
 
-use binius_field::{
+use trait_set::trait_set;
+
+use crate::{
 	as_packed_field::PackScalar,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
@@ -14,7 +16,6 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
 	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
 };
-use trait_set::trait_set;
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
 pub trait TowerFamily: Sized {
@@ -55,7 +56,7 @@ pub trait ProverTowerFamily: TowerFamily {
 }
 
 /// The canonical Fan-Paar tower family.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CanonicalTowerFamily;
 
 impl TowerFamily for CanonicalTowerFamily {

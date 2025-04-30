@@ -426,6 +426,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			table: self.table,
 			cols,
 			log_size: self.log_capacity,
+			index: 0,
 			oracle_offset: self.oracle_offset,
 		}
 	}
@@ -793,10 +794,12 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 					})
 					.collect(),
 			)
-			.map(move |cols| TableWitnessSegment {
+			.enumerate()
+			.map(move |(index, cols)| TableWitnessSegment {
 				table,
 				cols,
 				log_size: log_segment_size,
+				index,
 				oracle_offset,
 			});
 			itertools::Either::Right(iter)
@@ -860,6 +863,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				table,
 				cols: col_strides,
 				log_size: log_segment_size,
+				index: i,
 				oracle_offset,
 			}
 		})
@@ -880,6 +884,9 @@ where
 	cols: Vec<RefCellData<'a, P>>,
 	#[get_copy = "pub"]
 	log_size: usize,
+	/// The index of the segment in the segmented table witness.
+	#[get_copy = "pub"]
+	index: usize,
 	oracle_offset: usize,
 }
 
@@ -1255,18 +1262,18 @@ mod tests {
 		)
 		.unwrap();
 
-		assert_eq!(index.log_capacity(), 4);
-		assert_eq!(index.min_log_segment_size(), 4);
+		assert_eq!(index.log_capacity(), 3);
+		assert_eq!(index.min_log_segment_size(), 3);
 
 		let mut iter = index.segments(5);
 		// Check that the segment size is clamped to the capacity.
-		assert_eq!(iter.next().unwrap().log_size(), 4);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
 		assert!(iter.next().is_none());
 		drop(iter);
 
 		let mut iter = index.segments(2);
 		// Check that the segment size is clamped to the minimum segment size.
-		assert_eq!(iter.next().unwrap().log_size(), 4);
+		assert_eq!(iter.next().unwrap().log_size(), 3);
 		assert!(iter.next().is_none());
 		drop(iter);
 	}

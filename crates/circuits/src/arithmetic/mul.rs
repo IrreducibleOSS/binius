@@ -404,9 +404,8 @@ mod tests {
 	use binius_core::{
 		constraint_system::{self},
 		fiat_shamir::HasherChallenger,
-		tower::CanonicalTowerFamily,
 	};
-	use binius_field::{BinaryField1b, BinaryField8b};
+	use binius_field::{tower::CanonicalTowerFamily, BinaryField1b, BinaryField8b};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 

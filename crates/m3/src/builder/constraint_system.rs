@@ -13,7 +13,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
-use binius_math::LinearNormalForm;
+use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
 use itertools::chain;
@@ -182,11 +182,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized && !count.is_power_of_two() {
-				return Err(Error::TableSizePowerOfTwoRequired {
-					table_id: table.id,
-					size: count,
-				});
+			if table.power_of_two_sized {
+				if !count.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id: table.id,
+						size: count,
+					});
+				}
+				if count != 1 << table.log_capacity(count) {
+					panic!(
+						"Tables with required power-of-two size currently cannot have capacity \
+						exceeding their count. This is because the flushes do not have automatic \
+						selectors applied, and so the table would flush invalid events"
+					);
+				}
 			}
 
 			let mut oracle_lookup = Vec::new();
@@ -398,6 +407,17 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect();
 			addition.projected(oracle_lookup[col.table_index], query_values, *start_index)?
 		}
+		ColumnDef::ZeroPadded {
+			col,
+			n_pad_vars,
+			start_index,
+			nonzero_index,
+		} => addition.zero_padded(
+			oracle_lookup[col.table_index],
+			*n_pad_vars,
+			*nonzero_index,
+			*start_index,
+		)?,
 		ColumnDef::Shifted {
 			col,
 			offset,
@@ -435,6 +455,10 @@ fn add_oracle_for_column<F: TowerField>(
 			transparent_single[id.table_index].unwrap(),
 			n_vars - shape.log_values_per_row,
 		)?,
+		ColumnDef::StructuredDynSize(structured) => {
+			let expr = structured.expr(n_vars)?;
+			addition.transparent(ArithCircuit::from(&expr))?
+		}
 		ColumnDef::StaticExp {
 			base_tower_level, ..
 		} => addition.committed(n_vars, *base_tower_level),

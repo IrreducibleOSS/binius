@@ -2,7 +2,7 @@
 
 use binius_ntt::Error as NttError;
 
-use crate::transcript;
+use crate::{reed_solomon, transcript};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -28,6 +28,8 @@ pub enum Error {
 	RoundVCSLengthsOutOfRange,
 	#[error("round VCS vector_length must be a power of two")]
 	RoundVCSLengthsNotPowerOfTwo,
+	#[error("Reed-Solomon encoding error: {0}")]
+	CodeError(#[from] reed_solomon::Error),
 	#[error("Reed-Solomon encoding error: {0}")]
 	EncodeError(#[from] NttError),
 	#[error("vector commit error: {0}")]

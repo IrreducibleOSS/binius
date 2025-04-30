@@ -3,7 +3,7 @@
 use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
 
 use auto_impl::auto_impl;
-use binius_field::{Field, PackedField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_math::{
 	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
@@ -70,6 +70,24 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn binary_tower_level(&self) -> usize {
 		0
+	}
+}
+
+impl<F: TowerField> MultivariatePoly<F> for ArithCircuit<F> {
+	fn n_vars(&self) -> usize {
+		self.n_vars()
+	}
+
+	fn degree(&self) -> usize {
+		self.degree()
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		self.evaluate(query).map_err(Error::from)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.binary_tower_level()
 	}
 }
 

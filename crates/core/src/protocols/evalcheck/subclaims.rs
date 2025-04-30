@@ -144,11 +144,11 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 	n_vars: usize,
 	eval: F,
 ) {
-	if n_vars > constraint_builders.len() {
-		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
+	if n_vars >= constraint_builders.len() {
+		constraint_builders.resize_with(n_vars + 1, || ConstraintSetBuilder::new());
 	}
 	let bivariate_product = ArithExpr::Var(0) * ArithExpr::Var(1);
-	constraint_builders[n_vars - 1].add_sumcheck(meta.oracle_ids(), bivariate_product.into(), eval);
+	constraint_builders[n_vars].add_sumcheck(meta.oracle_ids(), bivariate_product.into(), eval);
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
@@ -163,10 +163,10 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 
 	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
 	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithCircuit::var(comp.n_polys());
-	if n_vars > constraint_builders.len() {
-		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
+	if n_vars >= constraint_builders.len() {
+		constraint_builders.resize_with(n_vars + 1, || ConstraintSetBuilder::new());
 	}
-	constraint_builders[n_vars - 1].add_sumcheck(oracle_ids, expr, eval);
+	constraint_builders[n_vars].add_sumcheck(oracle_ids, expr, eval);
 }
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]

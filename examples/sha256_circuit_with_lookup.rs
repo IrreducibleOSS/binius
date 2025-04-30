@@ -5,10 +5,10 @@ use binius_circuits::{
 	builder::{types::U, ConstraintSystemBuilder},
 	unconstrained::unconstrained,
 };
-use binius_core::{
-	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily, BinaryField1b,
 };
-use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField1b};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
