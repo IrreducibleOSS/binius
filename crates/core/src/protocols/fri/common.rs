@@ -131,7 +131,7 @@ pub fn fold_interleaved_chunk<F, FS, P, NTT>(
 	log_batch_size: usize,
 	chunk_index: usize,
 	values: &[P],
-	tensor: &[F],
+	tensor: &[P],
 	fold_challenges: &[F],
 	scratch_buffer: &mut [F],
 ) -> F
@@ -148,19 +148,31 @@ where
 		values.len(),
 		1 << (fold_challenges.len() + log_batch_size).saturating_sub(P::LOG_WIDTH)
 	);
-	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
+	debug_assert_eq!(tensor.len(), 1 << log_batch_size.saturating_sub(P::LOG_WIDTH));
 	debug_assert!(scratch_buffer.len() >= 1 << fold_challenges.len());
 
 	let scratch_buffer = &mut scratch_buffer[..1 << fold_challenges.len()];
 
-	let values_iter = P::iter_slice(values);
 	if log_batch_size == 0 {
-		iter::zip(&mut *scratch_buffer, values_iter).for_each(|(dst, val)| *dst = val);
-	} else {
-		let values_chunks = values_iter.chunks(1 << log_batch_size);
+		iter::zip(&mut *scratch_buffer, P::iter_slice(values)).for_each(|(dst, val)| *dst = val);
+	} else if log_batch_size < P::LOG_WIDTH {
+		// This branch is slower than the following one. It will rarely be used with standard FRI
+		// parameter choices and field sizes.
+		let values_chunks = P::iter_slice(values).chunks(1 << log_batch_size);
 		let folded_values = values_chunks
 			.into_iter()
-			.map(|chunk| inner_product_unchecked(chunk, tensor.iter().copied()));
+			.map(|chunk| inner_product_unchecked(chunk, P::iter_slice(tensor)));
+		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
+	} else {
+		let folded_values = values
+			.chunks(1 << log_batch_size - P::LOG_WIDTH)
+			.map(|chunk| {
+				iter::zip(chunk, tensor)
+					.map(|(&a_i, &b_i)| a_i * b_i)
+					.sum::<P>()
+					.into_iter()
+					.sum()
+			});
 		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
 	};
 
