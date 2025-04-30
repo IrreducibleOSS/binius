@@ -13,11 +13,9 @@ proptest! {
 		let mut prod_hi = (prod >> 32) as u32;
 		let prod_lo = (prod % (1u64 << 32)) as u32;
 		if a < 0 {
-			// Guaranteed to not underflow
 			prod_hi = prod_hi.wrapping_sub(b_u32);
 		}
 		if b < 0 {
-			// Guaranteed to not underflow
 			prod_hi = prod_hi.wrapping_sub(a_u32);
 		}
 		let prod = ((prod_hi as u64) << 32) | prod_lo as u64;
