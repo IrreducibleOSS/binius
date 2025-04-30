@@ -30,7 +30,7 @@ EXAMPLES_TO_RUN = {
         "single_threaded": True,
         "display": r"Keccak-f",
         "export": "keccakf-report.csv",
-        "args": ["keccakf_circuit", "--", "--n-permutations"],
+        "args": ["keccak", "--", "--n-permutations"],
         "n_ops": KECCAKF_PERMS,
     },
     "groestl": {
