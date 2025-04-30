@@ -173,7 +173,13 @@ where
 				.enumerate()
 				.map(|(i, coset_values)| {
 					scratch_buffer.copy_from_slice(coset_values);
-					fold_chunk(ntt, n_prior_challenges, i, &mut scratch_buffer, final_challenges)
+					fold_chunk(
+						ntt,
+						n_final_challenges + self.params.rs_code().log_inv_rate(),
+						i,
+						&mut scratch_buffer,
+						final_challenges,
+					)
 				})
 				.collect::<Vec<_>>()
 		} else {
@@ -322,7 +328,7 @@ where
 
 			next_value = fold_chunk(
 				ntt,
-				fold_round,
+				self.params.rs_code().log_len() - fold_round,
 				coset_index,
 				&mut values,
 				&self.fold_challenges[fold_round..fold_round + arity],

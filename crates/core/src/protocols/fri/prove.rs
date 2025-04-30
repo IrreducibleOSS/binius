@@ -26,14 +26,19 @@ use crate::{
 	transcript::{ProverTranscript, TranscriptWriter},
 };
 
-/// Fold the interleaved codeword into a single codeword.
+/// FRI-fold the interleaved codeword using the given challenges.
 ///
 /// ## Arguments
 ///
-/// * `rs_code` - the Reed–Solomon code the protocol tests proximity to.
+/// * `ntt` - the NTT instance, used to look up the twiddle values.
 /// * `codeword` - an interleaved codeword.
 /// * `challenges` - the folding challenges. The length must be at least `log_batch_size`.
-/// * `log_batch_size` - the base-2 logarithm of the batch size of the interleaved code.
+/// * `log_len` - the binary logarithm of the code length.
+/// * `log_batch_size` - the binary logarithm of the interleaved code batch size.
+///
+/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
+///
+/// [DP24]: <https://eprint.iacr.org/2024/504>
 #[instrument(skip_all, level = "debug")]
 fn fold_interleaved<F, FS, NTT, P>(
 	ntt: &NTT,

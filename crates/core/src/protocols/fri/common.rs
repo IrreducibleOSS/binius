@@ -36,22 +36,33 @@ where
 
 /// Calculate FRI fold of `values` at a `chunk_index` with random folding challenges.
 ///
-/// REQUIRES:
-/// - `folding_challenges` is not empty.
-/// - `values.len() == 1 << folding_challenges.len()`.
-/// - `scratch_buffer.len() == values.len()`.
-/// - `start_round + folding_challenges.len() - 1 < rs_code.log_dim()`.
+/// Folds a coset of a Reed–Solomon codeword into a single value using the FRI folding algorithm.
+/// The coset has size $2^n$, where $n$ is the number of challenges.
+///
+/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
 ///
 /// NB: This method is on a hot path and does not perform any allocations or
 /// precondition checks.
 ///
-/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
+/// ## Arguments
+///
+/// * `ntt` - the NTT instance, used to look up the twiddle values.
+/// * `log_len` - the binary logarithm of the code length.
+/// * `chunk_index` - the index of the chunk, of size $2^n$, in the full codeword.
+/// * `values` - mutable slice of values to fold, modified in place.
+/// * `challenges` - the sequence of folding challenges, with length $n$.
+///
+/// ## Pre-conditions
+///
+/// - `challenges.len() <= log_len`.
+/// - `log_len <= ntt.log_domain_size()`, so that the NTT domain is large enough.
+/// - `values.len() == 1 << challenges.len()`.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
 pub fn fold_chunk<F, FS, NTT>(
 	ntt: &NTT,
-	mut round: usize,
+	mut log_len: usize,
 	chunk_index: usize,
 	values: &mut [F],
 	challenges: &[F],
@@ -64,19 +75,26 @@ where
 	let mut log_size = challenges.len();
 
 	// Preconditions
-	debug_assert!(round + log_size <= ntt.log_domain_size());
+	debug_assert!(log_size <= log_len);
+	debug_assert!(log_len <= ntt.log_domain_size());
 	debug_assert_eq!(values.len(), 1 << log_size);
 
 	// FRI-fold the values in place.
-	for &r in challenges {
+	for &challenge in challenges {
 		// Fold the (2i) and (2i+1)th cells of the scratch buffer in-place into the i-th cell
+		let ntt_round = ntt.log_domain_size() - log_len;
 		for index_offset in 0..1 << (log_size - 1) {
 			let pair = (values[index_offset << 1], values[(index_offset << 1) + 1]);
-			values[index_offset] =
-				fold_pair(ntt, round, (chunk_index << (log_size - 1)) + index_offset, pair, r)
+			values[index_offset] = fold_pair(
+				ntt,
+				ntt_round,
+				(chunk_index << (log_size - 1)) + index_offset,
+				pair,
+				challenge,
+			)
 		}
 
-		round += 1;
+		log_len -= 1;
 		log_size -= 1;
 	}
 
@@ -146,8 +164,7 @@ where
 		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
 	};
 
-	let round = ntt.log_domain_size() - log_len;
-	fold_chunk(ntt, round, chunk_index, scratch_buffer, fold_challenges)
+	fold_chunk(ntt, log_len, chunk_index, scratch_buffer, fold_challenges)
 }
 
 /// Parameters for an FRI interleaved code proximity protocol.
