@@ -6,3 +6,4 @@ pub mod lookup;
 pub mod mul;
 pub mod structured;
 pub mod u32;
+mod util;

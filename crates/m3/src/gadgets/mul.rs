@@ -4,14 +4,17 @@ use std::{array, marker::PhantomData};
 
 use anyhow::Result;
 use binius_field::{
-	ext_basis, packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, PackedSubfield, TowerField,
+	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
+	PackedSubfield, TowerField,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
-	gadgets::u32::add::{Incr, UnsignedAddPrimitives},
+	builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	gadgets::{
+		u32::add::{Incr, UnsignedAddPrimitives},
+		util::pack_fp,
+	},
 };
 
 /// Helper trait to create Multiplication gadgets for unsigned integers of different bit lengths.
@@ -55,7 +58,7 @@ impl UnsignedMulPrimitives for u32 {
 	fn shifted_generator() -> B64 {
 		let mut g = B64::MULTIPLICATIVE_GENERATOR;
 		for _ in 0..32 {
-			g *= g
+			g = g.square();
 		}
 		g
 	}
@@ -81,7 +84,7 @@ impl UnsignedMulPrimitives for u64 {
 	fn shifted_generator() -> B128 {
 		let mut g = Self::generator();
 		for _ in 0..64 {
-			g *= g
+			g = g.square();
 		}
 		g
 	}
@@ -400,18 +403,6 @@ impl MulUU64 {
 	}
 }
 
-pub(crate) fn pack_fp<FP: TowerField, const BIT_LENGTH: usize>(
-	bits: [Col<B1>; BIT_LENGTH],
-) -> Expr<FP, 1> {
-	assert_eq!(BIT_LENGTH, 1 << FP::TOWER_LEVEL);
-	let basis: [_; BIT_LENGTH] = array::from_fn(ext_basis::<FP, B1>);
-	bits.into_iter()
-		.enumerate()
-		.map(|(i, bit)| upcast_col(bit) * basis[i])
-		.reduce(|a, b| a + b)
-		.expect("bit has length checked above")
-}
-
 #[derive(Debug)]
 pub struct MulSS32 {
 	mul_inner: MulUU32,
@@ -444,8 +435,8 @@ impl MulSS32 {
 		x_in_bits: [Col<B1>; 32],
 		y_in_bits: [Col<B1>; 32],
 	) -> Self {
-		let x_in = table.add_computed("SS::x_in", pack_fp(x_in_bits));
-		let y_in = table.add_computed("SS::y_in", pack_fp(y_in_bits));
+		let x_in = table.add_computed("x_in", pack_fp(x_in_bits));
+		let y_in = table.add_computed("y_in", pack_fp(y_in_bits));
 
 		// Convert x and y to |x| and |y| via two's complement
 		let x_is_negative = x_in_bits[31]; // Will be 1 if negative

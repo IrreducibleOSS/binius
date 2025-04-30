@@ -196,8 +196,8 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> Incr<UPrimitive
 		});
 
 		for (i, &xin) in input.iter().enumerate() {
-			table.assert_zero(format!("sum_{i}"), xin + cin[i] - zout[i]);
-			table.assert_zero(format!("carry_{i}"), xin * cin[i] - cout[i]);
+			table.assert_zero(format!("sum[{i}]"), xin + cin[i] - zout[i]);
+			table.assert_zero(format!("carry[{i}]"), xin * cin[i] - cout[i]);
 		}
 
 		Self {
@@ -250,6 +250,8 @@ pub type U64Incr = Incr<u64, 64>;
 
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
@@ -257,7 +259,9 @@ mod tests {
 	use rand::{prelude::StdRng, Rng as _, SeedableRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
+	use crate::builder::{
+		test_utils::validate_system_witness, ConstraintSystem, Statement, WitnessIndex,
+	};
 
 	#[test]
 	fn prop_test_no_carry() {
@@ -408,5 +412,63 @@ mod tests {
 			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
 				.unwrap();
 		}
+	}
+
+	#[test]
+	fn test_incr() {
+		const TABLE_SIZE: usize = 1 << 9;
+
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("u32_incr");
+
+		let table_id = table.id();
+		let mut rng = StdRng::seed_from_u64(0);
+		let test_values = repeat_with(|| B32::new(rng.gen::<u32>()))
+			.take(10)
+			.collect::<Vec<_>>();
+
+		let xin = table.add_committed_multiple("xin");
+
+		let incr = U32Incr::new(&mut table, xin);
+
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		let table_witness = witness.init_table(table_id, TABLE_SIZE).unwrap();
+		let mut segment = table_witness.full_segment();
+
+		{
+			let mut xin_witness =
+				array_util::try_map(xin, |bit_col| segment.get_mut(bit_col)).unwrap();
+			for (i, value) in test_values.iter().enumerate() {
+				for bit in 0..32 {
+					set_packed_slice(
+						&mut xin_witness[bit],
+						i,
+						B1::from(((value.val() >> bit) & 1) == 1),
+					)
+				}
+			}
+		}
+
+		incr.populate(&mut segment).unwrap();
+
+		{
+			let zouts = array_util::try_map(incr.zout, |bit_col| segment.get(bit_col)).unwrap();
+			for (i, value) in test_values.iter().enumerate() {
+				let expected = value.val().wrapping_add(1);
+				let mut got = 0u32;
+				for bit in (0..32).rev() {
+					got <<= 1;
+					if get_packed_slice(&zouts[bit], i) == B1::ONE {
+						got |= 1;
+					}
+				}
+				assert_eq!(expected, got);
+			}
+		}
+		// Validate constraint system
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
 	}
 }
