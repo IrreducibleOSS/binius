@@ -340,17 +340,14 @@ where
 					.next()
 				{
 					Some((suboracle_id, coeff)) if n_polys == 1 && !coeff.is_zero() => {
-						let eval = (eval - linear_combination.offset())
-							* coeff.invert().expect("not zero");
-
-						if self
-							.evals_memoization
-							.get(suboracle_id, &eval_point)
-							.is_none()
-						{
-							self.evals_memoization
-								.insert(suboracle_id, eval_point.clone(), eval);
-						}
+let eval = if let Some(eval) = self.evals_memoization.get(suboracle_id, &eval_point) {
+    *eval
+} else {
+    let eval = (eval - linear_combination.offset())
+        * coeff.invert().expect("not zero");
+    self.evals_memoization.insert(suboracle_id, eval_point.clone(), eval);
+    eval
+};
 
 						let subclaim = EvalcheckMultilinearClaim {
 							id: suboracle_id,
