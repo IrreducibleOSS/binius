@@ -23,8 +23,8 @@ use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
-		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckHint,
+		EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
 	},
 	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
@@ -654,8 +654,8 @@ fn test_evalcheck_zero_padded() {
 fn test_evalcheck_serialization() {
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut writer = transcript.message();
-	serialize_evalcheck_proof(&mut writer, &EvalcheckProof::NewClaim);
-	serialize_evalcheck_proof(&mut writer, &EvalcheckProof::DuplicateClaim(6));
+	serialize_evalcheck_proof(&mut writer, &EvalcheckHint::NewClaim);
+	serialize_evalcheck_proof(&mut writer, &EvalcheckHint::DuplicateClaim(6));
 
 	let mut transcript = transcript.into_verifier();
 	let mut reader = transcript.message();
@@ -663,8 +663,8 @@ fn test_evalcheck_serialization() {
 	let out_1 = deserialize_evalcheck_proof(&mut reader).unwrap();
 	let out_2 = deserialize_evalcheck_proof(&mut reader).unwrap();
 
-	assert_eq!(out_1, EvalcheckProof::NewClaim);
-	assert_eq!(out_2, EvalcheckProof::DuplicateClaim(6));
+	assert_eq!(out_1, EvalcheckHint::NewClaim);
+	assert_eq!(out_2, EvalcheckHint::DuplicateClaim(6));
 
 	transcript.finalize().unwrap()
 }

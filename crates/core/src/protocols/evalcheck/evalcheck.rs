@@ -34,9 +34,16 @@ enum EvalcheckNumerics {
 	DuplicateClaim,
 }
 
-/// The proof output of a given claim which may recursively contain proofs of subclaims arising from a given claim.
+/// A hint is an instruction that the prover sends to the verifier, instructing them how to check
+/// the current claim efficiently.
+///
+/// There are many scenarios, based on the structure of the multilinear oracle set, where multiple
+/// evaluation claims reduce to the same subclaim. Deduplicating these and ensuring that the
+/// verifier only checks them once is an important performance feature. The data structures a
+/// verifier would need to deduplicate on their its own are complex, and so instead the prover
+/// sends hints to the verifier if it can check a claim more efficiently by reusing work.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalcheckProof {
+pub enum EvalcheckHint {
 	NewClaim,
 	DuplicateClaim(usize),
 }
@@ -54,13 +61,13 @@ impl EvalcheckNumerics {
 /// Serializes the `EvalcheckProof` into the transcript
 pub fn serialize_evalcheck_proof<B: BufMut>(
 	transcript: &mut TranscriptWriter<B>,
-	evalcheck: &EvalcheckProof,
+	evalcheck: &EvalcheckHint,
 ) {
 	match evalcheck {
-		EvalcheckProof::NewClaim => {
+		EvalcheckHint::NewClaim => {
 			transcript.write_bytes(&[EvalcheckNumerics::NewClaim as u8]);
 		}
-		EvalcheckProof::DuplicateClaim(index) => {
+		EvalcheckHint::DuplicateClaim(index) => {
 			transcript.write_bytes(&[EvalcheckNumerics::DuplicateClaim as u8]);
 			transcript.write(index);
 		}
@@ -70,16 +77,16 @@ pub fn serialize_evalcheck_proof<B: BufMut>(
 /// Deserializes the `EvalcheckProof` object from the given transcript.
 pub fn deserialize_evalcheck_proof<B: Buf>(
 	transcript: &mut TranscriptReader<B>,
-) -> Result<EvalcheckProof, Error> {
+) -> Result<EvalcheckHint, Error> {
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
 
 	match as_enum {
-		EvalcheckNumerics::NewClaim => Ok(EvalcheckProof::NewClaim),
+		EvalcheckNumerics::NewClaim => Ok(EvalcheckHint::NewClaim),
 		EvalcheckNumerics::DuplicateClaim => {
 			let index = transcript.read()?;
-			Ok(EvalcheckProof::DuplicateClaim(index))
+			Ok(EvalcheckHint::DuplicateClaim(index))
 		}
 	}
 }

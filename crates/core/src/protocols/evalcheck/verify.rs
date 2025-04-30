@@ -10,7 +10,7 @@ use tracing::instrument;
 use super::{
 	deserialize_evalcheck_proof,
 	error::{Error, VerificationError},
-	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
 		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
@@ -101,7 +101,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 		// If the proof is a duplicate claim, we need to check if the claim is already in the round
 		// claims, which have been verified.
-		if let EvalcheckProof::DuplicateClaim(index) = evalcheck_proof {
+		if let EvalcheckHint::DuplicateClaim(index) = evalcheck_proof {
 			if let Some(expected_claim) = self.round_claims.get(index) {
 				if *expected_claim == evalcheck_claim {
 					return Ok(());
@@ -260,12 +260,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		eval_point: EvalPoint<F>,
 		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<F, Error> {
-		// If the subproof is a duplicate claim, we need to check if the claim is
-		// already in the round claims which has been verified otherwise, we verify the
-		// subclaim by DFS.
+		// If the subproof is a duplicate claim, we need to check that the claim is already in the
+		// round claims and return the evaluation. Otherwise, we verify the subclaim recursively.
 		let subproof = deserialize_evalcheck_proof(&mut transcript.message())?;
 		match subproof {
-			EvalcheckProof::DuplicateClaim(index) => {
+			EvalcheckHint::DuplicateClaim(index) => {
 				if self.round_claims[index].id != oracle_id
 					|| self.round_claims[index].eval_point != eval_point
 				{
@@ -274,7 +273,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				Ok(self.round_claims[index].eval)
 			}
-			EvalcheckProof::NewClaim => {
+			EvalcheckHint::NewClaim => {
 				let eval = transcript.message().read_scalar()?;
 				let subclaim = EvalcheckMultilinearClaim {
 					id: oracle_id,

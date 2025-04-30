@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use super::{
 	error::Error,
-	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	serialize_evalcheck_proof,
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
@@ -125,7 +125,7 @@ where
 	/// Given a prover state containing [`MultilinearOracleSet`] indexing into given
 	/// [`MultilinearExtensionIndex`], we prove an [`EvalcheckMultilinearClaim`] (stating that given composite
 	/// `poly` equals `eval` at `eval_point`) by recursively processing each of the multilinears.
-	/// This way the evalcheck claim gets transformed into an [`EvalcheckProof`]
+	/// This way the evalcheck claim gets transformed into an [`EvalcheckHint`]
 	/// and a new set of claims on:
 	///  * Committed polynomial evaluations
 	///  * New sumcheck constraints that need to be proven in subsequent rounds (those get appended to `new_sumchecks`)
@@ -396,11 +396,11 @@ where
 		if let Some(claim_id) = claim_id {
 			serialize_evalcheck_proof(
 				&mut transcript.message(),
-				&EvalcheckProof::DuplicateClaim(*claim_id),
+				&EvalcheckHint::DuplicateClaim(*claim_id),
 			);
 			return Ok(());
 		}
-		serialize_evalcheck_proof(&mut transcript.message(), &EvalcheckProof::NewClaim);
+		serialize_evalcheck_proof(&mut transcript.message(), &EvalcheckHint::NewClaim);
 
 		self.prove_multilinear_skip_duplicate_check(evalcheck_claim, transcript)
 	}
@@ -478,12 +478,12 @@ where
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
-							&EvalcheckProof::DuplicateClaim(*claim_index),
+							&EvalcheckHint::DuplicateClaim(*claim_index),
 						);
 					} else {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
-							&EvalcheckProof::NewClaim,
+							&EvalcheckHint::NewClaim,
 						);
 
 						let eval = *self
