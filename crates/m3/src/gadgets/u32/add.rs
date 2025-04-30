@@ -442,12 +442,8 @@ mod tests {
 			let mut xin_witness =
 				array_util::try_map(xin, |bit_col| segment.get_mut(bit_col)).unwrap();
 			for (i, value) in test_values.iter().enumerate() {
-				for bit in 0..32 {
-					set_packed_slice(
-						&mut xin_witness[bit],
-						i,
-						B1::from(((value.val() >> bit) & 1) == 1),
-					)
+				for (bit, packed) in xin_witness.iter_mut().enumerate() {
+					set_packed_slice(packed, i, B1::from(((value.val() >> bit) & 1) == 1))
 				}
 			}
 		}

@@ -4,7 +4,10 @@ use std::iter::repeat_with;
 
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::OptimalUnderlier, tower::CanonicalTowerFamily, packed::{get_packed_slice, set_packed_slice}, };
+	arch::OptimalUnderlier,
+	packed::{get_packed_slice, set_packed_slice},
+	tower::CanonicalTowerFamily,
+};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
