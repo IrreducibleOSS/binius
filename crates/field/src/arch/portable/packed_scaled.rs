@@ -330,7 +330,7 @@ where
 
 	#[inline]
 	unsafe fn spread_unchecked(self, log_block_len: usize, block_idx: usize) -> Self {
-		ScaledPackedField::spread_unchecked(self, log_block_len, block_idx)
+		Self::spread_unchecked(self, log_block_len, block_idx)
 	}
 
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
