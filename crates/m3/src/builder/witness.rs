@@ -14,7 +14,9 @@ use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
 	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
-use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
+use binius_math::{
+	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
+};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
@@ -1020,10 +1022,11 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 					table_id: self.table.id(),
 					log_vals_per_row,
 				})?;
+		let expr_circuit = ArithCircuit::from(expr.expr());
 		let col_refs = partition
 			.columns
 			.iter()
-			.zip(expr.expr().vars_usage())
+			.zip(expr_circuit.vars_usage())
 			.map(|(col_index, used)| {
 				used.then(|| {
 					self.get(Col::<FSub, V>::new(
@@ -1055,7 +1058,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
 		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
-		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
+		ArithCircuitPoly::new(expr_circuit).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
 

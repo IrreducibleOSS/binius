@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, TowerField};
-use binius_math::{ArithCircuit, ArithCircuitStep};
+use binius_math::{ArithCircuit, ArithCircuitStep, ArithExpr};
 use getset::{CopyGetters, Getters};
 
 use super::{column::Col, table::TableId};
@@ -21,13 +21,13 @@ pub struct Expr<F: TowerField, const V: usize> {
 	#[get_copy = "pub"]
 	table_id: TableId,
 	#[get = "pub"]
-	expr: ArithCircuit<F>,
+	expr: ArithExpr<F>,
 }
 
 impl<F: TowerField, const V: usize> Expr<F, V> {
 	/// Polynomial degree of the arithmetic expression.
 	pub fn degree(&self) -> usize {
-		self.expr.degree()
+		ArithCircuit::from(&self.expr).degree()
 	}
 
 	/// Exponentiate the expression by a constant power.
@@ -43,7 +43,7 @@ impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
 	fn from(value: Col<F, V>) -> Self {
 		Expr {
 			table_id: value.table_id,
-			expr: ArithCircuit::var(value.partition_index),
+			expr: ArithExpr::Var(value.partition_index),
 		}
 	}
 }
@@ -54,8 +54,8 @@ impl<F: TowerField, const V: usize> std::ops::Add<Self> for Col<F, V> {
 	fn add(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let lhs_expr = ArithCircuit::var(self.partition_index);
-		let rhs_expr = ArithCircuit::var(rhs.partition_index);
+		let lhs_expr = ArithExpr::Var(self.partition_index);
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
@@ -70,7 +70,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
 
-		let rhs_expr = ArithCircuit::var(rhs.partition_index);
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 		Expr {
 			table_id: self.table_id,
 			expr: self.expr + rhs_expr,
@@ -96,7 +96,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 	fn add(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr + ArithCircuit::constant(rhs),
+			expr: self.expr + ArithExpr::Const(rhs),
 		}
 	}
 }
@@ -122,8 +122,8 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Self> for Col<F, V> {
 
 	fn sub(self, rhs: Self) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		let lhs_expr = ArithCircuit::var(self.partition_index);
-		let rhs_expr = ArithCircuit::var(rhs.partition_index);
+		let lhs_expr = ArithExpr::Var(self.partition_index);
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 
 		Expr {
 			table_id: self.table_id,
@@ -158,7 +158,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	fn sub(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr - ArithCircuit::constant(rhs),
+			expr: self.expr - ArithExpr::Const(rhs),
 		}
 	}
 }
@@ -213,7 +213,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 	fn mul(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr * ArithCircuit::constant(rhs),
+			expr: self.expr * ArithExpr::Const(rhs),
 		}
 	}
 }
@@ -243,7 +243,7 @@ where
 	let Expr { table_id, expr } = expr;
 	Expr {
 		table_id,
-		expr: expr.convert_field(),
+		expr: ArithCircuit::from(&expr).convert_field().into(),
 	}
 }
 

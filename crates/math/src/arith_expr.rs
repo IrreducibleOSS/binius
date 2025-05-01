@@ -740,6 +740,48 @@ impl<F: Field> From<ArithExpr<F>> for ArithCircuit<F> {
 	}
 }
 
+impl<F: Field> From<&ArithCircuit<F>> for ArithExpr<F> {
+	fn from(circuit: &ArithCircuit<F>) -> Self {
+		let mut step_to_node = vec![Option::<Arc<Self>>::None; circuit.steps.len()];
+
+		for step in 0..circuit.steps.len() {
+			let node = match &circuit.steps[step] {
+				ArithCircuitStep::Const(value) => Self::Const(*value),
+				ArithCircuitStep::Var(index) => Self::Var(*index),
+				ArithCircuitStep::Add(left, right) => {
+					let left = step_to_node[*left].clone().expect("step must be present");
+					let right = step_to_node[*right].clone().expect("step must be present");
+					Self::Add(left, right)
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					let left = step_to_node[*left].clone().expect("step must be present");
+					let right = step_to_node[*right].clone().expect("step must be present");
+					Self::Mul(left, right)
+				}
+				ArithCircuitStep::Pow(base, exp) => {
+					let base = step_to_node[*base].clone().expect("step must be present");
+					Self::Pow(base, *exp)
+				}
+			};
+			step_to_node[step] = Some(Arc::new(node));
+		}
+
+		Arc::into_inner(
+			step_to_node
+				.pop()
+				.expect("steps should not be empty")
+				.expect("last step should be initialized"),
+		)
+		.expect("last step must have a single instance")
+	}
+}
+
+impl<F: Field> From<ArithCircuit<F>> for ArithExpr<F> {
+	fn from(circuit: ArithCircuit<F>) -> Self {
+		Self::from(&circuit)
+	}
+}
+
 impl<F: Field> Display for ArithCircuit<F> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
 		fn display_step<F: Field>(
@@ -1342,5 +1384,53 @@ mod tests {
 		let circuit = ArithCircuit::<F>::from(&expr);
 		assert_eq!(circuit.steps.len(), 5);
 		assert_eq!(unique_nodes_count(&circuit), 5);
+	}
+
+	fn unique_nodes_count_expr<F: Field>(expr: &ArithExpr<F>) -> usize {
+		fn add_nodes<F: Field>(
+			expr: &Arc<ArithExpr<F>>,
+			unique_nodes: &mut HashSet<*const ArithExpr<F>>,
+		) {
+			if !unique_nodes.insert(Arc::as_ptr(expr)) {
+				return;
+			}
+
+			match expr.as_ref() {
+				ArithExpr::Const(_) | ArithExpr::Var(_) => {}
+				ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
+					add_nodes(left, unique_nodes);
+					add_nodes(right, unique_nodes);
+				}
+				ArithExpr::Pow(base, _) => {
+					add_nodes(base, unique_nodes);
+				}
+			}
+		}
+
+		let mut unique_nodes = HashSet::new();
+		add_nodes(&Arc::new(expr.clone()), &mut unique_nodes);
+
+		unique_nodes.len()
+	}
+
+	#[test]
+	fn test_conversion_from_circuit_to_expr_node() {
+		type F = BinaryField8b;
+
+		let arith_circuit = ArithCircuit::<F> {
+			steps: vec![
+				ArithCircuitStep::Var(0),
+				ArithCircuitStep::Var(1),
+				ArithCircuitStep::Add(0, 1),
+				ArithCircuitStep::Mul(2, 2),
+				ArithCircuitStep::Add(3, 2),
+			],
+		};
+		let expr = ArithExpr::from(&arith_circuit);
+		let expected_expr = (ArithExpr::Var(0) + ArithExpr::Var(1))
+			* (ArithExpr::Var(0) + ArithExpr::Var(1))
+			+ (ArithExpr::Var(0) + ArithExpr::Var(1));
+		assert_eq!(expr, expected_expr);
+		assert_eq!(unique_nodes_count_expr(&expr), 5);
 	}
 }
