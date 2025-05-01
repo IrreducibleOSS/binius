@@ -11,7 +11,6 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		serialize_evalcheck_proof,
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
@@ -55,13 +54,8 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
-	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
+	evalcheck_prover.prove(claims, transcript)?;
 	drop(initial_evalcheck_round_span);
-
-	let mut writer = transcript.message();
-	for evalcheck_proof in &evalcheck_proofs {
-		serialize_evalcheck_proof(&mut writer, evalcheck_proof)
-	}
 
 	loop {
 		let _span = tracing::debug_span!(
@@ -93,12 +87,7 @@ where
 			)?;
 		drop(evalcheck_round_mle_fold_high_span);
 
-		let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
-
-		let mut writer = transcript.message();
-		for evalcheck_proof in &new_evalcheck_proofs {
-			serialize_evalcheck_proof(&mut writer, evalcheck_proof);
-		}
+		evalcheck_prover.prove(new_evalcheck_claims, transcript)?;
 	}
 
 	let committed_claims = evalcheck_prover

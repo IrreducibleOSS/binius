@@ -26,7 +26,7 @@ use super::{
 	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
-	Table, TableBuilder,
+	Table, TableBuilder, ZeroConstraint,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -319,21 +319,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 				}
 
 				if !zero_constraints.is_empty() {
-					// Translate zero constraints for the compiled constraint system.
-					let compiled_constraints = zero_constraints
-						.iter()
-						.map(|zero_constraint| Constraint {
-							name: zero_constraint.name.clone(),
-							composition: zero_constraint.expr.clone(),
-							predicate: ConstraintPredicate::Zero,
-						})
-						.collect::<Vec<_>>();
-
-					table_constraints.push(ConstraintSet {
-						n_vars,
-						oracle_ids: partition_oracle_ids,
-						constraints: compiled_constraints,
-					});
+					let constraint_set =
+						translate_constraint_set(n_vars, zero_constraints, partition_oracle_ids);
+					table_constraints.push(constraint_set);
 				}
 			}
 		}
@@ -467,6 +455,71 @@ fn add_oracle_for_column<F: TowerField>(
 		} => addition.committed(n_vars, *base_tower_level),
 	};
 	Ok(oracle_id)
+}
+
+/// Translates a set of zero constraints from a particular table partition into a constraint set.
+///
+/// The resulting constraint set will only contain oracles that were actually referenced from any
+/// of the constraint expressions.
+fn translate_constraint_set<F: TowerField>(
+	n_vars: usize,
+	zero_constraints: &[ZeroConstraint<F>],
+	partition_oracle_ids: Vec<usize>,
+) -> ConstraintSet<F> {
+	// We need to figure out which oracle ids from the entire set of the partition oracles is
+	// actually referenced in every zero constraint expressions.
+	let mut oracle_appears_in_expr = vec![false; partition_oracle_ids.len()];
+	let mut n_used_oracles = 0usize;
+	for zero_contraint in zero_constraints {
+		let vars_usage = zero_contraint.expr.vars_usage();
+		for (oracle_index, used) in vars_usage.iter().enumerate() {
+			if *used && !oracle_appears_in_expr[oracle_index] {
+				oracle_appears_in_expr[oracle_index] = true;
+				n_used_oracles += 1;
+			}
+		}
+	}
+
+	// Now that we've got the set of oracle ids that appear in the expr we are going to create
+	// a new list of oracle ids each of which is used. Along the way we create a new mapping table
+	// that maps the original oracle index to the new index in the dense list.
+	const INVALID_SENTINEL: usize = usize::MAX;
+	let mut remap_indices_table = vec![INVALID_SENTINEL; partition_oracle_ids.len()];
+	let mut dense_oracle_ids = Vec::with_capacity(n_used_oracles);
+	for (i, &used) in oracle_appears_in_expr.iter().enumerate() {
+		if !used {
+			continue;
+		}
+		let dense_index = dense_oracle_ids.len();
+		dense_oracle_ids.push(partition_oracle_ids[i]);
+		remap_indices_table[i] = dense_index;
+	}
+
+	// Translate zero constraints for the compiled constraint system.
+	let compiled_constraints = zero_constraints
+		.iter()
+		.map(|zero_constraint| {
+			let expr = zero_constraint
+				.expr
+				.clone()
+				.remap_vars(&remap_indices_table)
+				.expect(
+					"the expr must have the same length as partition_oracle_ids which is the\
+				 same length of remap_indices_table",
+				);
+			Constraint {
+				name: zero_constraint.name.clone(),
+				composition: expr,
+				predicate: ConstraintPredicate::Zero,
+			}
+		})
+		.collect::<Vec<_>>();
+
+	ConstraintSet {
+		n_vars,
+		oracle_ids: dense_oracle_ids,
+		constraints: compiled_constraints,
+	}
 }
 
 #[cfg(test)]
