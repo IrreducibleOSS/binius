@@ -466,7 +466,7 @@ impl MulSS32 {
 		let new_prod_high_bits = array::from_fn(|bit| {
 			table.add_computed(
 				format!("new_prod_high[{bit}]"),
-				prod_high_bits[bit] * (x_is_negative + B1::ONE) + y_sub.zout[bit] * x_is_negative,
+				prod_high_bits[bit] + x_is_negative * (prod_high_bits[bit] + y_sub.zout[bit]),
 			)
 		});
 
@@ -484,8 +484,8 @@ impl MulSS32 {
 		let out_high_bits: [_; 32] = array::from_fn(|bit| {
 			table.add_computed(
 				format!("out_high[{bit}]"),
-				new_prod_high_bits[bit] * (y_is_negative + B1::ONE)
-					+ x_sub.zout[bit] * y_is_negative,
+				new_prod_high_bits[bit]
+					+ y_is_negative * (new_prod_high_bits[bit] + x_sub.zout[bit]),
 			)
 		});
 
@@ -634,7 +634,7 @@ impl MulSU32 {
 		let out_high_bits = array::from_fn(|bit| {
 			table.add_computed(
 				format!("out_high[{bit}]"),
-				prod_high_bits[bit] * (x_is_negative + B1::ONE) + y_sub.zout[bit] * x_is_negative,
+				prod_high_bits[bit] + x_is_negative * (prod_high_bits[bit] + y_sub.zout[bit]),
 			)
 		});
 
