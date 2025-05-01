@@ -2,12 +2,11 @@
 
 use std::{iter, marker::PhantomData};
 
-use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
+use binius_field::{BinaryField, ExtensionField, PackedField};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use itertools::Itertools;
 
 use crate::{
 	merkle_tree::MerkleTreeScheme, protocols::fri::Error,
@@ -84,11 +83,11 @@ where
 		// Fold the (2i) and (2i+1)th cells of the scratch buffer in-place into the i-th cell
 		let ntt_round = ntt.log_domain_size() - log_len;
 		for index_offset in 0..1 << (log_size - 1) {
-			let pair = (values[index_offset << 1], values[(index_offset << 1) + 1]);
+			let pair = (values[index_offset << 1], values[(index_offset << 1) | 1]);
 			values[index_offset] = fold_pair(
 				ntt,
 				ntt_round,
-				(chunk_index << (log_size - 1)) + index_offset,
+				(chunk_index << (log_size - 1)) | index_offset,
 				pair,
 				challenge,
 			)
