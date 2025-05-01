@@ -44,7 +44,7 @@ const STATE_OUT_TRACK: usize = 7;
 /// You can think about it as 8x wide SIMD performing one permutation per a table row. Below is
 /// the graphical representation of the layout.
 ///
-/// ```
+/// ```plain
 /// | Batch 0  | Batch 1  | Batch 3  |
 /// |----------|----------|----------|
 /// | Round 00 | Round 01 | Round 02 |
