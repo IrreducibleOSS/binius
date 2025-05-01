@@ -172,13 +172,13 @@ where
 				.chunks(1 << n_final_challenges)
 				.enumerate()
 				.map(|(i, coset_values)| {
+					scratch_buffer.copy_from_slice(coset_values);
 					fold_chunk(
 						ntt,
-						n_prior_challenges,
+						n_final_challenges + self.params.rs_code().log_inv_rate(),
 						i,
-						coset_values,
-						final_challenges,
 						&mut scratch_buffer,
+						final_challenges,
 					)
 				})
 				.collect::<Vec<_>>()
@@ -187,13 +187,14 @@ where
 			// codeword.
 
 			let fold_arity = self.params.rs_code().log_dim() + self.params.log_batch_size();
-			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
+			let mut scratch_buffer = vec![F::default(); 1 << self.params.rs_code().log_dim()];
 			terminate_codeword
 				.chunks(1 << fold_arity)
 				.enumerate()
 				.map(|(i, chunk)| {
 					fold_interleaved_chunk(
 						ntt,
+						self.params.rs_code().log_len(),
 						self.params.log_batch_size(),
 						i,
 						chunk,
@@ -290,6 +291,7 @@ where
 		)?;
 		let mut next_value = fold_interleaved_chunk(
 			ntt,
+			self.params.rs_code().log_len(),
 			self.params.log_batch_size(),
 			index,
 			&values,
@@ -306,7 +308,7 @@ where
 
 			log_n_cosets -= arity;
 
-			let values = verify_coset_opening(
+			let mut values = verify_coset_opening(
 				self.vcs,
 				coset_index,
 				arity,
@@ -326,11 +328,10 @@ where
 
 			next_value = fold_chunk(
 				ntt,
-				fold_round,
+				self.params.rs_code().log_len() - fold_round,
 				coset_index,
-				&values,
+				&mut values,
 				&self.fold_challenges[fold_round..fold_round + arity],
-				scratch_buffer,
 			);
 			index = coset_index;
 			fold_round += arity;
