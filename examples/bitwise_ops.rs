@@ -91,12 +91,7 @@ fn main() -> Result<()> {
 	)?;
 	let _result = match args.op {
 		BitwiseOp::And => binius_circuits::bitwise::and(&mut builder, "a_and_b", in_a, in_b),
-		BitwiseOp::Xor => {
-			let out = binius_circuits::bitwise::xor(&mut builder, "a_xor_b", in_a, in_b)?;
-			// TODO: Assert equality so that something is constrained.
-			builder.assert_zero("zero", [in_a], arith_expr!([x] = x - x).convert_field());
-			Ok(out)
-		}
+		BitwiseOp::Xor => binius_circuits::bitwise::xor(&mut builder, "a_xor_b", in_a, in_b),
 		BitwiseOp::Or => binius_circuits::bitwise::or(&mut builder, "a_or_b", in_a, in_b),
 	};
 	drop(trace_gen_scope);

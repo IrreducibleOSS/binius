@@ -61,6 +61,11 @@ pub fn xor(
 				*zout = (*xin) ^ (*yin);
 			});
 	}
+	builder.assert_zero(
+		"bitwise_xor",
+		[xin, yin, zout],
+		arith_expr!([x, y, z] = x + y - z).convert_field(),
+	);
 	builder.pop_namespace();
 	Ok(zout)
 }
