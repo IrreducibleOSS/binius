@@ -17,6 +17,8 @@ use binius_m3::{
 	gadgets::mul::{MulSS32, MulSU32, MulUU32, MulUU64, SignConverter, UnsignedMulPrimitives},
 };
 use bumpalo::Bump;
+use bytemuck::Contiguous;
+use itertools::chain;
 use rand::{prelude::StdRng, Rng, SeedableRng};
 
 // This needs to create witness data as well as later query for checking outputs.
@@ -231,9 +233,19 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 					.collect()
 			}
 			MulDivEnum::MulSU32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
-					.take(table_size)
-					.collect()
+				const EXPLICIT_TESTS: [(B32, B32); 4] = [
+					(B32::new(i32::MIN_VALUE as u32), B32::new(u32::MAX_VALUE)),
+					(B32::new(u32::MAX_VALUE), B32::new(u32::MAX_VALUE)),
+					(B32::new(i32::MAX_VALUE as u32), B32::new(u32::MAX_VALUE)),
+					(B32::new(0), B32::new(0)),
+				];
+
+				chain!(
+					EXPLICIT_TESTS.into_iter(),
+					repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
+				)
+				.take(table_size)
+				.collect()
 			}
 			MulDivEnum::MulSS32(_) => repeat_with(|| {
 				(B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<i32>() as u32))

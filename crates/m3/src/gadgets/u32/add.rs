@@ -424,7 +424,7 @@ mod tests {
 		let table_id = table.id();
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_values = repeat_with(|| B32::new(rng.gen::<u32>()))
-			.take(10)
+			.take(TABLE_SIZE)
 			.collect::<Vec<_>>();
 
 		let xin = table.add_committed_multiple("xin");

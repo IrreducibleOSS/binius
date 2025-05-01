@@ -6,6 +6,7 @@ use binius_field::{ext_basis, TowerField};
 
 use crate::builder::{upcast_col, Col, Expr, B1};
 
+/// Used to pack an array of `Col<B1>` into `Col<FP>` assuming `BIT_LENGTH` is the bit length of field `FP`
 pub fn pack_fp<FP: TowerField, const BIT_LENGTH: usize>(
 	bits: [Col<B1>; BIT_LENGTH],
 ) -> Expr<FP, 1> {
