@@ -55,10 +55,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 
 	/// Returns a new `TableBuilder` with the specified namespace.
 	///
-	/// A namespace is a prefix that will be prepended to all column names created by this builder.
-	/// The new namespace is nested within the current builder's namespace (if any exists).
-	/// When nesting namespaces, they are joined with "::" separators, creating a hierarchical
-	/// naming structure.
+	/// A namespace is a prefix that will be prepended to all column names and zero constraints
+	/// created by this builder. The new namespace is nested within the current builder's namespace
+	/// (if any exists). When nesting namespaces, they are joined with "::" separators, creating a
+	/// hierarchical naming structure.
 	///
 	/// # Note
 	///
@@ -474,9 +474,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
+		let namespaced_name = self.namespaced_name(name);
 		self.table
 			.partition_mut(VALUES_PER_ROW)
-			.assert_zero(name, expr)
+			.assert_zero(namespaced_name, expr)
 	}
 
 	/// Constrains that all values contained in this column are non-zero.
