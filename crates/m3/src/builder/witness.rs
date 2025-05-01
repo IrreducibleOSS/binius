@@ -196,7 +196,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				count += 1;
 			}
 
-			if !table.power_of_two_sized {
+			if !table.is_power_of_two_sized() {
 				// Every table partition has a step_down appended to the end of the table to support
 				// non-power of two height tables.
 				for log_values_per_row in table.partitions.keys() {

@@ -182,7 +182,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized {
+			if table.is_power_of_two_sized() {
 				if !count.is_power_of_two() {
 					return Err(Error::TableSizePowerOfTwoRequired {
 						table_id: table.id,
@@ -279,7 +279,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				});
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down = (!table.power_of_two_sized)
+				let step_down = (!table.is_power_of_two_sized())
 					.then(|| {
 						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
 						oracles.add_transparent(step_down_poly)
@@ -447,6 +447,7 @@ fn add_oracle_for_column<F: TowerField>(
 			let expr = structured.expr(n_vars)?;
 			addition.transparent(ArithCircuit::from(&expr))?
 		}
+		ColumnDef::StructuredFixedSize { expr } => addition.transparent(expr.clone())?,
 		ColumnDef::StaticExp {
 			base_tower_level, ..
 		} => addition.committed(n_vars, *base_tower_level),

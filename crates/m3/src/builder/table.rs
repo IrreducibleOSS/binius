@@ -45,7 +45,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	pub fn require_power_of_two_size(&mut self) {
-		self.table.power_of_two_sized = true;
+		self.table.table_size_spec = TableSizeSpec::PowerOfTwo;
+	}
+
+	pub fn require_fixed_size(&mut self, log_size: usize) {
+		self.table.table_size_spec = TableSizeSpec::Fixed { log_size };
 	}
 
 	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
@@ -408,12 +412,28 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert!(
-			self.table.power_of_two_sized,
-			"Structured columns may only be added to tables that are power of two sized"
+			self.table.is_power_of_two_sized(),
+			"Structured dynamic size columns may only be added to tables that are power of two sized"
 		);
 		let namespaced_name = self.namespaced_name(name);
 		self.table
 			.new_column(namespaced_name, ColumnDef::StructuredDynSize(variant))
+	}
+
+	/// Add a structured fixed-size column to a table.
+	pub fn add_fixed<FSub>(&mut self, name: impl ToString, expr: ArithCircuit<F>) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(
+			matches!(self.table.table_size_spec, TableSizeSpec::Fixed { log_size } if log_size == expr.n_vars()),
+			"Structured fixed-size columns may only be added to tables with a fixed log_size that matches the n_vars of the expression"
+		);
+
+		let namespaced_name = self.namespaced_name(name);
+		self.table
+			.new_column(namespaced_name, ColumnDef::StructuredFixedSize { expr })
 	}
 
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
@@ -513,8 +533,8 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	/// Whether the table size is required to be a power of two.
-	pub power_of_two_sized: bool,
+	/// the size specification of a table
+	table_size_spec: TableSizeSpec,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
@@ -592,7 +612,7 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
-			power_of_two_sized: false,
+			table_size_spec: TableSizeSpec::Arbitrary,
 			partitions: SparseIndex::new(),
 		}
 	}
@@ -650,8 +670,26 @@ impl<F: TowerField> Table<F> {
 			.entry(log2_strict_usize(values_per_row))
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
+
+	pub fn is_power_of_two_sized(&self) -> bool {
+		matches!(self.table_size_spec, TableSizeSpec::PowerOfTwo)
+	}
 }
 
 const fn partition_id<const V: usize>() -> usize {
 	checked_log_2(V)
+}
+
+/// A category of the size specification of a table.
+///
+/// M3 tables can have size restrictions, where certain columns, specifically structured columns,
+/// are only allowed for certain size specifications.
+#[derive(Debug)]
+enum TableSizeSpec {
+	/// The table size may be arbitrary.
+	Arbitrary,
+	/// The table size may be any power of two.
+	PowerOfTwo,
+	/// The table size must be a fixed power of two.
+	Fixed { log_size: usize },
 }

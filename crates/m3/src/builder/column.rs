@@ -159,6 +159,9 @@ pub enum ColumnDef<F: TowerField = B128> {
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 	StructuredDynSize(StructuredDynSize),
+	StructuredFixedSize {
+		expr: ArithCircuit<F>,
+	},
 	StaticExp {
 		bit_cols: Vec<ColumnIndex>,
 		base: F,
