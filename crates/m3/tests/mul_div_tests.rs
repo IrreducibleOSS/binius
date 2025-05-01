@@ -349,8 +349,7 @@ impl AbsoluteValueTable {
 		let mut table = cs.add_table("TwosComplementTestTable");
 		let table_id = table.id();
 		let input = table.add_committed_multiple("input");
-		let signed_input =
-			SignConverter::new(&mut table, "abs_value_bits", input, input[31].into());
+		let signed_input = SignConverter::new(&mut table, input, input[31].into());
 		let abs_value_bits = signed_input.converted_bits;
 		Self {
 			table_id,

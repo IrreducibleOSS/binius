@@ -739,7 +739,6 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	/// Used to conditionally select bit representation based on the MSB bit (sign bit)
 	///
 	/// ## Parameters
-	/// * `name`: Name for the new column that will be created
 	/// * `in_bits`: The input bits from MSB to LSB
 	/// * `conditional`: The conditional bit to choose input bits, or it's two's complement
 	///
@@ -749,7 +748,6 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	///
 	pub fn new(
 		table: &mut TableBuilder,
-		name: &str,
 		xin: [Col<B1>; BIT_LENGTH],
 		conditional: Expr<B1, 1>,
 	) -> Self {
