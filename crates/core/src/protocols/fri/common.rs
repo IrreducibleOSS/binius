@@ -155,14 +155,6 @@ where
 
 	if log_batch_size == 0 {
 		iter::zip(&mut *scratch_buffer, P::iter_slice(values)).for_each(|(dst, val)| *dst = val);
-	} else if log_batch_size < P::LOG_WIDTH {
-		// This branch is slower than the following one. It will rarely be used with standard FRI
-		// parameter choices and field sizes.
-		let values_chunks = P::iter_slice(values).chunks(1 << log_batch_size);
-		let folded_values = values_chunks
-			.into_iter()
-			.map(|chunk| inner_product_unchecked(chunk, P::iter_slice(tensor)));
-		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
 	} else {
 		let folded_values = values
 			.chunks(1 << (log_batch_size - P::LOG_WIDTH))
@@ -171,6 +163,7 @@ where
 					.map(|(&a_i, &b_i)| a_i * b_i)
 					.sum::<P>()
 					.into_iter()
+					.take(1 << log_batch_size)
 					.sum()
 			});
 		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
