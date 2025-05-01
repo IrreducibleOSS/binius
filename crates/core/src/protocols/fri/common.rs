@@ -152,21 +152,17 @@ where
 
 	let scratch_buffer = &mut scratch_buffer[..1 << fold_challenges.len()];
 
-	if log_batch_size == 0 {
-		iter::zip(&mut *scratch_buffer, P::iter_slice(values)).for_each(|(dst, val)| *dst = val);
-	} else {
-		let folded_values = values
-			.chunks(1 << (log_batch_size - P::LOG_WIDTH))
-			.map(|chunk| {
-				iter::zip(chunk, tensor)
-					.map(|(&a_i, &b_i)| a_i * b_i)
-					.sum::<P>()
-					.into_iter()
-					.take(1 << log_batch_size)
-					.sum()
-			});
-		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
-	};
+	let folded_values = values
+		.chunks(1 << (log_batch_size - P::LOG_WIDTH))
+		.map(|chunk| {
+			iter::zip(chunk, tensor)
+				.map(|(&a_i, &b_i)| a_i * b_i)
+				.sum::<P>()
+				.into_iter()
+				.take(1 << log_batch_size)
+				.sum()
+		});
+	iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
 
 	fold_chunk(ntt, log_len, chunk_index, scratch_buffer, fold_challenges)
 }
