@@ -31,6 +31,8 @@ pub enum Error {
 	IncorrectQuerySize { expected: usize },
 	#[error("the sum of the query and the start index must be at most {expected}")]
 	IncorrectStartIndex { expected: usize },
+	#[error("the zero padding start index must be at most {expected}")]
+	IncorrectStartIndexZeroPad { expected: usize },
 	#[error("the index of the nonzero block should be at most {expected}")]
 	IncorrectNonZeroIndex { expected: usize },
 	#[error("the nonzero scalar prefix should be at most {expected}")]

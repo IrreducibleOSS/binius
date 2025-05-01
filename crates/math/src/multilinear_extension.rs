@@ -341,8 +341,8 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let init_n_vars = self.mu;
-		if start_index >= init_n_vars {
-			bail!(Error::IncorrectStartIndex { expected: self.mu })
+		if start_index > init_n_vars {
+			bail!(Error::IncorrectStartIndexZeroPad { expected: self.mu })
 		}
 		let new_n_vars = init_n_vars + n_pad_vars;
 		if nonzero_index >= 1 << n_pad_vars {
