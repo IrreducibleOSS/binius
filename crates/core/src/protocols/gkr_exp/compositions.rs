@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use binius_field::{Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithCircuit, ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
 use crate::composition::FixedDimIndexCompositions;
@@ -40,7 +40,7 @@ where
 		0
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
 		match self {
 			Self::StaticBase { base_power_static } => {
 				ArithExpr::Var(0)
@@ -48,7 +48,7 @@ where
 						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_static))
 			}
 			Self::DynamicBase => {
-				ArithExpr::Pow(Arc::new(ArithExpr::Var(0)), 2)
+				ArithExpr::Var(0).pow(2)
 					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
 						+ ArithExpr::Var(1) * ArithExpr::Var(2))
 			}
@@ -57,6 +57,7 @@ where
 					+ ArithExpr::Var(1) * ArithExpr::Var(0)
 			}
 		}
+		.into()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

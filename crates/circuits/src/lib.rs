@@ -284,7 +284,7 @@ mod tests {
 			.map(|i| B128::from(i * i))
 			.collect::<Vec<_>>();
 
-		let arith_poly_1 = ArithCircuitPoly::new(&comp_1);
+		let arith_poly_1 = ArithCircuitPoly::new(comp_1);
 		let values_comp_1 = (0..(1 << n_vars))
 			.map(|i| arith_poly_1.evaluate(&[values_x[i], values_y[i]]).unwrap())
 			.collect::<Vec<_>>();
@@ -293,7 +293,7 @@ mod tests {
 		let first = values_shift.remove(0);
 		values_shift.push(first);
 
-		let arith_poly_2 = ArithCircuitPoly::new(&comp_2);
+		let arith_poly_2 = ArithCircuitPoly::new(comp_2);
 		let values_comp_2 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_2
@@ -313,7 +313,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let arith_poly_3 = ArithCircuitPoly::new(&comp_3);
+		let arith_poly_3 = ArithCircuitPoly::new(comp_3);
 		let values_comp_3 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_3
@@ -329,7 +329,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let arith_poly_4 = ArithCircuitPoly::new(&comp_4);
+		let arith_poly_4 = ArithCircuitPoly::new(comp_4);
 		let values_comp_4 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_4

@@ -78,7 +78,7 @@ mod tests {
 	#[test]
 	fn test_incrementing_expr() {
 		let expr = incrementing_expr::<B32>(5).unwrap();
-		let evaluator = ArithCircuitPoly::new(&expr);
+		let evaluator = ArithCircuitPoly::new(expr.into());
 		for i in 0..1 << 5 {
 			let bits = decompose_index_to_hypercube_point::<B32>(5, i);
 			assert_eq!(evaluator.evaluate(&bits).unwrap(), B32::new(i as u32));

@@ -20,7 +20,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	BinaryField1b,
 };
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 use binius_utils::bail;
 
 use crate::builder::{
@@ -213,7 +213,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		&mut self,
 		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-		composition: ArithExpr<F>,
+		composition: ArithCircuit<F>,
 	) {
 		self.constraints
 			.add_zerocheck(name, oracle_ids, composition);
@@ -326,7 +326,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
-		comp: ArithExpr<F>,
+		comp: ArithCircuit<F>,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()

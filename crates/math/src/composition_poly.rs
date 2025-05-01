@@ -7,7 +7,7 @@ use binius_field::PackedField;
 use binius_utils::bail;
 use stackalloc::stackalloc_with_default;
 
-use crate::{ArithExpr, Error, RowsBatchRef};
+use crate::{ArithCircuit, Error, RowsBatchRef};
 
 /// A multivariate polynomial that is used as a composition of several multilinear polynomials.
 #[auto_impl(Arc, &)]
@@ -25,7 +25,7 @@ where
 	fn binary_tower_level(&self) -> usize;
 
 	/// Returns the arithmetic expression representing the polynomial.
-	fn expression(&self) -> ArithExpr<P::Scalar>;
+	fn expression(&self) -> ArithCircuit<P::Scalar>;
 
 	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
 	/// The evaluation follows SIMD semantics, meaning that operations are performed

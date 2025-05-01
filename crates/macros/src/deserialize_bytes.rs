@@ -43,7 +43,10 @@ pub fn split_for_impl<'gen, 'attr>(
 
 #[cfg(test)]
 mod tests {
+	// For some reason rustfmt removes "::" which is wrong
+	#[rustfmt::skip]
 	use ::quote::quote;
+
 	use proc_macro2::TokenStream;
 	use syn::DeriveInput;
 

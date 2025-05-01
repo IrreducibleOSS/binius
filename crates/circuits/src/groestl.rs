@@ -315,7 +315,7 @@ const MIX_BYTES_VEC: [AESTowerField8b; 8] = [
 ];
 
 fn mix_column_expr() -> ArithExpr<AESTowerField8b> {
-	let output = ArithExpr::<AESTowerField8b>::Var(0);
+	let output = ArithExpr::<AESTowerField8b>::var(0);
 	let mixed = MIX_BYTES_VEC
 		.into_iter()
 		.enumerate()

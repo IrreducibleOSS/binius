@@ -179,8 +179,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let partition_indexes = expr
-			.expr()
+		let expr_circuit = ArithCircuit::from(expr.expr());
+		let partition_indexes = expr_circuit
 			.vars_usage()
 			.iter()
 			.enumerate()
@@ -195,12 +195,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			})
 			.collect::<Vec<_>>();
 
-		let mut var_remapping = vec![0; expr.expr().n_vars()];
+		let mut var_remapping = vec![0; expr_circuit.n_vars()];
 		for (new_index, &old_index) in partition_indexes.iter().enumerate() {
 			var_remapping[old_index] = new_index;
 		}
-		let remapped_expr = expr
-			.expr()
+		let remapped_expr = expr_circuit
 			.convert_field()
 			.remap_vars(&var_remapping)
 			.expect("var_remapping should be large enought");
@@ -605,7 +604,7 @@ impl<F: TowerField> TablePartition<F> {
 		// On the other hand, ArithExpr does introspect that already
 		self.zero_constraints.push(ZeroConstraint {
 			name: name.to_string(),
-			expr: expr.expr().convert_field(),
+			expr: ArithCircuit::from(expr.expr()).convert_field(),
 		});
 	}
 

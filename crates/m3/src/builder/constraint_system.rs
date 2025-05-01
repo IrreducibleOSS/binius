@@ -510,7 +510,7 @@ fn translate_constraint_set<F: TowerField>(
 				);
 			Constraint {
 				name: zero_constraint.name.clone(),
-				composition: (&expr).into(),
+				composition: expr,
 				predicate: ConstraintPredicate::Zero,
 			}
 		})

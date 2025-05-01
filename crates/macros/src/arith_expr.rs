@@ -9,7 +9,7 @@ pub(crate) struct ArithExprItem(syn::Expr);
 impl ToTokens for ArithExprItem {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let Self(expr) = self;
-		tokens.extend(quote!(#expr));
+		tokens.extend(quote!(binius_math::ArithCircuit::from(#expr)));
 	}
 }
 

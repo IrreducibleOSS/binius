@@ -59,8 +59,8 @@ impl ToTokens for CompositionPolyItem {
 					0
 				}
 
-				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
-					(#expr).convert_field()
+				fn expression(&self) -> binius_math::ArithCircuit<P::Scalar> {
+					binius_math::ArithCircuit::from(#expr).convert_field()
 				}
 
 				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

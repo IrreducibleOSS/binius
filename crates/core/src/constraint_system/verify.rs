@@ -423,8 +423,9 @@ pub fn make_flush_oracles<F: TowerField>(
 								.composite_mle(
 									n_vars,
 									iter::once(selector_id).chain(non_const_oracles),
-									ArithExpr::Const(F::ONE)
-										+ ArithExpr::Var(0) * arith_expr_linear,
+									(ArithExpr::Const(F::ONE)
+										+ ArithExpr::Var(0) * arith_expr_linear)
+										.into(),
 								)?
 						}
 						None => oracles

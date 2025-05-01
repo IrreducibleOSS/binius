@@ -17,7 +17,7 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_hash::groestl::Groestl256;
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	ArithCircuit, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
@@ -60,8 +60,8 @@ impl<P: PackedField> CompositionPoly<P> for PowerComposition {
 		self.exponent
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0).pow(self.exponent as _)
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		ArithCircuit::var(0).pow(self.exponent as _)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
