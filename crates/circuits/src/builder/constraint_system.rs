@@ -144,14 +144,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			selector
 		};
 
-		self.flush_custom(direction, channel_id, selector, oracle_ids, multiplicity)
+		self.flush_custom(direction, channel_id, vec![selector], oracle_ids, multiplicity)
 	}
 
 	pub fn flush_custom(
 		&mut self,
 		direction: FlushDirection,
 		channel_id: ChannelId,
-		selector: OracleId,
+		selectors: Vec<OracleId>,
 		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
@@ -167,9 +167,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 
 		let log_rows = self.log_rows(non_const_oracles.iter().copied())?;
 		ensure!(
-			log_rows == self.log_rows([selector])?,
-			"Selector {} n_vars does not match flush {:?}",
-			selector,
+			log_rows == self.log_rows(selectors.clone())?,
+			"Selectors {:?} n_vars does not match flush {:?}",
+			&selectors,
 			non_const_oracles
 		);
 
@@ -177,7 +177,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.flushes.push(Flush {
 			channel_id,
 			direction,
-			selector: Some(selector),
+			selectors,
 			oracles,
 			multiplicity,
 		});

@@ -167,7 +167,7 @@ where
 		builder.flush_custom(
 			FlushDirection::Pull,
 			multiplicity_channel,
-			bit,
+			vec![bit],
 			permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
 			1 << i,
 		)?

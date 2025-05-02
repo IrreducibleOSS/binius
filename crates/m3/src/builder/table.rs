@@ -623,16 +623,20 @@ impl<F: TowerField> TablePartition<F> {
 				col.table_index
 			})
 			.collect();
-		let selector = opts.selector.map(|selector| {
-			assert_eq!(selector.table_id, self.table_id);
-			selector.table_index
-		});
+		let selectors = opts
+			.selectors
+			.iter()
+			.map(|selector| {
+				assert_eq!(selector.table_id, self.table_id);
+				selector.table_index
+			})
+			.collect::<Vec<_>>();
 		self.flushes.push(Flush {
 			column_indices,
 			channel_id,
 			direction,
 			multiplicity: opts.multiplicity,
-			selector,
+			selectors,
 		});
 	}
 }

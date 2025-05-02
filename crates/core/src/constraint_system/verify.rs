@@ -1,7 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter;
-
 use binius_field::{
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	BinaryField, PackedField, TowerField,
@@ -351,7 +349,7 @@ pub fn make_flush_oracles<F: TowerField>(
 					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
 
-					if let Some(selector_id) = &flush.selector {
+					for selector_id in &flush.selectors {
 						let got_tower_level = oracles.oracle(*selector_id).tower_level;
 						if got_tower_level != 0 {
 							return Err(Error::FlushSelectorTowerLevel {
@@ -392,43 +390,8 @@ pub fn make_flush_oracles<F: TowerField>(
 						})
 						.sum::<F>();
 
-					let poly = match flush.selector {
-						Some(selector_id) => {
-							let offset = *permutation_challenge + const_linear_combination + F::ONE;
-							let arith_expr_linear = ArithExpr::Const(offset);
-							let var_offset = 1; // Var(0) represents the selector column.
-							let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
-								.oracles
-								.iter()
-								.zip(mixing_powers.iter().copied())
-								.filter_map(|(id, coeff)| match id {
-									OracleOrConst::Oracle(id) => Some((*id, coeff)),
-									_ => None,
-								})
-								.unzip();
-
-							// Build the linear combination of the non-constant oracles.
-							let arith_expr_linear = coeffs.into_iter().enumerate().fold(
-								arith_expr_linear,
-								|linear, (offset, coeff)| {
-									linear
-										+ ArithExpr::Var(offset + var_offset)
-											* ArithExpr::Const(coeff)
-								},
-							);
-
-							// The ArithExpr is of the form 1 + S * linear_factors
-							oracles
-								.add_named(format!("flush channel_id={channel_id} composite"))
-								.composite_mle(
-									n_vars,
-									iter::once(selector_id).chain(non_const_oracles),
-									(ArithExpr::Const(F::ONE)
-										+ ArithExpr::Var(0) * arith_expr_linear)
-										.into(),
-								)?
-						}
-						None => oracles
+					let poly = if flush.selectors.is_empty() {
+						oracles
 							.add_named(format!("flush channel_id={channel_id} linear combination"))
 							.linear_combination_with_offset(
 								n_vars,
@@ -443,7 +406,42 @@ pub fn make_flush_oracles<F: TowerField>(
 										}
 										_ => None,
 									}),
-							)?,
+							)?
+					} else {
+						let offset = *permutation_challenge + const_linear_combination + F::ONE;
+						let arith_expr_linear = ArithExpr::Const(offset);
+						let var_offset = 1; // Var(0) represents the selector column.
+						let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
+							.oracles
+							.iter()
+							.zip(mixing_powers.iter().copied())
+							.filter_map(|(id, coeff)| match id {
+								OracleOrConst::Oracle(id) => Some((*id, coeff)),
+								_ => None,
+							})
+							.unzip();
+
+						// Build the linear combination of the non-constant oracles.
+						let arith_expr_linear = coeffs.into_iter().enumerate().fold(
+							arith_expr_linear,
+							|linear, (offset, coeff)| {
+								linear
+									+ ArithExpr::Var(offset + var_offset) * ArithExpr::Const(coeff)
+							},
+						);
+
+						let selector = (0..flush.selectors.len())
+							.map(ArithExpr::Var)
+							.product::<ArithExpr<F>>();
+
+						// The ArithExpr is of the form 1 + S * linear_factors
+						oracles
+							.add_named(format!("flush channel_id={channel_id} composite"))
+							.composite_mle(
+								n_vars,
+								flush.selectors.iter().copied().chain(non_const_oracles),
+								(ArithExpr::Const(F::ONE) + selector * arith_expr_linear).into(),
+							)?
 					};
 					Ok(poly)
 				})

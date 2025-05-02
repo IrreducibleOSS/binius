@@ -16,7 +16,7 @@ pub struct Flush {
 	/// An optional reference to a column to select which values to flush.
 	///
 	/// The referenced selector column must hold 1-bit values.
-	pub selector: Option<ColumnIndex>,
+	pub selectors: Vec<ColumnIndex>,
 }
 
 /// Options for a channel flush.
@@ -29,14 +29,14 @@ pub struct FlushOpts {
 	/// The referenced selector column must hold 1-bit values and contain only zeros after the
 	/// index that is the height of the table. If the selector is `None`, all values up to the
 	/// table height are flushed.
-	pub selector: Option<Col<B1>>,
+	pub selectors: Vec<Col<B1>>,
 }
 
 impl Default for FlushOpts {
 	fn default() -> Self {
 		Self {
 			multiplicity: 1,
-			selector: None,
+			selectors: vec![],
 		}
 	}
 }
