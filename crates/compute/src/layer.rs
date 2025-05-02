@@ -1,6 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::ops::Range;
+
+use binius_utils::checked_arithmetics::checked_log_2;
+
 use super::{alloc::Error as AllocError, memory::ComputeMemory};
+use crate::memory::DevSlice;
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F> {
@@ -10,8 +15,14 @@ pub trait ComputeLayer<F> {
 	/// The executor that can execute operations on the device.
 	type Exec;
 
+	/// The executor that can execute operations on a kernel-level granularity (i.e., a single core).
+	type KernelExec;
+
 	/// The operation (scalar) value type.
 	type OpValue;
+
+	/// The kernel(core)-level operation (scalar) type;
+	type KernelValue;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
@@ -69,6 +80,17 @@ pub trait ComputeLayer<F> {
 		Ok((out1, out2))
 	}
 
+	fn accumulate_kernels(
+		&self,
+		exec: &mut Self::Exec,
+		map: impl for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
+		inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
+	) -> Result<Vec<Self::OpValue>, Error>;
+
 	/// Returns the inner product of a vector of subfield elements with big field elements.
 	///
 	/// ## Arguments
@@ -122,6 +144,53 @@ pub trait ComputeLayer<F> {
 		coordinates: &[F],
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
+}
+
+// TODO: Better docs
+pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
+	Chunked {
+		data: Mem::FSlice<'a>,
+		log_min_chunk_size: usize,
+	},
+	ChunkedMut {
+		data: Mem::FSliceMut<'a>,
+		log_min_chunk_size: usize,
+	},
+	Local {
+		log_size: usize,
+	},
+}
+
+// TODO: better docs!
+pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
+	Ref(Mem::FSlice<'a>),
+	Mut(Mem::FSliceMut<'a>),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
+	// TODO: better docs!
+	pub fn log_chunks_range(mappings: &[Self]) -> Option<Range<usize>> {
+		mappings
+			.iter()
+			.map(|mapping| match mapping {
+				Self::Chunked {
+					data,
+					log_min_chunk_size,
+				} => {
+					let log_data_size = checked_log_2(data.len());
+					(log_data_size - log_min_chunk_size)..log_data_size
+				}
+				Self::ChunkedMut {
+					data,
+					log_min_chunk_size,
+				} => {
+					let log_data_size = checked_log_2(data.len());
+					(log_data_size - log_min_chunk_size)..log_data_size
+				}
+				Self::Local { log_size } => 0..*log_size,
+			})
+			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
+	}
 }
 
 #[derive(Debug, thiserror::Error)]

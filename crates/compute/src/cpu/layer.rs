@@ -5,9 +5,15 @@ use std::marker::PhantomData;
 use binius_field::{
 	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
 };
+use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::zeroed_vec;
 
 use super::memory::CpuMemory;
-use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
+use crate::{
+	alloc::{BumpAllocator, ComputeAllocator},
+	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
+	memory::ComputeMemory,
+};
 
 #[derive(Debug)]
 pub struct CpuExecutor;
@@ -17,8 +23,10 @@ pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
+	type KernelExec = CpuExecutor;
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
+	type KernelValue = T::B128;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
 		vec![<T::B128 as Field>::ZERO; n]
@@ -67,6 +75,42 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
 	) -> Result<Vec<T::B128>, Error> {
 		f(&mut CpuExecutor)
+	}
+
+	fn accumulate_kernels(
+		&self,
+		_exec: &mut Self::Exec,
+		map: impl for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
+		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+	) -> Result<Vec<Self::OpValue>, Error> {
+		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
+			.expect("Many variant must have at least one entry");
+
+		// For the reference implementation, use the smallest chunk size.
+		let log_chunks = log_chunks_range.end;
+		let total_alloc = Self::count_total_local_buffer_sizes(&inputs, log_chunks);
+		let mut local_buffer = zeroed_vec(total_alloc);
+		let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
+		(0..1 << log_chunks)
+			.map(|i| {
+				let kernel_data =
+					Self::map_kernel_mem(&mut inputs, &local_buffer_alloc, log_chunks, i);
+				map(&mut CpuExecutor, log_chunks, kernel_data)
+			})
+			.reduce(|out1, out2| {
+				let mut out1 = out1?;
+				let mut out2_iter = out2?.into_iter();
+				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
+					*out1_i += out2_i;
+				}
+				out1.extend(out2_iter);
+				Ok(out1)
+			})
+			.expect("range is not empty")
 	}
 
 	fn inner_product<'a>(
@@ -146,6 +190,62 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			}
 		}
 		Ok(())
+	}
+}
+
+// Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in signatures.
+// TODO: Perhaps should move somewhere else.
+type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
+type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
+
+impl<T: TowerFamily> CpuLayer<T> {
+	fn count_total_local_buffer_sizes(
+		mappings: &[MemMap<'_, Self, T::B128>],
+		log_chunk_size: usize,
+	) -> usize {
+		mappings
+			.iter()
+			.map(|mapping| match mapping {
+				KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
+				KernelMemMap::Local { .. } => 1 << log_chunk_size,
+			})
+			.sum()
+	}
+
+	fn map_kernel_mem<'a>(
+		mappings: &'a mut [MemMap<'_, Self, T::B128>],
+		local_buffer_alloc: &'a BumpAllocator<T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
+		log_chunks: usize,
+		i: usize,
+	) -> Vec<Buffer<'a, Self, T::B128>> {
+		mappings
+			.iter_mut()
+			.map(|mapping| match mapping {
+				KernelMemMap::Chunked { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Ref(<Self as ComputeLayer<T::B128>>::DevMem::slice(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::ChunkedMut { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Mut(<Self as ComputeLayer<T::B128>>::DevMem::slice_mut(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::Local { log_size } => {
+					let log_chunk_size = *log_size - log_chunks;
+					let buffer = local_buffer_alloc.alloc(1 << log_chunk_size).expect(
+						"precondition: allocator must have enough space for all local buffers",
+					);
+					KernelBuffer::Mut(buffer)
+				}
+			})
+			.collect()
 	}
 }
 
