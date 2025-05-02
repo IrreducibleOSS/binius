@@ -6,7 +6,7 @@ use binius_field::{
 	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
 };
 
-use super::memory::CpuMemory;
+use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
 
 #[derive(Debug)]
@@ -86,42 +86,19 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)));
 		}
 
-		let result = match a_edeg {
-			0 => inner_product_unchecked(
+		fn inner_product<F, FExt>(a_in: &[FExt], b_in: &[FExt]) -> FExt
+		where
+			F: Field,
+			FExt: ExtensionField<F>,
+		{
+			inner_product_unchecked(
 				b_in.iter().copied(),
 				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B1>>::iter_bases),
-			),
-			3 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B8>>::iter_bases),
-			),
-			4 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B16>>::iter_bases),
-			),
-			5 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B32>>::iter_bases),
-			),
-			6 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B64>>::iter_bases),
-			),
-			7 => inner_product_unchecked::<T::B128, T::B128>(
-				a_in.iter().copied(),
-				b_in.iter().copied(),
-			),
-			_ => {
-				return Err(Error::InputValidation(format!(
-					"unsupported value of a_edeg: {a_edeg}"
-				)))
-			}
-		};
+					.flat_map(<FExt as ExtensionField<F>>::iter_bases),
+			)
+		}
+
+		let result = each_tower_subfield!(a_edeg, T, inner_product::<_, T::B128>(a_in, b_in));
 		Ok(result)
 	}
 
