@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, marker::PhantomData};
+use std::{array, marker::PhantomData, ops::Deref};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
@@ -12,14 +12,11 @@ use itertools::izip;
 use crate::builder::{
 	column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128, B32, B64,
 };
+
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
-
 ///
-
 /// This gadget has input columns `xin` and `yin` for the two 32-bit integers to be added, and an
-
 /// output column `zout`, and it constrains that `xin + yin = zout` as integers.
-
 #[derive(Debug)]
 pub struct U32Add {
 	// Inputs
@@ -40,8 +37,8 @@ pub struct U32Add {
 	/// Flags modifying the gadget's behavior.
 	pub flags: U32AddFlags,
 }
-/// Flags modifying the behavior of the [`U32Add`] gadget.
 
+/// Flags modifying the behavior of the [`U32Add`] gadget.
 #[derive(Debug, Default, Clone)]
 pub struct U32AddFlags {
 	// Optionally a column for a dynamic carry in bit. This *must* be zero in all bits except the
@@ -50,6 +47,7 @@ pub struct U32AddFlags {
 	pub commit_zout: bool,
 	pub expose_final_carry: bool,
 }
+
 impl U32Add {
 	pub fn new(
 		table: &mut TableBuilder,
@@ -143,9 +141,8 @@ impl U32Add {
 		Ok(())
 	}
 }
-use std::{array, marker::PhantomData, ops::Deref};
-/// Gadget for unsigned addition using non-packed one-bit columns generic over `u32` and `u64`
 
+/// Gadget for unsigned addition using non-packed one-bit columns generic over `u32` and `u64`
 #[derive(Debug)]
 pub struct WideAdd<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
 	pub x_in: [Col<B1>; BIT_LENGTH],
@@ -258,7 +255,6 @@ impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideAdd<UX, BIT_LENGTH>
 		Ok(())
 	}
 }
-#[derive(Debug)]
 
 /// A very simple trait used in Addition gadgets for unsigned integers of different bit lengths.
 pub trait UnsignedAddPrimitives {

@@ -14,7 +14,10 @@ use binius_m3::{
 		Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
 		B1, B32, B64,
 	},
-	gadgets::mul::{MulSS32, MulSU32, MulUU32, MulUU64, SignConverter, UnsignedMulPrimitives},
+	gadgets::{
+		div::{DivSS32, DivUU32},
+		mul::{MulSS32, MulSU32, MulUU32, MulUU64, SignConverter, UnsignedMulPrimitives},
+	},
 };
 use bumpalo::Bump;
 use bytemuck::Contiguous;
@@ -167,135 +170,6 @@ enum MulDivType {
 	MulUU32,
 	MulSU32,
 	MulSS32,
-}
-
-#[allow(clippy::large_enum_variant)]
-enum MulDivEnum {
-	MulUU32(MulUU32),
-	MulSU32(MulSU32),
-	MulSS32(MulSS32),
-}
-
-struct MulDiv32TestTable {
-	table_id: TableId,
-	mul_div: MulDivEnum,
-}
-
-impl MulDiv32TestTable {
-	pub fn new(cs: &mut ConstraintSystem, mul_div_type: MulDivType) -> Self {
-		let mut table = cs.add_table("MulUU64Table");
-		let table_id = table.id();
-		let mul_div = match mul_div_type {
-			MulDivType::MulUU32 => MulDivEnum::MulUU32(MulUU32::new(&mut table)),
-			MulDivType::MulSU32 => MulDivEnum::MulSU32(MulSU32::new(&mut table)),
-			MulDivType::MulSS32 => MulDivEnum::MulSS32(MulSS32::new(&mut table)),
-		};
-		Self { table_id, mul_div }
-	}
-}
-
-impl TableFiller for MulDiv32TestTable {
-	type Event = (B32, B32);
-
-	fn id(&self) -> TableId {
-		self.table_id
-	}
-
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		let x_vals = rows.clone().map(|(x, _)| *x);
-		let y_vals = rows.map(|(_, y)| *y);
-		match &self.mul_div {
-			MulDivEnum::MulUU32(muluu) => muluu.populate_with_inputs(witness, x_vals, y_vals)?,
-			MulDivEnum::MulSU32(mulsu) => mulsu.populate_with_inputs(witness, x_vals, y_vals)?,
-			MulDivEnum::MulSS32(mulss) => mulss.populate_with_inputs(witness, x_vals, y_vals)?,
-		};
-		Ok(())
-	}
-}
-
-impl MulDivTestSuiteHelper for MulDiv32TestTable {
-	fn generate_inputs(&self, table_size: usize) -> Vec<(B32, B32)> {
-		// Just to be sure we are not resuing seed for the same inputs.
-		let seed = match &self.mul_div {
-			MulDivEnum::MulUU32(_) => 0xdeadbeef,
-			MulDivEnum::MulSU32(_) => 0xc0ffee,
-			MulDivEnum::MulSS32(_) => 0xbadcafe,
-		};
-		let mut rng = StdRng::seed_from_u64(seed);
-		match self.mul_div {
-			MulDivEnum::MulUU32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
-					.take(table_size)
-					.collect()
-			}
-			MulDivEnum::MulSU32(_) => {
-				const EXPLICIT_TESTS: [(B32, B32); 4] = [
-					(B32::new(i32::MIN_VALUE as u32), B32::new(u32::MAX_VALUE)),
-					(B32::new(u32::MAX_VALUE), B32::new(u32::MAX_VALUE)),
-					(B32::new(i32::MAX_VALUE as u32), B32::new(u32::MAX_VALUE)),
-					(B32::new(0), B32::new(0)),
-				];
-
-				chain!(
-					EXPLICIT_TESTS.into_iter(),
-					repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
-				)
-				.take(table_size)
-				.collect()
-			}
-			MulDivEnum::MulSS32(_) => repeat_with(|| {
-				(B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<i32>() as u32))
-			})
-			.take(table_size)
-			.collect(),
-		}
-	}
-
-	fn check_outputs(&self, inputs: &[(B32, B32)], table_witness: &TableWitnessSegment) {
-		match &self.mul_div {
-			MulDivEnum::MulUU32(muluu) => {
-				let out_low = table_witness.get(muluu.out_low).unwrap();
-				let out_high = table_witness.get(muluu.out_high).unwrap();
-				for (i, (x, y)) in inputs.iter().enumerate() {
-					let prod = x.val() as u64 * y.val() as u64;
-					let low = get_packed_slice(&out_low, i);
-					let high = get_packed_slice(&out_high, i);
-					assert!((prod >> 32) as u32 == high.val() && prod as u32 == low.val());
-				}
-			}
-			MulDivEnum::MulSU32(mulsu) => {
-				let out_low = table_witness.get(mulsu.out_low).unwrap();
-				let out_high = table_witness.get(mulsu.out_high).unwrap();
-				for (i, (x, y)) in inputs.iter().enumerate() {
-					let prod = (x.val() as i32 as i64) * y.val() as i64;
-					let low = get_packed_slice(&out_low, i);
-					let high = get_packed_slice(&out_high, i);
-					assert!((prod >> 32) as u32 == high.val() && prod as u32 == low.val());
-				}
-			}
-			MulDivEnum::MulSS32(mulss) => {
-				let out_low = table_witness.get(mulss.out_low).unwrap();
-				let out_high = table_witness.get(mulss.out_high).unwrap();
-				for (i, (x, y)) in inputs.iter().enumerate() {
-					let prod = (x.val() as i32 as i64) * (y.val() as i32 as i64);
-					let low = get_packed_slice(&out_low, i);
-					let high = get_packed_slice(&out_high, i);
-					assert!((prod >> 32) as u32 == high.val() && prod as u32 == low.val());
-				}
-			}
-		};
-	}
-}
-
-// This needs to create witness data as well as later query for checking outputs.
-enum MulDivType {
-	MulUU32,
-	MulSU32,
-	MulSS32,
 	DivUU32,
 	DivSS32,
 }
@@ -372,9 +246,19 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 					.collect()
 			}
 			MulDivEnum::MulSU32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
-					.take(table_size)
-					.collect()
+				const EXPLICIT_TESTS: [(B32, B32); 4] = [
+					(B32::new(i32::MIN_VALUE as u32), B32::new(u32::MAX_VALUE)),
+					(B32::new(u32::MAX_VALUE), B32::new(u32::MAX_VALUE)),
+					(B32::new(i32::MAX_VALUE as u32), B32::new(u32::MAX_VALUE)),
+					(B32::new(0), B32::new(0)),
+				];
+
+				chain!(
+					EXPLICIT_TESTS.into_iter(),
+					repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
+				)
+				.take(table_size)
+				.collect()
 			}
 			MulDivEnum::MulSS32(_) => repeat_with(|| {
 				(B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<i32>() as u32))
@@ -462,7 +346,7 @@ fn test_muluu32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulUU32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -477,7 +361,7 @@ fn test_mulsu32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSU32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -492,7 +376,7 @@ fn test_mulss32() {
 	let allocator = Bump::new();
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![1 << 8],
+		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSS32);
 	let test_suite = MulDivTestSuite { prove_verify: true };
@@ -628,22 +512,3 @@ fn test_twos_complement() {
 	let test_suite = MulDivTestSuite { prove_verify: true };
 	test_suite.execute(cs, allocator, statement, table).unwrap()
 }
-
-#[test]
-fn test_twos_complement() {
-    let mut cs = ConstraintSystem::new();
-
-    let allocator = Bump::new();
-
-    const TABLE_SIZE: usize = 1 << 8;
-
-    let statement = Statement {
-        boundaries: vec![],
-        table_sizes: vec![TABLE_SIZE],
-    };
-
-    let table = AbsoluteValueTable::new(&mut cs);
-    let test_suite = MulDivTestSuite { prove_verify: true };
-    test_suite.execute(cs, allocator, statement, table).unwrap()
-}
-
