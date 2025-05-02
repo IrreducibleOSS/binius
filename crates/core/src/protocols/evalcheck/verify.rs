@@ -13,7 +13,7 @@ use super::{
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
-		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
+		composite_mlecheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
 	EvalPoint,
 };
@@ -241,9 +241,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {
-				let meta = composite_sumcheck_meta(self.oracles, &eval_point)?;
+				let meta = composite_mlecheck_meta(self.oracles, &eval_point)?;
 				add_composite_sumcheck_to_constraints(
-					&meta,
+					meta,
 					&mut self.new_sumcheck_constraints,
 					&composition,
 					eval,
