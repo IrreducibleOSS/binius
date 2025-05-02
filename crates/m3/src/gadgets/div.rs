@@ -8,8 +8,8 @@ use itertools::izip;
 use crate::{
 	builder::{Col, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
 	gadgets::{
-		mul::{MulSS32, MulUU32, SignConverter, TwosComplement, UnsignedMulPrimitives},
-		u32::{add::WideAdd, U32AddFlags},
+		mul::{MulSS32, MulUU32, SignConverter, UnsignedMulPrimitives},
+		u32::{add::WideAdd, sub::WideSub, U32AddFlags, U32SubFlags},
 		util::pack_fp,
 	},
 };
@@ -21,8 +21,7 @@ use crate::{
 pub struct DivUU32 {
 	mul_inner: MulUU32,
 	sum: WideAdd<u64, 64>,
-	sub: WideAdd<u64, 64>,
-	neg_div: TwosComplement<u64, 64>,
+	sub: WideSub<u64, 64>,
 
 	p_in_bits: [Col<B1>; 32],
 	q_in_bits: [Col<B1>; 32],
@@ -91,24 +90,22 @@ impl DivUU32 {
 		// Add constraint to make sure that r < q by computing s = r - q in a larger bit length.
 		// There maybe a better way to do it with channels and simpler comparator logic.
 		let mut inner_comparator = table.with_namespace("sign_comparator");
-		let neg_div = TwosComplement::<u64, 64>::new(&mut inner_comparator, zero_extend_q);
-		let sub = WideAdd::<u64, 64>::new(
+		let sub = WideSub::<u64, 64>::new(
 			&mut inner_comparator,
 			zero_extend_rem,
-			neg_div.result_bits,
-			U32AddFlags {
+			zero_extend_q,
+			U32SubFlags {
 				commit_zout: true,
 				..Default::default()
 			},
 		);
 		// Check that the sign bit is set
-		table.assert_zero("less_than", sub.z_out[63] + B1::ONE);
+		table.assert_zero("less_than", sub.zout[63] + B1::ONE);
 
 		Self {
 			mul_inner,
 			sum,
 			sub,
-			neg_div,
 
 			p_in_bits,
 			q_in_bits,
@@ -126,7 +123,7 @@ impl DivUU32 {
 		&self,
 		index: &mut TableWitnessSegment<P>,
 		p_vals: impl IntoIterator<Item = B32>,
-		q_vals: impl IntoIterator<Item = B32>,
+		q_vals: impl IntoIterator<Item = B32> + Clone,
 	) -> anyhow::Result<()>
 	where
 		P: PackedField<Scalar = B128>
@@ -134,7 +131,6 @@ impl DivUU32 {
 			+ PackedExtension<B32>
 			+ PackedExtension<B64>,
 	{
-		let mut inner_q = Vec::new();
 		let mut inner_div = Vec::new();
 		{
 			let mut p_in_bits = array_util::try_map(self.p_in_bits, |bit| index.get_mut(bit))?;
@@ -149,7 +145,7 @@ impl DivUU32 {
 			let mut out_div = index.get_mut(self.out_div)?;
 			let mut out_rem = index.get_mut(self.out_rem)?;
 
-			for (i, (p, q)) in izip!(p_vals.into_iter(), q_vals.into_iter()).enumerate() {
+			for (i, (p, q)) in izip!(p_vals, q_vals.clone()).enumerate() {
 				let div = p.val() / q.val();
 				let rem = p.val() % q.val();
 				set_packed_slice(&mut p_in, i, p);
@@ -159,7 +155,6 @@ impl DivUU32 {
 				set_packed_slice(&mut out_div, i, div);
 				set_packed_slice(&mut out_rem, i, rem);
 
-				inner_q.push(q);
 				inner_div.push(div);
 
 				for bit_idx in 0..32 {
@@ -187,9 +182,8 @@ impl DivUU32 {
 			}
 		}
 
-		self.mul_inner.populate(index, inner_q, inner_div)?;
+		self.mul_inner.populate(index, q_vals, inner_div)?;
 		self.sum.populate(index)?;
-		self.neg_div.populate(index)?;
 		self.sub.populate(index)?;
 
 		Ok(())
@@ -326,12 +320,11 @@ impl DivSS32 {
 		&self,
 		index: &mut TableWitnessSegment<P>,
 		p_vals: impl IntoIterator<Item = B32>,
-		q_vals: impl IntoIterator<Item = B32>,
+		q_vals: impl IntoIterator<Item = B32> + Clone,
 	) -> anyhow::Result<()>
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
-		let mut inner_q = Vec::new();
 		let mut inner_div = Vec::new();
 		{
 			let mut p_in_bits = array_util::try_map(self.p_in_bits, |bit| index.get_mut(bit))?;
@@ -349,7 +342,7 @@ impl DivSS32 {
 			let mut out_div = index.get_mut(self.out_div)?;
 			let mut out_rem = index.get_mut(self.out_rem)?;
 
-			for (i, (p, q)) in izip!(p_vals, q_vals).enumerate() {
+			for (i, (p, q)) in izip!(p_vals, q_vals.clone()).enumerate() {
 				let p_i32 = p.val() as i32;
 				let q_i32 = q.val() as i32;
 				let div = p_i32 / q_i32;
@@ -370,7 +363,6 @@ impl DivSS32 {
 				let rem = B32::new(rem as u32);
 				set_packed_slice(&mut out_div, i, div);
 				set_packed_slice(&mut out_rem, i, rem);
-				inner_q.push(q);
 				inner_div.push(div);
 
 				for bit_idx in 0..32 {
@@ -411,7 +403,7 @@ impl DivSS32 {
 		}
 
 		self.mul_inner
-			.populate_with_inputs(index, inner_q, inner_div)?;
+			.populate_with_inputs(index, q_vals, inner_div)?;
 		self.sum.populate(index)?;
 		self.abs_r_value.populate(index)?;
 		self.neg_abs_q_value.populate(index)?;
