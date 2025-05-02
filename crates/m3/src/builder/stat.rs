@@ -30,13 +30,28 @@ pub struct TableStat {
 	name: String,
 	/// Index from the log2 tower level to the struct holding a set of partitions.
 	per_tower_level: SparseIndex<PerTowerLevel>,
+	bits_per_row_committed: usize,
+	bits_per_row_virtual: usize,
 }
 
 impl TableStat {
 	pub(super) fn new<F: TowerField>(table: &Table<F>) -> Self {
+		let mut bits_per_row_committed = 0;
+		let mut bits_per_row_virtual = 0;
+		for column in &table.columns {
+			let bits_per_column = 1 << column.shape.log_cell_size();
+			if matches!(column.col, super::ColumnDef::Committed { .. }) {
+				bits_per_row_virtual += bits_per_column;
+			} else {
+				bits_per_row_committed += bits_per_column;
+			}
+		}
+
 		let mut me = Self {
 			name: table.name.clone(),
 			per_tower_level: SparseIndex::new(),
+			bits_per_row_committed,
+			bits_per_row_virtual,
 		};
 
 		for (_, partition) in table.partitions.iter() {
@@ -116,11 +131,40 @@ impl TableStat {
 		}
 		cost
 	}
+
+	/// Returns the number of committed bits per row of this table. Committed bits are contributed
+	/// by the [`add_committed`][add_committed] columns.
+	///
+	/// Committed bits increase the proof size and generally lead to faster verification time
+	/// relative to comparable virtual bits.
+	///
+	/// [add_committed]: super::TableBuilder::add_committed
+	pub fn bits_per_row_committed(&self) -> usize {
+		self.bits_per_row_committed
+	}
+
+	/// Returns the number of virtual bits per row of this table. Virtual bits are pretty much any
+	/// non-[`add_committed`][`add_committed`] columns. E.g. [`add_shifted`][`add_shifted`],
+	/// [`add_computed`][`add_computed`], etc.
+	///
+	/// Virtual bits do not affect the proof size but generally lead to slower verification time
+	/// relative to committed bits.
+	///
+	/// [`add_committed`]: super::TableBuilder::add_committed
+	/// [`add_shifted`]: super::TableBuilder::add_shifted
+	/// [`add_computed`]: super::TableBuilder::add_computed
+	pub fn bits_per_row_virtual(&self) -> usize {
+		self.bits_per_row_virtual
+	}
 }
 
 impl fmt::Display for TableStat {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		writeln!(f, "table '{}' zero checks:", self.name)?;
+		writeln!(f, "table '{}':", self.name)?;
+		writeln!(f, "* bits per row: {}", self.bits_per_row_committed + self.bits_per_row_virtual)?;
+		writeln!(f, "  committed: {}", self.bits_per_row_committed)?;
+		writeln!(f, "  virtual: {}", self.bits_per_row_virtual)?;
+		writeln!(f, "* zero checks:")?;
 		for (tower_level, per_tower_level) in self.per_tower_level.iter() {
 			let bits = 1 << tower_level;
 			writeln!(f, "  B{bits}:")?;
