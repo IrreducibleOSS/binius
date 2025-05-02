@@ -9,6 +9,51 @@ use binius_field::{
 use super::memory::CpuMemory;
 use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
 
+macro_rules! each_tower_subfield {
+    (
+        $edeg:ident =>
+
+        fn $fname:ident < $tower_ty:ident , $subfield_ty:ident >(
+            $( $arg:ident : $arg_ty:ty ),* $(,)?
+        ) -> $Ret:ty
+        {
+            $($body:tt)*
+        }
+    ) => {{
+        // 1) re-define the generic `visit` without the `= Default`
+        fn $fname<$tower_ty, $subfield_ty>( $( $arg : $arg_ty ),* ) -> $Ret
+        where
+			$tower_ty: ::binius_field::tower::TowerFamily,
+			$subfield_ty: ::binius_field::Field,
+			$tower_ty::B128: ::binius_field::ExtensionField<$subfield_ty>,
+        {
+            $($body)*
+        }
+
+        // 2) build `let result = match a_edeg { … };`
+        match $edeg {
+            0 => $fname::<$tower_ty, $tower_ty::B1>( $( $arg ),* ),
+            3 => $fname::<$tower_ty, $tower_ty::B8>( $( $arg ),* ),
+            4 => $fname::<$tower_ty, $tower_ty::B16>( $( $arg ),* ),
+            5 => $fname::<$tower_ty, $tower_ty::B32>( $( $arg ),* ),
+            6 => $fname::<$tower_ty, $tower_ty::B64>( $( $arg ),* ),
+            7 => $fname::<$tower_ty, $tower_ty::B128>( $( $arg ),* ),
+
+            _ => {
+                return Err(
+                    Error::InputValidation(
+                        format!(
+                            "unsupported value of {}: {}",
+                            stringify!($edeg),
+                            $edeg
+                        )
+                    )
+                )
+            }
+        }
+    }};
+}
+
 #[derive(Debug)]
 pub struct CpuExecutor;
 
@@ -86,40 +131,15 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)));
 		}
 
-		let result = match a_edeg {
-			0 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B1>>::iter_bases),
-			),
-			3 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B8>>::iter_bases),
-			),
-			4 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B16>>::iter_bases),
-			),
-			5 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B32>>::iter_bases),
-			),
-			6 => inner_product_unchecked(
-				b_in.iter().copied(),
-				a_in.iter()
-					.flat_map(<T::B128 as ExtensionField<T::B64>>::iter_bases),
-			),
-			7 => inner_product_unchecked::<T::B128, T::B128>(
-				a_in.iter().copied(),
-				b_in.iter().copied(),
-			),
-			_ => {
-				return Err(Error::InputValidation(format!(
-					"unsupported value of a_edeg: {a_edeg}"
-				)))
+		let result = each_tower_subfield! {
+			a_edeg =>
+
+			fn visit<T, F>(a_in: &[T::B128], b_in: &[T::B128]) -> T::B128 {
+				inner_product_unchecked(
+					b_in.iter().copied(),
+					a_in.iter()
+						.flat_map(<T::B128 as ExtensionField<F>>::iter_bases),
+				)
 			}
 		};
 		Ok(result)
