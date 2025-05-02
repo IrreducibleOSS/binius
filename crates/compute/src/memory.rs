@@ -72,3 +72,25 @@ pub trait ComputeMemory<F> {
 		Self::split_at_mut(borrowed, mid)
 	}
 }
+
+pub struct FSliceWithTowerLevel<'a, F, Mem: ComputeMemory<F>> {
+	pub slice: Mem::FSlice<'a>,
+	pub tower_level: u8,
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> FSliceWithTowerLevel<'a, F, Mem> {
+	pub fn new(slice: Mem::FSlice<'a>, tower_level: u8) -> Self {
+		Self { slice, tower_level }
+	}
+}
+
+pub struct FSliceWithTowerLevelMut<'a, F, Mem: ComputeMemory<F>> {
+	pub slice: Mem::FSliceMut<'a>,
+	pub tower_level: u8,
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> FSliceWithTowerLevelMut<'a, F, Mem> {
+	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: u8) -> Self {
+		Self { slice, tower_level }
+	}
+}

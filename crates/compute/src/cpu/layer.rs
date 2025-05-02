@@ -7,13 +7,76 @@ use binius_field::{
 };
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
-use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
+use crate::{
+	layer::{ComputeLayer, Error, FSlice, FSliceMut},
+	memory::FSliceWithTowerLevel,
+};
 
 #[derive(Debug)]
 pub struct CpuExecutor;
 
 #[derive(Debug, Default)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
+
+impl<F: TowerFamily> CpuLayer<F> {
+	pub fn new() -> Self {
+		Self(PhantomData)
+	}
+}
+
+/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
+/// with the corresponding query element. The result is written to the `output` slice of packed values.
+fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
+	evals_as_b128: Vec<T::B128>,
+	log_evals_size: usize,
+	query: Vec<T::B128>,
+	log_query_size: usize,
+	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
+) -> Result<(), Error>
+where
+	<T as TowerFamily>::B128: From<EvalType> + ExtensionField<EvalType>,
+{
+	let evals = evals_as_b128
+		.iter()
+		.flat_map(<T::B128 as ExtensionField<EvalType>>::iter_bases)
+		.collect::<Vec<_>>();
+	let num_rows = 1 << log_query_size;
+	let num_cols = 1 << (log_evals_size - log_query_size);
+
+	if evals.len() != num_rows * num_cols {
+		return Err(Error::InputValidation(format!(
+			"evals has {} elements, expected {}",
+			evals.len(),
+			num_rows * num_cols
+		)));
+	}
+
+	if query.len() != num_rows {
+		return Err(Error::InputValidation(format!(
+			"query has {} elements, expected {}",
+			query.len(),
+			num_rows
+		)));
+	}
+
+	if out.len() != num_cols {
+		return Err(Error::InputValidation(format!(
+			"output has {} elements, expected {}",
+			out.len(),
+			num_cols
+		)));
+	}
+
+	for i in 0..num_cols {
+		let mut acc = T::B128::ZERO;
+		for j in 0..num_rows {
+			acc += T::B128::from(evals[j * num_cols + i]) * query[j];
+		}
+		out[i] = acc;
+	}
+
+	Ok(())
+}
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
@@ -102,6 +165,28 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(result)
 	}
 
+	fn fold_left<'a>(
+		&'a self,
+		_exec: &'a mut Self::Exec,
+		evals: FSliceWithTowerLevel<'_, T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
+		log_evals_size: usize,
+		query: FSlice<'_, T::B128, Self>,
+		log_query_size: usize,
+		out: &mut FSliceMut<'_, T::B128, Self>,
+	) -> Result<(), Error> {
+		each_tower_subfield!(
+			evals.tower_level,
+			T,
+			compute_left_fold::<_, T>(
+				evals.slice.to_vec(),
+				log_evals_size,
+				query.to_vec(),
+				log_query_size,
+				out
+			)
+		)
+	}
+
 	fn tensor_expand(
 		&self,
 		_exec: &mut Self::Exec,
@@ -128,7 +213,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 #[cfg(test)]
 mod tests {
-	use std::iter::repeat_with;
+	use std::{iter::repeat_with, mem::MaybeUninit};
 
 	use binius_field::{
 		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
@@ -138,7 +223,10 @@ mod tests {
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::memory::ComputeMemory;
+	use crate::{
+		alloc::{BumpAllocator, ComputeAllocator},
+		memory::ComputeMemory,
+	};
 
 	fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 		compute: C,
@@ -193,7 +281,6 @@ mod tests {
 		compute: C,
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		n_vars: usize,
-		// log_degree: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
 
@@ -343,6 +430,97 @@ mod tests {
 		assert_eq!(eval2, expected_eval2);
 	}
 
+	fn test_generic_single_left_fold<
+		'a,
+		'b,
+		F: Field + TowerField,
+		F2: ExtensionField<F> + TowerField,
+		C,
+	>(
+		compute: &'b C,
+		device_memory: <C::DevMem as ComputeMemory<F2>>::FSliceMut<'a>,
+		log_evals_size: usize,
+		log_query_size: usize,
+	) where
+		C: ComputeLayer<F2>,
+		'a: 'b,
+		<C as ComputeLayer<F2>>::DevMem: 'a,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
+		let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
+		let evals = repeat_with(|| F2::random(&mut rng))
+			.take(1 << log_evals_size_f2)
+			.collect::<Vec<_>>();
+		let query = repeat_with(|| F2::random(&mut rng))
+			.take(1 << log_query_size)
+			.collect::<Vec<_>>();
+		let mut out = compute.host_alloc(1 << (log_evals_size - log_query_size));
+		let out = out.as_mut();
+		for x_i in out.iter_mut() {
+			*x_i = F2::random(&mut rng);
+		}
+
+		let device_allocator =
+			BumpAllocator::<'a, F2, <C as ComputeLayer<F2>>::DevMem>::new(device_memory);
+		let mut out_slice = device_allocator.alloc(out.len()).unwrap();
+		let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
+		let mut query_slice = device_allocator.alloc(query.len()).unwrap();
+		compute.copy_h2d(out, &mut out_slice).unwrap();
+		compute
+			.copy_h2d(evals.as_slice(), &mut evals_slice)
+			.unwrap();
+		compute
+			.copy_h2d(query.as_slice(), &mut query_slice)
+			.unwrap();
+		let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
+		let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
+		let evals_slice_with_tower_level = FSliceWithTowerLevel::<
+			'_,
+			F2,
+			<C as ComputeLayer<F2>>::DevMem,
+		>::new(const_evals_slice, F::TOWER_LEVEL as u8);
+		compute
+			.execute(|exec| {
+				compute
+					.fold_left(
+						exec,
+						evals_slice_with_tower_level,
+						log_evals_size,
+						const_query_slice,
+						log_query_size,
+						&mut out_slice,
+					)
+					.unwrap();
+				Ok(vec![])
+			})
+			.unwrap();
+		compute
+			.copy_d2h(<C as ComputeLayer<F2>>::DevMem::as_const(&out_slice), out)
+			.unwrap();
+
+		let mut expected_out = out.iter().map(|x| MaybeUninit::new(*x)).collect::<Vec<_>>();
+		let evals_as_f1_slice = evals
+			.iter()
+			.flat_map(<F2 as ExtensionField<F>>::iter_bases)
+			.collect::<Vec<_>>();
+		binius_math::fold_left(
+			&evals_as_f1_slice,
+			log_evals_size,
+			&query,
+			log_query_size,
+			expected_out.as_mut_slice(),
+		)
+		.unwrap();
+		let expected_out = expected_out
+			.iter()
+			.map(|x| unsafe { x.assume_init() })
+			.collect::<Vec<_>>();
+		assert_eq!(out.len(), expected_out.len());
+		assert_eq!(out, expected_out);
+	}
+
 	#[test]
 	fn test_exec_single_tensor_expand() {
 		type F = BinaryField128b;
@@ -350,6 +528,21 @@ mod tests {
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << n_vars];
 		test_generic_single_tensor_expand(compute, &mut device_memory, n_vars);
+	}
+
+	#[test]
+	fn test_exec_single_left_fold() {
+		type F = BinaryField16b;
+		type F2 = BinaryField128b;
+		let n_vars = 8;
+		let mut device_memory = vec![F2::ZERO; 1 << n_vars];
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		test_generic_single_left_fold::<F, F2, _>(
+			&compute,
+			device_memory.as_mut_slice(),
+			n_vars / 2,
+			n_vars / 8,
+		);
 	}
 
 	#[test]

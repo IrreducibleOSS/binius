@@ -1,6 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use super::{alloc::Error as AllocError, memory::ComputeMemory};
+use super::{
+	alloc::Error as AllocError,
+	memory::{ComputeMemory, FSliceWithTowerLevel},
+};
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F> {
@@ -121,6 +124,16 @@ pub trait ComputeLayer<F> {
 		log_n: usize,
 		coordinates: &[F],
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
+	fn fold_left<'a>(
+		&'a self,
+		exec: &'a mut Self::Exec,
+		evals: FSliceWithTowerLevel<'_, F, Self::DevMem>,
+		log_evals_size: usize,
+		query: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		log_query_size: usize,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 }
 
