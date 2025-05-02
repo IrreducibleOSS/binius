@@ -6,53 +6,8 @@ use binius_field::{
 	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
 };
 
-use super::memory::CpuMemory;
+use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
-
-macro_rules! each_tower_subfield {
-    (
-        $edeg:ident =>
-
-        fn $fname:ident < $tower_ty:ident , $subfield_ty:ident >(
-            $( $arg:ident : $arg_ty:ty ),* $(,)?
-        ) -> $Ret:ty
-        {
-            $($body:tt)*
-        }
-    ) => {{
-        // 1) re-define the generic `visit` without the `= Default`
-        fn $fname<$tower_ty, $subfield_ty>( $( $arg : $arg_ty ),* ) -> $Ret
-        where
-			$tower_ty: ::binius_field::tower::TowerFamily,
-			$subfield_ty: ::binius_field::Field,
-			$tower_ty::B128: ::binius_field::ExtensionField<$subfield_ty>,
-        {
-            $($body)*
-        }
-
-        // 2) build `let result = match a_edeg { … };`
-        match $edeg {
-            0 => $fname::<$tower_ty, $tower_ty::B1>( $( $arg ),* ),
-            3 => $fname::<$tower_ty, $tower_ty::B8>( $( $arg ),* ),
-            4 => $fname::<$tower_ty, $tower_ty::B16>( $( $arg ),* ),
-            5 => $fname::<$tower_ty, $tower_ty::B32>( $( $arg ),* ),
-            6 => $fname::<$tower_ty, $tower_ty::B64>( $( $arg ),* ),
-            7 => $fname::<$tower_ty, $tower_ty::B128>( $( $arg ),* ),
-
-            _ => {
-                return Err(
-                    Error::InputValidation(
-                        format!(
-                            "unsupported value of {}: {}",
-                            stringify!($edeg),
-                            $edeg
-                        )
-                    )
-                )
-            }
-        }
-    }};
-}
 
 #[derive(Debug)]
 pub struct CpuExecutor;
@@ -131,17 +86,19 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)));
 		}
 
-		let result = each_tower_subfield! {
-			a_edeg =>
+		fn inner_product<F, FExt>(a_in: &[FExt], b_in: &[FExt]) -> FExt
+		where
+			F: Field,
+			FExt: ExtensionField<F>,
+		{
+			inner_product_unchecked(
+				b_in.iter().copied(),
+				a_in.iter()
+					.flat_map(<FExt as ExtensionField<F>>::iter_bases),
+			)
+		}
 
-			fn visit<T, F>(a_in: &[T::B128], b_in: &[T::B128]) -> T::B128 {
-				inner_product_unchecked(
-					b_in.iter().copied(),
-					a_in.iter()
-						.flat_map(<T::B128 as ExtensionField<F>>::iter_bases),
-				)
-			}
-		};
+		let result = each_tower_subfield!(a_edeg, T, inner_product::<_, T::B128>(a_in, b_in));
 		Ok(result)
 	}
 
