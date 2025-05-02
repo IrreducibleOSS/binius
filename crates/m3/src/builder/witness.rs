@@ -2,7 +2,9 @@
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
-	iter, slice,
+	iter,
+	ops::{Deref, DerefMut},
+	slice,
 	sync::Arc,
 };
 
@@ -11,8 +13,10 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier,
+	as_packed_field::PackedType,
+	packed::{get_packed_slice, set_packed_slice},
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{
 	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
@@ -1076,6 +1080,129 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
+	}
+}
+
+impl<'a, P> TableWitnessSegment<'a, P>
+where
+	P: PackedField<Scalar: TowerField>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B16>
+		+ PackedExtension<B32>
+		+ PackedExtension<B64>
+		+ PackedExtension<B128>,
+{
+	pub fn get_dyn(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColView<B128> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColView<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases(packed)
+			}))),
+			_ => panic!("oh no"),
+		};
+		Ok(ret)
+	}
+
+	pub fn get_dyn_mut(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColViewMut<B128> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColViewMut<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases_mut(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases_mut(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases_mut(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases_mut(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases_mut(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases_mut(packed)
+			}))),
+			_ => panic!("oh no"),
+		};
+		Ok(ret)
+	}
+}
+
+pub trait WitnessColView<F> {
+	fn get(&self, index: usize) -> F;
+
+	fn size(&self) -> usize;
+}
+
+pub trait WitnessColViewMut<F>: WitnessColView<F> {
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error>;
+}
+
+struct WitnessColViewImpl<Data>(Data);
+
+impl<F, P, Data> WitnessColView<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: Deref<Target = [P]>,
+{
+	fn get(&self, index: usize) -> F {
+		get_packed_slice(&self.0, index).into()
+	}
+
+	fn size(&self) -> usize {
+		self.0.len() << P::LOG_WIDTH
+	}
+}
+
+impl<F, P, Data> WitnessColViewMut<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: DerefMut<Target = [P]>,
+{
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error> {
+		let subfield_val = val.try_into().map_err(|_| Error::FieldElementTooBig)?;
+		set_packed_slice(&mut self.0, index, subfield_val);
+		Ok(())
 	}
 }
 
