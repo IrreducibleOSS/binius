@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use binius_field::{
 	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
 };
+use binius_math::{ArithCircuit, ArithExpr};
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
 
@@ -27,6 +28,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
 	type KernelValue = T::B128;
+	type ExprEval = ArithCircuit<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
 		vec![<T::B128 as Field>::ZERO; n]
@@ -70,11 +72,19 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
+	fn kernel_decl_value(&self, _exec: &mut CpuExecutor, init: T::B128) -> Result<T::B128, Error> {
+		Ok(init)
+	}
+
 	fn execute(
 		&self,
 		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
 	) -> Result<Vec<T::B128>, Error> {
 		f(&mut CpuExecutor)
+	}
+
+	fn compile_expr(&self, expr: &ArithExpr<T::B128>) -> Result<Self::ExprEval, Error> {
+		Ok(expr.into())
 	}
 
 	fn accumulate_kernels(
@@ -189,6 +199,28 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				*y_i += prod;
 			}
 		}
+		Ok(())
+	}
+
+	fn sum_composition_evals(
+		&self,
+		_exec: &mut Self::KernelExec,
+		log_len: usize,
+		inputs: &[&[T::B128]],
+		composition: &ArithCircuit<T::B128>,
+		batch_coeff: T::B128,
+		accumulator: &mut T::B128,
+	) -> Result<(), Error> {
+		for input in inputs {
+			assert_eq!(input.len(), 1 << log_len);
+		}
+		let ret = (0..1 << log_len)
+			.map(|i| {
+				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
+				composition.evaluate(&row).expect("Evalutation to succeed")
+			})
+			.sum::<T::B128>();
+		*accumulator += ret * batch_coeff;
 		Ok(())
 	}
 }

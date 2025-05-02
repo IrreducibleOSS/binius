@@ -2,13 +2,15 @@
 
 use std::ops::Range;
 
+use binius_field::Field;
+use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::checked_log_2;
 
 use super::{alloc::Error as AllocError, memory::ComputeMemory};
 use crate::memory::DevSlice;
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F> {
+pub trait ComputeLayer<F: Field> {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
@@ -23,6 +25,9 @@ pub trait ComputeLayer<F> {
 
 	/// The kernel(core)-level operation (scalar) type;
 	type KernelValue;
+
+	/// The evaluator for arithmetic expressions (polynomials).
+	type ExprEval;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
@@ -60,6 +65,13 @@ pub trait ComputeLayer<F> {
 		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
 
+	/// Declares a kernel-level value.
+	fn kernel_decl_value(
+		&self,
+		exec: &mut Self::KernelExec,
+		init: F,
+	) -> Result<Self::KernelValue, Error>;
+
 	/// Executes an operation.
 	///
 	/// A HAL operation is an abstract function that runs with an executor reference.
@@ -80,6 +92,10 @@ pub trait ComputeLayer<F> {
 		Ok((out1, out2))
 	}
 
+	/// Compiles an arithmetic expression to the evaluator.
+	fn compile_expr(&self, expr: &ArithExpr<F>) -> Result<Self::ExprEval, Error>;
+
+	// TODO: better docs
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
@@ -143,6 +159,17 @@ pub trait ComputeLayer<F> {
 		log_n: usize,
 		coordinates: &[F],
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
+	// TODO: better docs
+	fn sum_composition_evals(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		inputs: &[<Self::DevMem as ComputeMemory<F>>::FSlice<'_>],
+		composition: &Self::ExprEval,
+		batch_coeff: F,
+		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error>;
 }
 
