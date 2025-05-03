@@ -540,3 +540,9 @@ where
 
 	Ok(evalcheck_claims)
 }
+
+#[derive(Clone)]
+pub enum BivariateClaims<F: Field> {
+	Projected(EvalcheckMultilinearClaim<F>),
+	Composite(EvalcheckMultilinearClaim<F>),
+}
