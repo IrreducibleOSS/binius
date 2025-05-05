@@ -14,7 +14,9 @@ use super::{
 	RoundCoeffs, RoundProof,
 };
 use crate::{
-	fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcript::TranscriptReader,
+	fiat_shamir::{CanSample, Challenger},
+	protocols::sumcheck::{BatchSumcheckOutput, SumcheckClaim},
+	transcript::{TranscriptReader, VerifierTranscript},
 };
 
 #[derive(Debug)]
@@ -143,6 +145,14 @@ where
 		})
 	}
 
+	/// Returns total number of batched sumcheck rounds
+	pub fn total_rounds(&self) -> usize {
+		self.claims
+			.back()
+			.map(|claim_with_context| claim_with_context.claim.n_vars())
+			.unwrap_or(0)
+	}
+
 	/// Returns the number of sumcheck claims that have not finished.
 	pub fn remaining_claims(&self) -> usize {
 		self.claims.len()
@@ -258,6 +268,44 @@ where
 				Ok(())
 			}
 		}
+	}
+
+	/// Verifies a front-loaded batch sumcheck protocol execution.
+	pub fn run<Challenger_>(
+		mut self,
+		transcript: &mut VerifierTranscript<Challenger_>,
+	) -> Result<BatchSumcheckOutput<F>, Error>
+	where
+		Challenger_: Challenger,
+	{
+		let rounds_count = self.total_rounds();
+
+		let mut multilinear_evals = Vec::with_capacity(self.remaining_claims());
+		let mut challenges = Vec::with_capacity(rounds_count);
+
+		for _round_no in 0..rounds_count {
+			let mut reader = transcript.message();
+			while let Some(claim_multilinear_evals) = self.try_finish_claim(&mut reader)? {
+				multilinear_evals.push(claim_multilinear_evals);
+			}
+			self.receive_round_proof(&mut reader)?;
+
+			let challenge = transcript.sample();
+			challenges.push(challenge);
+
+			self.finish_round(challenge)?;
+		}
+
+		let mut reader = transcript.message();
+		while let Some(claim_multilinear_evals) = self.try_finish_claim(&mut reader)? {
+			multilinear_evals.push(claim_multilinear_evals);
+		}
+		self.finish()?;
+
+		Ok(BatchSumcheckOutput {
+			challenges,
+			multilinear_evals,
+		})
 	}
 }
 

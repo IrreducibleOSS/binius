@@ -71,7 +71,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			.iter_mut()
 			.map(|builder| mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
-			.rev()
 			.collect()
 	}
 

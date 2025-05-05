@@ -119,7 +119,6 @@ where
 			.iter_mut()
 			.map(|builder| std::mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
-			.rev()
 			.collect()
 	}
 

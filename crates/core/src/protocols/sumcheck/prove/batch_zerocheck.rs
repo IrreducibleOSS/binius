@@ -14,7 +14,7 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		immediate_switchover_heuristic,
-		prove::{batch_sumcheck, front_loaded::BatchProver, RegularSumcheckProver, SumcheckProver},
+		prove::{front_loaded, RegularSumcheckProver, SumcheckProver},
 		zerocheck::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
 			BatchZerocheckOutput, ZerocheckRoundEvals,
@@ -176,8 +176,6 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let max_n_vars = provers.last().map(|prover| prover.n_vars()).unwrap_or(0);
-
 	let max_domain_size = provers
 		.iter()
 		.map(|prover| prover.domain_size(skip_rounds))
@@ -204,26 +202,21 @@ where
 	let univariate_challenge = transcript.sample();
 
 	// Prove reduced multilinear eq-ind sumchecks, high-to-low, with front-loaded batching
-	let mut tail_sumcheck_provers = Vec::with_capacity(provers.len());
+	let mut sumcheck_provers = Vec::with_capacity(provers.len());
 	for prover in &mut provers {
-		let tail_sumcheck_prover = prover.fold_univariate_round(univariate_challenge)?;
-		tail_sumcheck_provers.push(tail_sumcheck_prover);
+		let sumcheck_prover = prover.fold_univariate_round(univariate_challenge)?;
+		sumcheck_provers.push(sumcheck_prover);
 	}
 
-	let tail_rounds = max_n_vars.saturating_sub(skip_rounds);
-	let mut tail_sumchecks = BatchProver::new_prebatched(batch_coeffs, tail_sumcheck_provers)?;
+	let regular_sumcheck_prover =
+		front_loaded::BatchProver::new_prebatched(batch_coeffs, sumcheck_provers)?;
 
-	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
-	for _round_no in 0..tail_rounds {
-		tail_sumchecks.send_round_proof(&mut transcript.message())?;
+	let BatchSumcheckOutput {
+		challenges: mut unskipped_challenges,
+		multilinear_evals: mut univariatized_multilinear_evals,
+	} = regular_sumcheck_prover.run(transcript)?;
 
-		let challenge = transcript.sample();
-		unskipped_challenges.push(challenge);
-
-		tail_sumchecks.receive_challenge(challenge)?;
-	}
-	let mut univariatized_multilinear_evals = tail_sumchecks.finish(&mut transcript.message())?;
-
+	// Reverse challenges since folding high-to-low
 	unskipped_challenges.reverse();
 
 	// Drop equality indicator evals prior to univariatizing reduction
@@ -261,10 +254,16 @@ where
 		&backend,
 	)?;
 
+	let batch_reduction_prover =
+		front_loaded::BatchProver::new(vec![Box::new(reduction_prover)], transcript)?;
+
 	let BatchSumcheckOutput {
-		challenges: skipped_challenges,
+		challenges: mut skipped_challenges,
 		multilinear_evals: mut concat_multilinear_evals,
-	} = batch_sumcheck::batch_prove(vec![reduction_prover], transcript)?;
+	} = batch_reduction_prover.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	skipped_challenges.reverse();
 
 	let mut concat_multilinear_evals = concat_multilinear_evals
 		.pop()
