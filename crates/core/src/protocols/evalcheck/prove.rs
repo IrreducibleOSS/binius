@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, iter};
 
 use binius_field::{PackedField, TowerField};
 use binius_hal::ComputationBackend;
@@ -15,7 +15,7 @@ use super::{
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	serialize_evalcheck_proof,
 	subclaims::{
-		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
+		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_mlecheck_meta,
 		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
@@ -28,7 +28,7 @@ use crate::{
 	},
 	protocols::evalcheck::subclaims::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
-		shifted_sumcheck_meta,
+		shifted_sumcheck_meta, CompositeMLECheckMeta,
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
@@ -61,6 +61,8 @@ where
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
 	// The list of claims that reduces to a bivariate sumcheck in a round.
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
+	// The list of claims that reduces to a composite MLEcheck in a round.
+	composite_mle_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	// The new sumcheck constraints arising in this round
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
@@ -100,6 +102,7 @@ where
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
 			projected_bivariate_claims: Vec::new(),
+			composite_mle_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
 
@@ -192,7 +195,7 @@ where
 
 			// Tensor expansion of unique eval points.
 			self.memoized_data
-				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
+				.memoize_query_par(deduplicated_eval_points.iter().copied(), self.backend)?;
 
 			// Query and fill missing evaluations.
 			let subclaims = deduplicated_claims_without_evals
@@ -252,10 +255,16 @@ where
 		drop(evalcheck_mle_fold_high_span);
 
 		// Fill witnesss data for Composite MLEs
+		let composite_mle_claims = std::mem::take(&mut self.composite_mle_claims);
+		let composite_mle_metas = composite_mle_claims
+			.iter()
+			.map(|claim| composite_mlecheck_meta(self.oracles, &claim.eval_point))
+			.collect::<Result<Vec<_>, Error>>()?;
+
 		fill_eq_witness_for_composites(
-			&projected_bivariate_metas,
+			&composite_mle_metas,
 			&mut self.memoized_data,
-			&projected_bivariate_claims,
+			&composite_mle_claims,
 			self.witness_index,
 			self.backend,
 		)?;
@@ -263,7 +272,11 @@ where
 		for (claim, meta, projected) in
 			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
 		{
-			self.process_sumcheck(claim, meta, projected)?;
+			self.process_bivariate_sumcheck(claim, meta, projected)?;
+		}
+
+		for (claim, meta) in iter::zip(composite_mle_claims, composite_mle_metas) {
+			self.process_composite_mlecheck(claim, meta)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
@@ -463,15 +476,20 @@ where
 					transcript,
 				)?;
 			}
-			MultilinearPolyVariant::Shifted { .. }
-			| MultilinearPolyVariant::Packed { .. }
-			| MultilinearPolyVariant::Composite { .. } => {
+			MultilinearPolyVariant::Shifted { .. } | MultilinearPolyVariant::Packed { .. } => {
 				self.projected_bivariate_claims
 					.push(EvalcheckMultilinearClaim {
 						id,
 						eval_point,
 						eval,
 					});
+			}
+			MultilinearPolyVariant::Composite { .. } => {
+				self.composite_mle_claims.push(EvalcheckMultilinearClaim {
+					id,
+					eval_point,
+					eval,
+				});
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for suboracle_id in linear_combination.polys() {
@@ -543,12 +561,11 @@ where
 			MultilinearPolyVariant::Packed(packed) => {
 				packed_sumcheck_meta(oracles, packed, eval_point)
 			}
-			MultilinearPolyVariant::Composite(_) => composite_sumcheck_meta(oracles, eval_point),
 			_ => unreachable!(),
 		}
 	}
 
-	fn process_sumcheck(
+	fn process_bivariate_sumcheck(
 		&mut self,
 		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
 		meta: &ProjectedBivariateMeta,
@@ -582,13 +599,29 @@ where
 				projected,
 			),
 
+			_ => unreachable!(),
+		}
+	}
+
+	fn process_composite_mlecheck(
+		&mut self,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		meta: CompositeMLECheckMeta,
+	) -> Result<(), Error> {
+		let EvalcheckMultilinearClaim {
+			id,
+			eval_point: _,
+			eval,
+		} = evalcheck_claim;
+
+		match self.oracles.oracle(id).variant {
 			MultilinearPolyVariant::Composite(composite) => {
 				// witness for eq MLE has been previously filled in `fill_eq_witness_for_composites`
 				add_composite_sumcheck_to_constraints(
 					meta,
 					&mut self.new_sumchecks_constraints,
 					&composite,
-					*eval,
+					eval,
 				);
 				Ok(())
 			}

@@ -12,6 +12,7 @@ pub use underlier::ByteSlicedUnderlier;
 #[cfg(test)]
 pub mod tests {
 	use proptest::prelude::*;
+	use rand::{distributions::Uniform, rngs::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::{
@@ -175,6 +176,26 @@ pub mod tests {
 									assert_eq!(bytesliced_d.get(offset + i), scalar_elems_a[offset + block_len + i]);
 									assert_eq!(bytesliced_d.get(offset + block_len + i), scalar_elems_b[offset + block_len + i]);
 								}
+							}
+						}
+					}
+
+					#[test]
+					fn check_spread(scalar_elems in scalars_vec_strategy::<$name>()) {
+						let bytesliced = <$name>::from_scalars(scalar_elems.iter().copied());
+
+						let mut rng = StdRng::seed_from_u64(0);
+						for log_block_len in 0..<$name>::LOG_WIDTH {
+							// iterating over all possible block lengths is too slow
+							let distribution = Uniform::from(0..(1 << (<$name>::LOG_WIDTH - log_block_len)));
+							let block_index = rng.sample(distribution);
+
+							let bytesliced_result = bytesliced.spread(log_block_len, block_index);
+							let offset = block_index << log_block_len;
+							let repeat_count = 1 << (<$name>::LOG_WIDTH - log_block_len);
+
+							for i in 0..<$name>::WIDTH {
+								assert_eq!(bytesliced_result.get(i), scalar_elems[offset + i / repeat_count]);
 							}
 						}
 					}
