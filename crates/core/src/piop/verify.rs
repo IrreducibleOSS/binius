@@ -132,18 +132,18 @@ where
 	let crude_cap_height = log2_ceil_usize(crude_n_test_queries);
 	let fold_arities = std::iter::repeat_n(
 		arity,
-		(commit_meta.total_vars + log_inv_rate).saturating_sub(1 + crude_cap_height) / arity,
+		(commit_meta.total_vars + log_inv_rate).saturating_sub(crude_cap_height) / arity,
 	)
 	.collect::<Vec<_>>();
-	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's log-length to be greater than the Merkle cap height.
-	// note that `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want this number to be > cap height.
-	// so fold_arities will repeat `arity` the maximal number of times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) > cap_height` stays true.
-	// this arity-selection strategy can be characterized as: "terminate as LATE as you can while nonetheless maintaining that all oracles have positive-length Merkle paths."
-	// note first that the Merkle path height (post-coset-bundling trick) of the last non-terminal codeword will equal the log-length of the terminal codeword, which is > cap height by fiat.
-	// moreover, if we terminated any later than we are above, this would stop being true. imagine what would happen if we took the above terminal codeword and folded more.
+	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's log-length to be at least as large as the Merkle cap height.
+	// note that `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want this number to be ≥ cap height.
+	// so fold_arities will repeat `arity` the maximal number of times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) ≥ cap_height` stays true.
+	// this arity-selection strategy can be characterized as: "terminate as late as you can, while maintaining that no Merkle cap is strictly smaller than `cap_height`."
+	// note first that the Merkle path height (post-coset-bundling trick) of the last non-terminal codeword will equal the log-length of the terminal codeword, which is ≥ cap height by fiat.
+	// moreover, if we terminated later than we are above, this would stop being true. imagine what would happen if we took the above terminal codeword and folded more.
 	// in that case, we would Merklize this word, again with the coset-bundling trick; the post-bundling path height would thus be `total_vars + log_inv_rate - sum(fold_arities) - arity`.
-	// but we already agreed (by the maximality of the number of times we subtracted `arity`) that the above thing will be ≤ cap_height. in other words, its paths will be empty.
-	// as a side-effect of this choice, we can conclude that the `min` in `optimal_verify_layer` will never trigger; i.e., we will have log2_ceil_usize(n_queries) < tree_depth there.
+	// but we already agreed (by the maximality of the number of times we subtracted `arity`) that the above thing will be < cap_height. in other words, its Merkle cap will be short.
+	// as a side-effect of this choice, we can conclude that the `min` in `optimal_verify_layer` will never trigger; i.e., we will have log2_ceil_usize(n_queries) ≤ tree_depth there.
 	// it can be shown that this strategy beats any strategy which terminates later than it does (in other words, by doing this, we are NOT terminating TOO early!).
 	// this doesn't mean that we should't terminate EVEN earlier (maybe we should). but this approach is conservative and simple; and it's easy to show that you won't lose by doing this.
 
@@ -169,8 +169,8 @@ where
 	// in the case of empty fold arities, we literally lose nothing (in fact we gain) by making the entire thing interleaved.
 	// this has the paradoxical effect that as `total_vars` grows, `log_batch_size` will also grow in lockstep, _until_ total_vars + log_inv_rate - crude_cap_height > arity becomes true,
 	// at which point `fold_arities` will become nonempty and `log_batch_size` will become fixed to `arity` from that point onwards.
-	// so e.g. if `log_inv_rate = 1`, `arity = 4`, `crude_cap_height = 8`, and `total_vars = 11`, then `fold_arities` will be [], `log_batch_size` will be 11, and `log_dim` will be 0;
-	// whereas for all else equal but `total_vars = 12`, then finally we get `fold_arities = [4]` `log_batch_size = 4`, and `log_dim = 8`.
+	// so e.g. if `log_inv_rate = 1`, `arity = 4`, `crude_cap_height = 8`, and `total_vars = 10`, then `fold_arities` will be [], `log_batch_size` will be 10, and `log_dim` will be 0;
+	// whereas for all else equal but `total_vars = 11`, then finally we get `fold_arities = [4]` `log_batch_size = 4`, and `log_dim = 7`.
 
 	let log_dim = commit_meta.total_vars - log_batch_size;
 	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
