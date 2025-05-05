@@ -65,30 +65,46 @@ pub trait AdditiveNTT<F: BinaryField> {
 	/// * `j` must be less than `self.log_domain_size() - i`
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F;
 
-	/// Batched forward transformation defined in [LCH14].
+	/// Batched forward transformation defined in [DP24], Section 2.3.
 	///
 	/// The scalars of `data`, viewed in natural order, represent a tensor of `shape` dimensions.
 	/// See [`NTTShape`] for layout details. The transform is inplace, output adheres to `shape`.
 	///
-	/// [LCH14]: <https://arxiv.org/abs/1404.3458>
+	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace.
+	///
+	/// The transformation accepts a `skip_rounds` parameter, which is a number of NTT layers to
+	/// skip at the beginning of the forward transform. This corresponds to parallel NTTs on
+	/// multiple adjacent subspace cosets, but beginning with messages interpreted as coefficients
+	/// in a modified novel polynomial basis. See [DP24] Remark 4.15.
+	///
+	/// [DP24]: <https://eprint.iacr.org/2024/504>
 	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error>;
 
-	/// Batched inverse transformation defined in [LCH14].
+	/// Batched inverse transformation defined in [DP24], Section 2.3.
 	///
 	/// The scalars of `data`, viewed in natural order, represent a tensor of `shape` dimensions.
 	/// See [`NTTShape`] for layout details. The transform is inplace, output adheres to `shape`.
 	///
-	/// [LCH14]: https://arxiv.org/abs/1404.3458
+	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace.
+	///
+	/// The transformation accepts a `skip_rounds` parameter, which is a number of NTT layers to
+	/// skip at the end of the inverse transform. This corresponds to parallel NTTs on multiple
+	/// adjacent subspace cosets, but returning with messages interpreted as coefficients in a
+	/// modified novel polynomial basis. See [DP24] Remark 4.15.
+	///
+	/// [DP24]: <https://eprint.iacr.org/2024/504>
 	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error>;
 
 	fn forward_transform_ext<PE: PackedExtension<F>>(
@@ -96,12 +112,13 @@ pub trait AdditiveNTT<F: BinaryField> {
 		data: &mut [PE],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset)
+		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
 	}
 
 	fn inverse_transform_ext<PE: PackedExtension<F>>(
@@ -109,11 +126,12 @@ pub trait AdditiveNTT<F: BinaryField> {
 		data: &mut [PE],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset)
+		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
 	}
 }
