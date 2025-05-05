@@ -13,7 +13,7 @@ use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
-	memory::ComputeMemory,
+	memory::{ComputeMemory, SizedSlice},
 };
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@
 
 use std::ops::RangeBounds;
 
-pub trait DevSlice<T> {
+pub trait SizedSlice {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
@@ -10,13 +10,13 @@ pub trait DevSlice<T> {
 	fn len(&self) -> usize;
 }
 
-impl<T> DevSlice<T> for &[T] {
+impl<T> SizedSlice for &[T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
 }
 
-impl<T> DevSlice<T> for &mut [T] {
+impl<T> SizedSlice for &mut [T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
@@ -27,10 +27,10 @@ pub trait ComputeMemory<F> {
 	const MIN_SLICE_LEN: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
-	type FSlice<'a>: Copy + DevSlice<F>;
+	type FSlice<'a>: Copy + SizedSlice;
 
 	/// An opaque handle to a mutable slice of elements stored in a compute memory.
-	type FSliceMut<'a>: DevSlice<F>;
+	type FSliceMut<'a>: SizedSlice;
 
 	/// Borrows a mutable memory slice as immutable.
 	///

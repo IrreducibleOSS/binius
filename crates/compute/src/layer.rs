@@ -7,7 +7,7 @@ use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::checked_log_2;
 
 use super::{alloc::Error as AllocError, memory::ComputeMemory};
-use crate::memory::DevSlice;
+use crate::memory::SizedSlice;
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F: Field> {
@@ -95,7 +95,55 @@ pub trait ComputeLayer<F: Field> {
 	/// Compiles an arithmetic expression to the evaluator.
 	fn compile_expr(&self, expr: &ArithExpr<F>) -> Result<Self::ExprEval, Error>;
 
-	// TODO: better docs
+	/// Launch many kernels in parallel and accumulate the scalar results with field addition.
+	///
+	/// This method provides low-level access to schedule parallel kernel executions on the compute
+	/// platform. A _kernel_ is a program that executes synchronously in one thread, with access to
+	/// local memory buffers. When the environment launches a kernel, it sets up the kernel's local
+	/// memory according to the memory mapping specifications provided by the `mem_maps` parameter.
+	/// The mapped buffers have type [`KernelBuffer`], and they may be read-write or read-only.
+	/// When the kernel exits, it returns a small number of computed values as field elements. The
+	/// vector of returned scalars is accumulated via binary field addition across all kernels and
+	/// returned from the call.
+	///
+	/// This method is fairly general but also designed to fit the specific needs of the sumcheck
+	/// protocol. That motivates the choice that returned values are small-length vectors that are
+	/// accumulated with field addition.
+	///
+	/// ## Buffer chunking
+	///
+	/// The kernel local memory buffers are thought of as slices of a larger buffer, which may or
+	/// may not exist somewhere else. Each kernel operates on a chunk of the larger buffers. For
+	/// example, the [`KernelMemMap::Chunked`] mapping specifies that each kernel operates on a
+	/// read-only chunk of a buffer in global device memory. The [`KernelMemMap::Local`] mapping
+	/// specifies that a kernel operates on a local scratchpad initialized with zeros and discarded
+	/// at the end of kernel execution (sort of like /dev/null).
+	///
+	/// This [`ComputeLayer`] object can decide how many kernels to launch and thus how large
+	/// each kernel's buffer chunks are. The number of chunks must be a power of two. This
+	/// information is provided to the kernel specification closure as an argument.
+	///
+	/// ## Kernel specification
+	///
+	/// The kernel logic is constructed within a closure, which is the `map` parameter. The closure
+	/// has three parameters:
+	///
+	/// * `kernel_exec` - the kernel execution environment.
+	/// * `log_chunks` - the binary logarithm of the number of kernels that are launched.
+	/// * `buffers` - a vector of kernel-local buffers.
+	///
+	/// The closure must respect certain assumptions:
+	///
+	/// * The kernel closure control flow is identical on each invocation when `log_chunks` is
+	///   unchanged.
+	///
+	/// [`ComputeLayer`] implementations are free to call the specification closure multiple times,
+	/// for example with different
+	///
+	/// ## Arguments
+	///
+	/// * `map` - the kernel specification closure. See the "Kernel specification" section above.
+	/// * `mem_maps` - the memory mappings for the kernel-local buffers.
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
@@ -104,7 +152,7 @@ pub trait ComputeLayer<F: Field> {
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
 		) -> Result<Vec<Self::KernelValue>, Error>,
-		inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
+		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
 
 	/// Returns the inner product of a vector of subfield elements with big field elements.
@@ -161,7 +209,27 @@ pub trait ComputeLayer<F: Field> {
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
-	// TODO: better docs
+	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
+	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
+	///
+	/// Mathematically, let there be $m$ input buffers, $P_0, \ldots, P_{m-1}$, each of length
+	/// $2^n$ elements. Let $c$ be the scaling coefficient (`batch_coeff`) and
+	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
+	///
+	/// $$
+	/// \sum_{i=0}^{2^n - 1} c C(P_0[i], \ldots, P_{m-1}[i]).
+	/// $$
+	///
+	/// The result is added back to an accumulator value.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
+	/// * `inputs` - the input buffers.
+	/// * `composition` - the compiled composition polynomial expression. This is an output of
+	///   [`Self::compile_expr`].
+	/// * `batch_coeff` - the scaling coefficient.
+	/// * `accumulator` - the output where the result is accumulated to.
 	fn sum_composition_evals(
 		&self,
 		exec: &mut Self::KernelExec,
@@ -173,29 +241,31 @@ pub trait ComputeLayer<F: Field> {
 	) -> Result<(), Error>;
 }
 
-// TODO: Better docs
+/// A memory mapping specification for a kernel execution.
+///
+/// See [`ComputeLayer::accumulate_kernels`] for context on kernel execution.
 pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
+	/// This maps a chunk of a buffer in global device memory to a read-only kernel buffer.
 	Chunked {
 		data: Mem::FSlice<'a>,
 		log_min_chunk_size: usize,
 	},
+	/// This maps a chunk of a mutable buffer in global device memory to a read-write kernel
+	/// buffer. When the kernel exits, the data in the kernel buffer is written back to the
+	/// original location.
 	ChunkedMut {
 		data: Mem::FSliceMut<'a>,
 		log_min_chunk_size: usize,
 	},
-	Local {
-		log_size: usize,
-	},
-}
-
-// TODO: better docs!
-pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
-	Ref(Mem::FSlice<'a>),
-	Mut(Mem::FSliceMut<'a>),
+	/// This allocates a kernel-local scratchpad buffer. The size specified in the mapping is the
+	/// total size of all kernel scratchpads. This is so that the kernel's local scratchpad size
+	/// scales up proportionally to the size of chunked buffers.
+	Local { log_size: usize },
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
-	/// Computes a range of possible number of chunks that data can be split into, given a sequence of memory mappings, so that range conforms to all mappings.
+	/// Computes a range of possible number of chunks that data can be split into, given a sequence
+	/// of memory mappings.
 	pub fn log_chunks_range(mappings: &[Self]) -> Option<Range<usize>> {
 		mappings
 			.iter()
@@ -220,16 +290,20 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 	}
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
-	pub fn len(&self) -> usize {
+/// A memory buffer mapped into a kernel.
+///
+/// See [`ComputeLayer::accumulate_kernels`] for context on kernel execution.
+pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
+	Ref(Mem::FSlice<'a>),
+	Mut(Mem::FSliceMut<'a>),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> SizedSlice for KernelBuffer<'a, F, Mem> {
+	fn len(&self) -> usize {
 		match self {
 			KernelBuffer::Ref(mem) => mem.len(),
 			KernelBuffer::Mut(mem) => mem.len(),
 		}
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.len() == 0
 	}
 }
 
