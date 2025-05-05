@@ -112,7 +112,7 @@ mod tests {
 					fill_incrementing_b32(index, structured_col)?;
 					Ok(())
 				}),
-				&(0..1 << 5).collect::<Vec<_>>(),
+				&(0..1 << 11).collect::<Vec<_>>(),
 			)
 			.unwrap();
 
