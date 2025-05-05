@@ -620,7 +620,7 @@ mod tests {
 	#[test]
 	fn test_exec_single_inner_product_using_kernel_accumulator() {
 		type F = BinaryField128b;
-		let n_vars = 3; // TODO: Restore value
+		let n_vars = 8;
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
 		test_generic_single_inner_product_using_kernel_accumulator::<F, _>(
