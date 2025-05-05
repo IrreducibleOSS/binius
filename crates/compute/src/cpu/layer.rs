@@ -18,14 +18,9 @@ pub struct CpuExecutor;
 #[derive(Debug, Default)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
-impl<F: TowerFamily> CpuLayer<F> {
-	pub fn new() -> Self {
-		Self(PhantomData)
-	}
-}
-
 /// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
-/// with the corresponding query element. The result is written to the `output` slice of packed values.
+/// with the corresponding query element. The result is written to the `output` slice of values.
+/// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
 	evals_as_b128: Vec<T::B128>,
 	log_evals_size: usize,
@@ -34,7 +29,7 @@ fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
 	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
 ) -> Result<(), Error>
 where
-	<T as TowerFamily>::B128: From<EvalType> + ExtensionField<EvalType>,
+	<T as TowerFamily>::B128: ExtensionField<EvalType>,
 {
 	let evals = evals_as_b128
 		.iter()
@@ -174,6 +169,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		log_query_size: usize,
 		out: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
+		// Dispatch to the binary field of type T corresponding to the tower level of the evals slice.
 		each_tower_subfield!(
 			evals.tower_level,
 			T,
