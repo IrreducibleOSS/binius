@@ -410,7 +410,7 @@ pub fn make_flush_oracles<F: TowerField>(
 					} else {
 						let offset = *permutation_challenge + const_linear_combination + F::ONE;
 						let arith_expr_linear = ArithExpr::Const(offset);
-						let var_offset = 1; // Var(0) represents the selector column.
+						let var_offset = flush.selectors.len(); // Var's represents the selector columns.
 						let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
 							.oracles
 							.iter()
@@ -430,7 +430,7 @@ pub fn make_flush_oracles<F: TowerField>(
 							},
 						);
 
-						let selector = (0..flush.selectors.len())
+						let selector = (0..var_offset)
 							.map(ArithExpr::Var)
 							.product::<ArithExpr<F>>();
 

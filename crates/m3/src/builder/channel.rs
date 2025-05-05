@@ -13,7 +13,7 @@ pub struct Flush {
 	pub direction: FlushDirection,
 	/// The number of times the values are flushed to the channel.
 	pub multiplicity: u32,
-	/// An optional reference to a columns to select which values to flush.
+	/// Selector columns that determine which row events are flushed
 	///
 	/// The referenced selector columns must hold 1-bit values.
 	pub selectors: Vec<ColumnIndex>,
@@ -24,7 +24,7 @@ pub struct Flush {
 pub struct FlushOpts {
 	/// The number of times the values are flushed to the channel.
 	pub multiplicity: u32,
-	/// An optional reference to a columns to select which values to flush.
+	/// Selector columns that determine which row events are flushed..
 	///
 	/// The referenced selector columns must hold 1-bit values and contain only zeros after the
 	/// index that is the height of the table. If the selectors is empty, all values up to the
