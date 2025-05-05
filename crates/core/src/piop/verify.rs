@@ -168,15 +168,13 @@ where
 		.unwrap_or(commit_meta.total_vars);
 	// in the case of empty fold arities, we literally lose nothing (in fact we gain) by making the entire thing interleaved.
 	// this has the paradoxical effect that as `total_vars` grows, `log_batch_size` will also grow in lockstep, _until_ total_vars + log_inv_rate - crude_cap_height > arity becomes true,
-	// at which point `fold_arities` will become nonempty and `log_batch_size` will become fixed to 4 from that point onwards.
+	// at which point `fold_arities` will become nonempty and `log_batch_size` will become fixed to `arity` from that point onwards.
 	// so e.g. if `log_inv_rate = 1`, `arity = 4`, `crude_cap_height = 8`, and `total_vars = 11`, then `fold_arities` will be [], `log_batch_size` will be 11, and `log_dim` will be 0;
 	// whereas for all else equal but `total_vars = 12`, then finally we get `fold_arities = [4]` `log_batch_size = 4`, and `log_dim = 8`.
 
 	let log_dim = commit_meta.total_vars - log_batch_size;
 	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
-
 	let n_test_queries: usize = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
-
 	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
 	Ok(fri_params)
 }
