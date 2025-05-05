@@ -542,7 +542,7 @@ where
 }
 
 #[derive(Clone)]
-pub enum BivariateClaims<F: Field> {
+pub enum SumcheckClaims<F: Field> {
 	Projected(EvalcheckMultilinearClaim<F>),
 	Composite(EvalcheckMultilinearClaim<F>),
 }

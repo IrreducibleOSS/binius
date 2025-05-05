@@ -16,7 +16,7 @@ use super::{
 	serialize_evalcheck_proof,
 	subclaims::{
 		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_mlecheck_meta,
-		fill_eq_witness_for_composites, BivariateClaims, MemoizedData, ProjectedBivariateMeta,
+		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta, SumcheckClaims,
 	},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -60,7 +60,7 @@ where
 	// Internally used to collect subclaims without evaluations for future query and memoization
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
 	// The list of claims that reduces to a bivariate sumcheck in a round.
-	bivariate_claims: Vec<BivariateClaims<P::Scalar>>,
+	sumcheck_claims: Vec<SumcheckClaims<P::Scalar>>,
 
 	// The new sumcheck constraints arising in this round
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
@@ -99,7 +99,7 @@ where
 			new_sumchecks_constraints: Vec::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
-			bivariate_claims: Vec::new(),
+			sumcheck_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
 
@@ -240,14 +240,14 @@ where
 		let mut projected_bivariate_claims = Vec::new();
 		let mut composite_mle_claims = Vec::new();
 
-		for claim in &self.bivariate_claims {
+		for claim in &self.sumcheck_claims {
 			match claim {
-				BivariateClaims::Projected(claim) => {
+				SumcheckClaims::Projected(claim) => {
 					let meta = Self::projected_bivariate_meta(self.oracles, claim)?;
 					projected_bivariate_metas.push(meta);
 					projected_bivariate_claims.push(claim.clone())
 				}
-				BivariateClaims::Composite(claim) => {
+				SumcheckClaims::Composite(claim) => {
 					let meta = composite_mlecheck_meta(self.oracles, &claim.eval_point)?;
 					composite_mle_metas.push(meta);
 					composite_mle_claims.push(claim.clone())
@@ -275,15 +275,15 @@ where
 		let mut projected_index = 0;
 		let mut composite_index = 0;
 
-		for claim in std::mem::take(&mut self.bivariate_claims) {
+		for claim in std::mem::take(&mut self.sumcheck_claims) {
 			match claim {
-				BivariateClaims::Projected(claim) => {
+				SumcheckClaims::Projected(claim) => {
 					let meta = &projected_bivariate_metas[projected_index];
 					let projected = projected_mles[projected_index].clone();
 					self.process_bivariate_sumcheck(&claim, meta, projected)?;
 					projected_index += 1;
 				}
-				BivariateClaims::Composite(claim) => {
+				SumcheckClaims::Composite(claim) => {
 					let meta = composite_mle_metas[composite_index];
 					self.process_composite_mlecheck(&claim, meta)?;
 					composite_index += 1;
@@ -495,8 +495,7 @@ where
 					eval,
 				};
 
-				self.bivariate_claims
-					.push(BivariateClaims::Projected(claim));
+				self.sumcheck_claims.push(SumcheckClaims::Projected(claim));
 			}
 			MultilinearPolyVariant::Composite { .. } => {
 				let claim = EvalcheckMultilinearClaim {
@@ -505,8 +504,7 @@ where
 					eval,
 				};
 
-				self.bivariate_claims
-					.push(BivariateClaims::Composite(claim));
+				self.sumcheck_claims.push(SumcheckClaims::Composite(claim));
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for suboracle_id in linear_combination.polys() {
