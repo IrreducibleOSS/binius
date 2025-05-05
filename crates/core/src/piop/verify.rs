@@ -155,7 +155,7 @@ where
 	// we need to know whether `total_vars + log_inv_rate - cap_height > arity` or not (we will have positive-indexed oracles if and only if this inequality is true).
 	// and here is the dependency: we need to know what cap height is. in order to break this, i have used a `crude_cap_height` in the above estimation, which ignores code block length.
 	// this might be an underestimate; in general, cap_height ≥ crude_cap_height. so in the worst case, we could have more positive oracles than we should (i.e., we could terminate "too late").
-	// note that this has nothing whatsoever to do with security---the `cap_height` below will be the "true" one. it only has to do with efficiency (early FRI termination).
+	// note that this has nothing whatsoever to do with security---the `n_test_queries` below will be the "true" one. it only has to do with efficiency (early FRI termination).
 	// as a separate note, the case where factoring in `log_dim` bumps up the `n_test_queries` at all, let alone the cap height, is extremely rare.
 	// in any case, here is an example with numbers. let's say that `arity = 4`, `total_vars = 11`, `log_inv_rate` = 1`, and `crude_cap_height = 7`.
 	// in this case `fold_arities` will be the 1-element list [4], `log_batch_size` will be 4, `log_dim` will be 7. now let's assume that `log2_ceil_usize(n_test_queries) = 9`.
