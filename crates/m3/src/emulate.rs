@@ -3,9 +3,17 @@
 use std::{collections::HashMap, hash::Hash};
 
 /// A channel used to validate a high-level M3 trace.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Channel<T> {
 	net_multiplicities: HashMap<T, isize>,
+}
+
+impl<T> Default for Channel<T> {
+	fn default() -> Self {
+		Self {
+			net_multiplicities: HashMap::default(),
+		}
+	}
 }
 
 impl<T: Hash + Eq> Channel<T> {
