@@ -217,7 +217,7 @@ pub trait ComputeLayer<F: Field> {
 	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
 	///
 	/// $$
-	/// \sum_{i=0}^{2^n - 1} c C(P_0[i], \ldots, P_{m-1}[i]).
+	/// \sum_{i=0}^{2^n - 1} c C(P_0\[i\], \ldots, P_{m-1}\[i\]).
 	/// $$
 	///
 	/// The result is added back to an accumulator value.
