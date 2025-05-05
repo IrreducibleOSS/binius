@@ -2,7 +2,7 @@
 
 use super::{
 	alloc::Error as AllocError,
-	memory::{ComputeMemory, FSliceWithTowerLevel},
+	memory::{ComputeMemory, SubfieldSlice},
 };
 
 /// A hardware abstraction layer (HAL) for compute operations.
@@ -126,13 +126,17 @@ pub trait ComputeLayer<F> {
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
+	/// Execute the left fold operation.
+	///
+	/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
+	/// with the corresponding query element. The results is written to the `output` slice of packed values.
+	/// If the function returns `Ok(())`, then `out` can be safely interpreted as initialized.
 	fn fold_left<'a>(
 		&'a self,
 		exec: &'a mut Self::Exec,
-		evals: FSliceWithTowerLevel<'_, F, Self::DevMem>,
+		evals: SubfieldSlice<'_, F, Self::DevMem>,
 		log_evals_size: usize,
 		query: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
-		log_query_size: usize,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 }
