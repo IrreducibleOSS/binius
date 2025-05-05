@@ -64,6 +64,7 @@ fn forward_transform_simple<F, FF>(
 	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
+	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
@@ -76,7 +77,7 @@ where
 		});
 	}
 
-	for i in (0..log_n).rev() {
+	for i in (skip_rounds..log_n).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
@@ -109,6 +110,7 @@ fn inverse_transform_simple<F, FF>(
 	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
+	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
@@ -122,7 +124,7 @@ where
 	}
 
 	#[allow(clippy::needless_range_loop)]
-	for i in 0..log_n {
+	for i in skip_rounds..log_n {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
@@ -170,6 +172,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
 			log_x,
@@ -190,6 +193,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					skip_rounds,
 				)?;
 			}
 		}
@@ -202,6 +206,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
 			log_x,
@@ -222,6 +227,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					skip_rounds,
 				)?;
 			}
 		}

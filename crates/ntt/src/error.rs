@@ -20,6 +20,8 @@ pub enum Error {
 	StrideGreaterThanPackedWidth,
 	#[error("the batch size is greater than the number of elements")]
 	BatchTooLarge,
+	#[error("the skip_rounds parameter exceeds the total number of NTT rounds")]
+	SkipRoundsTooLarge,
 	#[error("odd interpolation length mismatch, expected to be exactly {expected_len}")]
 	OddInterpolateIncorrectLength { expected_len: usize },
 	#[error("math error: {0}")]

@@ -132,7 +132,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		(0..(1 << self.log_inv_rate))
 			.into_par_iter()
 			.zip(code.par_chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))?;
+			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i, 0))?;
 		Ok(())
 	}
 

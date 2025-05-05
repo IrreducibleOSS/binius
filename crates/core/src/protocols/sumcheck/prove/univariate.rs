@@ -587,7 +587,7 @@ fn extrapolate_round_evals<F: TowerField>(
 			log_y: next_log_n,
 			..Default::default()
 		};
-		ntt.forward_transform(round_evals, shape, 0)?;
+		ntt.forward_transform(round_evals, shape, 0, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(round_evals[..1 << skip_rounds]
@@ -621,7 +621,7 @@ where
 	};
 
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0)?;
+	ntt.inverse_transform(evals, shape, 0, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
 	for (coset, extrapolated_chunk) in
@@ -629,7 +629,7 @@ where
 	{
 		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when composition_max_degree == 2
 		extrapolated_chunk.copy_from_slice(evals);
-		ntt.forward_transform(extrapolated_chunk, shape, coset)?;
+		ntt.forward_transform(extrapolated_chunk, shape, coset, 0)?;
 	}
 
 	Ok(())

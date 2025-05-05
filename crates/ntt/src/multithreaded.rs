@@ -63,6 +63,7 @@ where
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		forward_transform(
 			self.log_domain_size(),
@@ -70,6 +71,7 @@ where
 			data,
 			shape,
 			coset,
+			skip_rounds,
 			self.log_max_threads,
 		)
 	}
@@ -79,6 +81,7 @@ where
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
 			self.log_domain_size(),
@@ -86,6 +89,7 @@ where
 			data,
 			shape,
 			coset,
+			skip_rounds,
 			self.log_max_threads,
 		)
 	}
@@ -98,18 +102,24 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	shape: NTTShape,
 	coset: u32,
+	skip_rounds: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
 
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => {
-					single_threaded::forward_transform(log_domain_size, s_evals, data, shape, coset)
-				}
+				_ => single_threaded::forward_transform(
+					log_domain_size,
+					s_evals,
+					data,
+					shape,
+					coset,
+					skip_rounds,
+				),
 			};
 		}
 		_ => {}
@@ -123,12 +133,15 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	let log_w = P::LOG_WIDTH;
 
-	// Cutoff is the stage of the NTT where each the butterfly units are contained within
-	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_x);
-
-	let log_height = (log_y + log_z).saturating_sub(cutoff).min(log_max_threads);
-	let log_width = (log_x + log_y + log_z).saturating_sub(log_w + log_height);
+	// Determine the optimal log_height and log_width, measured in packed field elements. log_width
+	// must be at least 1, so that the row-wise NTTs have pairs of butterfly blocks to work with.
+	// Subject to the minimum width requirement, we want to set the height to the lowest value that
+	// takes advantage of all available threads.
+	//
+	// The subtraction must not underflow because data is checked to have at least 2 packed
+	// elements at the top of the function.
+	let log_height = (log_x + log_y + log_z - (log_w + 1)).min(log_max_threads);
+	let log_width = log_x + log_y + log_z - (log_w + log_height);
 
 	let par_rounds = log_height.saturating_sub(log_z);
 
@@ -144,7 +157,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 			.into_par_strides(1 << log_stride_len)
 			.for_each(|mut stride| {
 				// i indexes the layer of the NTT network, also the binary subspace.
-				for i in (0..par_rounds).rev() {
+				for i in (0..par_rounds.saturating_sub(skip_rounds)).rev() {
 					let s_evals_par_i = &s_evals[log_y - par_rounds + i];
 					let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
@@ -190,6 +203,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					log_z: log_row_z,
 				},
 				coset << par_rounds | inner_coset as u32,
+				skip_rounds.saturating_sub(par_rounds),
 			)
 		})?;
 
@@ -203,18 +217,24 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	shape: NTTShape,
 	coset: u32,
+	skip_rounds: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
 
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => {
-					single_threaded::inverse_transform(log_domain_size, s_evals, data, shape, coset)
-				}
+				_ => single_threaded::inverse_transform(
+					log_domain_size,
+					s_evals,
+					data,
+					shape,
+					coset,
+					skip_rounds,
+				),
 			};
 		}
 		_ => {}
@@ -228,16 +248,19 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	let log_w = P::LOG_WIDTH;
 
-	// Cutoff is the stage of the NTT where each the butterfly units are contained within
-	// packed base field elements.
-	let cutoff = log_w.saturating_sub(log_x);
-
-	let log_height = (log_y + log_z).saturating_sub(cutoff).min(log_max_threads);
-	let log_width = (log_x + log_y + log_z).saturating_sub(log_w + log_height);
+	// Determine the optimal log_height and log_width, measured in packed field elements. log_width
+	// must be at least 1, so that the row-wise NTTs have pairs of butterfly blocks to work with.
+	// Subject to the minimum width requirement, we want to set the height to the lowest value that
+	// takes advantage of all available threads.
+	//
+	// The subtraction must not underflow because data is checked to have at least 2 packed
+	// elements at the top of the function.
+	let log_height = (log_x + log_y + log_z - (log_w + 1)).min(log_max_threads);
+	let log_width = log_x + log_y + log_z - (log_w + log_height);
 
 	let par_rounds = log_height.saturating_sub(log_z);
-	let log_row_z = log_z.saturating_sub(log_height);
 
+	let log_row_z = log_z.saturating_sub(log_height);
 	let single_thread_log_y = log_width + log_w - log_x - log_row_z;
 
 	data.par_chunks_mut(1 << (log_width + par_rounds))
@@ -253,6 +276,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					log_z: log_row_z,
 				},
 				coset << par_rounds | inner_coset as u32,
+				skip_rounds.saturating_sub(par_rounds),
 			)
 		})?;
 
@@ -267,7 +291,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
 			// i indexes the layer of the NTT network, also the binary subspace.
-			for i in 0..par_rounds {
+			for i in 0..par_rounds.saturating_sub(skip_rounds) {
 				let s_evals_par_i = &s_evals[log_y - par_rounds + i];
 				let coset_offset = (coset as usize) << (par_rounds - 1 - i);
 
