@@ -139,7 +139,7 @@ where
 	// note that `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want this number to be > cap height.
 	// so fold_arities will repeat `arity` the maximal number of times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) > cap_height` stays true.
 	// this arity-selection strategy can be characterized as: "terminate as LATE as you can while nonetheless maintaining that all oracles have positive-length Merkle paths."
-	// note first that the Merkle path height (post-coset-bundling trick) of the last non-terminal codeword will equal the length of the terminal codeword, which is > cap height by fiat.
+	// note first that the Merkle path height (post-coset-bundling trick) of the last non-terminal codeword will equal the log-length of the terminal codeword, which is > cap height by fiat.
 	// moreover, if we terminated any later than we are above, this would stop being true. imagine what would happen if we took the above terminal codeword and folded more.
 	// in that case, we would Merklize this word, again with the coset-bundling trick; the post-bundling path height would thus be `total_vars + log_inv_rate - sum(fold_arities) - arity`.
 	// but we already agreed (by the maximality of the number of times we subtracted `arity`) that the above thing will be ≤ cap_height. in other words, its paths will be empty.
