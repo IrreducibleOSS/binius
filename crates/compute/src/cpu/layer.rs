@@ -206,14 +206,21 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		&self,
 		_exec: &mut Self::KernelExec,
 		log_len: usize,
-		inputs: &[&[T::B128]],
+		inputs: &[KernelBuffer<'_, T::B128, CpuMemory>],
 		composition: &ArithCircuit<T::B128>,
 		batch_coeff: T::B128,
 		accumulator: &mut T::B128,
 	) -> Result<(), Error> {
-		for input in inputs {
-			assert_eq!(input.len(), 1 << log_len);
-		}
+		let inputs: Vec<_> = inputs
+			.iter()
+			.map(|input| {
+				assert_eq!(input.len(), 1 << log_len);
+				match input {
+					KernelBuffer::Ref(fs) => *fs,
+					KernelBuffer::Mut(fs) => *fs,
+				}
+			})
+			.collect();
 		let ret = (0..1 << log_len)
 			.map(|i| {
 				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
@@ -498,6 +505,84 @@ mod tests {
 		assert_eq!(eval2, expected_eval2);
 	}
 
+	fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		n_vars: usize,
+	) {
+		let mut rng = StdRng::seed_from_u64(0);
+		let log_min_chunk_size = 3;
+
+		// Allocate buffers a and b to be device mapped
+		let mut a_buffer = compute.host_alloc(1 << n_vars);
+		let a_buffer = a_buffer.as_mut();
+		for x_i in a_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let a = a_buffer.to_vec();
+
+		let mut b_buffer = compute.host_alloc(1 << n_vars);
+		let b_buffer = b_buffer.as_mut();
+		for x_i in b_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let b = b_buffer.to_vec();
+
+		// Copy a and b to device (creating F-slices)
+		let (mut a_slice, device_memory) = C::DevMem::split_at_mut(device_memory, a_buffer.len());
+		compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
+		let a_slice = C::DevMem::as_const(&a_slice);
+
+		let (mut b_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, b_buffer.len());
+		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
+		let b_slice = C::DevMem::as_const(&b_slice);
+
+		// Run the HAL operation to compute the inner product
+		let arith = ArithExpr::Var(0) * ArithExpr::Var(1);
+		let eval = compute.compile_expr(&arith).unwrap();
+		let [actual] = compute
+			.execute(|exec| {
+				let a_slice = KernelMemMap::Chunked {
+					data: a_slice,
+					log_min_chunk_size,
+				};
+				let b_slice = KernelMemMap::Chunked {
+					data: b_slice,
+					log_min_chunk_size,
+				};
+				let results = compute.accumulate_kernels(
+					exec,
+					|kernel_exec, _log_chunks, kernel_data| {
+						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
+						let log_len = checked_log_2(kernel_data[0].len());
+						compute
+							.sum_composition_evals(
+								kernel_exec,
+								log_len,
+								&kernel_data,
+								&eval,
+								F::ONE,
+								&mut res,
+							)
+							.unwrap();
+						Ok(vec![res])
+					},
+					vec![a_slice, b_slice],
+				)?;
+				assert_eq!(results.len(), 1);
+				Ok(results)
+			})
+			.unwrap()
+			.try_into()
+			.unwrap();
+
+		// Compute the expected value and compare
+		let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
+			.map(|(a_i, &b_i)| b_i * a_i)
+			.sum::<F>();
+		assert_eq!(actual, expected);
+	}
+
 	#[test]
 	fn test_exec_single_tensor_expand() {
 		type F = BinaryField128b;
@@ -526,6 +611,19 @@ mod tests {
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
 		test_generic_multiple_multilinear_evaluations::<F1, F2, _, _>(
+			compute,
+			&mut device_memory,
+			n_vars,
+		);
+	}
+
+	#[test]
+	fn test_exec_single_inner_product_using_kernel_accumulator() {
+		type F = BinaryField128b;
+		let n_vars = 3; // TODO: Restore value
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
+		test_generic_single_inner_product_using_kernel_accumulator::<F, _>(
 			compute,
 			&mut device_memory,
 			n_vars,

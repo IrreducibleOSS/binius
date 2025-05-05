@@ -166,7 +166,7 @@ pub trait ComputeLayer<F: Field> {
 		&self,
 		exec: &mut Self::KernelExec,
 		log_len: usize,
-		inputs: &[<Self::DevMem as ComputeMemory<F>>::FSlice<'_>],
+		inputs: &[KernelBuffer<'_, F, Self::DevMem>],
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
@@ -217,6 +217,19 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 				Self::Local { log_size } => 0..*log_size,
 			})
 			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
+	}
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
+	pub fn len(&self) -> usize {
+		match self {
+			KernelBuffer::Ref(mem) => mem.len(),
+			KernelBuffer::Mut(mem) => mem.len(),
+		}
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.len() == 0
 	}
 }
 
