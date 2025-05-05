@@ -5,6 +5,7 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
 use binius_utils::{bail, DeserializeBytes};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -126,17 +127,49 @@ where
 {
 	assert!(arity > 0);
 
-	// The total arities must be strictly less than n_packed_vars, hence the -1
-	let fold_arities = std::iter::repeat_n(arity, commit_meta.total_vars.saturating_sub(1) / arity)
+	let crude_n_test_queries = (security_bits as f64 / -(0.5 * (1f64 + 2.0f64.powi(-(log_inv_rate as i32)))).log2()).ceil() as usize;
+	let crude_cap_height = log2_ceil_usize(crude_n_test_queries);
+	let fold_arities = std::iter::repeat_n(arity, (commit_meta.total_vars + log_inv_rate).saturating_sub(1 + crude_cap_height) / arity)
 		.collect::<Vec<_>>();
+	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's log-length to be greater than the Merkle cap height.
+	// note that `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want this number to be > cap height.
+	// so fold_arities will repeat `arity` the maximal number of times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) > cap_height` stays true.
+	// this arity-selection strategy can be characterized as: "terminate as LATE as you can while nonetheless maintaining that all oracles have positive-length Merkle paths."
+	// note first that the Merkle path height (post-coset-bundling trick) of the last non-terminal codeword will equal the length of the terminal codeword, which is sure enough positive.
+	// moreover, if we terminated any later than we are above, this would stop being true. imagine what would happen if we took the above terminal codeword and folded more.
+	// in that case, we would Merklize this word, again with the coset-bundling trick; the post-bundling path height would thus be `total_vars + log_inv_rate - sum(fold_arities) - arity`.
+	// but we already agreed (by the maximality of the number of times we subtracted `arity`) that the above thing will be ≤ cap_height. in other words, its paths will be empty.
+	// as a side-effect of this choice, we can conclude that the `min` in `optimal_verify_layer` will never trigger; i.e., we will have log2_ceil_usize(n_queries) < tree_depth there.
+	// it can be shown that this strategy beats any strategy which terminates later than it does (in other words, by doing this, we are NOT terminating TOO early!).
+	// this doesn't mean that we should't terminate EVEN earlier (maybe we should). but this approach is conservative and simple; and it's easy to show that you won't lose by doing this.
 
-	// Choose the interleaved code batch size to align with the first fold arity, which is
-	// optimal.
-	let log_batch_size = fold_arities.first().copied().unwrap_or(0);
+	// see PR for proof of this fact
+
+	// there is a frustrating circular dependency: in order to know the `n_test_queries`, and hence the `cap_height`, we need to know the code block length (since it impacts soundness).
+	// but in order to know that, we need to know what `log_batch_size` is. to know that, we must in turn know whether we have any positive-indexed FRI oracles or not.
+	// since if we do, that number will be `arity`; otherwise, it will be `total_vars`. but in order to know whether we have any positive-indexed FRI oracles,
+	// we need to know whether `total_vars + log_inv_rate - cap_height > arity` or not (we will have positive-indexed oracles if and only if this inequality is true).
+	// and here is the dependency: we need to know what cap height is. in order to break this, i have used a `crude_cap_height` in the above estimation, which ignores code block length.
+	// this might be an underestimate; in general, cap_height ≥ crude_cap_height. so in the worst case, we could have more positive oracles than we should (i.e., we could terminate "too late").
+	// note that this has nothing whatsoever to do with security---the `cap_height` below will be the "true" one. it only has to do with efficiency (early FRI termination).
+	// as a separate note, the case where factoring in `log_dim` bumps up the `n_test_queries` at all, let alone the cap height, is extremely rare.
+	// in any case, here is an example with numbers. let's say that `arity = 4`, `total_vars = 11`, `log_inv_rate` = 1`, and `crude_cap_height = 7`.
+	// in this case `fold_arities` will be the 1-element list [4], `log_batch_size` will be 4, `log_dim` will be 7. now let's assume that `log2_ceil_usize(n_test_queries) = 9`.
+	// in this case, our 0th oracle will have a log_length of 12; post-Merklization and coset bundling, its Merkle height will be 12 – 4 = 8. But our cap height is 9 now!
+	// so this thing will get entirely Merkle-cap'd, and we will have a path of 0 length after all. as we argued above, this is (slightly?) sub-optimal in terms of proof size. but that's ok.
+
+	let log_batch_size = fold_arities.first().copied().unwrap_or(commit_meta.total_vars);	
+	// in the case of empty fold arities, we literally lose nothing (in fact we gain) by making the entire thing interleaved.
+	// this has the paradoxical effect that as `total_vars` grows, `log_batch_size` will also grow in lockstep, _until_ total_vars + log_inv_rate - crude_cap_height > arity,
+	// at which point `fold_arities` will become nonempty and `log_batch_size` will become fixed to 4 for the rest of time.
+	// so e.g. if `log_inv_rate = 1`, `arity = 4`, `crude_cap_height = 8`, and `total_vars = 11`, then `fold_arities` will be [], `log_batch_size` will be 11, and `log_dim` will be 0;
+	// whereas for all else equal but `total_vars = 12`, then finally we get `fold_arities = [4]` `log_batch_size = 4`, and `log_dim = 8`.
+
 	let log_dim = commit_meta.total_vars - log_batch_size;
-
 	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
-	let n_test_queries = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+
+	let n_test_queries: usize = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+
 	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
 	Ok(fri_params)
 }
