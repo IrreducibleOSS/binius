@@ -4,8 +4,7 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
-use binius_utils::{bail, DeserializeBytes};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize, DeserializeBytes};
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -127,10 +126,15 @@ where
 {
 	assert!(arity > 0);
 
-	let crude_n_test_queries = (security_bits as f64 / -(0.5 * (1f64 + 2.0f64.powi(-(log_inv_rate as i32)))).log2()).ceil() as usize;
+	let crude_n_test_queries = (security_bits as f64
+		/ -(0.5 * (1f64 + 2.0f64.powi(-(log_inv_rate as i32)))).log2())
+	.ceil() as usize;
 	let crude_cap_height = log2_ceil_usize(crude_n_test_queries);
-	let fold_arities = std::iter::repeat_n(arity, (commit_meta.total_vars + log_inv_rate).saturating_sub(1 + crude_cap_height) / arity)
-		.collect::<Vec<_>>();
+	let fold_arities = std::iter::repeat_n(
+		arity,
+		(commit_meta.total_vars + log_inv_rate).saturating_sub(1 + crude_cap_height) / arity,
+	)
+	.collect::<Vec<_>>();
 	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's log-length to be greater than the Merkle cap height.
 	// note that `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want this number to be > cap height.
 	// so fold_arities will repeat `arity` the maximal number of times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) > cap_height` stays true.
@@ -158,7 +162,10 @@ where
 	// in this case, our 0th oracle will have a log_length of 12; post-Merklization and coset bundling, its Merkle height will be 12 – 4 = 8. But our cap height is 9 now!
 	// so this thing will get entirely Merkle-cap'd, and we will have a path of 0 length after all. as we argued above, this is (slightly?) sub-optimal in terms of proof size. but that's ok.
 
-	let log_batch_size = fold_arities.first().copied().unwrap_or(commit_meta.total_vars);	
+	let log_batch_size = fold_arities
+		.first()
+		.copied()
+		.unwrap_or(commit_meta.total_vars);
 	// in the case of empty fold arities, we literally lose nothing (in fact we gain) by making the entire thing interleaved.
 	// this has the paradoxical effect that as `total_vars` grows, `log_batch_size` will also grow in lockstep, _until_ total_vars + log_inv_rate - crude_cap_height > arity,
 	// at which point `fold_arities` will become nonempty and `log_batch_size` will become fixed to 4 for the rest of time.
