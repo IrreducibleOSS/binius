@@ -19,6 +19,7 @@ subtle.workspace = true
 thiserror.workspace = true
 transpose.workspace = true
 tracing.workspace = true
+trait-set.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

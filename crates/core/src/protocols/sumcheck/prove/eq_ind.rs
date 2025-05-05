@@ -480,13 +480,14 @@ where
 					.const_subst(var_index, suffix_eval + suffix_eval)
 					.optimize();
 
-				if let Some((value, value_at_inf)) = expr.constant().zip(expr_at_inf.constant()) {
+				if let Some((value, value_at_inf)) =
+					expr.get_constant().zip(expr_at_inf.get_constant())
+				{
 					const_eval_suffix = ConstEvalSuffix {
 						suffix,
 						value,
 						value_at_inf,
 					};
-
 					break;
 				}
 			}
@@ -536,7 +537,7 @@ where
 			.iter_mut()
 			.map(|(composition, const_eval_suffix)| {
 				let composition_at_infinity =
-					ArithCircuitPoly::new(&composition.expression().leading_term());
+					ArithCircuitPoly::new(composition.expression().leading_term());
 
 				const_eval_suffix.update(self.state.evaluation_order(), n_rounds_remaining);
 

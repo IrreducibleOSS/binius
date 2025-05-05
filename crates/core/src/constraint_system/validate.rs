@@ -44,7 +44,7 @@ where
 			match constraint.predicate {
 				ConstraintPredicate::Zero => zero_claims.push((
 					constraint.name.clone(),
-					ArithCircuitPoly::with_n_vars_circuit(
+					ArithCircuitPoly::with_n_vars(
 						multilinears.len(),
 						constraint.composition.clone(),
 					)?,
@@ -216,18 +216,20 @@ where
 				)?;
 			}
 		}
-		MultilinearPolyVariant::ZeroPadded(inner_id) => {
+		MultilinearPolyVariant::ZeroPadded(padded) => {
+			let inner_id = padded.id();
 			let unpadded_poly = witness.get_multilin_poly(inner_id)?;
-			for i in 0..1 << unpadded_poly.n_vars() {
+			let n_pad_vars = padded.n_pad_vars();
+			let start_index = padded.start_index();
+			let nonzero_index = padded.nonzero_index();
+			let padded_poly = unpadded_poly.zero_pad(n_pad_vars, start_index, nonzero_index)?;
+			for i in 0..1 << n_pad_vars {
 				check_eval(
 					oracle_label,
 					i,
-					unpadded_poly.evaluate_on_hypercube(i)?,
+					padded_poly.evaluate_on_hypercube(i)?,
 					poly.evaluate_on_hypercube(i)?,
 				)?;
-			}
-			for i in 1 << unpadded_poly.n_vars()..1 << n_vars {
-				check_eval(oracle_label, i, F::ZERO, poly.evaluate_on_hypercube(i)?)?;
 			}
 		}
 		MultilinearPolyVariant::Packed(ref packed) => {

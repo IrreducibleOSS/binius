@@ -4,9 +4,9 @@ use std::{marker::PhantomData, sync::Arc};
 
 use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 
-use super::{table::TableId, types::B128};
+use super::{structured::StructuredDynSize, table::TableId, types::B128};
 
 /// An index of a column within a table.
 pub type ColumnIndex = usize;
@@ -135,6 +135,12 @@ pub enum ColumnDef<F: TowerField = B128> {
 		query_size: usize,
 		query_bits: usize,
 	},
+	ZeroPadded {
+		col: ColumnId,
+		n_pad_vars: usize,
+		start_index: usize,
+		nonzero_index: usize,
+	},
 	Shifted {
 		col: ColumnId,
 		offset: usize,
@@ -147,10 +153,14 @@ pub enum ColumnDef<F: TowerField = B128> {
 	},
 	Computed {
 		cols: Vec<ColumnIndex>,
-		expr: ArithExpr<F>,
+		expr: ArithCircuit<F>,
 	},
 	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
+	},
+	StructuredDynSize(StructuredDynSize),
+	StructuredFixedSize {
+		expr: ArithCircuit<F>,
 	},
 	StaticExp {
 		bit_cols: Vec<ColumnIndex>,

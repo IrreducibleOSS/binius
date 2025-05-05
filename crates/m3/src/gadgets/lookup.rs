@@ -85,7 +85,10 @@ mod tests {
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use super::*;
-	use crate::builder::{test_utils::ClosureFiller, ConstraintSystem, Statement, WitnessIndex};
+	use crate::builder::{
+		test_utils::{validate_system_witness, ClosureFiller},
+		ConstraintSystem, WitnessIndex,
+	};
 
 	fn with_lookup_test_instance(
 		no_zero_counts: bool,
@@ -199,30 +202,14 @@ mod tests {
 	#[test]
 	fn test_basic_lookup_producer() {
 		with_lookup_test_instance(false, |cs, witness| {
-			let statement = Statement {
-				boundaries: vec![],
-				table_sizes: witness.table_sizes(),
-			};
-			let ccs = cs.compile(&statement).unwrap();
-			let witness = witness.into_multilinear_extension_index();
-
-			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
-				.unwrap();
+			validate_system_witness::<OptimalUnderlier128b>(cs, witness, vec![])
 		});
 	}
 
 	#[test]
-	fn test_basic_lookup_producer_nonzero_counts() {
+	fn test_lookup_producer_no_zero_counts() {
 		with_lookup_test_instance(true, |cs, witness| {
-			let statement = Statement {
-				boundaries: vec![],
-				table_sizes: witness.table_sizes(),
-			};
-			let ccs = cs.compile(&statement).unwrap();
-			let witness = witness.into_multilinear_extension_index();
-
-			binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness)
-				.unwrap();
+			validate_system_witness::<OptimalUnderlier128b>(cs, witness, vec![])
 		});
 	}
 }

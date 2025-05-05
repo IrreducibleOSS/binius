@@ -100,20 +100,16 @@ mod model {
 mod arithmetization {
 	use binius_core::{
 		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
-		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
-		tower::CanonicalTowerFamily,
-		witness::MultilinearExtensionIndex,
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU, Field,
 		PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
 	};
-	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
-			WitnessIndex, B1, B128, B32,
+			test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
+			TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
@@ -288,13 +284,8 @@ mod arithmetization {
 		}
 	}
 
-	pub struct Instance<'a> {
-		pub statement: Statement,
-		pub witness: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier128b, B128>>,
-		pub constraint_system: binius_core::constraint_system::ConstraintSystem<B128>,
-	}
-
-	pub fn collatz_instance(allocator: &Bump) -> Instance {
+	#[test]
+	fn test_collatz() {
 		use model::CollatzTrace;
 
 		let mut cs = ConstraintSystem::new();
@@ -304,8 +295,9 @@ mod arithmetization {
 
 		let trace = CollatzTrace::generate(3999);
 
+		let allocator = Bump::new();
 		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, allocator);
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)
 			.unwrap();
@@ -313,84 +305,21 @@ mod arithmetization {
 			.fill_table_sequential(&odds_table, &trace.odds)
 			.unwrap();
 
-		// TODO: Refactor boundary creation
-		let statement = Statement {
-			boundaries: vec![
-				Boundary {
-					values: vec![B128::new(3999)],
-					channel_id: collatz_orbit,
-					direction: FlushDirection::Push,
-					multiplicity: 1,
-				},
-				Boundary {
-					values: vec![B128::new(1)],
-					channel_id: collatz_orbit,
-					direction: FlushDirection::Pull,
-					multiplicity: 1,
-				},
-			],
-			table_sizes: witness.table_sizes(),
-		};
-		Instance {
-			constraint_system: cs.compile(&statement).unwrap(),
-			witness: witness.into_multilinear_extension_index(),
-			statement,
-		}
-	}
+		let boundaries = vec![
+			Boundary {
+				values: vec![B128::new(3999)],
+				channel_id: collatz_orbit,
+				direction: FlushDirection::Push,
+				multiplicity: 1,
+			},
+			Boundary {
+				values: vec![B128::new(1)],
+				channel_id: collatz_orbit,
+				direction: FlushDirection::Pull,
+				multiplicity: 1,
+			},
+		];
 
-	#[test]
-	fn test_collatz_validate_witness() {
-		let allocator = Bump::new();
-		let Instance {
-			statement,
-			witness,
-			constraint_system,
-		} = collatz_instance(&allocator);
-
-		binius_core::constraint_system::validate::validate_witness(
-			&constraint_system,
-			&statement.boundaries,
-			&witness,
-		)
-		.unwrap();
-	}
-
-	#[test]
-	fn test_collatz_prove_verify() {
-		let allocator = Bump::new();
-		let Instance {
-			statement,
-			witness,
-			constraint_system,
-		} = collatz_instance(&allocator);
-
-		const LOG_INV_RATE: usize = 1;
-		const SECURITY_BITS: usize = 100;
-
-		let proof = binius_core::constraint_system::prove::<
-			OptimalUnderlier128b,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(
-			&constraint_system,
-			LOG_INV_RATE,
-			SECURITY_BITS,
-			&statement.boundaries,
-			witness,
-			&binius_hal::make_portable_backend(),
-		)
-		.unwrap();
-
-		binius_core::constraint_system::verify::<
-			OptimalUnderlier128b,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-		>(&constraint_system, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
-		.unwrap();
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
 	}
 }

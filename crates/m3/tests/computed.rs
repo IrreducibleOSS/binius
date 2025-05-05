@@ -1,20 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
 	arch::OptimalUnderlier128b, as_packed_field::PackedType, Field, PackedExtension,
 	PackedFieldIndexable,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::builder::{
-	Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B128,
+	test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
+	TableWitnessSegment, WitnessIndex, B128,
 };
 use bumpalo::Bump;
 
 const VALUES_PER_ROW: usize = 32;
 const N_ROWS: usize = 8;
-const LOG_INV_RATE: usize = 1;
-const SECURITY_BITS: usize = 30;
 
 pub struct MyTable {
 	id: TableId,
@@ -91,43 +88,5 @@ fn test_m3_computed_col() {
 		)
 		.unwrap();
 
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: witness.table_sizes(),
-	};
-	let constraint_system = cs.compile(&statement).unwrap();
-	let witness = witness.into_multilinear_extension_index();
-
-	binius_core::constraint_system::validate::validate_witness(
-		&constraint_system,
-		&statement.boundaries,
-		&witness,
-	)
-	.unwrap();
-
-	let proof = binius_core::constraint_system::prove::<
-		OptimalUnderlier128b,
-		CanonicalTowerFamily,
-		Groestl256,
-		Groestl256ByteCompression,
-		HasherChallenger<Groestl256>,
-		_,
-	>(
-		&constraint_system,
-		LOG_INV_RATE,
-		SECURITY_BITS,
-		&statement.boundaries,
-		witness,
-		&binius_hal::make_portable_backend(),
-	)
-	.unwrap();
-
-	binius_core::constraint_system::verify::<
-		OptimalUnderlier128b,
-		CanonicalTowerFamily,
-		Groestl256,
-		Groestl256ByteCompression,
-		HasherChallenger<Groestl256>,
-	>(&constraint_system, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
-	.unwrap();
+	validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
 }

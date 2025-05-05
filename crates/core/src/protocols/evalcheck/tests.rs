@@ -1,8 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with, slice};
+use std::{array, iter::repeat_with};
 
-use assert_matches::assert_matches;
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	AESTowerField128b, BinaryField128b, BinaryField1b, ByteSliced16x128x1b, ByteSlicedAES16x128b,
@@ -17,15 +16,17 @@ use binius_math::{
 };
 use bytemuck::{cast_slice_mut, Pod};
 use itertools::Either;
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
+	fiat_shamir::HasherChallenger,
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
-		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckHint,
+		EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
 	},
+	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
 };
@@ -109,12 +110,15 @@ where
 		])
 		.unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+
+	verifier_state.verify(claims, &mut transcript).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -186,12 +190,14 @@ where
 		])
 		.unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
+	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims, proof).unwrap();
+	verifier_state.verify(claims, &mut transcript).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -282,11 +288,16 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -353,11 +364,16 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -412,7 +428,7 @@ where
 		.take(n_vars)
 		.collect::<Vec<_>>();
 
-	let eval = ArithCircuitPoly::new(&comp)
+	let eval = ArithCircuitPoly::new(comp)
 		.evaluate(&[
 			select_row1.evaluate(&eval_point).unwrap(),
 			select_row2.evaluate(&eval_point).unwrap(),
@@ -454,11 +470,16 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
+
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -514,13 +535,16 @@ where
 		.unwrap();
 
 	let backend = make_portable_backend();
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
-
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -563,8 +587,11 @@ where
 
 	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
 
+	let start_index = inner_n_vars;
+	let n_pad_vars = n_vars - inner_n_vars;
+	let nonzero_index = (1 << n_pad_vars) - 1;
 	let zero_padded_id = oracles
-		.add_zero_padded(select_row_oracle_id, n_vars)
+		.add_zero_padded(select_row_oracle_id, n_pad_vars, nonzero_index, start_index)
 		.unwrap();
 
 	let mut witness_index = MultilinearExtensionIndex::<PExtension>::new();
@@ -601,13 +628,16 @@ where
 	};
 
 	let backend = make_portable_backend();
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+	prover_state
+		.prove(vec![claim.clone()], &mut transcript)
+		.unwrap();
 
-	assert_matches!(proof[0], EvalcheckProof::ZeroPadded { .. });
-
+	let mut transcript = transcript.into_verifier();
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim], proof).unwrap();
+	verifier_state.verify(vec![claim], &mut transcript).unwrap();
 }
 
 #[test]
@@ -622,52 +652,19 @@ fn test_evalcheck_zero_padded() {
 // Test evalcheck serialization
 #[test]
 fn test_evalcheck_serialization() {
-	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Committed)
-	}
-
-	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
-		array::from_fn(|_| EvalcheckProof::Transparent)
-	}
-
-	fn rand_composite<'a, F: TowerField>(
-		elems: impl Iterator<Item = &'a EvalcheckProof<F>>,
-	) -> EvalcheckProof<F> {
-		let mut rng = thread_rng();
-		EvalcheckProof::LinearCombination {
-			subproofs: elems
-				.map(|x| (Some(F::random(&mut rng)), x.clone()))
-				.collect::<Vec<_>>(),
-		}
-	}
-
-	fn rand_repeating<F: TowerField>(inner: &EvalcheckProof<F>) -> EvalcheckProof<F> {
-		EvalcheckProof::Repeating(Box::new(inner.clone()))
-	}
-
-	let committed = rand_committed::<BinaryField128b, 10>();
-	let transparent = rand_transparent::<_, 20>();
-	let repeating = transparent.clone().map(|x| rand_repeating(&x));
-	let first_linear_combination =
-		rand_composite(committed[..10].iter().chain(repeating[..2].iter()));
-	let second_linear_combination = rand_composite(
-		slice::from_ref(&first_linear_combination)
-			.iter()
-			.chain(transparent[..20].iter()),
-	);
-
-	let mut transcript = crate::transcript::ProverTranscript::<
-		crate::fiat_shamir::HasherChallenger<Groestl256>,
-	>::new();
-
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut writer = transcript.message();
-	serialize_evalcheck_proof(&mut writer, &second_linear_combination);
+	serialize_evalcheck_proof(&mut writer, &EvalcheckHint::NewClaim);
+	serialize_evalcheck_proof(&mut writer, &EvalcheckHint::DuplicateClaim(6));
+
 	let mut transcript = transcript.into_verifier();
 	let mut reader = transcript.message();
 
-	let out_deserialized = deserialize_evalcheck_proof::<_, BinaryField128b>(&mut reader).unwrap();
+	let out_1 = deserialize_evalcheck_proof(&mut reader).unwrap();
+	let out_2 = deserialize_evalcheck_proof(&mut reader).unwrap();
 
-	assert_eq!(out_deserialized, second_linear_combination);
+	assert_eq!(out_1, EvalcheckHint::NewClaim);
+	assert_eq!(out_2, EvalcheckHint::DuplicateClaim(6));
 
 	transcript.finalize().unwrap()
 }

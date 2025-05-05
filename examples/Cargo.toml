@@ -27,8 +27,8 @@ tracing-profile.workspace = true
 tracing.workspace = true
 
 [[example]]
-name = "keccakf_circuit"
-path = "keccakf_circuit.rs"
+name = "keccak"
+path = "keccak.rs"
 
 [[example]]
 name = "u8mul"

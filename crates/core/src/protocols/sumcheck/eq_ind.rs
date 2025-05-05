@@ -1,9 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
-use binius_utils::{bail, sorting::is_sorted_ascending};
+use binius_math::{ArithCircuit, CompositionPoly};
+use binius_utils::bail;
 use getset::CopyGetters;
+use itertools::{izip, Either};
 
 use super::{
 	common::{CompositeSumClaim, SumcheckClaim},
@@ -72,15 +73,13 @@ where
 	}
 }
 
-/// Requirement: eq-ind sumcheck challenges have been sampled before this is called
+/// A reduction from a set of eq-ind sumcheck claims to the set of regular sumcheck claims.
+///
+/// Requirement: eq-ind sumcheck challenges have been sampled before this is called. This routine
+/// adds an extra multiplication by the equality indicator (which is the last multilinear, by agreement).
 pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
-	// Check that the claims are in descending order by n_vars
-	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		bail!(Error::ClaimsOutOfOrder);
-	}
-
 	claims
 		.iter()
 		.map(|eq_ind_sumcheck_claim| {
@@ -107,15 +106,22 @@ pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 		.collect()
 }
 
+/// Sorting order of the eq-ind sumcheck claims passed to [`verify_sumcheck_outputs`]
+pub enum ClaimsSortingOrder {
+	AscendingVars,
+	DescendingVars,
+}
+
 /// Verify the validity of the sumcheck outputs for a reduced eq-ind sumcheck.
 ///
 /// This takes in the output of the reduced sumcheck protocol and returns the output for the
 /// eq-ind sumcheck instance. This simply strips off the multilinear evaluation of the eq indicator
 /// polynomial and verifies that the value is correct.
 ///
-/// Note that due to univariatization of some rounds the number of challenges may be less than
-/// the maximum number of variables among claims.
+/// Sumcheck claims are given either in non-ascending or non-descending order, as specified by
+/// the `sorting_order` parameter.
 pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
+	sorting_order: ClaimsSortingOrder,
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 	eq_ind_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
@@ -129,30 +135,31 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 
-	// Check that the claims are in descending order by n_vars
-	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		bail!(Error::ClaimsOutOfOrder);
-	}
+	// Reverse claims/multilinear_evals order if needed.
+	let claims_evals_inner = izip!(claims, &mut multilinear_evals);
+	let claims_evals_non_desc = match sorting_order {
+		ClaimsSortingOrder::AscendingVars => Either::Left(claims_evals_inner),
+		ClaimsSortingOrder::DescendingVars => Either::Right(claims_evals_inner.rev()),
+	};
 
-	let max_n_vars = claims
-		.first()
-		.map(|claim| claim.n_vars())
-		.unwrap_or_default();
-
-	if sumcheck_challenges.len() > max_n_vars
-		|| eq_ind_challenges.len() != sumcheck_challenges.len()
-	{
+	if eq_ind_challenges.len() != sumcheck_challenges.len() {
 		bail!(VerificationError::NumberOfRounds);
 	}
 
+	// Incremental equality indicator computation by linear scan over claims in ascending `n_vars` order.
 	let mut eq_ind_eval = F::ONE;
 	let mut last_n_vars = 0;
-	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
+	for (claim, multilinear_evals) in claims_evals_non_desc {
 		if claim.n_multilinears() + 1 != multilinear_evals.len() {
 			bail!(VerificationError::NumberOfMultilinearEvals);
 		}
 
+		if claim.n_vars() < last_n_vars {
+			bail!(Error::ClaimsOutOfOrder);
+		}
+
 		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
+			// Equality indicator is evaluated at a suffix of appropriate length.
 			let sumcheck_challenge =
 				sumcheck_challenges[sumcheck_challenges.len() - 1 - last_n_vars];
 			let eq_ind_challenge = eq_ind_challenges[eq_ind_challenges.len() - 1 - last_n_vars];
@@ -174,7 +181,7 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 	})
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExtraProduct<Composition> {
 	pub inner: Composition,
 }
@@ -192,8 +199,8 @@ where
 		self.inner.degree() + 1
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::Var(self.inner.n_vars())
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		self.inner.expression() * ArithCircuit::var(self.inner.n_vars())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -213,36 +220,49 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::iter;
+	use std::{iter, sync::Arc};
 
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		packed::set_packed_slice,
 		underlier::UnderlierType,
-		BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
-		TowerField,
+		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
+		PackedBinaryField1x128b, PackedExtension, PackedField, PackedFieldIndexable,
+		PackedSubfield, RepackedExtension, TowerField,
 	};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{
+		make_portable_backend, ComputationBackend, ComputationBackendExt, SumcheckMultilinear,
+	};
 	use binius_hash::groestl::Groestl256;
 	use binius_math::{
-		DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
-		MultilinearPoly, MultilinearQuery,
+		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+		IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+		MultilinearQuery,
 	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	use crate::{
 		composition::BivariateProduct,
-		fiat_shamir::HasherChallenger,
+		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			sumcheck::{
-				self, immediate_switchover_heuristic,
-				prove::eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
-				CompositeSumClaim, EqIndSumcheckClaim,
+				self,
+				eq_ind::{ClaimsSortingOrder, ExtraProduct},
+				immediate_switchover_heuristic,
+				prove::{
+					eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
+					RegularSumcheckProver,
+				},
+				BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim,
 			},
-			test_utils::AddOneComposition,
+			test_utils::{
+				generate_zero_product_multilinears, AddOneComposition, TestProductComposition,
+			},
 		},
 		transcript::ProverTranscript,
+		transparent::eq_ind::EqIndPartialEval,
+		witness::MultilinearWitness,
 	};
 
 	fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(n_vars: usize)
@@ -350,7 +370,8 @@ mod tests {
 			}
 		);
 
-		let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
+		let _sumcheck_proof_output =
+			sumcheck::prove::batch_prove(vec![prover], &mut transcript).unwrap();
 
 		let mut verifier_transcript = transcript.into_verifier();
 
@@ -404,5 +425,291 @@ mod tests {
 			BinaryField128b,
 			BinaryField8b,
 		>(n_vars);
+	}
+
+	fn make_regular_sumcheck_prover_for_eq_ind_sumcheck<
+		'a,
+		'b,
+		F,
+		FDomain,
+		P,
+		Composition,
+		M,
+		Backend,
+	>(
+		multilinears: Vec<M>,
+		claims: &'b [CompositeSumClaim<F, Composition>],
+		challenges: &[F],
+		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+		switchover_fn: impl Fn(usize) -> usize,
+		backend: &'a Backend,
+	) -> RegularSumcheckProver<
+		'a,
+		FDomain,
+		P,
+		ExtraProduct<&'b Composition>,
+		MultilinearWitness<'static, P>,
+		Backend,
+	>
+	where
+		F: Field,
+		FDomain: Field,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
+		Composition: CompositionPoly<P>,
+		M: MultilinearPoly<P> + Send + Sync + 'static,
+		Backend: ComputationBackend,
+	{
+		let eq_ind = EqIndPartialEval::new(challenges)
+			.multilinear_extension::<P, _>(backend)
+			.unwrap();
+
+		let multilinears = multilinears
+			.into_iter()
+			.map(|multilin| Arc::new(multilin) as Arc<dyn MultilinearPoly<_> + Send + Sync>)
+			.chain([eq_ind.specialize_arc_dyn()])
+			.collect();
+
+		let composite_sum_claims =
+			claims
+				.iter()
+				.map(|CompositeSumClaim { composition, sum }| CompositeSumClaim {
+					composition: ExtraProduct { inner: composition },
+					sum: *sum,
+				});
+		RegularSumcheckProver::new(
+			EvaluationOrder::HighToLow,
+			multilinears,
+			composite_sum_claims,
+			evaluation_domain_factory,
+			switchover_fn,
+			backend,
+		)
+		.unwrap()
+	}
+
+	fn test_compare_prover_with_reference(
+		n_vars: usize,
+		n_multilinears: usize,
+		switchover_rd: usize,
+	) {
+		type P = PackedBinaryField1x128b;
+		type FBase = BinaryField32b;
+		type FDomain = BinaryField8b;
+		let mut rng = StdRng::seed_from_u64(0);
+
+		// Setup ZC Witness
+		let multilins = generate_zero_product_multilinears::<PackedSubfield<P, FBase>, P>(
+			&mut rng,
+			n_vars,
+			n_multilinears,
+		);
+
+		let mut prove_transcript_1 = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let backend = make_portable_backend();
+		let challenges = prove_transcript_1.sample_vec(n_vars);
+
+		let composite_claim = CompositeSumClaim {
+			composition: TestProductComposition::new(n_multilinears),
+			sum: Field::ZERO,
+		};
+
+		let composite_claims = [composite_claim];
+
+		let switchover_fn = |_| switchover_rd;
+
+		let sumcheck_multilinears = multilins
+			.iter()
+			.cloned()
+			.map(|multilin| SumcheckMultilinear::transparent(multilin, &switchover_fn))
+			.collect::<Vec<_>>();
+
+		sumcheck::prove::eq_ind::validate_witness(
+			n_vars,
+			&sumcheck_multilinears,
+			&challenges,
+			composite_claims.clone(),
+		)
+		.unwrap();
+
+		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+		let reference_prover =
+			make_regular_sumcheck_prover_for_eq_ind_sumcheck::<_, FDomain, _, _, _, _>(
+				multilins.clone(),
+				&composite_claims,
+				&challenges,
+				domain_factory.clone(),
+				|_| switchover_rd,
+				&backend,
+			);
+
+		let BatchSumcheckOutput {
+			challenges: sumcheck_challenges_1,
+			multilinear_evals: multilinear_evals_1,
+		} = sumcheck::batch_prove(vec![reference_prover], &mut prove_transcript_1).unwrap();
+
+		let optimized_prover =
+			EqIndSumcheckProverBuilder::with_switchover(multilins, switchover_fn, &backend)
+				.unwrap()
+				.build::<FDomain, _>(
+					EvaluationOrder::HighToLow,
+					&challenges,
+					composite_claims,
+					domain_factory,
+				)
+				.unwrap();
+
+		let mut prove_transcript_2 = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let _: Vec<BinaryField128b> = prove_transcript_2.sample_vec(n_vars);
+		let BatchSumcheckOutput {
+			challenges: sumcheck_challenges_2,
+			multilinear_evals: multilinear_evals_2,
+		} = sumcheck::batch_prove(vec![optimized_prover], &mut prove_transcript_2).unwrap();
+
+		assert_eq!(prove_transcript_1.finalize(), prove_transcript_2.finalize());
+		assert_eq!(multilinear_evals_1, multilinear_evals_2);
+		assert_eq!(sumcheck_challenges_1, sumcheck_challenges_2);
+	}
+
+	fn test_prove_verify_product_constraint_helper(
+		n_vars: usize,
+		n_multilinears: usize,
+		switchover_rd: usize,
+	) {
+		type P = PackedBinaryField1x128b;
+		type FBase = BinaryField32b;
+		type FE = BinaryField128b;
+		type FDomain = BinaryField8b;
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let multilins = generate_zero_product_multilinears::<PackedSubfield<P, FBase>, P>(
+			&mut rng,
+			n_vars,
+			n_multilinears,
+		);
+
+		let mut prove_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let challenges = prove_transcript.sample_vec(n_vars);
+
+		let composite_claim = CompositeSumClaim {
+			composition: TestProductComposition::new(n_multilinears),
+			sum: Field::ZERO,
+		};
+
+		let composite_claims = vec![composite_claim];
+
+		let switchover_fn = |_| switchover_rd;
+
+		let sumcheck_multilinears = multilins
+			.iter()
+			.cloned()
+			.map(|multilin| SumcheckMultilinear::transparent(multilin, &switchover_fn))
+			.collect::<Vec<_>>();
+
+		sumcheck::prove::eq_ind::validate_witness(
+			n_vars,
+			&sumcheck_multilinears,
+			&challenges,
+			composite_claims.clone(),
+		)
+		.unwrap();
+
+		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+		let backend = make_portable_backend();
+
+		let prover =
+			EqIndSumcheckProverBuilder::with_switchover(multilins.clone(), switchover_fn, &backend)
+				.unwrap()
+				.build::<FDomain, _>(
+					EvaluationOrder::HighToLow,
+					&challenges,
+					composite_claims.clone(),
+					domain_factory,
+				)
+				.unwrap();
+
+		let prove_output =
+			sumcheck::prove::batch_prove(vec![prover], &mut prove_transcript).unwrap();
+
+		let eq_ind_sumcheck_claim =
+			EqIndSumcheckClaim::new(n_vars, n_multilinears, composite_claims).unwrap();
+		let eq_ind_sumcheck_claims = vec![eq_ind_sumcheck_claim];
+
+		let BatchSumcheckOutput {
+			challenges: prover_eval_point,
+			multilinear_evals: prover_multilinear_evals,
+		} = sumcheck::eq_ind::verify_sumcheck_outputs(
+			ClaimsSortingOrder::AscendingVars,
+			&eq_ind_sumcheck_claims,
+			&challenges,
+			prove_output,
+		)
+		.unwrap();
+
+		let prover_sample = CanSample::<FE>::sample(&mut prove_transcript);
+		let mut verify_transcript = prove_transcript.into_verifier();
+		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
+
+		let regular_sumcheck_claims =
+			sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims).unwrap();
+
+		let verifier_output = sumcheck::batch_verify(
+			EvaluationOrder::HighToLow,
+			&regular_sumcheck_claims,
+			&mut verify_transcript,
+		)
+		.unwrap();
+
+		let BatchSumcheckOutput {
+			challenges: verifier_eval_point,
+			multilinear_evals: verifier_multilinear_evals,
+		} = sumcheck::eq_ind::verify_sumcheck_outputs(
+			ClaimsSortingOrder::AscendingVars,
+			&eq_ind_sumcheck_claims,
+			&challenges,
+			verifier_output,
+		)
+		.unwrap();
+
+		// Check that challengers are in the same state
+		assert_eq!(prover_sample, CanSample::<FE>::sample(&mut verify_transcript));
+		verify_transcript.finalize().unwrap();
+
+		assert_eq!(prover_eval_point, verifier_eval_point);
+		assert_eq!(prover_multilinear_evals, verifier_multilinear_evals);
+
+		assert_eq!(verifier_multilinear_evals.len(), 1);
+		assert_eq!(verifier_multilinear_evals[0].len(), n_multilinears);
+
+		// Verify the reduced multilinear evaluations are correct
+		let multilin_query = backend.multilinear_query(&verifier_eval_point).unwrap();
+		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
+			assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
+		}
+	}
+
+	#[test]
+	fn test_compare_eq_ind_prover_to_regular_sumcheck() {
+		for n_vars in 2..8 {
+			for n_multilinears in 1..5 {
+				for switchover_rd in 1..=n_vars / 2 {
+					test_compare_prover_with_reference(n_vars, n_multilinears, switchover_rd);
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn test_prove_verify_product_basic() {
+		for n_vars in 2..8 {
+			for n_multilinears in 1..5 {
+				for switchover_rd in 1..=n_vars / 2 {
+					test_prove_verify_product_constraint_helper(
+						n_vars,
+						n_multilinears,
+						switchover_rd,
+					);
+				}
+			}
+		}
 	}
 }

@@ -13,6 +13,7 @@ use binius_field::{
 	packed::pack_slice,
 	ExtensionField, TowerField,
 };
+use binius_math::ArithCircuit;
 use binius_utils::{
 	checked_arithmetics::{checked_log_2, log2_ceil_usize, log2_strict_usize},
 	sparse_index::SparseIndex,
@@ -20,12 +21,13 @@ use binius_utils::{
 
 use super::{
 	channel::Flush,
-	column::{Col, ColumnDef, ColumnInfo, ColumnShape},
+	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
+	stat::TableStat,
+	structured::StructuredDynSize,
 	types::B128,
 	upcast_col, ColumnIndex, FlushOpts, B1,
 };
-use crate::builder::column::ColumnId;
 
 pub type TableId = usize;
 
@@ -36,6 +38,7 @@ pub struct TableBuilder<'a, F: TowerField = B128> {
 }
 
 impl<'a, F: TowerField> TableBuilder<'a, F> {
+	/// Returns a new `TableBuilder` for the given table.
 	pub fn new(table: &'a mut Table<F>) -> Self {
 		Self {
 			namespace: None,
@@ -44,9 +47,41 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	pub fn require_power_of_two_size(&mut self) {
-		self.table.power_of_two_sized = true;
+		self.table.table_size_spec = TableSizeSpec::PowerOfTwo;
 	}
 
+	pub fn require_fixed_size(&mut self, log_size: usize) {
+		self.table.table_size_spec = TableSizeSpec::Fixed { log_size };
+	}
+
+	/// Returns a new `TableBuilder` with the specified namespace.
+	///
+	/// A namespace is a prefix that will be prepended to all column names and zero constraints
+	/// created by this builder. The new namespace is nested within the current builder's namespace
+	/// (if any exists). When nesting namespaces, they are joined with "::" separators, creating a
+	/// hierarchical naming structure.
+	///
+	/// # Note
+	///
+	/// This method doesn't modify the original builder. It returns a new builder that shares
+	/// the underlying table but has its own namespace configuration that builds upon the
+	/// original builder's namespace.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// # use binius_m3::builder::{B128, Col, Table, TableBuilder};
+	/// let mut table = Table::<B128>::new(0, "table");
+	/// let mut tb = TableBuilder::new(&mut table);
+	///
+	/// // Create a builder with namespace "arithmetic"
+	/// let mut arithmetic_tb = tb.with_namespace("arithmetic");
+	/// let add_col: Col<B128> = arithmetic_tb.add_committed("add"); // Column name: "arithmetic::add"
+	///
+	/// // Create a nested namespace "arithmetic::mul"
+	/// let mut mul_tb = arithmetic_tb.with_namespace("mul");
+	/// let result_col: Col<B128> = mul_tb.add_committed("result"); // Column name: "arithmetic::mul::result"
+	/// ```
 	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
 		TableBuilder {
 			namespace: Some(self.namespaced_name(namespace)),
@@ -54,6 +89,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		}
 	}
 
+	/// Returns the [`TableId`] of the underlying table.
 	pub fn id(&self) -> TableId {
 		self.table.id()
 	}
@@ -144,8 +180,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let partition_indexes = expr
-			.expr()
+		let expr_circuit = ArithCircuit::from(expr.expr());
+		let partition_indexes = expr_circuit
 			.vars_usage()
 			.iter()
 			.enumerate()
@@ -160,12 +196,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			})
 			.collect::<Vec<_>>();
 
-		let mut var_remapping = vec![0; expr.expr().n_vars()];
+		let mut var_remapping = vec![0; expr_circuit.n_vars()];
 		for (new_index, &old_index) in partition_indexes.iter().enumerate() {
 			var_remapping[old_index] = new_index;
 		}
-		let remapped_expr = expr
-			.expr()
+		let remapped_expr = expr_circuit
 			.convert_field()
 			.remap_vars(&var_remapping)
 			.expect("var_remapping should be large enought");
@@ -227,6 +262,69 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 				start_index: log_new_values_per_row,
 				query_size: log_query_size,
 				query_bits: index,
+			},
+		)
+	}
+
+	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables) by left
+	/// padding each FSub element with zeroes.
+	pub fn add_zero_pad_upcast<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let n_pad_vars = log_new_values_per_row - log_values_per_row;
+		let nonzero_index = (1 << n_pad_vars) - 1;
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::ZeroPadded {
+				col: col.id(),
+				n_pad_vars,
+				start_index: log_values_per_row,
+				nonzero_index,
+			},
+		)
+	}
+
+	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables).
+	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to 0.
+	/// Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
+	pub fn add_zero_pad<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, VALUES_PER_ROW>,
+		nonzero_index: usize,
+	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
+		assert!(NEW_VALUES_PER_ROW > VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let n_pad_vars = log_new_values_per_row - log_values_per_row;
+		assert!(nonzero_index < 1 << n_pad_vars);
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::ZeroPadded {
+				col: col.id(),
+				n_pad_vars,
+				start_index: log_values_per_row,
+				nonzero_index,
 			},
 		)
 	}
@@ -331,6 +429,44 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Add a structured column to a table.
+	///
+	/// A structured column is one that has sufficient structure that its multilinear extension
+	/// can be evaluated succinctly. See [`StructuredDynSize`] for more information.
+	pub fn add_structured<FSub>(
+		&mut self,
+		name: impl ToString,
+		variant: StructuredDynSize,
+	) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(
+			self.table.is_power_of_two_sized(),
+			"Structured dynamic size columns may only be added to tables that are power of two sized"
+		);
+		let namespaced_name = self.namespaced_name(name);
+		self.table
+			.new_column(namespaced_name, ColumnDef::StructuredDynSize(variant))
+	}
+
+	/// Add a structured fixed-size column to a table.
+	pub fn add_fixed<FSub>(&mut self, name: impl ToString, expr: ArithCircuit<F>) -> Col<FSub>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert!(
+			matches!(self.table.table_size_spec, TableSizeSpec::Fixed { log_size } if log_size == expr.n_vars()),
+			"Structured fixed-size columns may only be added to tables with a fixed log_size that matches the n_vars of the expression"
+		);
+
+		let namespaced_name = self.namespaced_name(name);
+		self.table
+			.new_column(namespaced_name, ColumnDef::StructuredFixedSize { expr })
+	}
+
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -339,9 +475,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
+		let namespaced_name = self.namespaced_name(name);
 		self.table
 			.partition_mut(VALUES_PER_ROW)
-			.assert_zero(name, expr)
+			.assert_zero(namespaced_name, expr)
 	}
 
 	/// Constrains that all values contained in this column are non-zero.
@@ -428,8 +565,8 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	/// Whether the table size is required to be a power of two.
-	pub power_of_two_sized: bool,
+	/// the size specification of a table
+	table_size_spec: TableSizeSpec,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
@@ -465,11 +602,10 @@ impl<F: TowerField> TablePartition<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		// TODO: Should we dynamically keep track of FSub::TOWER_LEVEL?
-		// On the other hand, ArithExpr does introspect that already
 		self.zero_constraints.push(ZeroConstraint {
+			tower_level: FSub::TOWER_LEVEL,
 			name: name.to_string(),
-			expr: expr.expr().convert_field(),
+			expr: ArithCircuit::from(expr.expr()).convert_field(),
 		});
 	}
 
@@ -507,7 +643,7 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
-			power_of_two_sized: false,
+			table_size_spec: TableSizeSpec::Arbitrary,
 			partitions: SparseIndex::new(),
 		}
 	}
@@ -565,8 +701,45 @@ impl<F: TowerField> Table<F> {
 			.entry(log2_strict_usize(values_per_row))
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
+
+	pub fn is_power_of_two_sized(&self) -> bool {
+		matches!(self.table_size_spec, TableSizeSpec::PowerOfTwo)
+	}
+
+	pub fn stat(&self) -> TableStat {
+		TableStat::new(self)
+	}
 }
 
 const fn partition_id<const V: usize>() -> usize {
 	checked_log_2(V)
+}
+
+/// A category of the size specification of a table.
+///
+/// M3 tables can have size restrictions, where certain columns, specifically structured columns,
+/// are only allowed for certain size specifications.
+#[derive(Debug)]
+enum TableSizeSpec {
+	/// The table size may be arbitrary.
+	Arbitrary,
+	/// The table size may be any power of two.
+	PowerOfTwo,
+	/// The table size must be a fixed power of two.
+	Fixed { log_size: usize },
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{Table, TableBuilder};
+	use crate::builder::B128;
+
+	#[test]
+	fn namespace_nesting() {
+		let mut table = Table::<B128>::new(0, "table");
+		let mut tb = TableBuilder::new(&mut table);
+		let mut tb_ns_1 = tb.with_namespace("ns1");
+		let tb_ns_2 = tb_ns_1.with_namespace("ns2");
+		assert_eq!(tb_ns_2.namespaced_name("column"), "ns1::ns2::column");
+	}
 }

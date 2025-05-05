@@ -12,7 +12,9 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
-	arch::byte_sliced::underlier::ByteSlicedUnderlier,
+	arch::{
+		byte_sliced::underlier::ByteSlicedUnderlier, portable::packed_scaled::ScaledPackedField,
+	},
 	as_packed_field::{PackScalar, PackedType},
 	binary_field::BinaryField,
 	linear_transformation::{
@@ -272,6 +274,8 @@ macro_rules! define_byte_sliced_3d {
 					},
 				)
 			}
+
+			impl_spread!($name, $scalar_type, $packed_storage, $storage_tower_level);
 		}
 
 		impl Mul for $name {
@@ -404,6 +408,34 @@ macro_rules! impl_init_with_transpose {
 			Self {
 				data: bytemuck::must_cast(data),
 			}
+		}
+	};
+}
+
+macro_rules! impl_spread {
+	($name:ident, $scalar_type:ty, $packed_storage:ty, $storage_tower_level:ty) => {
+		#[inline]
+		unsafe fn spread_unchecked(mut self, log_block_len: usize, block_idx: usize) -> Self {
+			{
+				let data: &mut [$packed_storage; Self::HEIGHT_BYTES] =
+					bytemuck::must_cast_mut(&mut self.data);
+				let underliers = WithUnderlier::to_underliers_arr_ref_mut(data);
+				UnderlierWithBitOps::transpose_bytes_from_byte_sliced::<$storage_tower_level>(
+					underliers,
+				);
+			}
+
+			type PackedSequentialField =
+				<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed;
+			let scaled_data: ScaledPackedField<PackedSequentialField, { Self::HEIGHT_BYTES }> =
+				bytemuck::must_cast(self);
+
+			let mut result = scaled_data.spread_unchecked(log_block_len, block_idx);
+			let data: &mut [$packed_storage; Self::HEIGHT_BYTES] =
+				bytemuck::must_cast_mut(&mut result);
+			let underliers = WithUnderlier::to_underliers_arr_ref_mut(data);
+			UnderlierWithBitOps::transpose_bytes_to_byte_sliced::<$storage_tower_level>(underliers);
+			bytemuck::must_cast(result)
 		}
 	};
 }
@@ -791,6 +823,8 @@ macro_rules! define_byte_sliced_3d_1b {
 					)
 				}
 			}
+
+			impl_spread!($name, BinaryField1b, $packed_storage, $storage_tower_level);
 		}
 
 		impl Mul for $name {

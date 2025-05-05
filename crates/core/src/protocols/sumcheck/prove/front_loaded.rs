@@ -6,7 +6,7 @@ use binius_field::{Field, TowerField};
 use binius_utils::sorting::is_sorted_ascending;
 use bytes::BufMut;
 
-use super::batch_prove::SumcheckProver;
+use super::batch_sumcheck::SumcheckProver;
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},
@@ -32,6 +32,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BatchProver<F: Field, Prover> {
 	provers: VecDeque<(Prover, F)>,
+	multilinear_evals: Vec<Vec<F>>,
 	round: usize,
 }
 
@@ -51,8 +52,25 @@ where
 	where
 		Transcript: CanSample<F>,
 	{
+		// Sample batch mixing coefficients
+		let batch_coeffs = transcript.sample_vec(provers.len());
+
+		Self::new_prebatched(batch_coeffs, provers)
+	}
+
+	/// Constructs a new prover for the front-loaded batched sumcheck with
+	/// specified batching coefficients.
+	///
+	/// ## Throws
+	///
+	/// * if the claims are not sorted in ascending order by number of variables
+	pub fn new_prebatched(batch_coeffs: Vec<F>, provers: Vec<Prover>) -> Result<Self, Error> {
 		if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars())) {
 			return Err(Error::ClaimsOutOfOrder);
+		}
+
+		if batch_coeffs.len() != provers.len() {
+			return Err(Error::IncorrectNumberOfBatchCoeffs);
 		}
 
 		if let Some(first_prover) = provers.first() {
@@ -64,11 +82,13 @@ where
 			}
 		}
 
-		// Sample batch mixing coefficients
-		let batch_coeffs = transcript.sample_vec(provers.len());
 		let provers = iter::zip(provers, batch_coeffs).collect();
 
-		Ok(Self { provers, round: 0 })
+		Ok(Self {
+			provers,
+			multilinear_evals: Vec::new(),
+			round: 0,
+		})
 	}
 
 	fn finish_claim_provers<B>(&mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
@@ -80,8 +100,9 @@ where
 				break;
 			}
 			let (prover, _) = self.provers.pop_front().expect("front returned Some");
-			let multilinear_evals = Box::new(prover).finish()?;
-			transcript.write_scalar_slice(&multilinear_evals);
+			let claim_multilinear_evals = Box::new(prover).finish()?;
+			transcript.write_scalar_slice(&claim_multilinear_evals);
+			self.multilinear_evals.push(claim_multilinear_evals);
 		}
 		Ok(())
 	}
@@ -120,7 +141,7 @@ where
 	}
 
 	/// Finishes the remaining instance provers and checks that all rounds are completed.
-	pub fn finish<B>(mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
+	pub fn finish<B>(mut self, transcript: &mut TranscriptWriter<B>) -> Result<Vec<Vec<F>>, Error>
 	where
 		B: BufMut,
 	{
@@ -128,7 +149,8 @@ where
 		if !self.provers.is_empty() {
 			return Err(Error::ExpectedFold);
 		}
-		Ok(())
+
+		Ok(self.multilinear_evals)
 	}
 
 	/// Returns the iterator over the provers.

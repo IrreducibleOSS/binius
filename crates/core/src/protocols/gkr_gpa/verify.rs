@@ -13,7 +13,9 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{self, CompositeSumClaim, EqIndSumcheckClaim},
+	protocols::sumcheck::{
+		self, eq_ind::ClaimsSortingOrder, CompositeSumClaim, EqIndSumcheckClaim,
+	},
 	transcript::VerifierTranscript,
 };
 
@@ -85,7 +87,7 @@ fn process_finished_claims<F: Field>(
 			break;
 		}
 
-		debug_assert!(layer_no > 0);
+		debug_assert!(!layer_claims.is_empty());
 		debug_assert_eq!(sorted_claims.len(), layer_claims.len());
 		let finished_layer_claim = layer_claims.pop().expect("must exist");
 		let _ = sorted_claims.pop().expect("must exist");
@@ -152,6 +154,7 @@ where
 		sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
 
 	let batch_sumcheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		ClaimsSortingOrder::DescendingVars,
 		&eq_ind_sumcheck_claims,
 		curr_layer_challenge,
 		batch_sumcheck_output,

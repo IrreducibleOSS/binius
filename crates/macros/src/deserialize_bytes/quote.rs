@@ -159,8 +159,8 @@ impl ToTokens for WhereClause<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-	use ::quote::quote;
 	use proc_macro2::TokenStream;
+	use quote::quote;
 	use syn::ItemStruct;
 
 	use crate::deserialize_bytes::{parse::ContainerAttributes, GenericsSplit};

@@ -20,7 +20,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	BinaryField1b,
 };
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 use binius_utils::bail;
 
 use crate::builder::{
@@ -213,7 +213,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		&mut self,
 		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-		composition: ArithExpr<F>,
+		composition: ArithCircuit<F>,
 	) {
 		self.constraints
 			.add_zerocheck(name, oracle_ids, composition);
@@ -326,7 +326,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
-		comp: ArithExpr<F>,
+		comp: ArithCircuit<F>,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
@@ -410,16 +410,26 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.transparent(poly)
 	}
 
+	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars` variables.
+	///
+	/// Arguments:
+	/// - `name`: The name of the oracle.
+	/// - `id`: The id of the oracle.
+	/// - `n_pad_vars`: The number of padding variables in the new column.
+	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1 << m`,
+	///   and it is the index of the nonzero block.
 	pub fn add_zero_padded(
 		&mut self,
 		name: impl ToString,
 		id: OracleId,
-		n_vars: usize,
+		n_pad_vars: usize,
+		nonzero_index: usize,
+		start_index: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.zero_padded(id, n_vars)
+			.zero_padded(id, n_pad_vars, nonzero_index, start_index)
 	}
 
 	fn scoped_name(&self, name: impl ToString) -> String {

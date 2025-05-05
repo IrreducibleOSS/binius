@@ -5,7 +5,7 @@ use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::bail;
 
-use super::{RegularSumcheckProver, UnivariateZerocheck};
+use super::{RegularSumcheckProver, ZerocheckProverImpl};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
 	polynomial::ArithCircuitPoly,
@@ -15,15 +15,7 @@ use crate::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
-pub type OracleZerocheckProver<
-	'a,
-	P,
-	FBase,
-	FDomain,
-	InterpolationDomainFactory,
-	SwitchoverFn,
-	Backend,
-> = UnivariateZerocheck<
+pub type OracleZerocheckProver<'a, P, FBase, FDomain, DomainFactory, Backend> = ZerocheckProverImpl<
 	'a,
 	FDomain,
 	FBase,
@@ -31,8 +23,7 @@ pub type OracleZerocheckProver<
 	ArithCircuitPoly<FBase>,
 	ArithCircuitPoly<<P as PackedField>::Scalar>,
 	MultilinearWitness<'a, P>,
-	InterpolationDomainFactory,
-	SwitchoverFn,
+	DomainFactory,
 	Backend,
 >;
 
@@ -46,26 +37,13 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 >;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-pub fn constraint_set_zerocheck_prover<
-	'a,
-	P,
-	F,
-	FBase,
-	FDomain,
-	InterpolationDomainFactory,
-	SwitchoverFn,
-	Backend,
->(
+pub fn constraint_set_zerocheck_prover<'a, P, F, FBase, FDomain, DomainFactory, Backend>(
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
-	interpolation_domain_factory: InterpolationDomainFactory,
-	switchover_fn: SwitchoverFn,
+	domain_factory: DomainFactory,
 	zerocheck_challenges: &[F],
 	backend: &'a Backend,
-) -> Result<
-	OracleZerocheckProver<'a, P, FBase, FDomain, InterpolationDomainFactory, SwitchoverFn, Backend>,
-	Error,
->
+) -> Result<OracleZerocheckProver<'a, P, FBase, FDomain, DomainFactory, Backend>, Error>
 where
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -74,8 +52,7 @@ where
 	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
-	InterpolationDomainFactory: EvaluationDomainFactory<FDomain>,
-	SwitchoverFn: Fn(usize) -> usize + Clone,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
 {
 	let mut zeros = Vec::with_capacity(constraints.len());
@@ -93,20 +70,19 @@ where
 			ConstraintPredicate::Zero => {
 				zeros.push((
 					name,
-					ArithCircuitPoly::with_n_vars_circuit(multilinears.len(), composition_base)?,
-					ArithCircuitPoly::with_n_vars_circuit(multilinears.len(), composition)?,
+					ArithCircuitPoly::with_n_vars(multilinears.len(), composition_base)?,
+					ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
 				));
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
 
-	let prover = OracleZerocheckProver::<_, _, FDomain, _, _, _>::new(
+	let prover = OracleZerocheckProver::<_, _, FDomain, _, _>::new(
 		multilinears,
 		zeros,
 		zerocheck_challenges,
-		interpolation_domain_factory,
-		switchover_fn,
+		domain_factory,
 		backend,
 	)?;
 
@@ -140,10 +116,7 @@ where
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars_circuit(
-					multilinears.len(),
-					composition,
-				)?,
+				composition: ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),

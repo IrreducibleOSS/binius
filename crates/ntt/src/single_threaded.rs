@@ -25,8 +25,7 @@ impl<F: BinaryField> SingleThreadedNTT<F> {
 	/// on-the-fly computed twiddle factors.
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
 		let subspace = BinarySubspace::with_dim(log_domain_size)?;
-		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
-		Ok(Self::with_twiddle_access(twiddle_access))
+		Self::with_subspace(&subspace)
 	}
 
 	/// Constructs an NTT over an isomorphic subspace for the given domain field using on-the-fly
@@ -37,7 +36,11 @@ impl<F: BinaryField> SingleThreadedNTT<F> {
 		F: From<FDomain>,
 	{
 		let subspace = BinarySubspace::<FDomain>::with_dim(log_domain_size)?.isomorphic();
-		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
+		Self::with_subspace(&subspace)
+	}
+
+	pub fn with_subspace(subspace: &BinarySubspace<F>) -> Result<Self, Error> {
+		let twiddle_access = OnTheFlyTwiddleAccess::generate(subspace)?;
 		Ok(Self::with_twiddle_access(twiddle_access))
 	}
 

@@ -13,7 +13,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
-use binius_math::LinearNormalForm;
+use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bumpalo::Bump;
 use itertools::chain;
@@ -26,7 +26,7 @@ use super::{
 	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
-	Table, TableBuilder,
+	Table, TableBuilder, ZeroConstraint,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -182,7 +182,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.power_of_two_sized {
+			if table.is_power_of_two_sized() {
 				if !count.is_power_of_two() {
 					return Err(Error::TableSizePowerOfTwoRequired {
 						table_id: table.id,
@@ -279,7 +279,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				});
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down = (!table.power_of_two_sized)
+				let step_down = (!table.is_power_of_two_sized())
 					.then(|| {
 						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
 						oracles.add_transparent(step_down_poly)
@@ -319,21 +319,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 				}
 
 				if !zero_constraints.is_empty() {
-					// Translate zero constraints for the compiled constraint system.
-					let compiled_constraints = zero_constraints
-						.iter()
-						.map(|zero_constraint| Constraint {
-							name: zero_constraint.name.clone(),
-							composition: (&zero_constraint.expr).into(),
-							predicate: ConstraintPredicate::Zero,
-						})
-						.collect::<Vec<_>>();
-
-					table_constraints.push(ConstraintSet {
-						n_vars,
-						oracle_ids: partition_oracle_ids,
-						constraints: compiled_constraints,
-					});
+					let constraint_set =
+						translate_constraint_set(n_vars, zero_constraints, partition_oracle_ids);
+					table_constraints.push(constraint_set);
 				}
 			}
 		}
@@ -407,6 +395,17 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect();
 			addition.projected(oracle_lookup[col.table_index], query_values, *start_index)?
 		}
+		ColumnDef::ZeroPadded {
+			col,
+			n_pad_vars,
+			start_index,
+			nonzero_index,
+		} => addition.zero_padded(
+			oracle_lookup[col.table_index],
+			*n_pad_vars,
+			*nonzero_index,
+			*start_index,
+		)?,
 		ColumnDef::Shifted {
 			col,
 			offset,
@@ -444,6 +443,11 @@ fn add_oracle_for_column<F: TowerField>(
 			transparent_single[id.table_index].unwrap(),
 			n_vars - shape.log_values_per_row,
 		)?,
+		ColumnDef::StructuredDynSize(structured) => {
+			let expr = structured.expr(n_vars)?;
+			addition.transparent(ArithCircuit::from(&expr))?
+		}
+		ColumnDef::StructuredFixedSize { expr } => addition.transparent(expr.clone())?,
 		ColumnDef::StaticExp {
 			base_tower_level, ..
 		} => addition.committed(n_vars, *base_tower_level),
@@ -452,6 +456,71 @@ fn add_oracle_for_column<F: TowerField>(
 		} => addition.committed(n_vars, *base_tower_level),
 	};
 	Ok(oracle_id)
+}
+
+/// Translates a set of zero constraints from a particular table partition into a constraint set.
+///
+/// The resulting constraint set will only contain oracles that were actually referenced from any
+/// of the constraint expressions.
+fn translate_constraint_set<F: TowerField>(
+	n_vars: usize,
+	zero_constraints: &[ZeroConstraint<F>],
+	partition_oracle_ids: Vec<usize>,
+) -> ConstraintSet<F> {
+	// We need to figure out which oracle ids from the entire set of the partition oracles is
+	// actually referenced in every zero constraint expressions.
+	let mut oracle_appears_in_expr = vec![false; partition_oracle_ids.len()];
+	let mut n_used_oracles = 0usize;
+	for zero_contraint in zero_constraints {
+		let vars_usage = zero_contraint.expr.vars_usage();
+		for (oracle_index, used) in vars_usage.iter().enumerate() {
+			if *used && !oracle_appears_in_expr[oracle_index] {
+				oracle_appears_in_expr[oracle_index] = true;
+				n_used_oracles += 1;
+			}
+		}
+	}
+
+	// Now that we've got the set of oracle ids that appear in the expr we are going to create
+	// a new list of oracle ids each of which is used. Along the way we create a new mapping table
+	// that maps the original oracle index to the new index in the dense list.
+	const INVALID_SENTINEL: usize = usize::MAX;
+	let mut remap_indices_table = vec![INVALID_SENTINEL; partition_oracle_ids.len()];
+	let mut dense_oracle_ids = Vec::with_capacity(n_used_oracles);
+	for (i, &used) in oracle_appears_in_expr.iter().enumerate() {
+		if !used {
+			continue;
+		}
+		let dense_index = dense_oracle_ids.len();
+		dense_oracle_ids.push(partition_oracle_ids[i]);
+		remap_indices_table[i] = dense_index;
+	}
+
+	// Translate zero constraints for the compiled constraint system.
+	let compiled_constraints = zero_constraints
+		.iter()
+		.map(|zero_constraint| {
+			let expr = zero_constraint
+				.expr
+				.clone()
+				.remap_vars(&remap_indices_table)
+				.expect(
+					"the expr must have the same length as partition_oracle_ids which is the\
+				 same length of remap_indices_table",
+				);
+			Constraint {
+				name: zero_constraint.name.clone(),
+				composition: expr,
+				predicate: ConstraintPredicate::Zero,
+			}
+		})
+		.collect::<Vec<_>>();
+
+	ConstraintSet {
+		n_vars,
+		oracle_ids: dense_oracle_ids,
+		constraints: compiled_constraints,
+	}
 }
 
 #[cfg(test)]

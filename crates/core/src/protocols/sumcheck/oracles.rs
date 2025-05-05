@@ -4,9 +4,12 @@ use std::iter;
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::EvaluationOrder;
-use binius_utils::bail;
+use binius_utils::{bail, sorting::is_sorted_ascending};
 
-use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
+use super::{
+	BatchSumcheckOutput, BatchZerocheckOutput, CompositeSumClaim, Error, SumcheckClaim,
+	ZerocheckClaim,
+};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
 	polynomial::ArithCircuitPoly,
@@ -42,7 +45,7 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?,
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),
@@ -71,7 +74,7 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Zero => {
-				zeros.push(ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?)
+				zeros.push(ArithCircuitPoly::with_n_vars(n_multilinears, composition)?)
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
@@ -100,6 +103,11 @@ pub fn make_eval_claims<F: TowerField>(
 	batch_sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let metas = metas.into_iter().collect::<Vec<_>>();
+
+	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars).rev()) {
+		bail!(Error::ClaimsOutOfOrder);
+	}
+
 	let max_n_vars = metas.first().map_or(0, |meta| meta.n_vars);
 
 	if metas.len() != batch_sumcheck_output.multilinear_evals.len() {
@@ -131,6 +139,66 @@ pub fn make_eval_claims<F: TowerField>(
 
 			evalcheck_claims.push(claim);
 		}
+	}
+
+	Ok(evalcheck_claims)
+}
+
+/// Construct eval claims from the batched zerocheck output.
+pub fn make_zerocheck_eval_claims<F: Field>(
+	metas: impl IntoIterator<Item = OracleClaimMeta>,
+	batch_zerocheck_output: BatchZerocheckOutput<F>,
+) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
+	let BatchZerocheckOutput {
+		skipped_challenges,
+		unskipped_challenges,
+		concat_multilinear_evals,
+	} = batch_zerocheck_output;
+
+	let metas = metas.into_iter().collect::<Vec<_>>();
+
+	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars)) {
+		bail!(Error::ClaimsOutOfOrder);
+	}
+
+	let max_n_vars = metas.last().map_or(0, |meta| meta.n_vars);
+	let n_multilinears = metas
+		.iter()
+		.map(|meta| meta.oracle_ids.len())
+		.sum::<usize>();
+
+	if n_multilinears != concat_multilinear_evals.len() {
+		bail!(Error::ClaimProofMismatch);
+	}
+
+	if max_n_vars != skipped_challenges.len() + unskipped_challenges.len() {
+		bail!(Error::ClaimProofMismatch);
+	}
+
+	let ids_with_n_vars = metas.into_iter().flat_map(|meta| {
+		meta.oracle_ids
+			.into_iter()
+			.map(move |oracle_id| (oracle_id, meta.n_vars))
+	});
+
+	let mut evalcheck_claims = Vec::new();
+	for ((oracle_id, n_vars), eval) in iter::zip(ids_with_n_vars, concat_multilinear_evals) {
+		// NB. Two stages of zerocheck reduction (univariate skip and front-loaded high-to-low sumchecks)
+		//     may result in a "gap" between challenges prefix and suffix.
+		let eval_point = [
+			&skipped_challenges[..n_vars.min(skipped_challenges.len())],
+			&unskipped_challenges[(max_n_vars - n_vars).min(unskipped_challenges.len())..],
+		]
+		.concat()
+		.into();
+
+		let claim = EvalcheckMultilinearClaim {
+			id: oracle_id,
+			eval_point,
+			eval,
+		};
+
+		evalcheck_claims.push(claim);
 	}
 
 	Ok(evalcheck_claims)

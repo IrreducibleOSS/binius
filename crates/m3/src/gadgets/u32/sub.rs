@@ -1,7 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::array;
+
 use binius_core::oracle::ShiftVariant;
-use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedFieldIndexable};
+use binius_field::{
+	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
+};
+use itertools::izip;
 
 use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128};
 
@@ -136,6 +141,118 @@ impl U32Sub {
 						if borrow { B1::ONE } else { B1::ZERO },
 					);
 				}
+			}
+		}
+
+		Ok(())
+	}
+}
+
+#[derive(Debug)]
+pub struct WideU32Sub {
+	/// Inputs
+	pub xin: [Col<B1>; 32],
+	pub yin: [Col<B1>; 32],
+
+	bin: Col<B1>,
+	bout: [Col<B1>; 32],
+
+	/// Outputs
+	pub zout: [Col<B1>; 32],
+	pub final_borrow: Option<Col<B1>>,
+	pub flags: U32SubFlags,
+}
+
+impl WideU32Sub {
+	pub fn new(
+		table: &mut TableBuilder,
+		xin: [Col<B1>; 32],
+		yin: [Col<B1>; 32],
+		flags: U32SubFlags,
+	) -> Self {
+		let bout = table.add_committed_multiple("bout");
+
+		let bin: [_; 32] = array::from_fn(|i| {
+			if i == 0 {
+				if let Some(borrow_in_bit) = flags.borrow_in_bit {
+					table.add_selected("bin[{0}]", borrow_in_bit, 0)
+				} else {
+					table.add_constant("bin[{0}}", [B1::ZERO])
+				}
+			} else {
+				bout[i - 1]
+			}
+		});
+
+		let final_borrow = flags.expose_final_borrow.then(|| bout[31]);
+
+		let zout = if flags.commit_zout {
+			let zout = table.add_committed_multiple("zout");
+			for (bit, zout_bit) in zout.iter().enumerate() {
+				table
+					.assert_zero(format!("zout[{bit}]"), xin[bit] + yin[bit] + bin[bit] - *zout_bit)
+			}
+			zout
+		} else {
+			array::from_fn(|bit| {
+				table.add_computed(format!("zout[{bit}]"), xin[bit] + yin[bit] + bin[bit])
+			})
+		};
+
+		Self {
+			bin: bin[0],
+			xin,
+			yin,
+			bout,
+			zout,
+			final_borrow,
+			flags,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1>,
+	{
+		let xin = array_util::try_map(self.xin, |bit_col| index.get(bit_col))?;
+		let yin = array_util::try_map(self.yin, |bit_col| index.get(bit_col))?;
+		let bout = array_util::try_map(self.bout, |bit_col| index.get_mut(bit_col))?;
+		let zout = array_util::try_map(self.zout, |bit_col| index.get_mut(bit_col))?;
+
+		type PB1<P> = <P as PackedExtension<B1>>::PackedSubfield;
+
+		let one = PB1::<P>::one();
+		let mut b_in = self
+			.flags
+			.borrow_in_bit
+			.map(|_| {
+				index
+					.get(self.bin)
+					.expect("witness index for borrow_in must be set before")
+					.to_vec()
+			})
+			.unwrap_or_else(|| {
+				let mut b_in = index
+					.get_mut(self.bin)
+					.expect("witness index for constant not set");
+				b_in.fill(PB1::<P>::zero());
+				vec![PB1::<P>::zero(); xin[0].len()]
+			});
+		for (x_bit, y_bit, mut b_out_bit, mut zout_bit) in
+			izip!(xin.into_iter(), yin.into_iter(), bout.into_iter(), zout.into_iter())
+		{
+			for (x, y, b_out, b_in, z_out) in izip!(
+				x_bit.iter().copied(),
+				y_bit.iter().copied(),
+				b_out_bit.iter_mut(),
+				b_in.iter_mut(),
+				zout_bit.iter_mut()
+			) {
+				let x_bit_inv = one + x;
+				let new_borrow = y * (*b_in) + x_bit_inv * (*b_in + y);
+				*z_out = x + y + (*b_in);
+				*b_out = new_borrow;
+				*b_in = new_borrow;
 			}
 		}
 

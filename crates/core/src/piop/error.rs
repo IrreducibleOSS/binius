@@ -4,7 +4,7 @@ use crate::{
 	oracle::OracleId,
 	polynomial,
 	protocols::{fri, sumcheck},
-	transcript, witness,
+	reed_solomon, transcript, witness,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +25,8 @@ pub enum Error {
 	SumcheckClaimVariablesMismatch { index: usize },
 	#[error("binius_math error: {0}")]
 	Math(#[from] binius_math::Error),
+	#[error("Reed-Solomon error: {0}")]
+	ReedSolomon(#[from] reed_solomon::Error),
 	#[error("Polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),
 	#[error("FRI error: {0}")]

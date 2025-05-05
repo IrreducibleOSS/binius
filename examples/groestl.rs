@@ -4,11 +4,12 @@ use std::{array, iter::repeat_with};
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
-use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
 	arch::{OptimalUnderlier, OptimalUnderlier128b},
 	as_packed_field::PackedType,
 	linear_transformation::PackedTransformationFactory,
+	tower::CanonicalTowerFamily,
 	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
