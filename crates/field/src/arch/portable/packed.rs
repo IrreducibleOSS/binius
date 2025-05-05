@@ -456,9 +456,12 @@ macro_rules! impl_ops_for_zero_height {
 
 pub(crate) use impl_ops_for_zero_height;
 
-macro_rules! impl_serialize_deserialize_for_packed_canonical {
+macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 	($bin_type:ty) => {
-		impl SerializeBytes for $bin_type {
+		impl SerializeBytes for $bin_type
+		where
+			<$bin_type as crate::PackedField>::Scalar: crate::BinaryField,
+		{
 			fn serialize(
 				&self,
 				write_buf: impl BufMut,
@@ -468,7 +471,10 @@ macro_rules! impl_serialize_deserialize_for_packed_canonical {
 			}
 		}
 
-		impl DeserializeBytes for $bin_type {
+		impl DeserializeBytes for $bin_type
+		where
+			<$bin_type as crate::PackedField>::Scalar: crate::BinaryField,
+		{
 			fn deserialize(
 				read_buf: impl Buf,
 				mode: SerializationMode,
@@ -479,7 +485,7 @@ macro_rules! impl_serialize_deserialize_for_packed_canonical {
 	};
 }
 
-pub(crate) use impl_serialize_deserialize_for_packed_canonical;
+pub(crate) use impl_serialize_deserialize_for_packed_binary_field;
 
 /// Multiply `PT1` values by upcasting to wider `PT2` type with the same scalar.
 /// This is useful for the cases when SIMD multiplication is faster.

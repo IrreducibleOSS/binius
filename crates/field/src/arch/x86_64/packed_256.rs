@@ -1,12 +1,19 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use cfg_if::cfg_if;
 
 use super::m256::M256;
 use crate::{
 	arch::{
 		portable::{
-			packed::{impl_ops_for_zero_height, PackedPrimitiveType},
+			packed::{
+				impl_ops_for_zero_height, impl_serialize_deserialize_for_packed_canonical,
+				PackedPrimitiveType,
+			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 		PackedStrategy, SimdStrategy,
@@ -28,6 +35,15 @@ pub type PackedBinaryField16x16b = PackedPrimitiveType<M256, BinaryField16b>;
 pub type PackedBinaryField8x32b = PackedPrimitiveType<M256, BinaryField32b>;
 pub type PackedBinaryField4x64b = PackedPrimitiveType<M256, BinaryField64b>;
 pub type PackedBinaryField2x128b = PackedPrimitiveType<M256, BinaryField128b>;
+
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField256x1b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField128x2b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField64x4b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField32x8b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField16x16b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField8x32b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField4x64b);
+impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField2x128b);
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField256x1b);
