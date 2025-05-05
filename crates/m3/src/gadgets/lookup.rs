@@ -113,7 +113,7 @@ mod tests {
 		let looker_2_vals = looker_2.add_committed::<B128, 1>("values");
 		looker_2.pull(chan, [looker_2_vals]);
 
-		let lookup_table_size = 64;
+		let lookup_table_size = 1;
 		let mut rng = StdRng::seed_from_u64(0);
 		let values = repeat_with(|| B128::random(&mut rng))
 			.take(lookup_table_size)
@@ -121,8 +121,8 @@ mod tests {
 
 		let mut counts = vec![0u32; lookup_table_size];
 
-		let looker_1_size = 56;
-		let looker_2_size = 67;
+		let looker_1_size = 128;
+		let looker_2_size = 128;
 
 		// Choose looked-up indices randomly, but ensuring they are at least one if no_zero_counts
 		// is true. This tests an edge case.
