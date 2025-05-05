@@ -94,7 +94,6 @@ pub trait ComputeMemory<F> {
 /// `SubfieldSlice` is typically used in scenarios where operations need to be performed on
 /// specific subfields of a larger field structure, allowing for efficient computation and
 /// manipulation of data within a hierarchical field system.
-
 pub struct SubfieldSlice<'a, F, Mem: ComputeMemory<F>> {
 	pub slice: Mem::FSlice<'a>,
 	pub tower_level: usize,
