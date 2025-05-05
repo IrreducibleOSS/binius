@@ -195,7 +195,7 @@ pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
-	// TODO: better docs!
+	/// Computes a range of possible number of chunks that data can be split into, given a sequence of memory mappings, so that range conforms to all mappings.
 	pub fn log_chunks_range(mappings: &[Self]) -> Option<Range<usize>> {
 		mappings
 			.iter()
