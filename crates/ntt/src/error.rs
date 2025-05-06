@@ -10,8 +10,6 @@ pub enum Error {
 	DomainTooSmall { log_required_domain_size: usize },
 	#[error("evaluation subspace must include the 1 element")]
 	DomainMustIncludeOne,
-	#[error("the packing width must divide the code dimension")]
-	PackingWidthMustDivideDimension,
 	#[error("the input length must be a power of two")]
 	PowerOfTwoLengthRequired,
 	#[error("the field extension degree must be a power of two")]
@@ -20,6 +18,8 @@ pub enum Error {
 	StrideGreaterThanPackedWidth,
 	#[error("the batch size is greater than the number of elements")]
 	BatchTooLarge,
+	#[error("the skip_rounds parameter exceeds the total number of NTT rounds")]
+	SkipRoundsTooLarge,
 	#[error("odd interpolation length mismatch, expected to be exactly {expected_len}")]
 	OddInterpolateIncorrectLength { expected_len: usize },
 	#[error("math error: {0}")]

@@ -6,7 +6,10 @@ use binius_field::Field;
 use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::checked_log_2;
 
-use super::{alloc::Error as AllocError, memory::ComputeMemory};
+use super::{
+	alloc::Error as AllocError,
+	memory::{ComputeMemory, SubfieldSlice},
+};
 use crate::memory::SizedSlice;
 
 /// A hardware abstraction layer (HAL) for compute operations.
@@ -207,6 +210,37 @@ pub trait ComputeLayer<F: Field> {
 		log_n: usize,
 		coordinates: &[F],
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
+	/// Computes left matrix-vector multiplication of a subfield matrix with a big field vector.
+	///
+	/// ## Mathematical Definition
+	///
+	/// This operation accepts
+	///
+	/// * $n \in \mathbb{N}$ (`out.len()`),
+	/// * $m \in \mathbb{N}$ (`vec.len()`),
+	/// * $M \in K^{n \times m}$ (`mat`),
+	/// * $v \in K^m$ (`vec`),
+	///
+	/// and computes the vector $Mv$.
+	///
+	/// ## Args
+	///
+	/// * `mat` - a slice of elements from a subfield of `F`.
+	/// * `vec` - a slice of `F` elements.
+	/// * `out` - a buffer for the output vector of `F` elements.
+	///
+	/// ## Throws
+	///
+	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
+	/// * Returns an error if `mat` is not a subfield of `F`.
+	fn fold_left<'a>(
+		&'a self,
+		exec: &'a mut Self::Exec,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
 	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
