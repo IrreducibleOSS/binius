@@ -183,21 +183,14 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		&self,
 		_exec: &mut Self::KernelExec,
 		log_len: usize,
-		inputs: &[KernelBuffer<'_, T::B128, CpuMemory>],
+		inputs: &[FSlice<'_, T::B128, Self>],
 		composition: &ArithCircuit<T::B128>,
 		batch_coeff: T::B128,
 		accumulator: &mut T::B128,
 	) -> Result<(), Error> {
-		let inputs: Vec<_> = inputs
-			.iter()
-			.map(|input| {
-				assert_eq!(input.len(), 1 << log_len);
-				match input {
-					KernelBuffer::Ref(fs) => *fs,
-					KernelBuffer::Mut(fs) => *fs,
-				}
-			})
-			.collect();
+		for input in inputs {
+			assert_eq!(input.len(), 1 << log_len);
+		}
 		let ret = (0..1 << log_len)
 			.map(|i| {
 				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
@@ -529,6 +522,8 @@ mod tests {
 				let results = compute.accumulate_kernels(
 					exec,
 					|kernel_exec, _log_chunks, kernel_data| {
+						let kernel_data: Vec<_> =
+							kernel_data.into_iter().map(|buf| buf.to_ref()).collect();
 						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 						let log_len = checked_log_2(kernel_data[0].len());
 						compute

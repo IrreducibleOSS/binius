@@ -234,7 +234,7 @@ pub trait ComputeLayer<F: Field> {
 		&self,
 		exec: &mut Self::KernelExec,
 		log_len: usize,
-		inputs: &[KernelBuffer<'_, F, Self::DevMem>],
+		inputs: &[FSlice<'_, F, Self>],
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
@@ -296,6 +296,32 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 	Ref(Mem::FSlice<'a>),
 	Mut(Mem::FSliceMut<'a>),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
+	/// Returns underlying `FSlice`.
+	///
+	/// ## Throws
+	///
+	/// Unless value is `Ref`.
+	pub fn to_ref(self) -> Mem::FSlice<'a> {
+		match self {
+			Self::Ref(slice) => slice,
+			Self::Mut(_) => panic!("Expected ref"),
+		}
+	}
+
+	/// Returns underlying `FSliceMut`.
+	///
+	/// ## Throws
+	///
+	/// Unless value is `Mut`.
+	pub fn to_mut(self) -> Mem::FSliceMut<'a> {
+		match self {
+			Self::Mut(slice) => slice,
+			Self::Ref(_) => panic!("Expected mut"),
+		}
+	}
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> SizedSlice for KernelBuffer<'a, F, Mem> {
