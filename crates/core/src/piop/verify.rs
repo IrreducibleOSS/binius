@@ -158,7 +158,7 @@ where
 	// case `log_batch_size = total_vars` and `log_dim = 0`, we're sending the entire message anyway, so the FRI portion is essentially trivial / superfluous, and the security is perfect.
 	// and in any case we could evade it simply by calculating `n_test_queries` and `cap_height` using the provisional `log_dim := total_vars.saturating_sub(arity)`, proceeding as above,
 	// and only then, if we find out post facto that `fold_arities = []`, overwriting `log_batch_size := total_vars` and `log_dim = 0`---and even recalculating `n_test_queries` if we wanted
-	// (though of course it doesn't matter---we could do 0 queries in that case, and we would still get security---and in fact during the actual part portion we will skip querying anyway).
+	// (though of course it doesn't matter---we could do 0 queries in that case, and we would still get security---and in fact during the actual querying part we will skip querying anyway).
 	// in any case, from a purely code-simplicity point of view, the simplest approach is to bite the bullet and let `log_batch_size := min(total_vars, arity)` for good---and keep it there,
 	// even if we post-facto find out that `fold_arities = []`. the cost of this is that the prover has to do a nontrivial (though small!) interleaved encoding, as opposed to a trivial one.
 	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
