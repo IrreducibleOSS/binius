@@ -352,6 +352,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::Constant {
 				poly: Arc::new(mle),
+				data: constants.map(|f_sub| f_sub.into()).to_vec(),
 			},
 		)
 	}

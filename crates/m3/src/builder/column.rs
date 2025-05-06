@@ -157,6 +157,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 	},
 	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
+		data: Vec<F>,
 	},
 	StructuredDynSize(StructuredDynSize),
 	StructuredFixedSize {
