@@ -3,7 +3,6 @@
 use std::array;
 
 use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedField};
-use binius_maybe_rayon::prelude::IntoParallelIterator;
 use itertools::izip;
 
 use crate::{
