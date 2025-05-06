@@ -135,14 +135,22 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	// Determine the optimal log_height and log_width, measured in packed field elements. log_width
 	// must be at least 1, so that the row-wise NTTs have pairs of butterfly blocks to work with.
-	// Subject to the minimum width requirement, we want to set the height to the lowest value that
-	// takes advantage of all available threads.
-	//
+	// Furthermore, we want the number of scalars in the width to be at least log_x, so that each
+	// row-wise NTT operates on full batches. Subject to the minimum width requirement, we want to
+	// set the height to the lowest value that takes advantage of all available threads.
+	let min_log_width_scalars = (log_w + 1).max(log_x);
+
 	// The subtraction must not underflow because data is checked to have at least 2 packed
 	// elements at the top of the function.
-	let log_height = (log_x + log_y + log_z - (log_w + 1)).min(log_max_threads);
+	let log_height = (log_x + log_y + log_z - min_log_width_scalars).min(log_max_threads);
 	let log_width = log_x + log_y + log_z - (log_w + log_height);
 
+	// The NTT algorithm shapes the tensor into a 2D matrix and runs two phases:
+	//
+	// 1. The first phase performs strided column-wise NTTs.
+	// 2. The second phase performs the row-wise NTTs.
+
+	// par_rounds is the number of phase 1 strided rounds.
 	let par_rounds = log_height.saturating_sub(log_z);
 
 	// Perform the column-wise NTTs in parallel over vertical strides of the matrix.
@@ -250,14 +258,22 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	// Determine the optimal log_height and log_width, measured in packed field elements. log_width
 	// must be at least 1, so that the row-wise NTTs have pairs of butterfly blocks to work with.
-	// Subject to the minimum width requirement, we want to set the height to the lowest value that
-	// takes advantage of all available threads.
-	//
+	// Furthermore, we want the number of scalars in the width to be at least log_x, so that each
+	// row-wise NTT operates on full batches. Subject to the minimum width requirement, we want to
+	// set the height to the lowest value that takes advantage of all available threads.
+	let min_log_width_scalars = (log_w + 1).max(log_x);
+
 	// The subtraction must not underflow because data is checked to have at least 2 packed
 	// elements at the top of the function.
-	let log_height = (log_x + log_y + log_z - (log_w + 1)).min(log_max_threads);
+	let log_height = (log_x + log_y + log_z - min_log_width_scalars).min(log_max_threads);
 	let log_width = log_x + log_y + log_z - (log_w + log_height);
 
+	// The iNTT algorithm shapes the tensor into a 2D matrix and runs two phases:
+	//
+	// 1. The first phase performs the row-wise iNTTs.
+	// 2. The second phase performs strided column-wise iNTTs.
+
+	// par_rounds is the number of phase 2 strided rounds.
 	let par_rounds = log_height.saturating_sub(log_z);
 
 	let log_row_z = log_z.saturating_sub(log_height);
