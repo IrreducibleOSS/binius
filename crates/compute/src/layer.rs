@@ -147,7 +147,8 @@ pub trait ComputeLayer<F> {
 	///
 	/// ## Throws
 	///
-	/// * unless `mat.len()` equals `vec.len() * out.len()` and `mat` is a subfield of `F`
+	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
+	/// * Returns an error if `mat` is not a subfield of `F`.
 	fn fold_left<'a>(
 		&'a self,
 		exec: &'a mut Self::Exec,

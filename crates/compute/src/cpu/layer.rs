@@ -112,7 +112,13 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		query: FSlice<'_, T::B128, Self>,
 		out: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
-		assert!(evals.tower_level <= T::B128::TOWER_LEVEL);
+		if evals.tower_level > T::B128::TOWER_LEVEL {
+			return Err(Error::InputValidation(format!(
+				"invalid evals: tower_level={} > {}",
+				evals.tower_level,
+				T::B128::TOWER_LEVEL
+			)));
+		}
 		let log_evals_size =
 			evals.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - evals.tower_level;
 		// Dispatch to the binary field of type T corresponding to the tower level of the evals slice.
