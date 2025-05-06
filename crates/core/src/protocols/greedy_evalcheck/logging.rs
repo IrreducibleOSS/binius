@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use binius_field::Field;
 use binius_utils::impl_debug_with_json;
 use serde::Serialize;
+use serde_json_any_key::any_key_map;
 
 use crate::oracle::ConstraintSet;
 
 #[derive(Serialize)]
 pub(super) struct RegularSumcheckDimensionsData {
+	#[serde(with = "any_key_map")]
 	claim_n_vars: HashMap<usize, usize>,
 }
 

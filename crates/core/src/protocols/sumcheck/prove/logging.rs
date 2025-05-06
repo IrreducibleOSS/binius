@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use binius_field::{Field, PackedField};
 use binius_utils::impl_debug_with_json;
 use serde::Serialize;
-
+use serde_json_any_key::any_key_map;
 use super::SumcheckProver;
 use crate::protocols::sumcheck::prove::batch_zerocheck::ZerocheckProver;
 
@@ -16,7 +16,7 @@ struct ProverData {
 }
 
 #[derive(Serialize)]
-pub struct FoldLowDimensionsData(HashMap<ProverData, usize>);
+pub struct FoldLowDimensionsData(#[serde(with = "any_key_map")] HashMap<ProverData, usize>);
 
 impl FoldLowDimensionsData {
 	pub fn new<'a, 'b, P: PackedField, Prover: ZerocheckProver<'a, P> + 'b>(

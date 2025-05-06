@@ -26,8 +26,9 @@ getset.workspace = true
 inventory.workspace = true
 itertools.workspace = true
 rand.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+serde_json_any_key.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

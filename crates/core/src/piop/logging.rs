@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use binius_field::TowerField;
 use binius_utils::impl_debug_with_json;
 use serde::Serialize;
+use serde_json_any_key::any_key_map;
 
 use crate::protocols::sumcheck::prove::SumcheckProver;
 
 #[derive(Serialize)]
 pub(super) struct SumcheckBatchProverDimensionsData {
+	#[serde(with = "any_key_map")]
 	prover_n_vars: HashMap<usize, usize>,
 	round: usize,
 }

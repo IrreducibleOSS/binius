@@ -6,11 +6,13 @@ use binius_field::{PackedField, TowerField};
 use binius_math::MultilinearPoly;
 use binius_utils::impl_debug_with_json;
 use serde::Serialize;
+use serde_json_any_key::any_key_map;
 
 use super::common::EvalClaimSuffixDesc;
 
 #[derive(Serialize)]
 pub struct MLEFoldHisgDimensionsData {
+	#[serde(with = "any_key_map")]
 	witness_n_vars: HashMap<usize, usize>,
 }
 
@@ -36,7 +38,7 @@ pub struct EvalClaimSuffixData {
 }
 
 #[derive(Serialize)]
-pub struct CalculateRingSwitchEqIndData(HashMap<EvalClaimSuffixData, usize>);
+pub struct CalculateRingSwitchEqIndData(#[serde(with = "any_key_map")] HashMap<EvalClaimSuffixData, usize>);
 
 impl CalculateRingSwitchEqIndData {
 	pub fn new<'a, F: TowerField>(
