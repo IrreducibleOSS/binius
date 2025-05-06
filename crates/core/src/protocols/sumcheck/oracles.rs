@@ -148,7 +148,6 @@ pub fn make_eval_claims<F: TowerField>(
 	let mut evalcheck_claims = Vec::new();
 	for (meta, prover_evals) in iter::zip(metas, batch_sumcheck_output.multilinear_evals) {
 		if meta.oracle_ids.len() != prover_evals.len() {
-			println!("!!!!!!!!!!!!!!!!! {} {}", meta.oracle_ids.len(), prover_evals.len());
 			bail!(Error::ClaimProofMismatch);
 		}
 
