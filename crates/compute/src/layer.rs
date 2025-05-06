@@ -138,7 +138,7 @@ pub trait ComputeLayer<F: Field> {
 	///   unchanged.
 	///
 	/// [`ComputeLayer`] implementations are free to call the specification closure multiple times,
-	/// for example with different
+	/// for example with different values for `log_chunks`.
 	///
 	/// ## Arguments
 	///
