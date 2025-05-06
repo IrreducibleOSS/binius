@@ -128,10 +128,12 @@ where
 	/// Finishes an interaction round by reducing the instance with the verifier challenge.
 	pub fn receive_challenge(&mut self, challenge: F) -> Result<(), Error> {
 		for (prover, _) in &mut self.provers {
+			let dimensions_data = PIOPCompilerFoldData::new(prover);
 			let _span = tracing::debug_span!(
 				"[task] (PIOP Compiler) Fold",
 				phase = "piop_compiler",
-				round = self.round
+				round = self.round,
+				dimensions_data = ?dimensions_data,
 			)
 			.entered();
 			prover.fold(challenge)?;
@@ -156,5 +158,19 @@ where
 	/// Returns the iterator over the provers.
 	pub fn provers(&self) -> impl Iterator<Item = &Prover> {
 		self.provers.iter().map(|(prover, _)| prover)
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct PIOPCompilerFoldData {
+	n_vars: usize,
+}
+
+impl PIOPCompilerFoldData {
+	fn new<F: Field>(prover: &impl SumcheckProver<F>) -> Self {
+		Self {
+			n_vars: prover.n_vars(),
+		}
 	}
 }

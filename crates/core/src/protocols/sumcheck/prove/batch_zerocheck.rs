@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, CpuBackend};
@@ -149,6 +149,35 @@ where
 	Ok(prover)
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct ProverData {
+	n_vars: usize,
+	domain_size: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct FoldLowDimensionsData(HashMap<ProverData, usize>);
+
+impl FoldLowDimensionsData {
+	fn new<'a, 'b, P: PackedField, Prover: ZerocheckProver<'a, P> + 'b>(
+		skip_rounds: usize,
+		constraints: impl IntoIterator<Item = &'b Prover>,
+	) -> Self {
+		let mut claim_n_vars = HashMap::new();
+		for constraint in constraints {
+			*claim_n_vars
+				.entry(ProverData {
+					n_vars: constraint.n_vars(),
+					domain_size: constraint.domain_size(skip_rounds),
+				})
+				.or_default() += 1;
+		}
+
+		Self(claim_n_vars)
+	}
+}
+
 /// Prove a batched zerocheck protocol execution.
 ///
 /// See the [`batch_verify_zerocheck`](`super::super::batch_verify_zerocheck`) docstring for
@@ -235,11 +264,12 @@ where
 
 	// Project witness multilinears to "skipped" variables
 	let mut projected_multilinears = Vec::new();
-
+	let dimensions_data = FoldLowDimensionsData::new(skip_rounds, &provers);
 	let mle_fold_low_span = tracing::debug_span!(
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
 	for prover in provers {

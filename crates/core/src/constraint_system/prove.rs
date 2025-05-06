@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{collections::HashMap, env, marker::PhantomData};
+use std::{env, marker::PhantomData};
 
 use binius_field::{
 	as_packed_field::PackedType,
@@ -44,144 +44,14 @@ use crate::{
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			prove::{RegularSumcheckProver, SumcheckProver, ZerocheckProver},
-			standard_switchover_heuristic, EqIndSumcheckClaim,
+			self, constraint_set_zerocheck_claim, prove::ZerocheckProver,
+			standard_switchover_heuristic,
 		},
 	},
 	ring_switch,
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-struct MLEData {
-	n_vars: usize,
-	log_extension_degree: usize,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MultilinearsData(HashMap<MLEData, usize>);
-
-impl MultilinearsData {
-	fn new<'a, P>(
-		iter: impl IntoIterator<Item = &'a (dyn MultilinearPoly<P> + Send + Sync)>,
-	) -> Self
-	where
-		P: PackedField,
-	{
-		let mut data = HashMap::new();
-		for mle in iter {
-			let n_vars = mle.n_vars();
-			let log_extension_degree = mle.log_extension_degree();
-			*data
-				.entry(MLEData {
-					n_vars,
-					log_extension_degree,
-				})
-				.or_default() += 1;
-		}
-
-		Self(data)
-	}
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-struct EqIndData {
-	eq_ind_claim_n_vars: usize,
-	eq_ind_n_multilinears: usize,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MLECheckData {
-	tail_provers_n_vars: HashMap<usize, usize>,
-	eq_ind_data: HashMap<EqIndData, usize>,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MLEFoldHighDimensionsData {
-	query_length: usize,
-	multilinears: MultilinearsData,
-}
-
-impl MLEFoldHighDimensionsData {
-	fn new<'a, P>(
-		query_length: usize,
-		multilinears: impl IntoIterator<Item = &'a (dyn MultilinearPoly<P> + Send + Sync)>,
-	) -> Self
-	where
-		P: PackedField,
-	{
-		let multilinears_data = MultilinearsData::new(multilinears);
-		Self {
-			query_length,
-			multilinears: multilinears_data,
-		}
-	}
-}
-
-impl MLECheckData {
-	fn new<'a, F: Field, Composition: CompositionPoly<F> + 'a>(
-		sumcheck_provers: impl IntoIterator<Item = &'a dyn SumcheckProver<F>>,
-		eq_ind_claims: impl IntoIterator<Item = &'a EqIndSumcheckClaim<F, Composition>>,
-	) -> Self {
-		let mut tail_provers_n_vars = HashMap::new();
-		for prover in sumcheck_provers {
-			*tail_provers_n_vars.entry(prover.n_vars()).or_default() += 1;
-		}
-
-		let mut eq_ind_data = HashMap::new();
-		for eq_ind_claim in eq_ind_claims {
-			*eq_ind_data
-				.entry(EqIndData {
-					eq_ind_claim_n_vars: eq_ind_claim.n_vars(),
-					eq_ind_n_multilinears: eq_ind_claim.n_multilinears(),
-				})
-				.or_default() += 1;
-		}
-
-		Self {
-			tail_provers_n_vars,
-			eq_ind_data,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct SmallRegularSumchecksDimensionsData {
-	reduction_prover_n_vars: HashMap<usize, usize>,
-}
-
-impl SmallRegularSumchecksDimensionsData {
-	fn new<'a, F, FDomain, P, Composition, M, Backend>(
-		sumcheck_provers: impl IntoIterator<
-			Item = &'a RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>,
-		>,
-	) -> Self
-	where
-		F: TowerField + ExtensionField<FDomain>,
-		FDomain: Field,
-		P: PackedField<Scalar = F>
-			+ PackedExtension<F, PackedSubfield = P>
-			+ PackedExtension<FDomain>,
-		Composition: CompositionPoly<P> + 'a,
-		M: MultilinearPoly<P> + Send + Sync + 'a,
-		Backend: ComputationBackend + 'a,
-	{
-		let mut reduction_prover_n_vars = HashMap::new();
-		for prover in sumcheck_provers {
-			*reduction_prover_n_vars.entry(prover.n_vars()).or_default() += 1;
-		}
-
-		Self {
-			reduction_prover_n_vars,
-		}
-	}
-}
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]

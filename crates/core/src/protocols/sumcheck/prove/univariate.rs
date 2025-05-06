@@ -284,13 +284,16 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
+	let dimensions_data = ExpandQueryData::new(zerocheck_challenges);
 	let expand_span = tracing::debug_span!(
 		"[task] Expand Query",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
-	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
+	let partial_eq_ind_evals: <Backend as ComputationBackend>::Vec<P> =
+		backend.tensor_product_full_query(zerocheck_challenges)?;
 	drop(expand_span);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -304,10 +307,13 @@ where
 			)
 		})
 		.collect::<Vec<_>>();
+	let dimensions_data =
+		UnivariateSkipCalculateCoeffsData::new(n_vars, skip_rounds, n_multilinears, log_batch);
 	let coeffs_span = tracing::debug_span!(
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
 
@@ -483,6 +489,40 @@ where
 		max_domain_size,
 		partial_eq_ind_evals,
 	})
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct UnivariateSkipCalculateCoeffsData {
+	n_vars: usize,
+	skip_vars: usize,
+	n_multilinears: usize,
+	log_batch: usize,
+}
+
+impl UnivariateSkipCalculateCoeffsData {
+	fn new(n_vars: usize, skip_vars: usize, n_multilinears: usize, log_batch: usize) -> Self {
+		Self {
+			n_vars,
+			skip_vars,
+			n_multilinears,
+			log_batch,
+		}
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct ExpandQueryData {
+	log_n: usize,
+}
+
+impl ExpandQueryData {
+	fn new<F: Field>(query: &[F]) -> Self {
+		Self {
+			log_n: query.len().ilog2() as _,
+		}
+	}
 }
 
 // A helper to perform spread multiplication of small field composition evals by appropriate

@@ -200,16 +200,16 @@ impl RSEncodeDimensionData {
 struct MerkleTreeDimensionData {
 	log_elems: usize,
 	element_size: usize,
-	coset_log_len: usize,
+	batch_size: usize,
 }
 
 impl MerkleTreeDimensionData {
-	fn new<F: BinaryField>(log_elems: usize, coset_log_len: usize) -> Self {
+	fn new<F: BinaryField>(log_elems: usize, batch_size: usize) -> Self {
 		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
 		Self {
 			log_elems,
 			element_size,
-			coset_log_len,
+			batch_size,
 		}
 	}
 }
@@ -253,14 +253,14 @@ where
 		});
 
 	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
+	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
 		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
-	let dimension_data = MerkleTreeDimensionData::new::<F>(log_len, coset_log_len);
+	let dimension_data = MerkleTreeDimensionData::new::<F>(log_len, 1 << coset_log_len);
 	let merkle_tree_span = tracing::debug_span!(
 		"[task] Merkle Tree",
 		phase = "commit",
@@ -390,10 +390,16 @@ where
 			return Ok(FoldRoundOutput::NoCommitment);
 		}
 
+		let dimensions_data = match self.round_committed.last() {
+			Some((codeword, _)) => FRIFoldData::new(log2_strict_usize(codeword.len()), 0),
+			None => FRIFoldData::new(self.params.rs_code().log_len(), self.params.log_batch_size()),
+		};
+
 		let fri_fold_span = tracing::debug_span!(
 			"[task] FRI Fold",
 			phase = "piop_compiler",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data
 		)
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
@@ -432,11 +438,12 @@ where
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
-
+		let dimension_data = MerkleTreeDimensionData::new::<F>(dimensions_data.log_len, coset_size);
 		let merkle_tree_span = tracing::debug_span!(
 			"[task] Merkle Tree",
 			phase = "piop_compiler",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimension_data
 		)
 		.entered();
 		let (commitment, committed) = self
@@ -521,6 +528,22 @@ where
 		}
 
 		Ok(())
+	}
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct FRIFoldData {
+	log_len: usize,
+	log_batch_size: usize,
+}
+
+impl FRIFoldData {
+	fn new(log_len: usize, log_batch_size: usize) -> Self {
+		Self {
+			log_len,
+			log_batch_size,
+		}
 	}
 }
 
