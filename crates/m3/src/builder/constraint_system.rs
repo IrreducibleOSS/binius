@@ -202,7 +202,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Constant { poly } = &info.col {
+				if let ColumnDef::Constant { poly, .. } = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
 						.transparent(poly.clone())?;
@@ -292,28 +292,26 @@ impl<F: TowerField> ConstraintSystem<F> {
 					channel_id,
 					direction,
 					multiplicity,
-					selector,
+					selectors,
 				} in flushes
 				{
 					let flush_oracles = column_indices
 						.iter()
 						.map(|&column_index| OracleOrConst::Oracle(oracle_lookup[column_index]))
 						.collect::<Vec<_>>();
-					let mut selectors =
-						chain!(selector.map(|column_idx| oracle_lookup[column_idx]), step_down)
-							.collect::<Vec<_>>();
-					if selectors.len() > 1 {
-						unimplemented!(
-							"Multiple selectors are not supported yet. \
-							Custom selectors are only allowed on tables with power-of-two size."
-						);
-					}
-					let selector = selectors.pop();
+					let selectors = chain!(
+						selectors
+							.iter()
+							.map(|column_idx| oracle_lookup[*column_idx]),
+						step_down
+					)
+					.collect::<Vec<_>>();
+
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
-						selector,
+						selectors,
 						multiplicity: *multiplicity as u64,
 					});
 				}

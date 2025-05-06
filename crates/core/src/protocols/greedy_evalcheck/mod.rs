@@ -14,6 +14,8 @@
 mod error;
 mod logging;
 mod prove;
+#[cfg(test)]
+mod tests;
 mod verify;
 
 pub use error::*;

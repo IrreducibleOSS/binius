@@ -8,9 +8,9 @@ use bytes::BufMut;
 
 use super::{batch_sumcheck::SumcheckProver, logging::PIOPCompilerFoldData};
 use crate::{
-	fiat_shamir::CanSample,
-	protocols::sumcheck::{Error, RoundCoeffs},
-	transcript::TranscriptWriter,
+	fiat_shamir::{CanSample, Challenger},
+	protocols::sumcheck::{BatchSumcheckOutput, Error, RoundCoeffs},
+	transcript::{ProverTranscript, TranscriptWriter},
 };
 
 /// Prover for a front-loaded batch sumcheck protocol execution.
@@ -56,6 +56,17 @@ where
 		let batch_coeffs = transcript.sample_vec(provers.len());
 
 		Self::new_prebatched(batch_coeffs, provers)
+	}
+
+	/// Returns total number of batched sumcheck rounds
+	pub fn total_rounds(&self) -> usize
+	where
+		Prover: SumcheckProver<F>,
+	{
+		self.provers
+			.back()
+			.map(|(prover, _)| prover.n_vars())
+			.unwrap_or(0)
 	}
 
 	/// Constructs a new prover for the front-loaded batched sumcheck with
@@ -158,5 +169,30 @@ where
 	/// Returns the iterator over the provers.
 	pub fn provers(&self) -> impl Iterator<Item = &Prover> {
 		self.provers.iter().map(|(prover, _)| prover)
+	}
+
+	/// Proves a front-loaded batch sumcheck protocol execution.
+	pub fn run<Challenger_: Challenger>(
+		mut self,
+		transcript: &mut ProverTranscript<Challenger_>,
+	) -> Result<BatchSumcheckOutput<F>, Error> {
+		let round_count = self.total_rounds();
+
+		let mut challenges = Vec::with_capacity(round_count);
+		for _round_no in 0..round_count {
+			self.send_round_proof(&mut transcript.message())?;
+
+			let challenge = transcript.sample();
+			challenges.push(challenge);
+
+			self.receive_challenge(challenge)?;
+		}
+
+		let multilinear_evals = self.finish(&mut transcript.message())?;
+
+		Ok(BatchSumcheckOutput {
+			challenges,
+			multilinear_evals,
+		})
 	}
 }

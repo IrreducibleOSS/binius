@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 
@@ -35,7 +33,7 @@ pub fn prove<'a, F, P, DomainField, Challenger_, Backend>(
 ) -> Result<GreedyEvalcheckProveOutput<'a, F, P, Backend>, Error>
 where
 	F: TowerField + ExtensionField<DomainField>,
-	P: PackedFieldIndexable<Scalar = F>
+	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<DomainField>,
 	DomainField: TowerField,

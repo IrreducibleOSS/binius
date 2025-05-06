@@ -460,11 +460,11 @@ fn test_prove_verify_batch_constant_polys() {
 
 fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
-		prove_verify_batch_front_loaded_with_evaluation_order(evaluation_order, claim_shapes);
+		test_prove_verify_batch_front_loaded_with_evaluation_order(evaluation_order, claim_shapes);
 	}
 }
 
-fn prove_verify_batch_front_loaded_with_evaluation_order(
+fn test_prove_verify_batch_front_loaded_with_evaluation_order(
 	evaluation_order: EvaluationOrder,
 	claim_shapes: &[TestSumcheckClaimShape],
 ) {
@@ -494,49 +494,20 @@ fn prove_verify_batch_front_loaded_with_evaluation_order(
 		provers.push(prover);
 	}
 
-	let n_rounds = claim_shapes
-		.iter()
-		.map(|claim_shape| claim_shape.n_vars)
-		.max()
-		.unwrap_or(0);
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-	let mut batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
-	for _ in 0..n_rounds {
-		batch_prover
-			.send_round_proof(&mut transcript.message())
-			.unwrap();
-		let challenge = transcript.sample();
-		batch_prover.receive_challenge(challenge).unwrap();
-	}
-	batch_prover.finish(&mut transcript.message()).unwrap();
+	let batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
+
+	let _batch_prover_output = batch_prover.run(&mut transcript).unwrap();
 
 	let mut transcript = transcript.into_verifier();
-	let mut challenges = Vec::with_capacity(n_rounds);
-	let mut multilinear_evals = Vec::with_capacity(claims.len());
 
-	let mut verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
-	for _ in 0..n_rounds {
-		let mut writer = transcript.message();
-		while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
-			multilinear_evals.push(claim_multilinear_evals);
-		}
-		verifier.receive_round_proof(&mut writer).unwrap();
+	let verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
 
-		let challenge = transcript.sample();
-		verifier.finish_round(challenge).unwrap();
-
-		challenges.push(challenge);
-	}
-
-	let mut writer = transcript.message();
-	while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
-		multilinear_evals.push(claim_multilinear_evals);
-	}
-	verifier.finish().unwrap();
-
-	assert_eq!(multilinear_evals.len(), claims.len());
+	let BatchSumcheckOutput {
+		challenges,
+		multilinear_evals,
+	} = verifier.run(&mut transcript).unwrap();
 
 	for (claim_shape, mles_i, multilinear_evals_i) in izip!(claim_shapes, mles, multilinear_evals) {
 		let TestSumcheckClaimShape { n_vars, .. } = claim_shape.clone();
