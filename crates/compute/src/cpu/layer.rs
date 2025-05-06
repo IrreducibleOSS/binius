@@ -109,10 +109,12 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		&'a self,
 		_exec: &'a mut Self::Exec,
 		evals: SubfieldSlice<'_, T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
-		log_evals_size: usize,
 		query: FSlice<'_, T::B128, Self>,
 		out: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
+		assert!(evals.tower_level <= T::B128::TOWER_LEVEL);
+		let log_evals_size =
+			evals.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - evals.tower_level;
 		// Dispatch to the binary field of type T corresponding to the tower level of the evals slice.
 		each_tower_subfield!(
 			evals.tower_level,
@@ -478,7 +480,6 @@ mod tests {
 					.fold_left(
 						exec,
 						evals_slice_with_tower_level,
-						log_evals_size,
 						const_query_slice,
 						&mut out_slice,
 					)

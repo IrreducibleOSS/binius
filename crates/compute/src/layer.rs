@@ -126,16 +126,32 @@ pub trait ComputeLayer<F> {
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
-	/// Execute the left fold operation.
+	/// Computes left matrix-vector multiplication of a subfield matrix with a big field vector.
 	///
-	/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
-	/// with the corresponding query element. The results is written to the `output` slice of packed values.
-	/// If the function returns `Ok(())`, then `out` can be safely interpreted as initialized.
+	/// ## Mathematical Definition
+	///
+	/// This operation accepts
+	///
+	/// * $n \in \mathbb{N}$ (`out.len()`),
+	/// * $m \in \mathbb{N}$ (`vec.len()`),
+	/// * $M \in K^{n \times m}$ (`mat`),
+	/// * $v \in K^m$ (`vec`),
+	///
+	/// and computes the vector $Mv$.
+	///
+	/// ## Args
+	///
+	/// * `mat` - a slice of elements from a subfield of `F`.
+	/// * `vec` - a slice of `F` elements.
+	/// * `out` - a buffer for the output vector of `F` elements.
+	///
+	/// ## Throws
+	///
+	/// * unless `mat.len()` equals `vec.len() * out.len()` and `mat` is a subfield of `F`
 	fn fold_left<'a>(
 		&'a self,
 		exec: &'a mut Self::Exec,
-		evals: SubfieldSlice<'_, F, Self::DevMem>,
-		log_evals_size: usize,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
 		query: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
