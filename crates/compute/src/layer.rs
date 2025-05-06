@@ -299,27 +299,11 @@ pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
-	/// Returns underlying `FSlice`.
-	///
-	/// ## Throws
-	///
-	/// Unless value is `Ref`.
-	pub fn to_ref(self) -> Mem::FSlice<'a> {
+	/// Returns underlying data as an `FSlice`.
+	pub fn to_ref(&self) -> Mem::FSlice<'_> {
 		match self {
-			Self::Ref(slice) => slice,
-			Self::Mut(_) => panic!("Expected ref"),
-		}
-	}
-
-	/// Returns underlying `FSliceMut`.
-	///
-	/// ## Throws
-	///
-	/// Unless value is `Mut`.
-	pub fn to_mut(self) -> Mem::FSliceMut<'a> {
-		match self {
-			Self::Mut(slice) => slice,
-			Self::Ref(_) => panic!("Expected mut"),
+			Self::Ref(slice) => Mem::narrow(slice),
+			Self::Mut(slice) => Mem::as_const(slice),
 		}
 	}
 }

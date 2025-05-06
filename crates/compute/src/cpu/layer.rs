@@ -522,8 +522,10 @@ mod tests {
 				let results = compute.accumulate_kernels(
 					exec,
 					|kernel_exec, _log_chunks, kernel_data| {
-						let kernel_data: Vec<_> =
-							kernel_data.into_iter().map(|buf| buf.to_ref()).collect();
+						let kernel_data = kernel_data
+							.iter()
+							.map(|buf| buf.to_ref())
+							.collect::<Vec<_>>();
 						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 						let log_len = checked_log_2(kernel_data[0].len());
 						compute
