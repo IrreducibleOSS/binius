@@ -99,22 +99,27 @@ mod tests {
 		let allocator = Bump::new();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
-		witness
-			.fill_table_sequential(
-				&ClosureFiller::new(test_table_id, |events, index| {
-					{
-						let mut expected_col = index.get_scalars_mut::<B32, 1>(expected_col)?;
-						for (&&i, col_i) in iter::zip(events, &mut *expected_col) {
-							*col_i = BinaryField32b::new(i);
+		{
+			let table_witness = witness.init_table(test_table_id, 1 << 5).unwrap();
+			table_witness
+				.fill_sequential_with_segment_size(
+					&ClosureFiller::new(test_table_id, |events, index| {
+						{
+							let mut expected_col = index.get_scalars_mut::<B32, 1>(expected_col)?;
+							for (&&i, col_i) in iter::zip(events, &mut *expected_col) {
+								*col_i = BinaryField32b::new(i);
+							}
 						}
-					}
 
-					fill_incrementing_b32(index, structured_col)?;
-					Ok(())
-				}),
-				&(0..1 << 11).collect::<Vec<_>>(),
-			)
-			.unwrap();
+						fill_incrementing_b32(index, structured_col)?;
+						Ok(())
+					}),
+					&(0..1 << 5).collect::<Vec<_>>(),
+					// Test that fill works when the segment size is less than the full index size.
+					4,
+				)
+				.unwrap();
+		}
 
 		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
 	}

@@ -698,6 +698,7 @@ where
 	oracle_offset: usize,
 	cols: Vec<WitnessColumnInfo<(&'a mut [P], usize)>>,
 	log_segment_size: usize,
+	start_index: usize,
 	n_segments: usize,
 }
 
@@ -727,6 +728,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset: witness.oracle_offset,
 			cols,
 			log_segment_size,
+			start_index: 0,
 			n_segments: 1 << (witness.log_capacity - log_segment_size),
 		}
 	}
@@ -759,6 +761,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				oracle_offset: self.oracle_offset,
 				cols: cols_0,
 				log_segment_size: self.log_segment_size,
+				start_index: self.start_index,
 				n_segments: index,
 			},
 			TableWitnessSegmentedView {
@@ -766,6 +769,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				oracle_offset: self.oracle_offset,
 				cols: cols_1,
 				log_segment_size: self.log_segment_size,
+				start_index: self.start_index + index,
 				n_segments: self.n_segments - index,
 			},
 		)
@@ -777,6 +781,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset,
 			cols,
 			log_segment_size,
+			start_index,
 			n_segments,
 		} = self;
 
@@ -801,7 +806,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				table,
 				cols,
 				log_size: log_segment_size,
-				index,
+				index: start_index + index,
 				oracle_offset,
 			});
 			itertools::Either::Right(iter)
@@ -814,7 +819,8 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset,
 			cols,
 			log_segment_size,
-			n_segments: _,
+			start_index,
+			n_segments,
 		} = self;
 
 		// This implementation uses unsafe code to iterate the segments of the view. A fully safe
@@ -843,7 +849,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			})
 			.collect::<Vec<_>>();
 
-		(0..self.n_segments).into_par_iter().map(move |i| {
+		(0..n_segments).into_par_iter().map(move |i| {
 			let col_strides = cols
 				.iter()
 				.map(|col| match col {
@@ -865,7 +871,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				table,
 				cols: col_strides,
 				log_size: log_segment_size,
-				index: i,
+				index: start_index + i,
 				oracle_offset,
 			}
 		})
