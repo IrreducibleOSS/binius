@@ -3,6 +3,7 @@
 use std::array;
 
 use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedField};
+use binius_maybe_rayon::prelude::IntoParallelIterator;
 use itertools::izip;
 
 use crate::{
@@ -35,7 +36,6 @@ pub struct DivUU32 {
 }
 
 impl DivUU32 {
-	#[allow(clippy::needless_range_loop)]
 	pub fn new(table: &mut TableBuilder) -> Self {
 		let zero = table.add_constant("zero", [B1::ZERO]);
 		let p_in_bits = table.add_committed_multiple("p_in_bits");
@@ -80,9 +80,10 @@ impl DivUU32 {
 			},
 		);
 
+		#[allow(clippy::needless_range_loop)]
 		for bit in 0..64 {
 			table.assert_zero(
-				format!("division_satisfied_{bit}"),
+				format!("division_satisfied[{bit}]"),
 				zero_extend_p[bit] - sum.z_out[bit],
 			);
 		}
@@ -215,7 +216,6 @@ pub struct DivSS32 {
 }
 
 impl DivSS32 {
-	#[allow(clippy::needless_range_loop)]
 	pub fn new(table: &mut TableBuilder) -> Self {
 		let p_in_bits = table.add_committed_multiple("p_in_bits");
 		let q_in_bits = table.add_committed_multiple("q_in_bits");
@@ -262,6 +262,7 @@ impl DivSS32 {
 			},
 		);
 
+		#[allow(clippy::needless_range_loop)]
 		for bit in 0..64 {
 			table.assert_zero(
 				format!("division_satisfied_{bit}"),
@@ -325,7 +326,9 @@ impl DivSS32 {
 	where
 		P: PackedField<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
+		// This vector holds the witness data for the inner multiplication gadget
 		let mut inner_div = Vec::new();
+
 		{
 			let mut p_in_bits = array_util::try_map(self.p_in_bits, |bit| index.get_mut(bit))?;
 			let mut q_in_bits = array_util::try_map(self.q_in_bits, |bit| index.get_mut(bit))?;

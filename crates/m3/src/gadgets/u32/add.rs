@@ -179,13 +179,13 @@ impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideAdd<UX, BIT_LENGTH>
 			let zout = table.add_committed_multiple("z_out");
 			for bit in 0..BIT_LENGTH {
 				table.assert_zero(
-					format!("sum_{bit}"),
+					format!("sum[{bit}]"),
 					x_in[bit] + y_in[bit] + cin[bit] - zout[bit],
 				);
 			}
 			zout
 		} else {
-			array::from_fn(|i| table.add_computed(format!("zout_{i}"), x_in[i] + y_in[i] + cin[i]))
+			array::from_fn(|i| table.add_computed(format!("zout[{i}]"), x_in[i] + y_in[i] + cin[i]))
 		};
 		let final_carry_out = table.add_committed("final_carry_out");
 		let cout: [_; BIT_LENGTH] = array::from_fn(|i| {
