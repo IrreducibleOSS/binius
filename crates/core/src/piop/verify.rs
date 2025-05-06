@@ -129,7 +129,7 @@ where
 	let log_dim = commit_meta.total_vars.saturating_sub(arity);
 	let log_batch_size = commit_meta.total_vars.min(arity);
 	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
-	let n_test_queries: usize = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+	let n_test_queries = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
 
 	let cap_height = log2_ceil_usize(n_test_queries);
 	let fold_arities = std::iter::repeat_n(
