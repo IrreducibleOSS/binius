@@ -2,6 +2,8 @@
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("incorrect buffer length: expected {expected}, got {actual}")]
+	IncorrectBufferLength { expected: usize, actual: usize },
 	#[error("the evaluation domain of the code does not match the subspace of the NTT encoder")]
 	EncoderSubspaceMismatch,
 	#[error("the dimension of the evaluation domain of the code does not match the parameters")]
