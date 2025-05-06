@@ -108,24 +108,24 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn fold_left<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		evals: SubfieldSlice<'_, T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
-		query: FSlice<'_, T::B128, Self>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: FSlice<'_, T::B128, Self>,
 		out: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
-		if evals.tower_level > T::B128::TOWER_LEVEL {
+		if mat.tower_level > T::B128::TOWER_LEVEL {
 			return Err(Error::InputValidation(format!(
 				"invalid evals: tower_level={} > {}",
-				evals.tower_level,
+				mat.tower_level,
 				T::B128::TOWER_LEVEL
 			)));
 		}
 		let log_evals_size =
-			evals.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - evals.tower_level;
+			mat.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - mat.tower_level;
 		// Dispatch to the binary field of type T corresponding to the tower level of the evals slice.
 		each_tower_subfield!(
-			evals.tower_level,
+			mat.tower_level,
 			T,
-			compute_left_fold::<_, T>(evals.slice.to_vec(), log_evals_size, query.to_vec(), out)
+			compute_left_fold::<_, T>(mat.slice, log_evals_size, vec, out)
 		)
 	}
 
@@ -159,9 +159,9 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
-	evals_as_b128: Vec<T::B128>,
+	evals_as_b128: &[T::B128],
 	log_evals_size: usize,
-	query: Vec<T::B128>,
+	query: &[T::B128],
 	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
 ) -> Result<(), Error>
 where

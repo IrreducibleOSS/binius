@@ -153,7 +153,7 @@ pub trait ComputeLayer<F> {
 		&'a self,
 		exec: &'a mut Self::Exec,
 		mat: SubfieldSlice<'_, F, Self::DevMem>,
-		query: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 }
