@@ -3,18 +3,19 @@
 use std::collections::HashMap;
 
 use binius_field::{Field, PackedField};
+use binius_utils::impl_debug_with_json;
+use serde::Serialize;
 
 use super::SumcheckProver;
 use crate::protocols::sumcheck::prove::batch_zerocheck::ZerocheckProver;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, PartialEq, Eq, Hash)]
 struct ProverData {
 	n_vars: usize,
 	domain_size: Option<usize>,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub struct FoldLowDimensionsData(HashMap<ProverData, usize>);
 
 impl FoldLowDimensionsData {
@@ -36,8 +37,9 @@ impl FoldLowDimensionsData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(FoldLowDimensionsData);
+
+#[derive(Serialize)]
 pub struct PIOPCompilerFoldData {
 	n_vars: usize,
 }
@@ -50,8 +52,9 @@ impl PIOPCompilerFoldData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(PIOPCompilerFoldData);
+
+#[derive(Serialize)]
 pub struct ExpandQueryData {
 	log_n: usize,
 }
@@ -67,8 +70,9 @@ impl ExpandQueryData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(ExpandQueryData);
+
+#[derive(Serialize)]
 pub struct UnivariateSkipCalculateCoeffsData {
 	n_vars: usize,
 	skip_vars: usize,
@@ -86,3 +90,5 @@ impl UnivariateSkipCalculateCoeffsData {
 		}
 	}
 }
+
+impl_debug_with_json!(UnivariateSkipCalculateCoeffsData);

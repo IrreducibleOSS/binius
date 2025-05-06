@@ -1,9 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{BinaryField, BinaryField1b, ExtensionField};
+use binius_utils::impl_debug_with_json;
+use serde::Serialize;
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub(super) struct SortAndMergeDimensionData {
 	log_elems: usize,
 	element_size: usize,
@@ -19,8 +20,9 @@ impl SortAndMergeDimensionData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(SortAndMergeDimensionData);
+
+#[derive(Serialize)]
 pub(super) struct RSEncodeDimensionData {
 	log_elems: usize,
 	element_size: usize,
@@ -38,8 +40,9 @@ impl RSEncodeDimensionData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(RSEncodeDimensionData);
+
+#[derive(Serialize)]
 pub(super) struct MerkleTreeDimensionData {
 	log_elems: usize,
 	element_size: usize,
@@ -57,8 +60,9 @@ impl MerkleTreeDimensionData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(MerkleTreeDimensionData);
+
+#[derive(Serialize)]
 pub(super) struct FRIFoldData {
 	log_len: usize,
 	log_batch_size: usize,
@@ -76,3 +80,5 @@ impl FRIFoldData {
 		self.log_len
 	}
 }
+
+impl_debug_with_json!(FRIFoldData);

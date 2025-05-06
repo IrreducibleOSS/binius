@@ -111,6 +111,8 @@ quote = "1.0.36"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rayon = "1.8.0"
 seq-macro = "0.3.5"
+serde = "1.0.219"
+serde_json = "1.0.140"
 sha2 = "0.10.8"
 stackalloc = "1.2.1"
 subtle = "2.5.0"

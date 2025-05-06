@@ -3,11 +3,12 @@
 use std::collections::HashMap;
 
 use binius_field::TowerField;
+use binius_utils::impl_debug_with_json;
+use serde::Serialize;
 
 use crate::protocols::sumcheck::prove::SumcheckProver;
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub(super) struct SumcheckBatchProverDimensionsData {
 	prover_n_vars: HashMap<usize, usize>,
 	round: usize,
@@ -33,8 +34,9 @@ impl SumcheckBatchProverDimensionsData {
 	}
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+impl_debug_with_json!(SumcheckBatchProverDimensionsData);
+
+#[derive(Serialize)]
 pub(super) struct FriFoldRoundsData {
 	round: usize,
 	log_batch_size: usize,
@@ -50,3 +52,5 @@ impl FriFoldRoundsData {
 		}
 	}
 }
+
+impl_debug_with_json!(FriFoldRoundsData);

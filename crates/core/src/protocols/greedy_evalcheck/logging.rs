@@ -3,11 +3,12 @@
 use std::collections::HashMap;
 
 use binius_field::Field;
+use binius_utils::impl_debug_with_json;
+use serde::Serialize;
 
 use crate::oracle::ConstraintSet;
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub(super) struct RegularSumcheckDimensionsData {
 	claim_n_vars: HashMap<usize, usize>,
 }
@@ -24,3 +25,5 @@ impl RegularSumcheckDimensionsData {
 		Self { claim_n_vars }
 	}
 }
+
+impl_debug_with_json!(RegularSumcheckDimensionsData);

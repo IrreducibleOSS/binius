@@ -4,11 +4,12 @@ use std::collections::HashMap;
 
 use binius_field::{PackedField, TowerField};
 use binius_math::MultilinearPoly;
+use binius_utils::impl_debug_with_json;
+use serde::Serialize;
 
 use super::common::EvalClaimSuffixDesc;
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub struct MLEFoldHisgDimensionsData {
 	witness_n_vars: HashMap<usize, usize>,
 }
@@ -26,15 +27,15 @@ impl MLEFoldHisgDimensionsData {
 	}
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
+impl_debug_with_json!(MLEFoldHisgDimensionsData);
+
+#[derive(Serialize, PartialEq, Eq, Hash)]
 pub struct EvalClaimSuffixData {
 	pub suffix_desc_kappa: usize,
 	pub suffix_len: usize,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub struct CalculateRingSwitchEqIndData(HashMap<EvalClaimSuffixData, usize>);
 
 impl CalculateRingSwitchEqIndData {
@@ -54,3 +55,5 @@ impl CalculateRingSwitchEqIndData {
 		Self(claim_n_vars)
 	}
 }
+
+impl_debug_with_json!(CalculateRingSwitchEqIndData);
