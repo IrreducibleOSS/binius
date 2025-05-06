@@ -210,7 +210,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in signatures.
-// TODO: Perhaps should move somewhere else.
 type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
 type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
 
