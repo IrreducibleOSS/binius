@@ -43,7 +43,9 @@ pub trait ZerocheckProver<'a, P: PackedField> {
 	fn n_vars(&self) -> usize;
 
 	/// Maximal required Lagrange domain size among compositions in this prover.
-	fn domain_size(&self, skip_rounds: usize) -> usize;
+	///
+	/// Returns `None` if the current prover state doesn't contain information about the domain size.
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize>;
 
 	/// Computes the prover message for the univariate round as a univariate polynomial.
 	///
@@ -80,7 +82,7 @@ impl<'a, P: PackedField, Prover: ZerocheckProver<'a, P> + ?Sized> ZerocheckProve
 		(**self).n_vars()
 	}
 
-	fn domain_size(&self, skip_rounds: usize) -> usize {
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize> {
 		(**self).domain_size(skip_rounds)
 	}
 
@@ -152,7 +154,7 @@ where
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct ProverData {
 	n_vars: usize,
-	domain_size: usize,
+	domain_size: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -209,7 +211,11 @@ where
 
 	let max_domain_size = provers
 		.iter()
-		.map(|prover| prover.domain_size(skip_rounds))
+		.map(|prover| {
+			prover
+				.domain_size(skip_rounds)
+				.expect("domain size must be known")
+		})
 		.max()
 		.unwrap_or(0);
 

@@ -519,9 +519,12 @@ struct ExpandQueryData {
 
 impl ExpandQueryData {
 	fn new<F: Field>(query: &[F]) -> Self {
-		Self {
-			log_n: query.len().ilog2() as _,
-		}
+		let log_n = if query.is_empty() {
+			0
+		} else {
+			query.len().ilog2() as usize
+		};
+		Self { log_n }
 	}
 }
 

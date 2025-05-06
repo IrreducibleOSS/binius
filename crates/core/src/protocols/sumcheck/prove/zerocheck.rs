@@ -297,16 +297,18 @@ where
 		self.n_vars
 	}
 
-	fn domain_size(&self, skip_rounds: usize) -> usize {
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize> {
 		let ZerocheckProverState::RoundEval { compositions, .. } = &self.state else {
-			panic!("ZerocheckProver::domain_size should be called before folding/projection")
+			return None;
 		};
 
-		compositions
-			.iter()
-			.map(|(_, composition, _)| domain_size(composition.degree(), skip_rounds))
-			.max()
-			.unwrap_or(0)
+		Some(
+			compositions
+				.iter()
+				.map(|(_, composition, _)| domain_size(composition.degree(), skip_rounds))
+				.max()
+				.unwrap_or(0),
+		)
 	}
 
 	fn execute_univariate_round(
