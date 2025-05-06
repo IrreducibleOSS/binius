@@ -50,7 +50,7 @@ mod model {
 				event.fire(&mut sequence_chan);
 			}
 
-			assert!(sequence_chan.is_balanced());
+			sequence_chan.assert_balanced();
 		}
 	}
 
