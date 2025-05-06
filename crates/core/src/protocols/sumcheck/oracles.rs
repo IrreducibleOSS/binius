@@ -104,11 +104,11 @@ pub fn make_eval_claims<F: TowerField>(
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let metas = metas.into_iter().collect::<Vec<_>>();
 
-	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars).rev()) {
+	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars)) {
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let max_n_vars = metas.first().map_or(0, |meta| meta.n_vars);
+	let max_n_vars = metas.last().map_or(0, |meta| meta.n_vars);
 
 	if metas.len() != batch_sumcheck_output.multilinear_evals.len() {
 		bail!(Error::ClaimProofMismatch);
@@ -126,8 +126,8 @@ pub fn make_eval_claims<F: TowerField>(
 
 		for (oracle_id, eval) in iter::zip(meta.oracle_ids, prover_evals) {
 			let eval_points_range = match evaluation_order {
-				EvaluationOrder::LowToHigh => max_n_vars - meta.n_vars..max_n_vars,
-				EvaluationOrder::HighToLow => 0..meta.n_vars,
+				EvaluationOrder::LowToHigh => 0..meta.n_vars,
+				EvaluationOrder::HighToLow => max_n_vars - meta.n_vars..max_n_vars,
 			};
 			let eval_point = batch_sumcheck_output.challenges[eval_points_range].to_vec();
 
