@@ -6,7 +6,7 @@ use binius_field::{Field, TowerField};
 use binius_utils::sorting::is_sorted_ascending;
 use bytes::BufMut;
 
-use super::batch_sumcheck::SumcheckProver;
+use super::{batch_sumcheck::SumcheckProver, logging::PIOPCompilerFoldData};
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},
@@ -158,19 +158,5 @@ where
 	/// Returns the iterator over the provers.
 	pub fn provers(&self) -> impl Iterator<Item = &Prover> {
 		self.provers.iter().map(|(prover, _)| prover)
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct PIOPCompilerFoldData {
-	n_vars: usize,
-}
-
-impl PIOPCompilerFoldData {
-	fn new<F: Field>(prover: &impl SumcheckProver<F>) -> Self {
-		Self {
-			n_vars: prover.n_vars(),
-		}
 	}
 }

@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{collections::HashMap, iter, sync::Arc};
+use std::{iter, sync::Arc};
 
 use binius_field::{
 	tower::{PackedTop, TowerFamily},
@@ -16,13 +16,16 @@ use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
 	eq_ind::RowBatchCoeffs,
 	error::Error,
+	logging::MLEFoldHisgDimensionsData,
 	tower_tensor_algebra::TowerTensorAlgebra,
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
 	protocols::evalcheck::subclaims::MemoizedData,
-	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
+	ring_switch::{
+		common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd, logging::CalculateRingSwitchEqIndData,
+	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
@@ -33,53 +36,6 @@ type FExt<Tower> = <Tower as TowerFamily>::B128;
 pub struct ReducedWitness<P: PackedField> {
 	pub transparents: Vec<MultilinearWitness<'static, P>>,
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MLEFoldHisgDimensionsData {
-	witness_n_vars: HashMap<usize, usize>,
-}
-
-impl MLEFoldHisgDimensionsData {
-	fn new<'a, P: PackedField, M: MultilinearPoly<P> + 'a>(
-		multilinears: impl IntoIterator<Item = &'a M>,
-	) -> Self {
-		let mut witness_n_vars = HashMap::new();
-		for multilinear in multilinears {
-			*witness_n_vars.entry(multilinear.n_vars()).or_default() += 1;
-		}
-
-		Self { witness_n_vars }
-	}
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct EvalClaimSuffixData {
-	suffix_desc_kappa: usize,
-	suffix_len: usize,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct CalculateRingSwitchEqIndData(HashMap<EvalClaimSuffixData, usize>);
-
-impl CalculateRingSwitchEqIndData {
-	fn new<'a, F: TowerField>(
-		constraints: impl IntoIterator<Item = &'a EvalClaimSuffixDesc<F>>,
-	) -> Self {
-		let mut claim_n_vars = HashMap::new();
-		for constraint in constraints {
-			*claim_n_vars
-				.entry(EvalClaimSuffixData {
-					suffix_desc_kappa: constraint.kappa,
-					suffix_len: constraint.suffix.len(),
-				})
-				.or_default() += 1;
-		}
-
-		Self(claim_n_vars)
-	}
 }
 
 pub fn prove<F, P, M, Tower, Challenger_, Backend>(

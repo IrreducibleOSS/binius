@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{borrow::Cow, collections::HashMap, ops::Deref};
+use std::{borrow::Cow, ops::Deref};
 
 use binius_field::{
 	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
@@ -29,7 +29,10 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	piop::CommitMeta,
+	piop::{
+		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
+		CommitMeta,
+	},
 	protocols::{
 		fri,
 		fri::{FRIFolder, FRIParams, FoldRoundOutput},
@@ -268,48 +271,6 @@ where
 	)?;
 
 	Ok(())
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct SumcheckBatchProverDimensionsData {
-	prover_n_vars: HashMap<usize, usize>,
-	round: usize,
-}
-
-impl SumcheckBatchProverDimensionsData {
-	fn new<'a, F, Prover>(round: usize, provers: impl IntoIterator<Item = &'a Prover>) -> Self
-	where
-		F: TowerField,
-		Prover: SumcheckProver<F> + 'a,
-	{
-		let mut prover_n_vars = HashMap::new();
-		for prover in provers {
-			prover_n_vars.insert(prover.n_vars(), prover.n_vars());
-		}
-		Self {
-			prover_n_vars,
-			round,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct FriFoldRoundsData {
-	round: usize,
-	log_batch_size: usize,
-	codeword_len: usize,
-}
-
-impl FriFoldRoundsData {
-	fn new(round: usize, log_batch_size: usize, codeword_len: usize) -> Self {
-		Self {
-			round,
-			log_batch_size,
-			codeword_len,
-		}
-	}
 }
 
 #[allow(clippy::too_many_arguments)]

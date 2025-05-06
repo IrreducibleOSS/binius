@@ -26,9 +26,12 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
 	},
-	protocols::evalcheck::subclaims::{
-		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
-		shifted_sumcheck_meta, CompositeMLECheckMeta,
+	protocols::evalcheck::{
+		logging::MLEFoldHighDimensionsData,
+		subclaims::{
+			packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
+			shifted_sumcheck_meta, CompositeMLECheckMeta,
+		},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
@@ -660,17 +663,5 @@ where
 			eval_point,
 			eval,
 		})
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MLEFoldHighDimensionsData {
-	n_claims: usize,
-}
-
-impl MLEFoldHighDimensionsData {
-	fn new(n_claims: usize) -> Self {
-		Self { n_claims }
 	}
 }

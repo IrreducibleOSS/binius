@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
-	BinaryField, BinaryField1b, ExtensionField, PackedExtension, PackedField, TowerField,
+	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
 };
 use binius_math::MultilinearQuery;
 use binius_maybe_rayon::prelude::*;
@@ -16,12 +16,13 @@ use tracing::instrument;
 use super::{
 	common::{vcs_optimal_layers_depths_iter, FRIParams},
 	error::Error,
+	logging::{MerkleTreeDimensionData, RSEncodeDimensionData, SortAndMergeDimensionData},
 	TerminateCodeword,
 };
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	protocols::fri::common::fold_interleaved_chunk,
+	protocols::fri::{common::fold_interleaved_chunk, logging::FRIFoldData},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{ProverTranscript, TranscriptWriter},
 };
@@ -157,61 +158,6 @@ where
 	commit_interleaved_with(params, ntt, merkle_prover, move |buffer| {
 		buffer.copy_from_slice(message)
 	})
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct SortAndMergeDimensionData {
-	log_elems: usize,
-	element_size: usize,
-}
-
-impl SortAndMergeDimensionData {
-	fn new<F: BinaryField>(log_elems: usize) -> Self {
-		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
-		Self {
-			log_elems,
-			element_size,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct RSEncodeDimensionData {
-	log_elems: usize,
-	element_size: usize,
-	log_batch_size: usize,
-}
-
-impl RSEncodeDimensionData {
-	fn new<F: BinaryField>(log_elems: usize, log_batch_size: usize) -> Self {
-		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
-		Self {
-			log_elems,
-			element_size,
-			log_batch_size,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct MerkleTreeDimensionData {
-	log_elems: usize,
-	element_size: usize,
-	batch_size: usize,
-}
-
-impl MerkleTreeDimensionData {
-	fn new<F: BinaryField>(log_elems: usize, batch_size: usize) -> Self {
-		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
-		Self {
-			log_elems,
-			element_size,
-			batch_size,
-		}
-	}
 }
 
 /// Encodes and commits the input message with a closure for writing the message.
@@ -438,7 +384,8 @@ where
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
-		let dimension_data = MerkleTreeDimensionData::new::<F>(dimensions_data.log_len, coset_size);
+		let dimension_data =
+			MerkleTreeDimensionData::new::<F>(dimensions_data.log_len(), coset_size);
 		let merkle_tree_span = tracing::debug_span!(
 			"[task] Merkle Tree",
 			phase = "piop_compiler",
@@ -528,22 +475,6 @@ where
 		}
 
 		Ok(())
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct FRIFoldData {
-	log_len: usize,
-	log_batch_size: usize,
-}
-
-impl FRIFoldData {
-	fn new(log_len: usize, log_batch_size: usize) -> Self {
-		Self {
-			log_len,
-			log_batch_size,
-		}
 	}
 }
 

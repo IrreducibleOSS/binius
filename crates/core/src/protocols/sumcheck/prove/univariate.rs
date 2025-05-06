@@ -25,7 +25,10 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
 		common::{equal_n_vars_check, small_field_embedding_degree_check},
-		prove::RegularSumcheckProver,
+		prove::{
+			logging::{ExpandQueryData, UnivariateSkipCalculateCoeffsData},
+			RegularSumcheckProver,
+		},
 		zerocheck::{domain_size, extrapolated_scalars_count},
 		Error,
 	},
@@ -489,43 +492,6 @@ where
 		max_domain_size,
 		partial_eq_ind_evals,
 	})
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct UnivariateSkipCalculateCoeffsData {
-	n_vars: usize,
-	skip_vars: usize,
-	n_multilinears: usize,
-	log_batch: usize,
-}
-
-impl UnivariateSkipCalculateCoeffsData {
-	fn new(n_vars: usize, skip_vars: usize, n_multilinears: usize, log_batch: usize) -> Self {
-		Self {
-			n_vars,
-			skip_vars,
-			n_multilinears,
-			log_batch,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct ExpandQueryData {
-	log_n: usize,
-}
-
-impl ExpandQueryData {
-	fn new<F: Field>(query: &[F]) -> Self {
-		let log_n = if query.is_empty() {
-			0
-		} else {
-			query.len().ilog2() as usize
-		};
-		Self { log_n }
-	}
 }
 
 // A helper to perform spread multiplication of small field composition evals by appropriate

@@ -1,17 +1,15 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::collections::HashMap;
-
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 
-use super::error::Error;
+use super::{error::Error, logging::RegularSumcheckDimensionsData};
 use crate::{
 	fiat_shamir::Challenger,
-	oracle::{ConstraintSet, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
 		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
 		EvalcheckMultilinearClaim, EvalcheckProver,
@@ -23,23 +21,6 @@ use crate::{
 pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
 	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 	pub memoized_data: MemoizedData<'a, P, Backend>,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct RegularSumcheckDimensionsData {
-	claim_n_vars: HashMap<usize, usize>,
-}
-
-impl RegularSumcheckDimensionsData {
-	fn new<'a, F: Field>(constraints: impl IntoIterator<Item = &'a ConstraintSet<F>>) -> Self {
-		let mut claim_n_vars = HashMap::new();
-		for constraint in constraints {
-			*claim_n_vars.entry(constraint.n_vars).or_default() += 1;
-		}
-
-		Self { claim_n_vars }
-	}
 }
 
 #[allow(clippy::too_many_arguments)]

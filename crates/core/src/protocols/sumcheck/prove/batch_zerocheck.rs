@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, CpuBackend};
@@ -14,7 +14,10 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		immediate_switchover_heuristic,
-		prove::{batch_sumcheck, front_loaded::BatchProver, RegularSumcheckProver, SumcheckProver},
+		prove::{
+			batch_sumcheck, front_loaded::BatchProver, logging::FoldLowDimensionsData,
+			RegularSumcheckProver, SumcheckProver,
+		},
 		zerocheck::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
 			BatchZerocheckOutput, ZerocheckRoundEvals,
@@ -149,35 +152,6 @@ where
 	)?;
 
 	Ok(prover)
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct ProverData {
-	n_vars: usize,
-	domain_size: Option<usize>,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct FoldLowDimensionsData(HashMap<ProverData, usize>);
-
-impl FoldLowDimensionsData {
-	fn new<'a, 'b, P: PackedField, Prover: ZerocheckProver<'a, P> + 'b>(
-		skip_rounds: usize,
-		constraints: impl IntoIterator<Item = &'b Prover>,
-	) -> Self {
-		let mut claim_n_vars = HashMap::new();
-		for constraint in constraints {
-			*claim_n_vars
-				.entry(ProverData {
-					n_vars: constraint.n_vars(),
-					domain_size: constraint.domain_size(skip_rounds),
-				})
-				.or_default() += 1;
-		}
-
-		Self(claim_n_vars)
-	}
 }
 
 /// Prove a batched zerocheck protocol execution.

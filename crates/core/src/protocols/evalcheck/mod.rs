@@ -14,6 +14,7 @@
 mod error;
 #[allow(clippy::module_inception)]
 mod evalcheck;
+mod logging;
 mod prove;
 pub mod subclaims;
 #[cfg(test)]
