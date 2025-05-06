@@ -12,11 +12,8 @@ use itertools::izip;
 use crate::{
 	builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
 	gadgets::{
-		u32::{
-			add::{Incr, UnsignedAddPrimitives},
-			sub::WideU32Sub,
-			U32SubFlags,
-		},
+		add::{Incr, UnsignedAddPrimitives},
+		sub::{U32SubFlags, WideU32Sub},
 		util::pack_fp,
 	},
 };
