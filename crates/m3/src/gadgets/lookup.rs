@@ -38,7 +38,7 @@ impl LookupProducer {
 				value_cols.iter().copied(),
 				FlushOpts {
 					multiplicity: 1 << i,
-					selector: Some(multiplicity_col),
+					selectors: vec![multiplicity_col],
 				},
 			);
 		}

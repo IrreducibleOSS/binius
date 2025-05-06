@@ -1,15 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{util::inner_product_unchecked, TowerField};
-use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain, EvaluationOrder};
+use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize, sorting::is_sorted_ascending};
 use tracing::instrument;
 
 use super::{
 	eq_ind::{self, ClaimsSortingOrder},
 	error::{Error, VerificationError},
-	front_loaded::BatchVerifier as SumcheckBatchVerifier,
-	verify_sumcheck::batch_verify as batch_verify_sumcheck,
+	front_loaded,
 	zerocheck::{self, univariatizing_reduction_claim, BatchZerocheckOutput, ZerocheckClaim},
 	BatchSumcheckOutput,
 };
@@ -115,39 +114,13 @@ where
 	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(skip_rounds, claims)?;
 	let sumcheck_claims = eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
-	let mut tail_verifier =
-		SumcheckBatchVerifier::new_prebatched(batch_coeffs, sum, &sumcheck_claims)?;
+	let batch_sumcheck_verifier =
+		front_loaded::BatchVerifier::new_prebatched(batch_coeffs, sum, &sumcheck_claims)?;
 
-	let tail_rounds = max_n_vars.saturating_sub(skip_rounds);
+	let mut sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
 
-	let mut univariatized_multilinear_evals = Vec::with_capacity(claims.len());
-	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
-	for _round_no in 0..tail_rounds {
-		let mut reader = transcript.message();
-		while let Some(claim_multilinear_evals) = tail_verifier.try_finish_claim(&mut reader)? {
-			univariatized_multilinear_evals.push(claim_multilinear_evals);
-		}
-		tail_verifier.receive_round_proof(&mut reader)?;
-
-		let challenge = transcript.sample();
-		unskipped_challenges.push(challenge);
-
-		tail_verifier.finish_round(challenge)?;
-	}
-
-	let mut reader = transcript.message();
-	while let Some(claim_multilinear_evals) = tail_verifier.try_finish_claim(&mut reader)? {
-		univariatized_multilinear_evals.push(claim_multilinear_evals);
-	}
-	tail_verifier.finish()?;
-
-	unskipped_challenges.reverse();
-
-	// Reduce eq-ind sumchecks to regular sumchecks
-	let sumcheck_output = BatchSumcheckOutput {
-		challenges: unskipped_challenges,
-		multilinear_evals: univariatized_multilinear_evals,
-	};
+	// Reverse challenges since folding high-to-low
+	sumcheck_output.challenges.reverse();
 
 	let eq_ind_output = eq_ind::verify_sumcheck_outputs(
 		ClaimsSortingOrder::AscendingVars,
@@ -160,8 +133,12 @@ where
 	let reduction_claim =
 		univariatizing_reduction_claim(skip_rounds, &eq_ind_output.multilinear_evals)?;
 
-	let reduction_sumcheck_output =
-		batch_verify_sumcheck(EvaluationOrder::HighToLow, &[reduction_claim.clone()], transcript)?;
+	let univariatize_verifier =
+		front_loaded::BatchVerifier::new(&[reduction_claim.clone()], transcript)?;
+	let mut reduction_sumcheck_output = univariatize_verifier.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	reduction_sumcheck_output.challenges.reverse();
 
 	let BatchSumcheckOutput {
 		challenges: skipped_challenges,

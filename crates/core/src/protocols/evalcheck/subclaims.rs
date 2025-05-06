@@ -34,7 +34,10 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
 		self,
-		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
+		prove::{
+			front_loaded,
+			oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
+		},
 		Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
@@ -533,10 +536,21 @@ where
 		backend,
 	)?;
 
-	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
+	let batch_prover = front_loaded::BatchProver::new(provers, transcript)?;
+
+	let mut sumcheck_output = batch_prover.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	sumcheck_output.challenges.reverse();
 
 	let evalcheck_claims =
 		sumcheck::make_eval_claims(EvaluationOrder::HighToLow, metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
+}
+
+#[derive(Clone)]
+pub enum SumcheckClaims<F: Field> {
+	Projected(EvalcheckMultilinearClaim<F>),
+	Composite(EvalcheckMultilinearClaim<F>),
 }

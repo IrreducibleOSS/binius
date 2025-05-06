@@ -2,7 +2,9 @@
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
-	iter, slice,
+	iter,
+	ops::{Deref, DerefMut},
+	slice,
 	sync::Arc,
 };
 
@@ -11,8 +13,10 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier,
+	as_packed_field::PackedType,
+	packed::{get_packed_slice, set_packed_slice},
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{
 	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
@@ -216,6 +220,41 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			first_oracle_id_in_table += count;
 		}
 		index
+	}
+}
+
+impl<'cs, 'alloc, P> WitnessIndex<'cs, 'alloc, P>
+where
+	P: PackedField<Scalar: TowerField>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B16>
+		+ PackedExtension<B32>
+		+ PackedExtension<B64>
+		+ PackedExtension<B128>,
+{
+	/// Automatically populate the witness data for all the constant columns in all the tables with a [`TableWitnessIndex<P>`].
+	pub fn fill_constant_cols(&mut self) -> Result<(), Error> {
+		for table in self.tables.iter_mut() {
+			match table.as_mut() {
+				Either::Left(_) => (),
+				// If we have witness index data, populate the witness
+				Either::Right(table_witness_index) => {
+					let table = table_witness_index.table();
+					let segment = table_witness_index.full_segment();
+					for col in table.columns.iter() {
+						if let ColumnDef::Constant { data, .. } = &col.col {
+							let mut witness_data = segment.get_dyn_mut(col.id.table_index)?;
+							let len = witness_data.size();
+							for (i, scalar) in data.iter().cycle().take(len).enumerate() {
+								witness_data.set(i, *scalar)?
+							}
+						}
+					}
+				}
+			}
+		}
+		Ok(())
 	}
 }
 
@@ -1079,6 +1118,136 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	}
 }
 
+impl<'a, P> TableWitnessSegment<'a, P>
+where
+	P: PackedField<Scalar: TowerField>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B16>
+		+ PackedExtension<B32>
+		+ PackedExtension<B64>
+		+ PackedExtension<B128>,
+{
+	/// For a given column index within a table, return the immutable upcasted witness data
+	pub fn get_dyn(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColView<P::Scalar> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColView<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases(packed)
+			}))),
+			_ => panic!("tower_level must be in the range [0, 7]"),
+		};
+		Ok(ret)
+	}
+
+	/// For a given column index within a table, return the mutable witness data.
+	pub fn get_dyn_mut(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColViewMut<P::Scalar> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColViewMut<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases_mut(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases_mut(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases_mut(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases_mut(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases_mut(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases_mut(packed)
+			}))),
+			_ => panic!("tower_level must be in the range [0, 7]"),
+		};
+		Ok(ret)
+	}
+}
+
+/// Type erased interface for viewing witness columns. Note that `F` will be an extension field of the underlying column's field.
+pub trait WitnessColView<F> {
+	/// Returns the scalar at a given index
+	fn get(&self, index: usize) -> F;
+
+	/// The size of the scalar elements in this column.
+	fn size(&self) -> usize;
+}
+
+/// Similar to [`WitnessColView`], for mutating witness columns.
+pub trait WitnessColViewMut<F>: WitnessColView<F> {
+	/// Modifies the upcasted scalar at a given index.
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error>;
+}
+
+struct WitnessColViewImpl<Data>(Data);
+
+impl<F, P, Data> WitnessColView<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: Deref<Target = [P]>,
+{
+	fn get(&self, index: usize) -> F {
+		get_packed_slice(&self.0, index).into()
+	}
+
+	fn size(&self) -> usize {
+		self.0.len() << P::LOG_WIDTH
+	}
+}
+
+impl<F, P, Data> WitnessColViewMut<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: DerefMut<Target = [P]>,
+{
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error> {
+		let subfield_val = val.try_into().map_err(|_| Error::FieldElementTooBig)?;
+		set_packed_slice(&mut self.0, index, subfield_val);
+		Ok(())
+	}
+}
+
 /// A struct that can populate segments of a table witness using row descriptors.
 pub trait TableFiller<P = PackedType<OptimalUnderlier, B128>>
 where
@@ -1105,9 +1274,10 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::iter::repeat_with;
+	use std::{array, iter::repeat_with};
 
 	use assert_matches::assert_matches;
+	use binius_core::oracle::MultilinearOracleSet;
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
@@ -1117,7 +1287,7 @@ mod tests {
 	use super::*;
 	use crate::builder::{
 		types::{B1, B32, B8},
-		ConstraintSystem, TableBuilder,
+		ConstraintSystem, Statement, TableBuilder,
 	};
 
 	#[test]
@@ -1428,5 +1598,90 @@ mod tests {
 			index.fill_table_sequential(&test_table, &[]),
 			Err(Error::IncorrectNumberOfTableEvents { .. })
 		);
+	}
+
+	#[test]
+	fn test_dyn_witness() {
+		let mut cs = ConstraintSystem::new();
+		let mut test_table = cs.add_table("test");
+		let test_col: Col<B32, 4> = test_table.add_committed("col");
+		let table_id = test_table.id();
+
+		let allocator = Bump::new();
+
+		let table_size = 11;
+		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+		let table_index = index.init_table(table_id, table_size).unwrap();
+		let segment = table_index.full_segment();
+		let mut rng = StdRng::seed_from_u64(0);
+		let row = repeat_with(|| B32::random(&mut rng))
+			.take(table_size * 4)
+			.collect::<Vec<_>>();
+		{
+			let mut data: Box<dyn WitnessColViewMut<_>> =
+				segment.get_dyn_mut(test_col.table_index).unwrap();
+			row.iter().enumerate().for_each(|(i, val)| {
+				data.set(i, (*val).into()).unwrap();
+			})
+		}
+		let data = segment.get_dyn(test_col.table_index).unwrap();
+		row.iter().enumerate().for_each(|(i, val)| {
+			let down_cast: B32 = data.get(i).try_into().unwrap();
+			assert_eq!(down_cast, *val)
+		})
+	}
+
+	fn find_oracle_id_with_name(
+		oracles: &MultilinearOracleSet<B128>,
+		name: &str,
+	) -> Option<OracleId> {
+		(0..oracles.size()).find(|&oracle| oracles.oracle(oracle).name() == Some(name))
+	}
+
+	#[test]
+	fn test_constant_filling() {
+		let mut cs = ConstraintSystem::new();
+
+		let mut test_table = cs.add_table("test");
+		let mut rng = StdRng::seed_from_u64(0);
+		let unpack_value = B16::random(&mut rng);
+		let pack_const_arr: [B32; 4] = array::from_fn(|_| B32::random(&mut rng));
+
+		let _ = test_table.add_constant("unpacked_col", [unpack_value]);
+		let _ = test_table.add_constant("packed_col", pack_const_arr);
+		let table_id = test_table.id();
+
+		let allocator = Bump::new();
+
+		let table_size = 123;
+		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+		{
+			let _ = index.init_table(table_id, table_size).unwrap();
+			index.fill_constant_cols().unwrap();
+		}
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![table_size],
+		};
+		let witness = index.into_multilinear_extension_index();
+		let ccs = cs.compile(&statement).unwrap();
+		let non_packed_col_id = find_oracle_id_with_name(&ccs.oracles, "unpacked_col").unwrap();
+
+		// Query MultilinearExtensionIndex to see if the constants are correct.
+		let non_pack_witness = witness.get_multilin_poly(non_packed_col_id).unwrap();
+		for index in 0..non_pack_witness.size() {
+			let got = non_pack_witness.evaluate_on_hypercube(index).unwrap();
+			assert_eq!(got, unpack_value.into());
+		}
+		let packed_col_id = find_oracle_id_with_name(&ccs.oracles, "packed_col").unwrap();
+
+		let pack_witness = witness.get_multilin_poly(packed_col_id).unwrap();
+		for index in 0..pack_witness.size() {
+			let got = pack_witness.evaluate_on_hypercube(index).unwrap();
+
+			assert_eq!(got, pack_const_arr[index % 4].into());
+		}
 	}
 }

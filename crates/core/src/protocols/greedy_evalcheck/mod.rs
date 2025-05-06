@@ -13,6 +13,8 @@
 
 mod error;
 mod prove;
+#[cfg(test)]
+mod tests;
 mod verify;
 
 pub use error::*;
