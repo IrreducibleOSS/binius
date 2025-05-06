@@ -60,7 +60,7 @@ impl LookupProducer {
 		P: PackedExtension<B1>,
 		P::Scalar: TowerField,
 	{
-		if self.multiplicity_bits.len() < 32 {
+		if self.multiplicity_bits.len() < u32::BITS as usize {
 			for count in counts.clone() {
 				ensure!(
 					count < (1 << self.multiplicity_bits.len()) as u32,
@@ -241,9 +241,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let counts = vec![9; lookup_table_size];
-		let values_and_counts = iter::zip(values, counts)
-			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
-			.collect::<Vec<_>>();
+		let values_and_counts = iter::zip(values, counts).collect::<Vec<_>>();
 
 		let allocator = Bump::new();
 		let mut witness =
