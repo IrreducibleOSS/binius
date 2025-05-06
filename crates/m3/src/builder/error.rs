@@ -22,6 +22,8 @@ pub enum Error {
 	},
 	#[error("cannot construct witness index for empty table {table_id}")]
 	EmptyTable { table_id: TableId },
+	#[error("failed to write element to a column with a lower tower height")]
+	FieldElementTooBig,
 	#[error("structured column error: {0}")]
 	Structured(#[from] StructuredError),
 	#[error("table {table_id} index has already been initialized")]

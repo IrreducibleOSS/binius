@@ -202,7 +202,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Constant { poly } = &info.col {
+				if let ColumnDef::Constant { poly, .. } = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
 						.transparent(poly.clone())?;
