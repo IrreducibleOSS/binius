@@ -77,7 +77,7 @@ where
 		});
 	}
 
-	for i in (skip_rounds..log_n).rev() {
+	for i in (0..(log_n - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
@@ -124,7 +124,7 @@ where
 	}
 
 	#[allow(clippy::needless_range_loop)]
-	for i in skip_rounds..log_n {
+	for i in 0..(log_n - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);

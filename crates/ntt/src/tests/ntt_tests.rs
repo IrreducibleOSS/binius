@@ -26,6 +26,7 @@ fn check_roundtrip_with_reference<F, P>(
 	data: &[P],
 	shape: NTTShape,
 	cosets: Range<u32>,
+	skip_rounds: usize,
 ) where
 	F: BinaryField,
 	P: PackedField<Scalar = F>,
@@ -49,18 +50,18 @@ fn check_roundtrip_with_reference<F, P>(
 	let mut data_copy_ref = orig_data.clone();
 
 	for coset in cosets {
-		ntt.forward_transform(&mut data_copy_impl, shape, coset, 0)
+		ntt.forward_transform(&mut data_copy_impl, shape, coset, skip_rounds)
 			.unwrap();
 		reference_ntt
-			.forward_transform(&mut data_copy_ref, shape, coset, 0)
+			.forward_transform(&mut data_copy_ref, shape, coset, skip_rounds)
 			.unwrap();
 
 		assert_eq!(&data_copy_impl, &data_copy_ref);
 
-		ntt.inverse_transform(&mut data_copy_impl, shape, coset, 0)
+		ntt.inverse_transform(&mut data_copy_impl, shape, coset, skip_rounds)
 			.unwrap();
 		reference_ntt
-			.inverse_transform(&mut data_copy_ref, shape, coset, 0)
+			.inverse_transform(&mut data_copy_ref, shape, coset, skip_rounds)
 			.unwrap();
 
 		assert_eq!(&orig_data, &data_copy_impl);
@@ -115,55 +116,62 @@ fn check_roundtrip_all_ntts<P>(
 		for log_n_b in log_n_b_range {
 			for log_n in 0..=log_n_b {
 				let log_batch = log_n_b - log_n;
-
 				let shape = NTTShape {
 					log_x: log_stride_batch,
 					log_y: log_n,
 					log_z: log_batch,
 				};
 
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&single_threaded_ntt,
-					&data,
-					shape,
-					cosets.clone(),
-				);
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&single_threaded_precompute_ntt,
-					&data,
-					shape,
-					cosets.clone(),
-				);
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&multithreaded_ntt_2,
-					&data,
-					shape,
-					cosets.clone(),
-				);
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&multithreaded_ntt_4,
-					&data,
-					shape,
-					cosets.clone(),
-				);
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&multithreaded_precompute_ntt_2,
-					&data,
-					shape,
-					cosets.clone(),
-				);
-				check_roundtrip_with_reference(
-					&simple_ntt,
-					&dynamic_dispatch_ntt,
-					&data,
-					shape,
-					cosets.clone(),
-				);
+				for skip_rounds in [0, log_n / 3, log_n / 2] {
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&single_threaded_ntt,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&single_threaded_precompute_ntt,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&multithreaded_ntt_2,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&multithreaded_ntt_4,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&multithreaded_precompute_ntt_2,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+					check_roundtrip_with_reference(
+						&simple_ntt,
+						&dynamic_dispatch_ntt,
+						&data,
+						shape,
+						cosets.clone(),
+						skip_rounds,
+					);
+				}
 			}
 		}
 	}
