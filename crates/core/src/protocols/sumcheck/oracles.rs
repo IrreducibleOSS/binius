@@ -7,8 +7,8 @@ use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
-	BatchSumcheckOutput, BatchZerocheckOutput, CompositeSumClaim, Error, SumcheckClaim,
-	ZerocheckClaim,
+	BatchSumcheckOutput, BatchZerocheckOutput, CompositeSumClaim, EqIndSumcheckClaim, Error,
+	SumcheckClaim, ZerocheckClaim,
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
@@ -84,6 +84,33 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	Ok((claim, meta))
 }
 
+#[allow(clippy::type_complexity)]
+pub fn constraint_set_mlecheck_claim<F: TowerField>(
+	constraint_set: ConstraintSet<F>,
+) -> Result<(EqIndSumcheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
+	let (constraints, meta) = split_constraint_set(constraint_set);
+	let n_multilinears = meta.oracle_ids.len();
+
+	let mut sums = Vec::new();
+	for Constraint {
+		composition,
+		predicate,
+		..
+	} in constraints
+	{
+		match predicate {
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
+				sum,
+			}),
+			_ => bail!(Error::MixedBatchingNotSupported),
+		}
+	}
+
+	let claim = EqIndSumcheckClaim::new(meta.n_vars, n_multilinears, sums)?;
+	Ok((claim, meta))
+}
+
 fn split_constraint_set<F: Field>(
 	constraint_set: ConstraintSet<F>,
 ) -> (Vec<Constraint<F>>, OracleClaimMeta) {
@@ -121,6 +148,7 @@ pub fn make_eval_claims<F: TowerField>(
 	let mut evalcheck_claims = Vec::new();
 	for (meta, prover_evals) in iter::zip(metas, batch_sumcheck_output.multilinear_evals) {
 		if meta.oracle_ids.len() != prover_evals.len() {
+			println!("!!!!!!!!!!!!!!!!! {} {}", meta.oracle_ids.len(), prover_evals.len());
 			bail!(Error::ClaimProofMismatch);
 		}
 
@@ -222,4 +250,24 @@ pub fn constraint_set_sumcheck_claims<F: TowerField>(
 		claims.push(claim);
 	}
 	Ok(SumcheckClaimsWithMeta { claims, metas })
+}
+
+pub struct MLEcheckClaimsWithMeta<F: TowerField, C> {
+	pub claims: Vec<EqIndSumcheckClaim<F, C>>,
+	pub metas: Vec<OracleClaimMeta>,
+}
+
+/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+pub fn constraint_set_mlecheck_claims<F: TowerField>(
+	constraint_sets: Vec<ConstraintSet<F>>,
+) -> Result<MLEcheckClaimsWithMeta<F, ArithCircuitPoly<F>>, Error> {
+	let mut claims = Vec::with_capacity(constraint_sets.len());
+	let mut metas = Vec::with_capacity(constraint_sets.len());
+
+	for constraint_set in constraint_sets {
+		let (claim, meta) = constraint_set_mlecheck_claim(constraint_set)?;
+		metas.push(meta);
+		claims.push(claim);
+	}
+	Ok(MLEcheckClaimsWithMeta { claims, metas })
 }

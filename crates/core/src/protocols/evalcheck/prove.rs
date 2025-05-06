@@ -2,12 +2,12 @@
 
 use std::collections::HashSet;
 
-use binius_field::{PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
-use itertools::chain;
+use itertools::{chain, izip};
 use tracing::instrument;
 
 use super::{
@@ -15,8 +15,8 @@ use super::{
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	serialize_evalcheck_proof,
 	subclaims::{
-		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_mlecheck_meta,
-		fill_eq_witness_for_composites, MemoizedData, ProjectedBivariateMeta, SumcheckClaims,
+		add_composite_sumcheck_to_constraints, calculate_projected_mles, MemoizedData,
+		ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -30,7 +30,7 @@ use crate::{
 		logging::MLEFoldHighDimensionsData,
 		subclaims::{
 			packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
-			shifted_sumcheck_meta, CompositeMLECheckMeta,
+			shifted_sumcheck_meta,
 		},
 	},
 	transcript::ProverTranscript,
@@ -65,10 +65,12 @@ where
 	// Internally used to collect subclaims without evaluations for future query and memoization
 	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
 	// The list of claims that reduces to a bivariate sumcheck in a round.
-	sumcheck_claims: Vec<SumcheckClaims<P::Scalar>>,
+	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	// The new sumcheck constraints arising in this round
-	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
+	// The new bivariate sumcheck constraints arising in this round
+	new_bivariate_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
+	// The new mle sumcheck constraints arising in this round
+	new_mlechecks_constraints: Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 	// Tensor expansion of evaluation points and partial evaluations of multilinears
 	pub memoized_data: MemoizedData<'b, P, Backend>,
 	backend: &'a Backend,
@@ -102,10 +104,11 @@ where
 			oracles,
 			witness_index,
 			committed_eval_claims: Vec::new(),
-			new_sumchecks_constraints: Vec::new(),
+			new_bivariate_sumchecks_constraints: Vec::new(),
+			new_mlechecks_constraints: Vec::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
-			sumcheck_claims: Vec::new(),
+			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
 
@@ -116,12 +119,31 @@ where
 		}
 	}
 
-	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumchecks_constraints(&mut self) -> Result<Vec<ConstraintSet<F>>, OracleError> {
-		self.new_sumchecks_constraints
+	/// A helper method to move out bivariate sumcheck constraints
+	pub fn take_new_bivariate_sumchecks_constraints(
+		&mut self,
+	) -> Result<Vec<ConstraintSet<F>>, OracleError> {
+		self.new_bivariate_sumchecks_constraints
 			.iter_mut()
 			.map(|builder| std::mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
+			.collect()
+	}
+
+	/// A helper method to move out mlechecks constraints
+	pub fn take_new_mlechecks_constraints(
+		&mut self,
+	) -> Result<Vec<ConstraintSetEqIndPoint<F>>, OracleError> {
+		std::mem::take(&mut self.new_mlechecks_constraints)
+			.into_iter()
+			.map(|(ep, builder)| {
+				builder
+					.build_one(self.oracles)
+					.map(|constraint| ConstraintSetEqIndPoint {
+						eq_ind_challenges: ep.clone(),
+						constraint_set: constraint,
+					})
+			})
 			.collect()
 	}
 
@@ -237,26 +259,7 @@ where
 		}
 
 		// Step 3: Process projected_bivariate_claims
-		let mut projected_bivariate_metas = Vec::new();
-		let mut composite_mle_metas = Vec::new();
-		let mut projected_bivariate_claims = Vec::new();
-		let mut composite_mle_claims = Vec::new();
-
-		for claim in &self.sumcheck_claims {
-			match claim {
-				SumcheckClaims::Projected(claim) => {
-					let meta = Self::projected_bivariate_meta(self.oracles, claim)?;
-					projected_bivariate_metas.push(meta);
-					projected_bivariate_claims.push(claim.clone())
-				}
-				SumcheckClaims::Composite(claim) => {
-					let meta = composite_mlecheck_meta(self.oracles, &claim.eval_point)?;
-					composite_mle_metas.push(meta);
-					composite_mle_claims.push(claim.clone())
-				}
-			}
-		}
-		let dimensions_data = MLEFoldHighDimensionsData::new(projected_bivariate_claims.len());
+		let dimensions_data = MLEFoldHighDimensionsData::new(self.projected_bivariate_claims.len());
 		let evalcheck_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Evalcheck) MLE Fold High",
 			phase = "evalcheck",
@@ -264,6 +267,14 @@ where
 			?dimensions_data,
 		)
 		.entered();
+
+		let projected_bivariate_metas = self
+			.projected_bivariate_claims
+			.iter()
+			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
+			.collect::<Result<Vec<_>, Error>>()?;
+
+		let projected_bivariate_claims = std::mem::take(&mut self.projected_bivariate_claims);
 
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
@@ -274,31 +285,19 @@ where
 		)?;
 		drop(evalcheck_mle_fold_high_span);
 
-		fill_eq_witness_for_composites(
-			&composite_mle_metas,
-			&mut self.memoized_data,
-			&composite_mle_claims,
-			self.witness_index,
+		// memoize eq_ind_partial_evals for HighToLow case
+		self.memoized_data.memoize_query_par(
+			self.new_mlechecks_constraints.iter().map(|(ep, _)| {
+				let ep = ep.as_ref();
+				&ep[0..ep.len().saturating_sub(1)]
+			}),
 			self.backend,
 		)?;
 
-		let mut projected_index = 0;
-		let mut composite_index = 0;
-
-		for claim in std::mem::take(&mut self.sumcheck_claims) {
-			match claim {
-				SumcheckClaims::Projected(claim) => {
-					let meta = &projected_bivariate_metas[projected_index];
-					let projected = projected_mles[projected_index].clone();
-					self.process_bivariate_sumcheck(&claim, meta, projected)?;
-					projected_index += 1;
-				}
-				SumcheckClaims::Composite(claim) => {
-					let meta = composite_mle_metas[composite_index];
-					self.process_composite_mlecheck(&claim, meta)?;
-					composite_index += 1;
-				}
-			}
+		for (claim, meta, projected) in
+			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
+		{
+			self.process_bivariate_sumcheck(claim, meta, projected)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
@@ -510,16 +509,23 @@ where
 					eval,
 				};
 
-				self.sumcheck_claims.push(SumcheckClaims::Projected(claim));
+				self.projected_bivariate_claims.push(claim);
 			}
-			MultilinearPolyVariant::Composite { .. } => {
-				let claim = EvalcheckMultilinearClaim {
-					id,
-					eval_point,
-					eval,
-				};
+			MultilinearPolyVariant::Composite(composite) => {
+				let position = self
+					.new_mlechecks_constraints
+					.iter()
+					.position(|(ep, _)| *ep == eval_point);
 
-				self.sumcheck_claims.push(SumcheckClaims::Composite(claim));
+				transcript.message().write(&position);
+
+				add_composite_sumcheck_to_constraints(
+					position,
+					&eval_point,
+					&mut self.new_mlechecks_constraints,
+					&composite,
+					eval,
+				);
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for suboracle_id in linear_combination.polys() {
@@ -614,7 +620,7 @@ where
 				eval_point,
 				*eval,
 				self.witness_index,
-				&mut self.new_sumchecks_constraints,
+				&mut self.new_bivariate_sumchecks_constraints,
 				projected,
 			),
 
@@ -625,36 +631,10 @@ where
 				eval_point,
 				*eval,
 				self.witness_index,
-				&mut self.new_sumchecks_constraints,
+				&mut self.new_bivariate_sumchecks_constraints,
 				projected,
 			),
 
-			_ => unreachable!(),
-		}
-	}
-
-	fn process_composite_mlecheck(
-		&mut self,
-		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
-		meta: CompositeMLECheckMeta,
-	) -> Result<(), Error> {
-		let EvalcheckMultilinearClaim {
-			id,
-			eval_point: _,
-			eval,
-		} = evalcheck_claim;
-
-		match self.oracles.oracle(*id).variant {
-			MultilinearPolyVariant::Composite(composite) => {
-				// witness for eq MLE has been previously filled in `fill_eq_witness_for_composites`
-				add_composite_sumcheck_to_constraints(
-					meta,
-					&mut self.new_sumchecks_constraints,
-					&composite,
-					*eval,
-				);
-				Ok(())
-			}
 			_ => unreachable!(),
 		}
 	}
@@ -690,4 +670,9 @@ where
 			eval,
 		})
 	}
+}
+
+pub struct ConstraintSetEqIndPoint<F: Field> {
+	pub eq_ind_challenges: EvalPoint<F>,
+	pub constraint_set: ConstraintSet<F>,
 }

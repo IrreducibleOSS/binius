@@ -2,7 +2,7 @@
 
 use std::mem;
 
-use binius_field::{util::inner_product_unchecked, TowerField};
+use binius_field::{util::inner_product_unchecked, Field, TowerField};
 use getset::{Getters, MutGetters};
 use itertools::chain;
 use tracing::instrument;
@@ -13,7 +13,7 @@ use super::{
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
-		composite_mlecheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
+		packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
 	EvalPoint,
 };
@@ -49,6 +49,9 @@ where
 	/// The new sumcheck constraints in this round
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
 
+	// The new mle sumcheck constraints arising in this round
+	new_mlechecks_constraints: Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
+
 	/// The list of claims that have been verified in this round
 	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
 }
@@ -62,6 +65,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			oracles,
 			committed_eval_claims: Vec::new(),
 			new_sumcheck_constraints: Vec::new(),
+			new_mlechecks_constraints: Vec::new(),
 			round_claims: Vec::new(),
 		}
 	}
@@ -73,6 +77,25 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			.map(|builder| mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.collect()
+	}
+
+	/// A helper method to move out mlechecks constraints
+	pub fn take_new_mlechecks_constraints(
+		&mut self,
+	) -> Result<ConstraintSetsEqIndPoints<F>, OracleError> {
+		let new_mlechecks_constraints = std::mem::take(&mut self.new_mlechecks_constraints);
+
+		let mut eq_ind_challenges = Vec::with_capacity(new_mlechecks_constraints.len());
+		let mut constraint_sets = Vec::with_capacity(new_mlechecks_constraints.len());
+
+		for (ep, builder) in new_mlechecks_constraints {
+			eq_ind_challenges.push(ep.to_vec());
+			constraint_sets.push(builder.build_one(self.oracles)?)
+		}
+		Ok(ConstraintSetsEqIndPoints {
+			eq_ind_challenges,
+			constraint_sets,
+		})
 	}
 
 	/// Verify an evalcheck claim.
@@ -242,14 +265,24 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					transcript,
 				)?;
 			}
-			MultilinearPolyVariant::Composite(composition) => {
-				let meta = composite_mlecheck_meta(self.oracles, &eval_point)?;
+			MultilinearPolyVariant::Composite(composite) => {
+				let position = transcript.message().read()?;
+
+				if let Some(position) = position {
+					let (constraints_eval_point, _) = &self.new_mlechecks_constraints[position];
+
+					if *constraints_eval_point != eval_point {
+						return Err(VerificationError::MLECheckConstraintSetPositionMismatch.into());
+					}
+				}
+
 				add_composite_sumcheck_to_constraints(
-					meta,
-					&mut self.new_sumcheck_constraints,
-					&composition,
+					position,
+					&eval_point,
+					&mut self.new_mlechecks_constraints,
+					&composite,
 					eval,
-				)
+				);
 			}
 		}
 
@@ -288,4 +321,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 		}
 	}
+}
+
+pub struct ConstraintSetsEqIndPoints<F: Field> {
+	pub eq_ind_challenges: Vec<Vec<F>>,
+	pub constraint_sets: Vec<ConstraintSet<F>>,
 }
