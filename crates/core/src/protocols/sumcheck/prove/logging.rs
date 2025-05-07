@@ -6,6 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_utils::impl_debug_with_json;
 use serde::Serialize;
 use serde_json_any_key::any_key_map;
+
 use super::SumcheckProver;
 use crate::protocols::sumcheck::prove::batch_zerocheck::ZerocheckProver;
 

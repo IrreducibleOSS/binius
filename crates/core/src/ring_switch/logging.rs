@@ -38,7 +38,9 @@ pub struct EvalClaimSuffixData {
 }
 
 #[derive(Serialize)]
-pub struct CalculateRingSwitchEqIndData(#[serde(with = "any_key_map")] HashMap<EvalClaimSuffixData, usize>);
+pub struct CalculateRingSwitchEqIndData(
+	#[serde(with = "any_key_map")] HashMap<EvalClaimSuffixData, usize>,
+);
 
 impl CalculateRingSwitchEqIndData {
 	pub fn new<'a, F: TowerField>(
