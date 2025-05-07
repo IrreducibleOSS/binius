@@ -35,7 +35,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 				.unwrap()
 				.precompute_twiddles();
 			group.bench_function(BenchmarkId::new("single-thread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0));
+				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0, 0));
 			});
 
 			let ntt = SingleThreadedNTT::<F>::new(log_dim)
@@ -43,7 +43,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 				.precompute_twiddles()
 				.multithreaded();
 			group.bench_function(BenchmarkId::new("multithread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0));
+				b.iter(|| ntt.forward_transform_ext(&mut data, shape, 0, 0));
 			});
 		}
 	}

@@ -11,6 +11,8 @@ workspace = true
 binius_field = { path = "../field", default-features = false }
 binius_ntt = { path = "../ntt", default-features = false }
 binius_math = { path = "../math", default-features = false }
+binius_utils = { path = "../utils", default-features = false }
+bytemuck.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -75,7 +75,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			..Default::default()
 		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, shape, i as u32)?;
+			ntt.inverse_transform(chunk, shape, i as u32, 0)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is $d\times d$,
@@ -176,7 +176,7 @@ mod tests {
 					log_y: next_log_n,
 					..Default::default()
 				};
-				ntt.forward_transform(&mut ntt_evals, shape, 0).unwrap();
+				ntt.forward_transform(&mut ntt_evals, shape, 0, 0).unwrap();
 
 				let odd_interpolate = OddInterpolate::new(d, ell, &ntt.s_evals).unwrap();
 				odd_interpolate

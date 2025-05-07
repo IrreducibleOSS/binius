@@ -50,7 +50,7 @@ mod model {
 				event.fire(&mut sequence_chan);
 			}
 
-			assert!(sequence_chan.is_balanced());
+			sequence_chan.assert_balanced();
 		}
 	}
 
@@ -111,7 +111,7 @@ mod arithmetization {
 			test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
 			TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
-		gadgets::u32::{U32Add, U32AddFlags},
+		gadgets::add::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
 

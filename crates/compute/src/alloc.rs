@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use super::memory::{ComputeMemory, DevSlice};
+use super::memory::{ComputeMemory, SizedSlice};
 use crate::cpu::CpuMemory;
 
 pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {

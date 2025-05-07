@@ -95,8 +95,9 @@ where
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
-		forward_transform(self.log_domain_size(), &self.s_evals, data, shape, coset)
+		forward_transform(self.log_domain_size(), &self.s_evals, data, shape, coset, skip_rounds)
 	}
 
 	fn inverse_transform<P: PackedField<Scalar = F>>(
@@ -104,8 +105,9 @@ where
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
-		inverse_transform(self.log_domain_size(), &self.s_evals, data, shape, coset)
+		inverse_transform(self.log_domain_size(), &self.s_evals, data, shape, coset, skip_rounds)
 	}
 }
 
@@ -115,8 +117,9 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	shape: NTTShape,
 	coset: u32,
+	skip_rounds: usize,
 ) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
 
 	match data.len() {
 		0 => return Ok(()),
@@ -131,7 +134,14 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					// Handle the case of one packed element by batch transforming the original
 					// data with dummy data and extracting the transformed result.
 					let mut buffer = [data[0], P::zero()];
-					forward_transform(log_domain_size, s_evals, &mut buffer, shape, coset)?;
+					forward_transform(
+						log_domain_size,
+						s_evals,
+						&mut buffer,
+						shape,
+						coset,
+						skip_rounds,
+					)?;
 					data[0] = buffer[0];
 					Ok(())
 				}
@@ -153,7 +163,7 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let cutoff = log_w.saturating_sub(log_x);
 
 	// i indexes the layer of the NTT network, also the binary subspace.
-	for i in (cutoff..log_y).rev() {
+	for i in (cutoff..(log_y - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
@@ -173,7 +183,7 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		}
 	}
 
-	for i in (0..cmp::min(cutoff, log_y)).rev() {
+	for i in (0..cmp::min(cutoff, log_y - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
@@ -208,8 +218,9 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	shape: NTTShape,
 	coset: u32,
+	skip_rounds: usize,
 ) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset)?;
+	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
 
 	match data.len() {
 		0 => return Ok(()),
@@ -224,7 +235,14 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					// Handle the case of one packed element by batch transforming the original
 					// data with dummy data and extracting the transformed result.
 					let mut buffer = [data[0], P::zero()];
-					inverse_transform(log_domain_size, s_evals, &mut buffer, shape, coset)?;
+					inverse_transform(
+						log_domain_size,
+						s_evals,
+						&mut buffer,
+						shape,
+						coset,
+						skip_rounds,
+					)?;
 					data[0] = buffer[0];
 					Ok(())
 				}
@@ -246,7 +264,7 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let cutoff = log_w.saturating_sub(log_x);
 
 	#[allow(clippy::needless_range_loop)]
-	for i in 0..cutoff.min(log_y) {
+	for i in 0..cutoff.min(log_y - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
@@ -274,7 +292,7 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 	// i indexes the layer of the NTT network, also the binary subspace.
 	#[allow(clippy::needless_range_loop)]
-	for i in cutoff..log_y {
+	for i in cutoff..(log_y - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		let coset_offset = (coset as usize) << (log_y - 1 - i);
 
@@ -302,6 +320,7 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	data: &[PB],
 	shape: NTTShape,
 	coset: u32,
+	skip_rounds: usize,
 ) -> Result<(), Error> {
 	let NTTShape {
 		log_x,
@@ -311,6 +330,9 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 
 	if !data.len().is_power_of_two() {
 		return Err(Error::PowerOfTwoLengthRequired);
+	}
+	if skip_rounds > log_y {
+		return Err(Error::SkipRoundsTooLarge);
 	}
 
 	let full_sized_y = (data.len() * PB::WIDTH) >> (log_x + log_z);
@@ -423,8 +445,8 @@ mod tests {
 			log_y: 3,
 			log_z: 0,
 		};
-		let _ = s.forward_transform(&mut packed, shape, 3);
-		let _ = s.forward_transform(unpacked, shape, 3);
+		let _ = s.forward_transform(&mut packed, shape, 3, 0);
+		let _ = s.forward_transform(unpacked, shape, 3, 0);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -445,8 +467,8 @@ mod tests {
 			log_y: 3,
 			log_z: 0,
 		};
-		let _ = s.inverse_transform(&mut packed, shape, 3);
-		let _ = s.inverse_transform(unpacked, shape, 3);
+		let _ = s.inverse_transform(&mut packed, shape, 3, 0);
+		let _ = s.inverse_transform(unpacked, shape, 3, 0);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -467,8 +489,8 @@ mod tests {
 			log_y: 2,
 			log_z: 0,
 		};
-		let _ = forward_transform(s.log_domain_size(), &s.s_evals, &mut packed, shape, 3);
-		let _ = s.forward_transform(unpacked, shape, 3);
+		let _ = forward_transform(s.log_domain_size(), &s.s_evals, &mut packed, shape, 3, 0);
+		let _ = s.forward_transform(unpacked, shape, 3, 0);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -489,8 +511,8 @@ mod tests {
 			log_y: 2,
 			log_z: 0,
 		};
-		let _ = inverse_transform(s.log_domain_size(), &s.s_evals, &mut packed, shape, 3);
-		let _ = s.inverse_transform(unpacked, shape, 3);
+		let _ = inverse_transform(s.log_domain_size(), &s.s_evals, &mut packed, shape, 3, 0);
+		let _ = s.inverse_transform(unpacked, shape, 3, 0);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
