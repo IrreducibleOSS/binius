@@ -156,7 +156,7 @@ pub trait ComputeLayer<F> {
 	/// * `data_out` - an output buffer, with length $2^n$.
 	///
 	/// [DP24]: <https://eprint.iacr.org/2024/504>
-	fn fri_fold<FSub, NTT>(
+	fn fri_fold<FSub>(
 		&self,
 		exec: &mut Self::Exec,
 		ntt: &impl AdditiveNTT<FSub>,
