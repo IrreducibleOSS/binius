@@ -4,7 +4,7 @@ use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerFie
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 
-use super::error::Error;
+use super::{error::Error, logging::RegularSumcheckDimensionsData};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
@@ -68,10 +68,12 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
+		let dimensions_data = RegularSumcheckDimensionsData::new(new_sumchecks.iter());
 		let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
 			"[task] (Evalcheck) Regular Sumcheck (Small)",
 			phase = "evalcheck",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
 		)
 		.entered();
 		let new_evalcheck_claims =

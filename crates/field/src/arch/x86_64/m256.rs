@@ -304,7 +304,7 @@ impl std::fmt::Display for M256 {
 
 impl std::fmt::Debug for M256 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "M256({})", self)
+		write!(f, "M256({self})")
 	}
 }
 

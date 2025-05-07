@@ -12,6 +12,7 @@
 //! protocols to reduce several evaluation claims to a single PCS opening per batch.
 
 mod error;
+mod logging;
 mod prove;
 #[cfg(test)]
 mod tests;

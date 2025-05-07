@@ -14,7 +14,9 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		immediate_switchover_heuristic,
-		prove::{front_loaded, RegularSumcheckProver, SumcheckProver},
+		prove::{
+			front_loaded, logging::FoldLowDimensionsData, RegularSumcheckProver, SumcheckProver,
+		},
 		zerocheck::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
 			BatchZerocheckOutput, ZerocheckRoundEvals,
@@ -43,7 +45,9 @@ pub trait ZerocheckProver<'a, P: PackedField> {
 	fn n_vars(&self) -> usize;
 
 	/// Maximal required Lagrange domain size among compositions in this prover.
-	fn domain_size(&self, skip_rounds: usize) -> usize;
+	///
+	/// Returns `None` if the current prover state doesn't contain information about the domain size.
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize>;
 
 	/// Computes the prover message for the univariate round as a univariate polynomial.
 	///
@@ -80,7 +84,7 @@ impl<'a, P: PackedField, Prover: ZerocheckProver<'a, P> + ?Sized> ZerocheckProve
 		(**self).n_vars()
 	}
 
-	fn domain_size(&self, skip_rounds: usize) -> usize {
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize> {
 		(**self).domain_size(skip_rounds)
 	}
 
@@ -178,7 +182,11 @@ where
 
 	let max_domain_size = provers
 		.iter()
-		.map(|prover| prover.domain_size(skip_rounds))
+		.map(|prover| {
+			prover
+				.domain_size(skip_rounds)
+				.expect("domain size must be known")
+		})
 		.max()
 		.unwrap_or(0);
 
@@ -228,11 +236,12 @@ where
 
 	// Project witness multilinears to "skipped" variables
 	let mut projected_multilinears = Vec::new();
-
+	let dimensions_data = FoldLowDimensionsData::new(skip_rounds, &provers);
 	let mle_fold_low_span = tracing::debug_span!(
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
 	for prover in provers {

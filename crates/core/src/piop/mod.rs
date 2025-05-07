@@ -33,6 +33,7 @@
 
 pub mod commit;
 mod error;
+mod logging;
 mod prove;
 #[cfg(test)]
 mod tests;
