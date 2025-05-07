@@ -100,24 +100,18 @@ mod model {
 mod arithmetization {
 	use binius_core::{
 		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
-		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, tower::CanonicalTowerFamily,
-		underlier::SmallU, Field, PackedExtension, PackedField, PackedFieldIndexable,
-		PackedSubfield,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU, Field,
+		PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
 	};
-	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_m3::{
 		builder::{
-			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
-			WitnessIndex, B1, B128, B32,
+			test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
+			TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
-		gadgets::{
-			add::{U32Add, U32AddFlags},
-			mul::MulSS32,
-		},
+		gadgets::add::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
 
@@ -239,8 +233,6 @@ mod arithmetization {
 			table.pull(seq_chan, [odd_packed]);
 			table.push(seq_chan, [triple_plus_one_packed]);
 
-			MulSS32::new(&mut table);
-
 			Self {
 				id: table.id(),
 				odd,
@@ -292,51 +284,6 @@ mod arithmetization {
 		}
 	}
 
-	fn compile_validate_prove_verify(
-		cs: &ConstraintSystem,
-		statement: &Statement,
-		witness: WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
-	) {
-		let compiled_cs = cs.compile(statement).unwrap();
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(
-			&compiled_cs,
-			&statement.boundaries,
-			&witness,
-		)
-		.unwrap();
-
-		// const LOG_INV_RATE: usize = 1;
-		// const SECURITY_BITS: usize = 100;
-
-		// let proof = binius_core::constraint_system::prove::<
-		// 	OptimalUnderlier128b,
-		// 	CanonicalTowerFamily,
-		// 	Groestl256,
-		// 	Groestl256ByteCompression,
-		// 	HasherChallenger<Groestl256>,
-		// 	_,
-		// >(
-		// 	&compiled_cs,
-		// 	LOG_INV_RATE,
-		// 	SECURITY_BITS,
-		// 	&statement.boundaries,
-		// 	witness,
-		// 	&binius_hal::make_portable_backend(),
-		// )
-		// .unwrap();
-
-		// binius_core::constraint_system::verify::<
-		// 	OptimalUnderlier128b,
-		// 	CanonicalTowerFamily,
-		// 	Groestl256,
-		// 	Groestl256ByteCompression,
-		// 	HasherChallenger<Groestl256>,
-		// >(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
-		// .unwrap();
-	}
-
 	#[test]
 	fn test_collatz() {
 		use model::CollatzTrace;
@@ -346,8 +293,7 @@ mod arithmetization {
 		let evens_table = EvensTable::new(&mut cs, collatz_orbit);
 		let odds_table = OddsTable::new(&mut cs, collatz_orbit);
 
-		let initial_val = 3999;
-		let trace = CollatzTrace::generate(initial_val);
+		let trace = CollatzTrace::generate(3999);
 
 		let allocator = Bump::new();
 		let mut witness =
@@ -361,7 +307,7 @@ mod arithmetization {
 
 		let boundaries = vec![
 			Boundary {
-				values: vec![B128::new(initial_val.into())],
+				values: vec![B128::new(3999)],
 				channel_id: collatz_orbit,
 				direction: FlushDirection::Push,
 				multiplicity: 1,
@@ -373,10 +319,7 @@ mod arithmetization {
 				multiplicity: 1,
 			},
 		];
-		let statement = Statement {
-			boundaries,
-			table_sizes: vec![trace.evens.len(), trace.odds.len()],
-		};
-		compile_validate_prove_verify(&cs, &statement, witness);
+
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
 	}
 }
