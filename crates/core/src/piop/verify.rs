@@ -152,7 +152,7 @@ where
 	// see PR for proof of this fact
 
 	// how should we handle the case `fold_arities = []`, i.e. total_vars + log_inv_rate - cap_height < arity? in that case, we would lose nothing by making the entire thing interleaved,
-	// i.e., setting `log_batch_size := total_vars`, so `terminal_codeword` is an interleaving of the repetition code---so is itself a repetition code!---the prover just sends the message.
+	// i.e., setting `log_batch_size := total_vars`, so `terminal_codeword` lives in the interleaving of the repetition code (and so is itself a repetition codeword!). encoding is trivial.
 	// but there's a circularity: whether `total_vars + log_inv_rate - cap_height < arity` or not depends on `cap_height`, which depends on `n_test_queries`, which depends on `log_dim`---
 	// soundness depends on block length!---which finally itself depends on whether we're using the repetition code or not. of course this circular dependency is artificial, since in the
 	// case `log_batch_size = total_vars` and `log_dim = 0`, we're sending the entire message anyway, so the FRI portion is essentially trivial / superfluous, and the security is perfect.
