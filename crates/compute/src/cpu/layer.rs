@@ -5,11 +5,15 @@ use std::marker::PhantomData;
 use binius_field::{
 	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
 };
+use binius_math::{ArithCircuit, ArithExpr};
+use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::zeroed_vec;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
-	layer::{ComputeLayer, Error, FSlice, FSliceMut},
-	memory::SubfieldSlice,
+	alloc::{BumpAllocator, ComputeAllocator},
+	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
+	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
 };
 
 #[derive(Debug)]
@@ -20,8 +24,11 @@ pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
+	type KernelExec = CpuExecutor;
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
+	type KernelValue = T::B128;
+	type ExprEval = ArithCircuit<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
 		vec![<T::B128 as Field>::ZERO; n]
@@ -65,11 +72,55 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
+	fn kernel_decl_value(&self, _exec: &mut CpuExecutor, init: T::B128) -> Result<T::B128, Error> {
+		Ok(init)
+	}
+
 	fn execute(
 		&self,
 		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
 	) -> Result<Vec<T::B128>, Error> {
 		f(&mut CpuExecutor)
+	}
+
+	fn compile_expr(&self, expr: &ArithExpr<T::B128>) -> Result<Self::ExprEval, Error> {
+		Ok(expr.into())
+	}
+
+	fn accumulate_kernels(
+		&self,
+		_exec: &mut Self::Exec,
+		map: impl for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
+		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+	) -> Result<Vec<Self::OpValue>, Error> {
+		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
+			.expect("Many variant must have at least one entry");
+
+		// For the reference implementation, use the smallest chunk size.
+		let log_chunks = log_chunks_range.end;
+		let total_alloc = Self::count_total_local_buffer_sizes(&inputs, log_chunks);
+		let mut local_buffer = zeroed_vec(total_alloc);
+		let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
+		(0..1 << log_chunks)
+			.map(|i| {
+				let kernel_data =
+					Self::map_kernel_mem(&mut inputs, &local_buffer_alloc, log_chunks, i);
+				map(&mut CpuExecutor, log_chunks, kernel_data)
+			})
+			.reduce(|out1, out2| {
+				let mut out1 = out1?;
+				let mut out2_iter = out2?.into_iter();
+				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
+					*out1_i += out2_i;
+				}
+				out1.extend(out2_iter);
+				Ok(out1)
+			})
+			.expect("range is not empty")
 	}
 
 	fn inner_product<'a>(
@@ -150,6 +201,83 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			}
 		}
 		Ok(())
+	}
+
+	fn sum_composition_evals(
+		&self,
+		_exec: &mut Self::KernelExec,
+		log_len: usize,
+		inputs: &[FSlice<'_, T::B128, Self>],
+		composition: &ArithCircuit<T::B128>,
+		batch_coeff: T::B128,
+		accumulator: &mut T::B128,
+	) -> Result<(), Error> {
+		for input in inputs {
+			assert_eq!(input.len(), 1 << log_len);
+		}
+		let ret = (0..1 << log_len)
+			.map(|i| {
+				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
+				composition.evaluate(&row).expect("Evalutation to succeed")
+			})
+			.sum::<T::B128>();
+		*accumulator += ret * batch_coeff;
+		Ok(())
+	}
+}
+
+// Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in signatures.
+type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
+type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
+
+impl<T: TowerFamily> CpuLayer<T> {
+	fn count_total_local_buffer_sizes(
+		mappings: &[MemMap<'_, Self, T::B128>],
+		log_chunk_size: usize,
+	) -> usize {
+		mappings
+			.iter()
+			.map(|mapping| match mapping {
+				KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
+				KernelMemMap::Local { .. } => 1 << log_chunk_size,
+			})
+			.sum()
+	}
+
+	fn map_kernel_mem<'a>(
+		mappings: &'a mut [MemMap<'_, Self, T::B128>],
+		local_buffer_alloc: &'a BumpAllocator<T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
+		log_chunks: usize,
+		i: usize,
+	) -> Vec<Buffer<'a, Self, T::B128>> {
+		mappings
+			.iter_mut()
+			.map(|mapping| match mapping {
+				KernelMemMap::Chunked { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Ref(<Self as ComputeLayer<T::B128>>::DevMem::slice(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::ChunkedMut { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Mut(<Self as ComputeLayer<T::B128>>::DevMem::slice_mut(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::Local { log_size } => {
+					let log_chunk_size = *log_size - log_chunks;
+					let buffer = local_buffer_alloc.alloc(1 << log_chunk_size).expect(
+						"precondition: allocator must have enough space for all local buffers",
+					);
+					KernelBuffer::Mut(buffer)
+				}
+			})
+			.collect()
 	}
 }
 
@@ -429,6 +557,88 @@ mod tests {
 		assert_eq!(eval2, expected_eval2);
 	}
 
+	fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		n_vars: usize,
+	) {
+		let mut rng = StdRng::seed_from_u64(0);
+		let log_min_chunk_size = 3;
+
+		// Allocate buffers a and b to be device mapped
+		let mut a_buffer = compute.host_alloc(1 << n_vars);
+		let a_buffer = a_buffer.as_mut();
+		for x_i in a_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let a = a_buffer.to_vec();
+
+		let mut b_buffer = compute.host_alloc(1 << n_vars);
+		let b_buffer = b_buffer.as_mut();
+		for x_i in b_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let b = b_buffer.to_vec();
+
+		// Copy a and b to device (creating F-slices)
+		let (mut a_slice, device_memory) = C::DevMem::split_at_mut(device_memory, a_buffer.len());
+		compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
+		let a_slice = C::DevMem::as_const(&a_slice);
+
+		let (mut b_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, b_buffer.len());
+		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
+		let b_slice = C::DevMem::as_const(&b_slice);
+
+		// Run the HAL operation to compute the inner product
+		let arith = ArithExpr::Var(0) * ArithExpr::Var(1);
+		let eval = compute.compile_expr(&arith).unwrap();
+		let [actual] = compute
+			.execute(|exec| {
+				let a_slice = KernelMemMap::Chunked {
+					data: a_slice,
+					log_min_chunk_size,
+				};
+				let b_slice = KernelMemMap::Chunked {
+					data: b_slice,
+					log_min_chunk_size,
+				};
+				let results = compute.accumulate_kernels(
+					exec,
+					|kernel_exec, _log_chunks, kernel_data| {
+						let kernel_data = kernel_data
+							.iter()
+							.map(|buf| buf.to_ref())
+							.collect::<Vec<_>>();
+						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
+						let log_len = checked_log_2(kernel_data[0].len());
+						compute
+							.sum_composition_evals(
+								kernel_exec,
+								log_len,
+								&kernel_data,
+								&eval,
+								F::ONE,
+								&mut res,
+							)
+							.unwrap();
+						Ok(vec![res])
+					},
+					vec![a_slice, b_slice],
+				)?;
+				assert_eq!(results.len(), 1);
+				Ok(results)
+			})
+			.unwrap()
+			.try_into()
+			.unwrap();
+
+		// Compute the expected value and compare
+		let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
+			.map(|(a_i, &b_i)| b_i * a_i)
+			.sum::<F>();
+		assert_eq!(actual, expected);
+	}
+
 	fn test_generic_single_left_fold<
 		'a,
 		'b,
@@ -561,6 +771,19 @@ mod tests {
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
 		test_generic_multiple_multilinear_evaluations::<F1, F2, _, _>(
+			compute,
+			&mut device_memory,
+			n_vars,
+		);
+	}
+
+	#[test]
+	fn test_exec_single_inner_product_using_kernel_accumulator() {
+		type F = BinaryField128b;
+		let n_vars = 8;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
+		test_generic_single_inner_product_using_kernel_accumulator::<F, _>(
 			compute,
 			&mut device_memory,
 			n_vars,
