@@ -74,7 +74,10 @@ mod arithmetization {
 			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableBuilder, TableFiller,
 			TableId, TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
-		gadgets::add::{U32Add, U32AddFlags},
+		gadgets::{
+			add::{U32Add, U32AddFlags},
+			mul::MulSS32,
+		},
 	};
 	use bumpalo::Bump;
 
@@ -88,6 +91,7 @@ mod arithmetization {
 		pub f0_bits: Col<B1, 32>,
 		pub f1_bits: Col<B1, 32>,
 		pub f2_bits: U32Add,
+		pub mul: MulSS32,
 	}
 
 	impl FibonacciTable {
@@ -109,6 +113,7 @@ mod arithmetization {
 				},
 			);
 			let final_carry = f2_bits.final_carry.expect("expose_final_carry is true");
+			let mul = MulSS32::new(table);
 
 			table.assert_zero("carry out", final_carry.into());
 
@@ -127,13 +132,14 @@ mod arithmetization {
 				f0_bits,
 				f1_bits,
 				f2_bits,
+				mul,
 			}
 		}
 	}
 
 	impl<P> TableFiller<P> for FibonacciTable
 	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
 		type Event = model::FibEvent;
 
@@ -143,19 +149,22 @@ mod arithmetization {
 
 		fn fill<'a>(
 			&'a self,
-			rows: impl Iterator<Item = &'a Self::Event>,
+			rows: impl Iterator<Item = &'a Self::Event> + Clone,
 			witness: &'a mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
 			{
 				let mut f0_bits = witness.get_mut_as(self.f0_bits)?;
 				let mut f1_bits = witness.get_mut_as(self.f1_bits)?;
 
-				for (i, event) in rows.enumerate() {
+				for (i, event) in rows.clone().enumerate() {
 					f0_bits[i] = event.f0;
 					f1_bits[i] = event.f1;
 				}
 			}
 			self.f2_bits.populate(witness)?;
+			let x_vals = rows.clone().map(|event| event.f0.into());
+			let y_vals = rows.clone().map(|event| event.f1.into());
+			self.mul.populate_with_inputs(witness, x_vals, y_vals)?;
 			Ok(())
 		}
 	}

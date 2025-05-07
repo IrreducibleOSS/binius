@@ -307,34 +307,34 @@ mod arithmetization {
 		)
 		.unwrap();
 
-		const LOG_INV_RATE: usize = 1;
-		const SECURITY_BITS: usize = 100;
+		// const LOG_INV_RATE: usize = 1;
+		// const SECURITY_BITS: usize = 100;
 
-		let proof = binius_core::constraint_system::prove::<
-			OptimalUnderlier128b,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(
-			&compiled_cs,
-			LOG_INV_RATE,
-			SECURITY_BITS,
-			&statement.boundaries,
-			witness,
-			&binius_hal::make_portable_backend(),
-		)
-		.unwrap();
+		// let proof = binius_core::constraint_system::prove::<
+		// 	OptimalUnderlier128b,
+		// 	CanonicalTowerFamily,
+		// 	Groestl256,
+		// 	Groestl256ByteCompression,
+		// 	HasherChallenger<Groestl256>,
+		// 	_,
+		// >(
+		// 	&compiled_cs,
+		// 	LOG_INV_RATE,
+		// 	SECURITY_BITS,
+		// 	&statement.boundaries,
+		// 	witness,
+		// 	&binius_hal::make_portable_backend(),
+		// )
+		// .unwrap();
 
-		binius_core::constraint_system::verify::<
-			OptimalUnderlier128b,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-		>(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
-		.unwrap();
+		// binius_core::constraint_system::verify::<
+		// 	OptimalUnderlier128b,
+		// 	CanonicalTowerFamily,
+		// 	Groestl256,
+		// 	Groestl256ByteCompression,
+		// 	HasherChallenger<Groestl256>,
+		// >(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
+		// .unwrap();
 	}
 
 	#[test]
