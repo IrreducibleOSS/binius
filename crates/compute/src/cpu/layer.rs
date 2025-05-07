@@ -3,8 +3,11 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
+	tower::TowerFamily, util::inner_product_unchecked, BinaryField, ExtensionField, Field,
+	TowerField,
 };
+use binius_math::extrapolate_line_scalar;
+use binius_ntt::AdditiveNTT;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::layer::{ComputeLayer, Error, FSlice, FSliceMut};
@@ -122,6 +125,86 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				*y_i += prod;
 			}
 		}
+		Ok(())
+	}
+
+	fn fri_fold<FSub, NTT>(
+		&self,
+		exec: &mut Self::Exec,
+		ntt: &impl AdditiveNTT<FSub>,
+		log_len: usize,
+		log_batch_size: usize,
+		challenges: &[T::B128],
+		data_in: &[T::B128],
+		data_out: &mut &mut [T::B128],
+	) -> Result<(), Error>
+	where
+		FSub: binius_field::BinaryField,
+		T::B128: BinaryField + ExtensionField<FSub>,
+	{
+		assert_eq!(data_in.len(), 1 << (log_len + log_batch_size));
+		assert!(challenges.len() >= log_batch_size);
+
+		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
+		let log_size = fold_challenges.len();
+
+		let mut tensor = vec![T::B128::ZERO; 1 << log_batch_size];
+		tensor[0] = T::B128::ONE;
+		self.tensor_expand(
+			exec,
+			log_batch_size,
+			&interleave_challenges,
+			&mut tensor.as_mut_slice(),
+		)?;
+
+		let mut buffer = vec![T::B128::ZERO; 1 << log_size];
+		for (chunk_index, (chunk, out)) in data_in
+			.chunks_exact(1 << log_size)
+			.zip(data_out.iter_mut())
+			.enumerate()
+		{
+			if log_batch_size == 0 {
+				buffer.iter_mut().zip(chunk.iter()).for_each(|(x_i, y_i)| {
+					*x_i = *y_i;
+				});
+			} else {
+				let folded_iter = chunk.chunks_exact(1 << log_batch_size).map(|chunk| {
+					let mut result = T::B128::ZERO;
+					for (a, b) in chunk.iter().zip(&tensor) {
+						result += *a * b;
+					}
+
+					result
+				});
+
+				folded_iter.zip(buffer.iter_mut()).for_each(|(x_i, y_i)| {
+					*y_i = x_i;
+				});
+			}
+
+			let mut log_len = log_len;
+			let mut log_size = log_size;
+			for &challenge in challenges {
+				let ntt_round = ntt.log_domain_size() - log_len;
+				for index_offset in 0..1 << (log_size - 1) {
+					let t = ntt.get_subspace_eval(
+						ntt_round,
+						(chunk_index << (log_size - 1)) | index_offset,
+					);
+					let (mut u, mut v) =
+						(buffer[index_offset << 1], buffer[(index_offset << 1) | 1]);
+					v += u;
+					u += v * t;
+					buffer[index_offset] = extrapolate_line_scalar(u, v, challenge);
+				}
+
+				log_len -= 1;
+				log_size -= 1;
+			}
+
+			*out = buffer[0];
+		}
+
 		Ok(())
 	}
 }

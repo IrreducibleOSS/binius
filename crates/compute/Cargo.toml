@@ -9,9 +9,10 @@ workspace = true
 
 [dependencies]
 binius_field = { path = "../field", default-features = false }
+binius_ntt = { path = "../ntt", default-features = false }
+binius_math = { path = "../math", default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
-binius_math = { path = "../math", default-features = false }
 rand = { workspace = true, features = ["std"] }
