@@ -96,7 +96,7 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "amd-portable"
             cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
-          - runner: "c7a-2xlarge"
+          - runner: "c7a-4xlarge"
             name: "amd-stable"
             cmd: 'RUSTFLAGS="-C target-cpu=native" CARGO_STABLE=true ./scripts/run_tests_and_examples.sh'
           - runner: "c7a-2xlarge"
