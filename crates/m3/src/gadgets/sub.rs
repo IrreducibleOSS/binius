@@ -10,7 +10,7 @@ use itertools::izip;
 
 use crate::{
 	builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128},
-	gadgets::u32::add::UnsignedAddPrimitives,
+	gadgets::add::UnsignedAddPrimitives,
 };
 
 /// A gadget for performing 32-bit integer subtraction on vertically-packed bit columns.

@@ -8,8 +8,9 @@ use itertools::izip;
 use crate::{
 	builder::{Col, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
 	gadgets::{
+		add::{U32AddFlags, WideAdd},
 		mul::{MulSS32, MulUU32, SignConverter, UnsignedMulPrimitives},
-		u32::{add::WideAdd, sub::WideSub, U32AddFlags, U32SubFlags},
+		sub::{U32SubFlags, WideSub},
 		util::pack_fp,
 	},
 };
