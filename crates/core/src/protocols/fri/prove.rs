@@ -40,7 +40,7 @@ use crate::{
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[instrument(skip_all, level = "debug")]
-fn fold_interleaved<F, FS, NTT, P>(
+pub fn fold_interleaved<F, FS, NTT, P>(
 	ntt: &NTT,
 	codeword: &[P],
 	challenges: &[F],

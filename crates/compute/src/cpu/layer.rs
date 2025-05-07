@@ -25,7 +25,7 @@ impl<T: TowerFamily> CpuLayer<T> {
 		log_n: usize,
 		coordinates: &[T::B128],
 	) -> Result<Vec<T::B128>, Error> {
-		let mut tensor = vec![T::B128::ZERO; 1 << log_n];
+		let mut tensor = vec![T::B128::ZERO; 1 << (log_n + coordinates.len())];
 		tensor[0] = T::B128::ONE;
 		self.tensor_expand(exec, log_n, &coordinates, &mut tensor.as_mut_slice())
 			.map(|_| tensor)
@@ -142,7 +142,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
-	fn fri_fold<FSub, NTT>(
+	fn fri_fold<FSub>(
 		&self,
 		exec: &mut Self::Exec,
 		ntt: &impl AdditiveNTT<FSub>,
@@ -194,7 +194,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			// Apply folding to the pairs of values
 			let mut log_len = log_len;
 			let mut log_size = log_size;
-			for &challenge in challenges {
+			for &challenge in fold_challenges {
 				let ntt_round = ntt.log_domain_size() - log_len;
 				for index_offset in 0..1 << (log_size - 1) {
 					let t = ntt.get_subspace_eval(
@@ -223,6 +223,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 mod tests {
 	use std::iter::repeat_with;
 
+	use binius_core::protocols::fri::fold_interleaved;
 	use binius_field::{
 		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
 		ExtensionField, Field, PackedExtension, PackedField, TowerField,
@@ -436,6 +437,75 @@ mod tests {
 		assert_eq!(eval2, expected_eval2);
 	}
 
+	fn test_generic_fri_fold<F, FSub, C>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		log_len: usize,
+		log_batch_size: usize,
+	) where
+		F: TowerField + ExtensionField<FSub>,
+		FSub: BinaryField,
+		C: ComputeLayer<F>,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let ntt = binius_ntt::SingleThreadedNTT::<FSub>::new(log_len).unwrap();
+
+		// Allocate buffers to be device mapped
+		let mut data_in = compute.host_alloc(1 << (log_len + log_batch_size));
+		let data_in = data_in.as_mut();
+		for x_i in data_in.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let data_in = data_in.to_vec();
+
+		// Copy the buffer to device slice
+		let (mut data_in_slice, device_memory) =
+			C::DevMem::split_at_mut(device_memory, data_in.len());
+		compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
+		let data_in_slice = C::DevMem::as_const(&data_in_slice);
+
+		let mut data_out = compute.host_alloc(1 << log_len);
+		let data_out = data_out.as_mut();
+		for x_i in data_out.iter_mut() {
+			*x_i = <F as Field>::ZERO;
+		}
+		let (mut data_out_slice, _device_memory) =
+			C::DevMem::split_at_mut(device_memory, data_out.len());
+		compute.copy_h2d(&data_out, &mut data_out_slice).unwrap();
+
+		// Create out slice
+
+		let challenges = repeat_with(|| <F as Field>::random(&mut rng))
+			.take(log_batch_size * 2)
+			.collect::<Vec<_>>();
+
+		// Run the HAL operation
+		compute
+			.execute(|exec| {
+				compute.fri_fold(
+					exec,
+					&ntt,
+					log_len,
+					log_batch_size,
+					&challenges,
+					data_in_slice,
+					&mut data_out_slice,
+				)?;
+				Ok(vec![])
+			})
+			.unwrap();
+
+		// Copy the buffer back to host
+		let data_out_slice = C::DevMem::as_const(&data_out_slice);
+		compute.copy_d2h(data_out_slice, data_out).unwrap();
+
+		// Compute the expected result and compare
+		let expected_result =
+			fold_interleaved(&ntt, &data_in, &challenges, log_len, log_batch_size);
+		assert_eq!(data_out, &expected_result);
+	}
+
 	#[test]
 	fn test_exec_single_tensor_expand() {
 		type F = BinaryField128b;
@@ -468,5 +538,16 @@ mod tests {
 			&mut device_memory,
 			n_vars,
 		);
+	}
+
+	#[test]
+	fn test_exec_fri_fold() {
+		type F = BinaryField128b;
+		type FSub = BinaryField16b;
+		let log_len = 10;
+		let log_batch_size = 4;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];
+		test_generic_fri_fold::<F, FSub, _>(compute, &mut device_memory, log_len, log_batch_size);
 	}
 }
