@@ -27,7 +27,7 @@ use tracing_profile::init_tracing;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of multiplication to do.
-	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(512..))]
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(3..))]
 	n_muls: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]

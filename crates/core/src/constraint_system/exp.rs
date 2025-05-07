@@ -3,7 +3,7 @@
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	packed::get_packed_slice,
+	packed::get_packed_slice_checked,
 	tower::{ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
 	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
@@ -218,13 +218,11 @@ where
 
 	let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
 
-	let mut repacked_evals = vec![
-		PackedType::<U, FExpBase>::default();
-		1 << witness.n_vars().saturating_sub(f_exp_log_width)
-	];
+	let mut repacked_evals =
+		vec![PackedType::<U, FExpBase>::default(); 1 << n_vars.saturating_sub(f_exp_log_width)];
 
 	repacked_evals
-		.par_chunks_mut(subcube_packed_size / ext_degree)
+		.par_chunks_mut((subcube_packed_size / ext_degree).max(1))
 		.enumerate()
 		.for_each(|(subcube_index, repacked_evals)| {
 			let mut subcube_evals =
@@ -254,8 +252,9 @@ where
 				demoted.chunks(ext_degree).zip(repacked_evals).for_each(
 					|(demoted, repacked_evals)| {
 						*repacked_evals = PackedType::<U, FExpBase>::from_fn(|i| {
-							get_packed_slice(demoted, i * ext_degree)
-						})
+							get_packed_slice_checked(demoted, i * ext_degree)
+								.unwrap_or(FExpBase::ZERO)
+						});
 					},
 				)
 			}
