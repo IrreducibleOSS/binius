@@ -264,7 +264,7 @@ where
 	)?;
 
 	let batch_reduction_prover =
-		front_loaded::BatchProver::new(vec![Box::new(reduction_prover)], transcript)?;
+		front_loaded::BatchProver::new(vec![reduction_prover], transcript)?;
 
 	let BatchSumcheckOutput {
 		challenges: mut skipped_challenges,

@@ -32,7 +32,7 @@ mod model {
 			for event in self.rows.iter() {
 				event.fire(&mut sequence_chan);
 			}
-			assert!(sequence_chan.is_balanced());
+			sequence_chan.assert_balanced();
 		}
 	}
 
@@ -74,7 +74,7 @@ mod arithmetization {
 			Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableBuilder, TableFiller,
 			TableId, TableWitnessSegment, WitnessIndex, B1, B128, B32,
 		},
-		gadgets::u32::{U32Add, U32AddFlags},
+		gadgets::add::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
 

@@ -17,7 +17,7 @@ use binius_math::{
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{DynamicDispatchNTT, NTTOptions, ThreadingSettings};
+use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use itertools::chain;
@@ -130,13 +130,9 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let ntt = DynamicDispatchNTT::new(
-		fri_params.rs_code().log_len(),
-		&NTTOptions {
-			thread_settings: ThreadingSettings::MultithreadedDefault,
-			precompute_twiddles: true,
-		},
-	)?;
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())?
+		.precompute_twiddles()
+		.multithreaded();
 
 	let commit_span =
 		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")

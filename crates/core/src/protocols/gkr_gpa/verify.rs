@@ -14,7 +14,7 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck::{
-		self, eq_ind::ClaimsSortingOrder, CompositeSumClaim, EqIndSumcheckClaim,
+		self, eq_ind::ClaimsSortingOrder, front_loaded, CompositeSumClaim, EqIndSumcheckClaim,
 	},
 	transcript::VerifierTranscript,
 };
@@ -150,8 +150,13 @@ where
 	let regular_sumcheck_claims =
 		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
-	let batch_sumcheck_output =
-		sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
+	let batch_sumcheck_verifier =
+		front_loaded::BatchVerifier::new(&regular_sumcheck_claims, transcript)?;
+	let mut batch_sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
+
+	if evaluation_order == EvaluationOrder::HighToLow {
+		batch_sumcheck_output.challenges.reverse();
+	}
 
 	let batch_sumcheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
 		ClaimsSortingOrder::DescendingVars,
