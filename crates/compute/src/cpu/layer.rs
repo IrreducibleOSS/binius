@@ -26,7 +26,7 @@ impl<T: TowerFamily> CpuLayer<T> {
 	) -> Result<Vec<T::B128>, Error> {
 		let mut tensor = vec![T::B128::ZERO; 1 << coordinates.len()];
 		tensor[0] = T::B128::ONE;
-		self.tensor_expand(exec, 0, &coordinates, &mut tensor.as_mut_slice())
+		self.tensor_expand(exec, 0, coordinates, &mut tensor.as_mut_slice())
 			.map(|_| tensor)
 	}
 }
@@ -155,14 +155,39 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		FSub: binius_field::BinaryField,
 		T::B128: BinaryField + ExtensionField<FSub>,
 	{
-		assert_eq!(data_in.len(), 1 << (log_len + log_batch_size));
-		assert!(challenges.len() >= log_batch_size);
+		if data_in.len() != 1 << (log_len + log_batch_size) {
+			return Err(Error::InputValidation(format!(
+				"invalid data_in length: {}",
+				data_in.len()
+			)));
+		}
+
+		if challenges.len() < log_batch_size {
+			return Err(Error::InputValidation(format!(
+				"invalid challenges length: {}",
+				challenges.len()
+			)));
+		}
+
+		if challenges.len() > log_batch_size + log_len {
+			return Err(Error::InputValidation(format!(
+				"challenges length too big: {}",
+				challenges.len()
+			)));
+		}
+
+		if data_out.len() != 1 << (log_len - (challenges.len() - log_batch_size)) {
+			return Err(Error::InputValidation(format!(
+				"invalid data_out length: {}",
+				data_out.len()
+			)));
+		}
 
 		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
 		let log_size = fold_challenges.len();
 
 		// Expand the interleave challenges to the tensor size
-		let tensor = self.tensor_expand_with_one(exec, &interleave_challenges)?;
+		let tensor = self.tensor_expand_with_one(exec, interleave_challenges)?;
 
 		let mut values = vec![T::B128::ZERO; 1 << log_len];
 		for (chunk_index, (chunk, out)) in data_in
@@ -472,7 +497,7 @@ mod tests {
 		}
 		let (mut data_out_slice, _device_memory) =
 			C::DevMem::split_at_mut(device_memory, data_out.len());
-		compute.copy_h2d(&data_out, &mut data_out_slice).unwrap();
+		compute.copy_h2d(data_out, &mut data_out_slice).unwrap();
 
 		// Create out slice
 
@@ -541,11 +566,29 @@ mod tests {
 	}
 
 	#[test]
-	fn test_exec_fri_fold() {
+	fn test_exec_fri_fold_non_zero_log_batch() {
 		type F = BinaryField128b;
 		type FSub = BinaryField16b;
 		let log_len = 10;
 		let log_batch_size = 4;
+		let log_fold_challenges = 2;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];
+		test_generic_fri_fold::<F, FSub, _>(
+			compute,
+			&mut device_memory,
+			log_len,
+			log_batch_size,
+			log_fold_challenges,
+		);
+	}
+
+	#[test]
+	fn test_exec_fri_fold_zero_log_batch() {
+		type F = BinaryField128b;
+		type FSub = BinaryField16b;
+		let log_len = 10;
+		let log_batch_size = 0;
 		let log_fold_challenges = 2;
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];

@@ -156,6 +156,7 @@ pub trait ComputeLayer<F> {
 	/// * `data_out` - an output buffer, with length $2^n$.
 	///
 	/// [DP24]: <https://eprint.iacr.org/2024/504>
+	#[allow(clippy::too_many_arguments)]
 	fn fri_fold<FSub>(
 		&self,
 		exec: &mut Self::Exec,
