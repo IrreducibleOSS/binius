@@ -22,12 +22,11 @@ impl<T: TowerFamily> CpuLayer<T> {
 	fn tensor_expand_with_one(
 		&self,
 		exec: &mut <Self as ComputeLayer<T::B128>>::Exec,
-		log_n: usize,
 		coordinates: &[T::B128],
 	) -> Result<Vec<T::B128>, Error> {
-		let mut tensor = vec![T::B128::ZERO; 1 << (log_n + coordinates.len())];
+		let mut tensor = vec![T::B128::ZERO; 1 << coordinates.len()];
 		tensor[0] = T::B128::ONE;
-		self.tensor_expand(exec, log_n, &coordinates, &mut tensor.as_mut_slice())
+		self.tensor_expand(exec, 0, &coordinates, &mut tensor.as_mut_slice())
 			.map(|_| tensor)
 	}
 }
@@ -163,11 +162,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let log_size = fold_challenges.len();
 
 		// Expand the interleave challenges to the tensor size
-		let tensor = self.tensor_expand_with_one(exec, log_batch_size, &interleave_challenges)?;
+		let tensor = self.tensor_expand_with_one(exec, &interleave_challenges)?;
 
-		let mut values = vec![T::B128::ZERO; 1 << log_size];
+		let mut values = vec![T::B128::ZERO; 1 << log_len];
 		for (chunk_index, (chunk, out)) in data_in
-			.chunks_exact(1 << log_size)
+			.chunks_exact(1 << challenges.len())
 			.zip(data_out.iter_mut())
 			.enumerate()
 		{
@@ -177,13 +176,13 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 					*x_i = *y_i;
 				});
 			} else {
-				let folded_iter = chunk.chunks_exact(1 << log_batch_size).map(|chunk| {
-					let mut result = T::B128::ZERO;
-					for (a, b) in chunk.iter().zip(&tensor) {
-						result += *a * b;
-					}
-
-					result
+				let folded_iter = chunk.chunks(1 << log_batch_size).map(|chunk| {
+					chunk
+						.iter()
+						.zip(&tensor)
+						.map(|(&a_i, &b_i)| a_i * b_i)
+						.take(1 << log_batch_size)
+						.sum::<T::B128>()
 				});
 
 				folded_iter.zip(values.iter_mut()).for_each(|(x_i, y_i)| {
@@ -442,6 +441,7 @@ mod tests {
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		log_len: usize,
 		log_batch_size: usize,
+		log_fold_challenges: usize,
 	) where
 		F: TowerField + ExtensionField<FSub>,
 		FSub: BinaryField,
@@ -465,7 +465,7 @@ mod tests {
 		compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
 		let data_in_slice = C::DevMem::as_const(&data_in_slice);
 
-		let mut data_out = compute.host_alloc(1 << log_len);
+		let mut data_out = compute.host_alloc(1 << (log_len - log_fold_challenges));
 		let data_out = data_out.as_mut();
 		for x_i in data_out.iter_mut() {
 			*x_i = <F as Field>::ZERO;
@@ -477,7 +477,7 @@ mod tests {
 		// Create out slice
 
 		let challenges = repeat_with(|| <F as Field>::random(&mut rng))
-			.take(log_batch_size * 2)
+			.take(log_batch_size + log_fold_challenges)
 			.collect::<Vec<_>>();
 
 		// Run the HAL operation
@@ -546,8 +546,15 @@ mod tests {
 		type FSub = BinaryField16b;
 		let log_len = 10;
 		let log_batch_size = 4;
+		let log_fold_challenges = 2;
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];
-		test_generic_fri_fold::<F, FSub, _>(compute, &mut device_memory, log_len, log_batch_size);
+		test_generic_fri_fold::<F, FSub, _>(
+			compute,
+			&mut device_memory,
+			log_len,
+			log_batch_size,
+			log_fold_challenges,
+		);
 	}
 }
