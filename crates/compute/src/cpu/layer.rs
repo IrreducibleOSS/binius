@@ -18,6 +18,20 @@ pub struct CpuExecutor;
 #[derive(Debug, Default)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
+impl<T: TowerFamily> CpuLayer<T> {
+	fn tensor_expand_with_one(
+		&self,
+		exec: &mut <Self as ComputeLayer<T::B128>>::Exec,
+		log_n: usize,
+		coordinates: &[T::B128],
+	) -> Result<Vec<T::B128>, Error> {
+		let mut tensor = vec![T::B128::ZERO; 1 << log_n];
+		tensor[0] = T::B128::ONE;
+		self.tensor_expand(exec, log_n, &coordinates, &mut tensor.as_mut_slice())
+			.map(|_| tensor)
+	}
+}
+
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
 	type DevMem = CpuMemory;
@@ -148,23 +162,18 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
 		let log_size = fold_challenges.len();
 
-		let mut tensor = vec![T::B128::ZERO; 1 << log_batch_size];
-		tensor[0] = T::B128::ONE;
-		self.tensor_expand(
-			exec,
-			log_batch_size,
-			&interleave_challenges,
-			&mut tensor.as_mut_slice(),
-		)?;
+		// Expand the interleave challenges to the tensor size
+		let tensor = self.tensor_expand_with_one(exec, log_batch_size, &interleave_challenges)?;
 
-		let mut buffer = vec![T::B128::ZERO; 1 << log_size];
+		let mut values = vec![T::B128::ZERO; 1 << log_size];
 		for (chunk_index, (chunk, out)) in data_in
 			.chunks_exact(1 << log_size)
 			.zip(data_out.iter_mut())
 			.enumerate()
 		{
+			// Fill the values with the folded items
 			if log_batch_size == 0 {
-				buffer.iter_mut().zip(chunk.iter()).for_each(|(x_i, y_i)| {
+				values.iter_mut().zip(chunk.iter()).for_each(|(x_i, y_i)| {
 					*x_i = *y_i;
 				});
 			} else {
@@ -177,11 +186,12 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 					result
 				});
 
-				folded_iter.zip(buffer.iter_mut()).for_each(|(x_i, y_i)| {
+				folded_iter.zip(values.iter_mut()).for_each(|(x_i, y_i)| {
 					*y_i = x_i;
 				});
 			}
 
+			// Apply folding to the pairs of values
 			let mut log_len = log_len;
 			let mut log_size = log_size;
 			for &challenge in challenges {
@@ -192,17 +202,17 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 						(chunk_index << (log_size - 1)) | index_offset,
 					);
 					let (mut u, mut v) =
-						(buffer[index_offset << 1], buffer[(index_offset << 1) | 1]);
+						(values[index_offset << 1], values[(index_offset << 1) | 1]);
 					v += u;
 					u += v * t;
-					buffer[index_offset] = extrapolate_line_scalar(u, v, challenge);
+					values[index_offset] = extrapolate_line_scalar(u, v, challenge);
 				}
 
 				log_len -= 1;
 				log_size -= 1;
 			}
 
-			*out = buffer[0];
+			*out = values[0];
 		}
 
 		Ok(())
