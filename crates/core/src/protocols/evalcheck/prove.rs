@@ -395,9 +395,14 @@ where
 			MultilinearPolyVariant::ZeroPadded(padded) => {
 				let id = padded.id();
 				let inner = self.oracles.oracle(id);
-				let inner_n_vars = inner.n_vars();
-				let inner_eval_point = eval_point.slice(0..inner_n_vars);
-				self.claims_without_evals.push((inner, inner_eval_point));
+				let inner_eval_point = chain!(
+					&eval_point[..padded.start_index()],
+					&eval_point[padded.start_index() + padded.n_pad_vars()..],
+				)
+				.copied()
+				.collect::<Vec<_>>();
+				self.claims_without_evals
+					.push((inner, inner_eval_point.into()));
 			}
 			_ => return,
 		};
