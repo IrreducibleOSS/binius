@@ -365,7 +365,7 @@ impl<F: Field> ArithCircuit<F> {
 	}
 
 	pub fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let mut step_evals = Vec::with_capacity(self.steps.len());
+		let mut step_evals = Vec::<F>::with_capacity(self.steps.len());
 		for step in &self.steps {
 			match step {
 				ArithCircuitStep::Add(left, right) => {
@@ -374,7 +374,7 @@ impl<F: Field> ArithCircuit<F> {
 				ArithCircuitStep::Mul(left, right) => {
 					step_evals.push(step_evals[*left] * step_evals[*right])
 				}
-				ArithCircuitStep::Pow(base, exp) => step_evals.push(query[*base].pow(*exp)),
+				ArithCircuitStep::Pow(base, exp) => step_evals.push(step_evals[*base].pow(*exp)),
 				ArithCircuitStep::Const(value) => step_evals.push(*value),
 				ArithCircuitStep::Var(index) => step_evals.push(query[*index]),
 			}
@@ -1514,5 +1514,16 @@ mod tests {
 			+ (ArithExpr::Var(0) + ArithExpr::Var(1));
 		assert_eq!(expr, expected_expr);
 		assert_eq!(unique_nodes_count_expr(&expr), 5);
+	}
+
+	#[test]
+	fn test_evaluate() {
+		type F = BinaryField8b;
+		let expr = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1))
+			* (ArithCircuit::var(2) + ArithCircuit::var(3)).pow(5);
+		let result = expr
+			.evaluate(&[F::new(2), F::new(3), F::new(4), F::new(5)])
+			.unwrap();
+		assert_eq!(result, F::new(2) + F::new(3) * (F::new(4) + F::new(5)).pow(5));
 	}
 }
