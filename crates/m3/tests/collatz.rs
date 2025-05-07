@@ -346,7 +346,7 @@ mod arithmetization {
 		let evens_table = EvensTable::new(&mut cs, collatz_orbit);
 		let odds_table = OddsTable::new(&mut cs, collatz_orbit);
 
-		let initial_val = 3;
+		let initial_val = 3999;
 		let trace = CollatzTrace::generate(initial_val);
 
 		let allocator = Bump::new();
