@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::array;
+use std::{array, marker::PhantomData};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
@@ -8,7 +8,10 @@ use binius_field::{
 };
 use itertools::izip;
 
-use crate::builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128};
+use crate::{
+	builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128},
+	gadgets::u32::add::UnsignedAddPrimitives,
+};
 
 /// A gadget for performing 32-bit integer subtraction on vertically-packed bit columns.
 ///
@@ -148,31 +151,33 @@ impl U32Sub {
 	}
 }
 
+/// Gadget for unsigned subtraction using non-packed one-bit columns generic over `u32` and `u64`
 #[derive(Debug)]
-pub struct WideU32Sub {
+pub struct WideSub<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
 	/// Inputs
-	pub xin: [Col<B1>; 32],
-	pub yin: [Col<B1>; 32],
+	pub xin: [Col<B1>; BIT_LENGTH],
+	pub yin: [Col<B1>; BIT_LENGTH],
 
 	bin: Col<B1>,
-	bout: [Col<B1>; 32],
+	bout: [Col<B1>; BIT_LENGTH],
+	_marker: PhantomData<UX>,
 
 	/// Outputs
-	pub zout: [Col<B1>; 32],
+	pub zout: [Col<B1>; BIT_LENGTH],
 	pub final_borrow: Option<Col<B1>>,
 	pub flags: U32SubFlags,
 }
 
-impl WideU32Sub {
+impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideSub<UX, BIT_LENGTH> {
 	pub fn new(
 		table: &mut TableBuilder,
-		xin: [Col<B1>; 32],
-		yin: [Col<B1>; 32],
+		xin: [Col<B1>; BIT_LENGTH],
+		yin: [Col<B1>; BIT_LENGTH],
 		flags: U32SubFlags,
 	) -> Self {
 		let bout = table.add_committed_multiple("bout");
 
-		let bin: [_; 32] = array::from_fn(|i| {
+		let bin: [_; BIT_LENGTH] = array::from_fn(|i| {
 			if i == 0 {
 				if let Some(borrow_in_bit) = flags.borrow_in_bit {
 					table.add_selected("bin[{0}]", borrow_in_bit, 0)
@@ -184,7 +189,7 @@ impl WideU32Sub {
 			}
 		});
 
-		let final_borrow = flags.expose_final_borrow.then(|| bout[31]);
+		let final_borrow = flags.expose_final_borrow.then(|| bout[BIT_LENGTH - 1]);
 
 		let zout = if flags.commit_zout {
 			let zout = table.add_committed_multiple("zout");
@@ -207,6 +212,7 @@ impl WideU32Sub {
 			zout,
 			final_borrow,
 			flags,
+			_marker: PhantomData,
 		}
 	}
 
@@ -259,6 +265,8 @@ impl WideU32Sub {
 		Ok(())
 	}
 }
+
+pub type WideU32Sub = WideSub<u32, 32>;
 
 #[cfg(test)]
 mod tests {
