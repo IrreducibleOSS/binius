@@ -279,16 +279,15 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			.enumerate()
 		{
 			// Apply folding with interleaved challenges.
-			// After this code block is executed every `1 << log_batch_size`'s element contains the folded value.
 			values[..(1 << challenges.len())].copy_from_slice(chunk);
 			let batches_count = 1 << (challenges.len() - log_batch_size);
 			for (round, challenge) in interleave_challenges.iter().enumerate() {
 				let folds_count = 1 << (log_batch_size - round - 1);
 				// On every round fold the adjacent pairs of values
 				for batch_index in 0..batches_count {
-					let batch_offset = batch_index << log_batch_size;
+					let batch_offset = batch_index << (log_batch_size - round);
 					for i in 0..folds_count {
-						values[batch_offset + i] = extrapolate_line_scalar(
+						values[batch_offset / 2 + i] = extrapolate_line_scalar(
 							values[batch_offset + (i << 1)],
 							values[batch_offset + (i << 1) + 1],
 							*challenge,
@@ -298,7 +297,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			}
 
 			// Apply the inverse NTT to the folded values.
-			// Note that we are working with 'sparse' data where every `1 << log_batch_size`'s element is a folded value.
 			let mut log_len = log_len;
 			let mut log_size = log_size;
 			for &challenge in fold_challenges {
@@ -308,14 +306,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 						ntt_round,
 						(chunk_index << (log_size - 1)) | index_offset,
 					);
-					let (mut u, mut v) = (
-						values[index_offset << (log_batch_size + 1)],
-						values[((index_offset << 1) | 1) << log_batch_size],
-					);
+					let (mut u, mut v) =
+						(values[index_offset << 1], values[(index_offset << 1) | 1]);
 					v += u;
 					u += v * t;
-					values[index_offset << log_batch_size] =
-						extrapolate_line_scalar(u, v, challenge);
+					values[index_offset] = extrapolate_line_scalar(u, v, challenge);
 				}
 
 				log_len -= 1;
