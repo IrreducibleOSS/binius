@@ -25,6 +25,7 @@
 
 mod common;
 mod error;
+mod logging;
 mod prove;
 #[cfg(test)]
 mod tests;

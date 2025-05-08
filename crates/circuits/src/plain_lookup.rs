@@ -308,7 +308,7 @@ mod count_multiplicity_tests {
 		let table: Vec<i32> = vec![];
 		let values = vec![1, 2, 3];
 		let result = count_multiplicities(&table, &values, false).unwrap();
-		assert_eq!(result, vec![]);
+		assert!(result.is_empty());
 	}
 
 	#[test]
