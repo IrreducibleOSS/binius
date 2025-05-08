@@ -475,7 +475,7 @@ fn add_oracle_for_column<F: TowerField>(
 fn translate_constraint_set<F: TowerField>(
 	n_vars: usize,
 	zero_constraints: &[ZeroConstraint<F>],
-	partition_oracle_ids: Vec<usize>,
+	partition_oracle_ids: Vec<OracleId>,
 ) -> ConstraintSet<F> {
 	// We need to figure out which oracle ids from the entire set of the partition oracles is
 	// actually referenced in every zero constraint expressions.

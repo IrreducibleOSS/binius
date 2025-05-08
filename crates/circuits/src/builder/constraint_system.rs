@@ -353,7 +353,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		id: OracleId,
 		values: Vec<F>,
 		start_index: usize,
-	) -> Result<usize, OracleError> {
+	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
@@ -366,7 +366,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		id: OracleId,
 		values: Vec<F>,
-	) -> Result<usize, OracleError> {
+	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))

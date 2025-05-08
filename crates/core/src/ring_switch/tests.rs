@@ -68,7 +68,7 @@ where
 {
 	let mut witness_index = MultilinearExtensionIndex::new();
 
-	for oracle in oracles.iter() {
+	for oracle in oracles.polys() {
 		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			let n_vars = oracle.n_vars();
 			let witness = match oracle.binary_tower_level() {
@@ -141,7 +141,7 @@ where
 	F: TowerField,
 {
 	let max_n_vars = oracles
-		.iter()
+		.polys()
 		.filter(|oracle| matches!(oracle.variant, MultilinearPolyVariant::Committed))
 		.map(|oracle| oracle.n_vars())
 		.max()
@@ -151,7 +151,7 @@ where
 		.collect::<Vec<_>>();
 
 	let mut eval_claims = Vec::new();
-	for oracle in oracles.iter() {
+	for oracle in oracles.polys() {
 		if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			continue;
 		}
