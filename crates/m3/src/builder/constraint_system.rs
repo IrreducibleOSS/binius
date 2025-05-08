@@ -221,7 +221,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 					column_info,
 					n_vars,
 				)?;
-				println!("oracle_id: {} {:?}", oracle_id, column_info);
 				oracle_lookup.push(oracle_id);
 				if column_info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
