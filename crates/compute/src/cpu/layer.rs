@@ -24,19 +24,6 @@ pub struct CpuExecutor;
 #[derive(Debug, Default)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
-impl<T: TowerFamily> CpuLayer<T> {
-	fn tensor_expand_with_one(
-		&self,
-		exec: &mut <Self as ComputeLayer<T::B128>>::Exec,
-		coordinates: &[T::B128],
-	) -> Result<Vec<T::B128>, Error> {
-		let mut tensor = vec![T::B128::ZERO; 1 << coordinates.len()];
-		tensor[0] = T::B128::ONE;
-		self.tensor_expand(exec, 0, coordinates, &mut tensor.as_mut_slice())
-			.map(|_| tensor)
-	}
-}
-
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
 	type KernelExec = CpuExecutor;
@@ -242,7 +229,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 	fn fri_fold<FSub>(
 		&self,
-		exec: &mut Self::Exec,
+		_exec: &mut Self::Exec,
 		ntt: &impl AdditiveNTT<FSub>,
 		log_len: usize,
 		log_batch_size: usize,
@@ -285,36 +272,33 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
 		let log_size = fold_challenges.len();
 
-		// Expand the interleave challenges to the tensor size
-		let tensor = self.tensor_expand_with_one(exec, interleave_challenges)?;
-
-		let mut values = vec![T::B128::ZERO; 1 << log_len];
+		let mut values = vec![T::B128::ZERO; 1 << challenges.len()];
 		for (chunk_index, (chunk, out)) in data_in
 			.chunks_exact(1 << challenges.len())
 			.zip(data_out.iter_mut())
 			.enumerate()
 		{
-			// Fill the values with the folded items
-			if log_batch_size == 0 {
-				values.iter_mut().zip(chunk.iter()).for_each(|(x_i, y_i)| {
-					*x_i = *y_i;
-				});
-			} else {
-				let folded_iter = chunk.chunks(1 << log_batch_size).map(|chunk| {
-					chunk
-						.iter()
-						.zip(&tensor)
-						.map(|(&a_i, &b_i)| a_i * b_i)
-						.take(1 << log_batch_size)
-						.sum::<T::B128>()
-				});
-
-				folded_iter.zip(values.iter_mut()).for_each(|(x_i, y_i)| {
-					*y_i = x_i;
-				});
+			// Apply folding with interleaved challenges.
+			// After this code block is executed every `1 << log_batch_size`'s element contains the folded value.
+			values[..(1 << challenges.len())].copy_from_slice(chunk);
+			let batches_count = 1 << (challenges.len() - log_batch_size);
+			for (round, challenge) in interleave_challenges.iter().enumerate() {
+				let folds_count = 1 << (log_batch_size - round - 1);
+				// On every round fold the adjacent pairs of values
+				for batch_index in 0..batches_count {
+					let batch_offset = batch_index << log_batch_size;
+					for i in 0..folds_count {
+						values[batch_offset + i] = extrapolate_line_scalar(
+							values[batch_offset + (i << 1)],
+							values[batch_offset + (i << 1) + 1],
+							*challenge,
+						);
+					}
+				}
 			}
 
-			// Apply folding to the pairs of values
+			// Apply the inverse NTT to the folded values.
+			// Note that we are working with 'sparse' data where every `1 << log_batch_size`'s element is a folded value.
 			let mut log_len = log_len;
 			let mut log_size = log_size;
 			for &challenge in fold_challenges {
@@ -324,11 +308,14 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 						ntt_round,
 						(chunk_index << (log_size - 1)) | index_offset,
 					);
-					let (mut u, mut v) =
-						(values[index_offset << 1], values[(index_offset << 1) | 1]);
+					let (mut u, mut v) = (
+						values[index_offset << (log_batch_size + 1)],
+						values[((index_offset << 1) | 1) << log_batch_size],
+					);
 					v += u;
 					u += v * t;
-					values[index_offset] = extrapolate_line_scalar(u, v, challenge);
+					values[index_offset << log_batch_size] =
+						extrapolate_line_scalar(u, v, challenge);
 				}
 
 				log_len -= 1;
@@ -756,9 +743,9 @@ mod tests {
 		assert_eq!(actual, expected);
 	}
 
-	fn test_generic_fri_fold<F, FSub, C>(
+	fn test_generic_fri_fold<'a, F, FSub, C>(
 		compute: C,
-		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
 		log_len: usize,
 		log_batch_size: usize,
 		log_fold_challenges: usize,
@@ -766,6 +753,7 @@ mod tests {
 		F: TowerField + ExtensionField<FSub>,
 		FSub: BinaryField,
 		C: ComputeLayer<F>,
+		C::DevMem: 'a,
 	{
 		let mut rng = StdRng::seed_from_u64(0);
 
@@ -780,8 +768,9 @@ mod tests {
 		let data_in = data_in.to_vec();
 
 		// Copy the buffer to device slice
-		let (mut data_in_slice, device_memory) =
-			C::DevMem::split_at_mut(device_memory, data_in.len());
+		let device_allocator =
+			BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
+		let mut data_in_slice = device_allocator.alloc(data_in.len()).unwrap();
 		compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
 		let data_in_slice = C::DevMem::as_const(&data_in_slice);
 
@@ -790,8 +779,7 @@ mod tests {
 		for x_i in data_out.iter_mut() {
 			*x_i = <F as Field>::ZERO;
 		}
-		let (mut data_out_slice, _device_memory) =
-			C::DevMem::split_at_mut(device_memory, data_out.len());
+		let mut data_out_slice = device_allocator.alloc(data_out.len()).unwrap();
 		compute.copy_h2d(data_out, &mut data_out_slice).unwrap();
 
 		// Create out slice
