@@ -276,6 +276,37 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+fn prove_interleaved_fri_sumcheck_compute_layer<
+	F,
+	FEncode,
+	P,
+	NTT,
+	MTScheme,
+	MTProver,
+	Challenger_,
+>(
+	n_rounds: usize,
+	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
+	merkle_prover: &MTProver,
+	sumcheck_provers: Vec<impl SumcheckProver<F>>,
+	codeword: &[P],
+	committed: &MTProver::Committed,
+	transcript: &mut ProverTranscript<Challenger_>,
+) -> Result<(), Error>
+where
+	F: TowerField,
+	FEncode: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	NTT: AdditiveNTT<FEncode> + Sync,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Challenger_: Challenger,
+{
+	unimplemented!()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn prove_interleaved_fri_sumcheck<F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
