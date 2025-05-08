@@ -2,17 +2,14 @@
 
 use std::iter::repeat_with;
 
-use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::OptimalUnderlier,
+	arch::OptimalUnderlier128b,
 	packed::{get_packed_slice, set_packed_slice},
-	tower::CanonicalTowerFamily,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
-		B1, B32, B64,
+		test_utils::validate_system_witness, Col, ConstraintSystem, Statement, TableFiller,
+		TableId, TableWitnessSegment, WitnessIndex, B1, B32, B64,
 	},
 	gadgets::{
 		div::{DivSS32, DivUU32},
@@ -57,44 +54,7 @@ impl MulDivTestSuite {
 		let table_index = witness.get_table(test_table.id()).unwrap();
 		test_table.check_outputs(&inputs, &table_index.full_segment());
 
-		const LOG_INV_RATE: usize = 1;
-
-		// Lower security bits for testing only!!
-		const SECURITY_BITS: usize = 70;
-		let ccs = cs.compile(&statement)?;
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(
-			&ccs,
-			&statement.boundaries,
-			&witness,
-		)?;
-
-		if self.prove_verify {
-			let proof = binius_core::constraint_system::prove::<
-				OptimalUnderlier,
-				CanonicalTowerFamily,
-				Groestl256,
-				Groestl256ByteCompression,
-				HasherChallenger<Groestl256>,
-				_,
-			>(
-				&ccs,
-				LOG_INV_RATE,
-				SECURITY_BITS,
-				&statement.boundaries,
-				witness,
-				&binius_hal::make_portable_backend(),
-			)?;
-
-			binius_core::constraint_system::verify::<
-				OptimalUnderlier,
-				CanonicalTowerFamily,
-				Groestl256,
-				Groestl256ByteCompression,
-				HasherChallenger<Groestl256>,
-			>(&ccs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)?;
-		}
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, statement.boundaries);
 		Ok(())
 	}
 }
