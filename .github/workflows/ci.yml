@@ -125,6 +125,27 @@ jobs:
           rustup toolchain install $RUST_VERSION
       - name: Run Command
         run: ${{ matrix.expand.cmd }}
+  integration-test:
+    name: integration-test-${{ matrix.expand.name }}
+    needs: [build]
+    runs-on: ${{ matrix.expand.runner }}
+    env:
+      RUST_VERSION: 1.85.0
+    strategy:
+      matrix:
+        expand:
+          - runner: "c7a-2xlarge"
+            name: "amd-binius-m3"
+            cmd: 'RUSTFLAGS="-C target-cpu=native" BINIUS_M3_TEST_PROVE_VERIFY=1 cargo test --package binius_m3'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo yum -y install gcc openssl-devel
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Run Command
+        run: ${{ matrix.expand.cmd }}
   deploy:
     name: deploy-pages
     needs: [build]
