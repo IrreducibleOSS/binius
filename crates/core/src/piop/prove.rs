@@ -435,7 +435,11 @@ where
 		let packed_evals = unpacked_committed
 			.packed_evals()
 			.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
-		MultilinearExtension::from_values_generic(Cow::Borrowed(packed_evals))
+
+		MultilinearExtension::new(
+			unpacked_n_vars - unpacked_committed.log_extension_degree(),
+			Cow::Borrowed(packed_evals),
+		)
 	}?;
 	Ok(packed_committed)
 }

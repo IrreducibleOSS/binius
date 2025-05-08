@@ -176,7 +176,7 @@ where
 					PackedField::iter_slice(
 						partial_eval.packed_evals().expect("packed_evals exist"),
 					)
-					.take(1 << suffix_desc.kappa)
+					.take((1 << suffix_desc.kappa).min(1 << partial_eval.n_vars()))
 					.collect::<Vec<_>>()
 				} else {
 					let suffix_query = memoized_data
@@ -185,7 +185,7 @@ where
 					let partial_eval =
 						witnesses[*committed_idx].evaluate_partial_high(suffix_query.into())?;
 					PackedField::iter_slice(partial_eval.evals())
-						.take(1 << suffix_desc.kappa)
+						.take((1 << suffix_desc.kappa).min(1 << partial_eval.n_vars()))
 						.collect::<Vec<_>>()
 				};
 

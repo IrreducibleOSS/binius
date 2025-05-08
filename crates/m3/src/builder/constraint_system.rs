@@ -254,7 +254,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					{
 						let bits_ids = bit_cols
 							.iter()
-							.map(|&partition_idx| partition_oracle_ids[partition_idx])
+							.map(|&col_idx| oracle_lookup[col_idx])
 							.collect();
 						exponents.push(Exp {
 							base: OracleOrConst::Const {
@@ -268,10 +268,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 					if let ColumnDef::DynamicExp { bit_cols, base, .. } = col_info {
 						let bits_ids = bit_cols
 							.iter()
-							.map(|&partition_idx| partition_oracle_ids[partition_idx])
+							.map(|&col_idx| oracle_lookup[col_idx])
 							.collect();
 						exponents.push(Exp {
-							base: OracleOrConst::Oracle(partition_oracle_ids[*base]),
+							base: OracleOrConst::Oracle(oracle_lookup[*base]),
 							bits_ids,
 							exp_result_id: oracle_lookup[index],
 						})
