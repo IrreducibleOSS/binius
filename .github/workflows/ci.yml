@@ -135,7 +135,7 @@ jobs:
       matrix:
         expand:
           - runner: "c7a-2xlarge"
-            name: "amd-binius-m3"
+            name: "binius-m3-amd"
             cmd: 'RUSTFLAGS="-C target-cpu=native" BINIUS_M3_TEST_PROVE_VERIFY=1 cargo test --package binius_m3'
     steps:
       - name: Checkout Repository
