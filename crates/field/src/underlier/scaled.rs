@@ -14,7 +14,7 @@ use super::{Divisible, NumCast, Random, UnderlierType, UnderlierWithBitOps};
 use crate::tower_levels::TowerLevel;
 
 /// A type that represents a pair of elements of the same underlier type.
-/// We use it as an underlier for the `ScaledPAckedField` type.
+/// We use it as an underlier for the `ScaledPackedField` type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct ScaledUnderlier<U, const N: usize>(pub [U; N]);

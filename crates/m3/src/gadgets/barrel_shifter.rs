@@ -20,7 +20,7 @@ pub struct BarrelShifter {
 	/// The input column representing the 32-bit value to be shifted.
 	input: Col<B1, 32>,
 
-	/// The shift amount column representing the 5 of positions to shift,
+	/// The shift amount column representing the 5 bits of positions to shift,
 	/// ignoring the remaining 11.
 	shift_amount: Col<B1, 16>,
 
