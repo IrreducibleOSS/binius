@@ -66,13 +66,15 @@ impl_debug_with_json!(MerkleTreeDimensionData);
 pub(super) struct FRIFoldData {
 	log_len: usize,
 	log_batch_size: usize,
+	num_challenges: usize,
 }
 
 impl FRIFoldData {
-	pub(super) fn new(log_len: usize, log_batch_size: usize) -> Self {
+	pub(super) fn new(log_len: usize, log_batch_size: usize, num_challenges: usize) -> Self {
 		Self {
 			log_len,
 			log_batch_size,
+			num_challenges,
 		}
 	}
 
