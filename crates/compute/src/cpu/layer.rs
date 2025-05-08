@@ -3,9 +3,11 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	tower::TowerFamily, util::inner_product_unchecked, ExtensionField, Field, TowerField,
+	tower::TowerFamily, util::inner_product_unchecked, BinaryField, ExtensionField, Field,
+	TowerField,
 };
-use binius_math::{ArithCircuit, ArithExpr};
+use binius_math::{extrapolate_line_scalar, ArithCircuit, ArithExpr};
+use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
 
@@ -224,6 +226,102 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		*accumulator += ret * batch_coeff;
 		Ok(())
 	}
+
+	fn fri_fold<FSub>(
+		&self,
+		_exec: &mut Self::Exec,
+		ntt: &impl AdditiveNTT<FSub>,
+		log_len: usize,
+		log_batch_size: usize,
+		challenges: &[T::B128],
+		data_in: &[T::B128],
+		data_out: &mut &mut [T::B128],
+	) -> Result<(), Error>
+	where
+		FSub: binius_field::BinaryField,
+		T::B128: BinaryField + ExtensionField<FSub>,
+	{
+		if data_in.len() != 1 << (log_len + log_batch_size) {
+			return Err(Error::InputValidation(format!(
+				"invalid data_in length: {}",
+				data_in.len()
+			)));
+		}
+
+		if challenges.len() < log_batch_size {
+			return Err(Error::InputValidation(format!(
+				"invalid challenges length: {}",
+				challenges.len()
+			)));
+		}
+
+		if challenges.len() > log_batch_size + log_len {
+			return Err(Error::InputValidation(format!(
+				"challenges length too big: {}",
+				challenges.len()
+			)));
+		}
+
+		if data_out.len() != 1 << (log_len - (challenges.len() - log_batch_size)) {
+			return Err(Error::InputValidation(format!(
+				"invalid data_out length: {}",
+				data_out.len()
+			)));
+		}
+
+		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
+		let log_size = fold_challenges.len();
+
+		let mut values = vec![T::B128::ZERO; 1 << challenges.len()];
+		for (chunk_index, (chunk, out)) in data_in
+			.chunks_exact(1 << challenges.len())
+			.zip(data_out.iter_mut())
+			.enumerate()
+		{
+			// Apply folding with interleaved challenges.
+			values[..(1 << challenges.len())].copy_from_slice(chunk);
+			let batches_count = 1 << (challenges.len() - log_batch_size);
+			for (round, challenge) in interleave_challenges.iter().enumerate() {
+				let folds_count = 1 << (log_batch_size - round - 1);
+				// On every round fold the adjacent pairs of values
+				for batch_index in 0..batches_count {
+					let batch_offset = batch_index << (log_batch_size - round);
+					for i in 0..folds_count {
+						values[batch_offset / 2 + i] = extrapolate_line_scalar(
+							values[batch_offset + (i << 1)],
+							values[batch_offset + (i << 1) + 1],
+							*challenge,
+						);
+					}
+				}
+			}
+
+			// Apply the inverse NTT to the folded values.
+			let mut log_len = log_len;
+			let mut log_size = log_size;
+			for &challenge in fold_challenges {
+				let ntt_round = ntt.log_domain_size() - log_len;
+				for index_offset in 0..1 << (log_size - 1) {
+					let t = ntt.get_subspace_eval(
+						ntt_round,
+						(chunk_index << (log_size - 1)) | index_offset,
+					);
+					let (mut u, mut v) =
+						(values[index_offset << 1], values[(index_offset << 1) | 1]);
+					v += u;
+					u += v * t;
+					values[index_offset] = extrapolate_line_scalar(u, v, challenge);
+				}
+
+				log_len -= 1;
+				log_size -= 1;
+			}
+
+			*out = values[0];
+		}
+
+		Ok(())
+	}
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in signatures.
@@ -342,6 +440,7 @@ where
 mod tests {
 	use std::{iter::repeat_with, mem::MaybeUninit};
 
+	use binius_core::protocols::fri::fold_interleaved;
 	use binius_field::{
 		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
 		ExtensionField, Field, PackedExtension, PackedField, TowerField,
@@ -639,6 +738,77 @@ mod tests {
 		assert_eq!(actual, expected);
 	}
 
+	fn test_generic_fri_fold<'a, F, FSub, C>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
+		log_len: usize,
+		log_batch_size: usize,
+		log_fold_challenges: usize,
+	) where
+		F: TowerField + ExtensionField<FSub>,
+		FSub: BinaryField,
+		C: ComputeLayer<F>,
+		C::DevMem: 'a,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let ntt = binius_ntt::SingleThreadedNTT::<FSub>::new(log_len).unwrap();
+
+		// Allocate buffers to be device mapped
+		let mut data_in = compute.host_alloc(1 << (log_len + log_batch_size));
+		let data_in = data_in.as_mut();
+		for x_i in data_in.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let data_in = data_in.to_vec();
+
+		// Copy the buffer to device slice
+		let device_allocator =
+			BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
+		let mut data_in_slice = device_allocator.alloc(data_in.len()).unwrap();
+		compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
+		let data_in_slice = C::DevMem::as_const(&data_in_slice);
+
+		let mut data_out = compute.host_alloc(1 << (log_len - log_fold_challenges));
+		let data_out = data_out.as_mut();
+		for x_i in data_out.iter_mut() {
+			*x_i = <F as Field>::ZERO;
+		}
+		let mut data_out_slice = device_allocator.alloc(data_out.len()).unwrap();
+		compute.copy_h2d(data_out, &mut data_out_slice).unwrap();
+
+		// Create out slice
+
+		let challenges = repeat_with(|| <F as Field>::random(&mut rng))
+			.take(log_batch_size + log_fold_challenges)
+			.collect::<Vec<_>>();
+
+		// Run the HAL operation
+		compute
+			.execute(|exec| {
+				compute.fri_fold(
+					exec,
+					&ntt,
+					log_len,
+					log_batch_size,
+					&challenges,
+					data_in_slice,
+					&mut data_out_slice,
+				)?;
+				Ok(vec![])
+			})
+			.unwrap();
+
+		// Copy the buffer back to host
+		let data_out_slice = C::DevMem::as_const(&data_out_slice);
+		compute.copy_d2h(data_out_slice, data_out).unwrap();
+
+		// Compute the expected result and compare
+		let expected_result =
+			fold_interleaved(&ntt, &data_in, &challenges, log_len, log_batch_size);
+		assert_eq!(data_out, &expected_result);
+	}
+
 	fn test_generic_single_left_fold<
 		'a,
 		'b,
@@ -787,6 +957,42 @@ mod tests {
 			compute,
 			&mut device_memory,
 			n_vars,
+		);
+	}
+
+	#[test]
+	fn test_exec_fri_fold_non_zero_log_batch() {
+		type F = BinaryField128b;
+		type FSub = BinaryField16b;
+		let log_len = 10;
+		let log_batch_size = 4;
+		let log_fold_challenges = 2;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];
+		test_generic_fri_fold::<F, FSub, _>(
+			compute,
+			&mut device_memory,
+			log_len,
+			log_batch_size,
+			log_fold_challenges,
+		);
+	}
+
+	#[test]
+	fn test_exec_fri_fold_zero_log_batch() {
+		type F = BinaryField128b;
+		type FSub = BinaryField16b;
+		let log_len = 10;
+		let log_batch_size = 0;
+		let log_fold_challenges = 2;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (log_len + log_batch_size + 1)];
+		test_generic_fri_fold::<F, FSub, _>(
+			compute,
+			&mut device_memory,
+			log_len,
+			log_batch_size,
+			log_fold_challenges,
 		);
 	}
 }

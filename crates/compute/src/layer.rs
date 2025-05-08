@@ -2,8 +2,9 @@
 
 use std::ops::Range;
 
-use binius_field::Field;
+use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::ArithExpr;
+use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 
 use super::{
@@ -273,6 +274,51 @@ pub trait ComputeLayer<F: Field> {
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error>;
+
+	/// FRI-fold the interleaved codeword using the given challenges.
+	///
+	/// The FRI-fold operation folds a length $2^{n+b+\eta}$ vector of field elements into a length
+	/// $2^n$ vector of field elements. $n$ is the log block length of the code, $b$ is the log
+	/// batch size, and $b + \eta$ is the number of challenge elements. The operation has the
+	/// following mathematical structure:
+	///
+	/// 1. Split the challenge vector into two parts: $c_0$ with length $b$ and $c_1$ with length
+	///    $\eta$.
+	/// 2. Low fold the input data with the tensor expansion of $c_0.
+	/// 3. Apply $\eta$ layers of the inverse additive NTT to the data.
+	/// 4. Low fold the input data with the tensor expansion of $c_1.
+	///
+	/// The algorithm to perform steps 3 and 4 can be combined into a linear amount of work,
+	/// whereas step 3 on its own would require $\eta$ independent linear passes.
+	///
+	/// See [DP24], Section 4.2 for more details.
+	///
+	/// This operation writes the result out-of-place into an output buffer.
+	///
+	/// ## Arguments
+	///
+	/// * `ntt` - the NTT instance, used to look up the twiddle values.
+	/// * `log_len` - $n + \eta$, the binary logarithm of the code length.
+	/// * `log_batch_size` - $b$, the binary logarithm of the interleaved code batch size.
+	/// * `challenges` - the folding challenges, with length $b + \eta$.
+	/// * `data_in` - an input vector, with length $2^{n + b + \eta}$.
+	/// * `data_out` - an output buffer, with length $2^n$.
+	///
+	/// [DP24]: <https://eprint.iacr.org/2024/504>
+	#[allow(clippy::too_many_arguments)]
+	fn fri_fold<FSub>(
+		&self,
+		exec: &mut Self::Exec,
+		ntt: &impl AdditiveNTT<FSub>,
+		log_len: usize,
+		log_batch_size: usize,
+		challenges: &[F],
+		data_in: FSlice<F, Self>,
+		data_out: &mut FSliceMut<F, Self>,
+	) -> Result<(), Error>
+	where
+		FSub: BinaryField,
+		F: ExtensionField<FSub>;
 }
 
 /// A memory mapping specification for a kernel execution.
