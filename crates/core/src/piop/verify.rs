@@ -486,8 +486,8 @@ mod tests {
 
 		assert_eq!(commit_meta.total_vars, 0);
 		assert_eq!(commit_meta.total_multilins, 0);
-		assert_eq!(commit_meta.n_multilins_by_vars, vec![]);
-		assert_eq!(commit_meta.offsets_by_vars, vec![]);
+		assert!(commit_meta.n_multilins_by_vars.is_empty());
+		assert!(commit_meta.offsets_by_vars.is_empty());
 	}
 
 	#[test]
@@ -536,8 +536,8 @@ mod tests {
 
 		assert_eq!(commit_meta.total_vars, 0);
 		assert_eq!(commit_meta.total_multilins, 0);
-		assert_eq!(commit_meta.n_multilins_by_vars(), &[]);
-		assert_eq!(commit_meta.offsets_by_vars, vec![]);
+		assert!(commit_meta.n_multilins_by_vars().is_empty());
+		assert!(commit_meta.offsets_by_vars.is_empty());
 	}
 
 	#[test]

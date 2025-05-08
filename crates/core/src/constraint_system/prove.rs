@@ -267,7 +267,7 @@ where
 	let zerocheck_span = tracing::info_span!(
 		"[phase] Zerocheck",
 		phase = "zerocheck",
-		perfetto_category = "phase.main"
+		perfetto_category = "phase.main",
 	)
 	.entered();
 

@@ -25,7 +25,10 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
 		common::{equal_n_vars_check, small_field_embedding_degree_check},
-		prove::RegularSumcheckProver,
+		prove::{
+			logging::{ExpandQueryData, UnivariateSkipCalculateCoeffsData},
+			RegularSumcheckProver,
+		},
 		zerocheck::{domain_size, extrapolated_scalars_count},
 		Error,
 	},
@@ -284,13 +287,16 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
+	let dimensions_data = ExpandQueryData::new(zerocheck_challenges);
 	let expand_span = tracing::debug_span!(
 		"[task] Expand Query",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
-	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
+	let partial_eq_ind_evals: <Backend as ComputationBackend>::Vec<P> =
+		backend.tensor_product_full_query(zerocheck_challenges)?;
 	drop(expand_span);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -304,10 +310,13 @@ where
 			)
 		})
 		.collect::<Vec<_>>();
+	let dimensions_data =
+		UnivariateSkipCalculateCoeffsData::new(n_vars, skip_rounds, n_multilinears, log_batch);
 	let coeffs_span = tracing::debug_span!(
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
 

@@ -16,13 +16,16 @@ use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
 	eq_ind::RowBatchCoeffs,
 	error::Error,
+	logging::MLEFoldHisgDimensionsData,
 	tower_tensor_algebra::TowerTensorAlgebra,
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
 	protocols::evalcheck::subclaims::MemoizedData,
-	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
+	ring_switch::{
+		common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd, logging::CalculateRingSwitchEqIndData,
+	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
@@ -60,12 +63,15 @@ where
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
 	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
+	let dimensions_data = MLEFoldHisgDimensionsData::new(witnesses);
 	let mle_fold_high_span = tracing::debug_span!(
 		"[task] (Ring Switch) MLE Fold High",
 		phase = "ring_switch",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
+
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
@@ -95,12 +101,15 @@ where
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
+	let dimensions_data = CalculateRingSwitchEqIndData::new(system.suffix_descs.iter());
 	let calculate_ring_switch_eq_ind_span = tracing::debug_span!(
 		"[task] Calculate Ring Switch Eq Ind",
 		phase = "ring_switch",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimensions_data,
 	)
 	.entered();
+
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,

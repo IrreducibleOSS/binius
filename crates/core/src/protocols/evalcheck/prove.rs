@@ -26,9 +26,12 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
 	},
-	protocols::evalcheck::subclaims::{
-		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
-		shifted_sumcheck_meta, CompositeMLECheckMeta,
+	protocols::evalcheck::{
+		logging::MLEFoldHighDimensionsData,
+		subclaims::{
+			packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
+			shifted_sumcheck_meta, CompositeMLECheckMeta,
+		},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
@@ -227,13 +230,6 @@ where
 		}
 
 		// Step 3: Process projected_bivariate_claims
-		let evalcheck_mle_fold_high_span = tracing::debug_span!(
-			"[task] (Evalcheck) MLE Fold High",
-			phase = "evalcheck",
-			perfetto_category = "task.main"
-		)
-		.entered();
-
 		let mut projected_bivariate_metas = Vec::new();
 		let mut composite_mle_metas = Vec::new();
 		let mut projected_bivariate_claims = Vec::new();
@@ -253,6 +249,14 @@ where
 				}
 			}
 		}
+		let dimensions_data = MLEFoldHighDimensionsData::new(projected_bivariate_claims.len());
+		let evalcheck_mle_fold_high_span = tracing::debug_span!(
+			"[task] (Evalcheck) MLE Fold High",
+			phase = "evalcheck",
+			perfetto_category = "task.main",
+			dimensions_data = ?dimensions_data,
+		)
+		.entered();
 
 		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
