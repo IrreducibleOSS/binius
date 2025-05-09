@@ -14,9 +14,9 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
 		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B8,
+		B128, B8, B64
 	},
-	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
+	gadgets::hash::keccak::{self, Keccakf},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
@@ -54,7 +54,7 @@ impl PermutationTable {
 
 impl<P> TableFiller<P> for PermutationTable
 where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8> + PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
 	type Event = [u64; 25];
