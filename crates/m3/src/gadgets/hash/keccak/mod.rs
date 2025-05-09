@@ -12,6 +12,7 @@ use binius_field::{
 	PackedFieldIndexable, PackedSubfield, TowerField,
 };
 pub use state::{StateMatrix, StateRow};
+use trace::PermutationTrace;
 
 use crate::builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B64, B8};
 
@@ -20,7 +21,7 @@ mod test_vector;
 mod trace;
 
 // This implementation tries to be as close to the
-// [Keccak Specification Summary][keccak_spec_summary] and as such it is highly recommended to
+// [Keccak Specification Summary][keccak_spec_summary] and as such i///////.// //t is highly recommended to
 // get familiar with it. A lot of terminology is carried over from that spec.
 //
 // [keccak_spec_summary]: https://keccak.team/keccak_specs_summary.html
@@ -101,9 +102,7 @@ impl Keccakf {
 		let mut state = state_in;
 
 		//Declaring packed state_in columns for exposing in the struct.
-		let state_in_packed = array::from_fn::<Col<B64,8>, 25, _>(|i| {
-			let x = i % 5;
-			let y = i / 5;
+		let state_in_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x,y)| {
 			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
 		});
 
@@ -119,22 +118,20 @@ impl Keccakf {
 		});
 
 		//Declaring packed state_out columns to be exposed in the struct.
-		let state_out_packed = array::from_fn::<Col<B64,8>, 25, _>(|i| {
-			let x = i % 5;
-			let y = i / 5;
+		let state_out_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x,y)| {
 			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
 		});
 
 		let input = array::from_fn::<_, 25, _>(|i| {
 			let x = i % 5;
 			let y = i / 5;
-			table.add_selected(format!("input[{x},{y}]"), state_in_packed[i], 0)
+			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x,y)], 0)
 		});
 
 		let output = array::from_fn::<_, 25, _>(|i| {
 			let x = i % 5;
 			let y = i / 5;
-			table.add_selected(format!("output[{x},{y}]"), state_out_packed[i], 7)
+			table.add_selected(format!("output[{x},{y}]"), state_out_packed[(x,y)], 7)
 		});
 
 		let link_sel = table.add_constant(
@@ -180,7 +177,10 @@ impl Keccakf {
 	/// [`Self::populate_state_in`].
 	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<()>
 	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+		P: PackedFieldIndexable<Scalar = B128>
+			+ PackedExtension<B1>
+			+ PackedExtension<B8>
+			+ PackedExtension<B64>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
 		// `state_in` for the first track of the first batch specifies the initial state for
@@ -188,7 +188,7 @@ impl Keccakf {
 		let pts = self.batches[0]
 			.read_state_ins(index, 0)?
 			.map(trace::keccakf_trace)
-			.collect::<Vec<_>>();
+			.collect::<Vec<PermutationTrace>>();
 		for batch in &self.batches {
 			batch.populate(index, &pts)?;
 		}
@@ -202,6 +202,7 @@ impl Keccakf {
 						index.get_as(self.batches[0].state_in[(x, y)])?;
 					let batch_2_state_out: std::cell::Ref<'_, [u64]> =
 						index.get_as(self.batches[2].state_out[(x, y)])?;
+
 					for track in 0..TRACKS_PER_BATCH - 1 {
 						next_state_in[TRACKS_PER_BATCH * k + track] =
 							batch_0_state_in[TRACKS_PER_BATCH * k + track + 1];
@@ -209,6 +210,16 @@ impl Keccakf {
 							next_state_in[TRACKS_PER_BATCH * k + track],
 							batch_2_state_out[TRACKS_PER_BATCH * k + track]
 						);
+
+						//Populating the packed and selected input and output columns.
+						let mut input: std::cell::RefMut<'_, [u64]> =
+							index.get_mut_as(self.input[x + y * 5])?;
+						let mut output: std::cell::RefMut<'_, [u64]> =
+							index.get_mut_as(self.output[x + y * 5])?;
+
+						input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
+						output[k] =
+							pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
 					}
 				}
 			}
@@ -393,9 +404,9 @@ impl RoundBatch {
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
-		for (k, pt) in pts.iter().enumerate() {
+		for (k, trace) in pts.iter().enumerate() {
 			// Gather all batch round traces for the batch number.
-			let brt = pt.per_batch(self.batch_no);
+			let brt = trace.per_batch(self.batch_no);
 
 			// Fill in round_const witness with the corresponding round constants
 			let mut round_const: std::cell::RefMut<'_, [u64]> =
