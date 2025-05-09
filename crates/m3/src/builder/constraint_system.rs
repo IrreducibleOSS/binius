@@ -26,7 +26,7 @@ use super::{
 	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
-	Table, TableBuilder, ZeroConstraint,
+	Table, TableBuilder, TableSizeSpec, ZeroConstraint,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -182,20 +182,31 @@ impl<F: TowerField> ConstraintSystem<F> {
 			if count == 0 {
 				continue;
 			}
-			if table.is_power_of_two_sized() {
-				if !count.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id: table.id,
-						size: count,
-					});
-				}
-				if count != 1 << table.log_capacity(count) {
-					panic!(
-						"Tables with required power-of-two size currently cannot have capacity \
+			match table.size_spec() {
+				TableSizeSpec::PowerOfTwo => {
+					if !count.is_power_of_two() {
+						return Err(Error::TableSizePowerOfTwoRequired {
+							table_id: table.id,
+							size: count,
+						});
+					}
+					if count != 1 << table.log_capacity(count) {
+						panic!(
+						    "Tables with required power-of-two size currently cannot have capacity \
 						exceeding their count. This is because the flushes do not have automatic \
 						selectors applied, and so the table would flush invalid events"
-					);
+					    );
+					}
 				}
+				TableSizeSpec::Fixed { log_size } => {
+					if count != 1 << log_size {
+						return Err(Error::TableSizeFixedRequired {
+							table_id: table.id,
+							size: count,
+						});
+					}
+				}
+				TableSizeSpec::Arbitrary => (),
 			}
 
 			let mut oracle_lookup = Vec::new();
@@ -279,7 +290,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				});
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
-				let step_down = (!table.is_power_of_two_sized())
+				let step_down = (!table.requires_any_po2_size())
 					.then(|| {
 						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
 						oracles.add_transparent(step_down_poly)
@@ -538,5 +549,18 @@ mod tests {
 			table_sizes: vec![15],
 		};
 		assert_matches!(cs.compile(&statement), Err(Error::TableSizePowerOfTwoRequired { .. }));
+	}
+
+	#[test]
+	fn test_unsatisfied_fixed_size_requirement() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let mut table_builder = cs.add_table("fibonacci");
+		table_builder.require_fixed_size(4);
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![15],
+		};
+		assert_matches!(cs.compile(&statement), Err(Error::TableSizeFixedRequired { .. }));
 	}
 }
