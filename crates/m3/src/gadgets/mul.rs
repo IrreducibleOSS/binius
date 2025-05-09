@@ -228,6 +228,8 @@ where
 			}
 		}
 
+		// NB: Exponentiation result columns are filled by the core constraint system prover.
+
 		Ok(())
 	}
 
