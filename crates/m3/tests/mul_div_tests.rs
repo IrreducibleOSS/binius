@@ -3,7 +3,9 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
+	arch::{OptimalUnderlier, OptimalUnderlier128b},
+	as_packed_field::PackedType,
+	packed::get_packed_slice,
 };
 use binius_m3::{
 	builder::{
@@ -52,7 +54,7 @@ impl MulDivTestSuite {
 		let table_index = witness.get_table(test_table.id()).unwrap();
 		test_table.check_outputs(&inputs, &table_index.full_segment());
 
-		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, statement.boundaries);
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, statement.boundaries);
 		Ok(())
 	}
 }
