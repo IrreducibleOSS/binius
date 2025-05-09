@@ -444,7 +444,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert!(
-			self.table.is_power_of_two_sized(),
+			self.table.requires_any_po2_size(),
 			"Structured dynamic size columns may only be added to tables that are power of two sized"
 		);
 		let namespaced_name = self.namespaced_name(name);
@@ -707,8 +707,14 @@ impl<F: TowerField> Table<F> {
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
 
-	pub fn is_power_of_two_sized(&self) -> bool {
+	/// Returns true if this table requires to have any power-of-two size.
+	pub fn requires_any_po2_size(&self) -> bool {
 		matches!(self.table_size_spec, TableSizeSpec::PowerOfTwo)
+	}
+
+	/// Returns the size constraint of this table.
+	pub(crate) fn size_spec(&self) -> TableSizeSpec {
+		self.table_size_spec
 	}
 
 	pub fn stat(&self) -> TableStat {
@@ -724,8 +730,8 @@ const fn partition_id<const V: usize>() -> usize {
 ///
 /// M3 tables can have size restrictions, where certain columns, specifically structured columns,
 /// are only allowed for certain size specifications.
-#[derive(Debug)]
-enum TableSizeSpec {
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum TableSizeSpec {
 	/// The table size may be arbitrary.
 	Arbitrary,
 	/// The table size may be any power of two.
