@@ -81,8 +81,8 @@ pub struct Keccakf {
 	/// This is used for the state-in to state-out linking rule.
 	next_state_in: StateMatrix<PackedLane8>,
 
-	pub input: [Col<B64>; 25],
-	pub output: [Col<B64>; 25],
+	pub input: StateMatrix<Col<B64>>,
+	pub output: StateMatrix<Col<B64>>,
 	/// Link selector.
 	///
 	/// This is all ones for the first 7 tracks and all zeroes for the last one.
@@ -122,15 +122,11 @@ impl Keccakf {
 			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
 		});
 
-		let input = array::from_fn::<_, 25, _>(|i| {
-			let x = i % 5;
-			let y = i / 5;
+		let input = StateMatrix::from_fn(|(x, y)| {
 			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x, y)], 0)
 		});
 
-		let output = array::from_fn::<_, 25, _>(|i| {
-			let x = i % 5;
-			let y = i / 5;
+		let output = StateMatrix::from_fn(|(x, y)| {
 			table.add_selected(format!("output[{x},{y}]"), state_out_packed[(x, y)], 7)
 		});
 
@@ -212,9 +208,9 @@ impl Keccakf {
 					}
 					// Populating the packed and selected input and output columns.
 					let mut input: std::cell::RefMut<'_, [u64]> =
-						index.get_mut_as(self.input[x + y * 5])?;
+						index.get_mut_as(self.input[(x, y)])?;
 					let mut output: std::cell::RefMut<'_, [u64]> =
-						index.get_mut_as(self.output[x + y * 5])?;
+						index.get_mut_as(self.output[(x, y)])?;
 
 					input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
 					output[k] = pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
