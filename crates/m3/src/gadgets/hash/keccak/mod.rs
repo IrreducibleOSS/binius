@@ -13,7 +13,7 @@ use binius_field::{
 };
 pub use state::{StateMatrix, StateRow};
 
-use crate::builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B8};
+use crate::builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B64, B8};
 
 mod state;
 mod test_vector;
@@ -79,6 +79,9 @@ pub struct Keccakf {
 	///
 	/// This is used for the state-in to state-out linking rule.
 	next_state_in: StateMatrix<PackedLane8>,
+
+	pub input: [Col<B64>; 25],
+	pub output: [Col<B64>; 25],
 	/// Link selector.
 	///
 	/// This is all ones for the first 7 tracks and all zeroes for the last one.
@@ -91,8 +94,20 @@ impl Keccakf {
 	/// Creates a new instance of the gadget.
 	///
 	/// See the struct documentation for more details.
-	pub fn new(table: &mut TableBuilder, state_in: StateMatrix<PackedLane8>) -> Self {
+	pub fn new(table: &mut TableBuilder) -> Self {
+		let state_in: StateMatrix<PackedLane8> =
+			StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_in[{x},{y}]")));
+
 		let mut state = state_in;
+
+		//Declaring packed state_in columns for exposing in the struct.
+		let state_in_packed = array::from_fn::<Col<B64,8>, 25, _>(|i| {
+			let x = i % 5;
+			let y = i / 5;
+			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
+		});
+
+		//Constructing the batches of rounds. The final value of `state` will be the permutation output.
 		let batches = array::from_fn(|batch_no| {
 			let batch = RoundBatch::new(
 				&mut table.with_namespace(format!("batch[{batch_no}]")),
@@ -102,6 +117,26 @@ impl Keccakf {
 			state = batch.state_out.clone();
 			batch
 		});
+
+		//Declaring packed state_out columns to be exposed in the struct.
+		let state_out_packed = array::from_fn::<Col<B64,8>, 25, _>(|i| {
+			let x = i % 5;
+			let y = i / 5;
+			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
+		});
+
+		let input = array::from_fn::<_, 25, _>(|i| {
+			let x = i % 5;
+			let y = i / 5;
+			table.add_selected(format!("input[{x},{y}]"), state_in_packed[i], 0)
+		});
+
+		let output = array::from_fn::<_, 25, _>(|i| {
+			let x = i % 5;
+			let y = i / 5;
+			table.add_selected(format!("output[{x},{y}]"), state_out_packed[i], 7)
+		});
+
 		let link_sel = table.add_constant(
 			"link_sel",
 			array::from_fn(|bit_index| {
@@ -133,6 +168,8 @@ impl Keccakf {
 		Self {
 			batches,
 			next_state_in,
+			input,
+			output,
 			link_sel,
 		}
 	}
@@ -213,7 +250,7 @@ impl Keccakf {
 	pub fn populate_state_in<'a, P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		state_ins: impl IntoIterator<Item = &'a StateMatrix<u64>>,
+		state_ins: impl IntoIterator<Item = &'a [u64; 25]>,
 	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
@@ -420,7 +457,7 @@ impl RoundBatch {
 		&self,
 		index: &mut TableWitnessSegment<P>,
 		track: usize,
-		state_ins: impl IntoIterator<Item = &'a StateMatrix<u64>>,
+		state_ins: impl IntoIterator<Item = &'a [u64; 25]>,
 	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
@@ -431,7 +468,7 @@ impl RoundBatch {
 				for y in 0..5 {
 					let mut state_in_data: std::cell::RefMut<'_, [u64]> =
 						index.get_mut_as(self.state_in[(x, y)])?;
-					state_in_data[TRACKS_PER_BATCH * k + track] = state_in[(x, y)];
+					state_in_data[TRACKS_PER_BATCH * k + track] = state_in[x + y * 5];
 				}
 			}
 		}
@@ -600,8 +637,9 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let mut table = cs.add_table("test");
 
-		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let keccakf = Keccakf::new(&mut table, state_in);
+		// let state_in: StateMatrix<PackedLane8> =
+		// 	StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
+		let keccakf = Keccakf::new(&mut table);
 
 		let allocator = Bump::new();
 		let table_id = table.id();
@@ -617,8 +655,9 @@ mod tests {
 
 		let state_ins = TEST_VECTOR
 			.iter()
-			.map(|&[state_in, _]| StateMatrix::from_values(state_in))
+			.map(|&[state_in, _]| state_in)
 			.collect::<Vec<_>>();
+
 		keccakf.populate_state_in(&mut segment, &state_ins).unwrap();
 		keccakf.populate(&mut segment).unwrap();
 		let state_outs = keccakf
