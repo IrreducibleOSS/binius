@@ -10,8 +10,8 @@ use binius_math::RowsBatchRef;
 pub struct RoundEvals<F: Field>(pub Vec<F>);
 
 pub trait SumcheckEvaluator<P: PackedField, Composition> {
-	/// The range of eval point indices over which composition evaluation and summation should happen.
-	/// Returned range must equal the result of `n_round_evals()` in length.
+	/// The range of eval point indices over which composition evaluation and summation should
+	/// happen. Returned range must equal the result of `n_round_evals()` in length.
 	fn eval_point_indices(&self) -> Range<usize>;
 
 	/// Compute composition evals over a subcube.
@@ -31,11 +31,12 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 		batch_query: &RowsBatchRef<P>,
 	) -> P;
 
-	/// Compute sum of evals over the suffix where the composite is guaranteed to evaluate to a constant.
+	/// Compute sum of evals over the suffix where the composite is guaranteed to evaluate to a
+	/// constant.
 	///
-	/// It is assumed that all required inputs are known at the evaluator creation time, as `const_eval_suffix` is
-	/// determined dynamically by the sumcheck round calculator and may be _smaller_ than the return value of the method
-	/// with the same name.
+	/// It is assumed that all required inputs are known at the evaluator creation time, as
+	/// `const_eval_suffix` is determined dynamically by the sumcheck round calculator and may be
+	/// _smaller_ than the return value of the method with the same name.
 	///
 	/// See doc comments to [EvaluationDomain](binius_math::EvaluationDomain) for the intuition
 	/// behind `is_infinity_point`.
@@ -54,11 +55,11 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 	/// In case of sumcheck returns None.
 	fn eq_ind_partial_eval(&self) -> Option<&[P]>;
 
-	/// Trace suffix where the composite is guaranteed to evaluate to a constant. The non-constant prefix
-	/// would get processed via `process_subcube_at_eval_point`, whereas the remainder gets handled via
-	/// `process_constant_eval_suffix`. Due to the fact that sumcheck operates over whole subcubes the
-	/// `const_eval_suffix` passed to `process_constant_eval_suffix` may be _smaller_ that the return value
-	/// of this method.
+	/// Trace suffix where the composite is guaranteed to evaluate to a constant. The non-constant
+	/// prefix would get processed via `process_subcube_at_eval_point`, whereas the remainder gets
+	/// handled via `process_constant_eval_suffix`. Due to the fact that sumcheck operates over
+	/// whole subcubes the `const_eval_suffix` passed to `process_constant_eval_suffix` may be
+	/// _smaller_ that the return value of this method.
 	fn const_eval_suffix(&self) -> usize {
 		0
 	}

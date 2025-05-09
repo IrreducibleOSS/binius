@@ -26,7 +26,8 @@ where
 	f(array);
 }
 
-/// Helper function to convert `f` closure that returns a value 1-4 bits wide to a function that returns i8.
+/// Helper function to convert `f` closure that returns a value 1-4 bits wide to a function that
+/// returns i8.
 #[allow(dead_code)]
 #[inline]
 pub(super) fn make_func_to_i8<T, U>(mut f: impl FnMut(usize) -> T) -> impl FnMut(usize) -> i8

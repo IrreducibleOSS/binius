@@ -50,7 +50,8 @@ impl<F: BinaryField> SingleThreadedNTT<F> {
 }
 
 impl<F: TowerField> SingleThreadedNTT<F> {
-	/// A specialization of [`with_domain_field`](Self::with_domain_field) to the canonical tower field.
+	/// A specialization of [`with_domain_field`](Self::with_domain_field) to the canonical tower
+	/// field.
 	pub fn with_canonical_field(log_domain_size: usize) -> Result<Self, Error> {
 		Self::with_domain_field::<F::Canonical>(log_domain_size)
 	}
@@ -337,7 +338,8 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 
 	let full_sized_y = (data.len() * PB::WIDTH) >> (log_x + log_z);
 
-	// Verify that our log_y exactly matches the data length, except when we are NTT-ing one packed field
+	// Verify that our log_y exactly matches the data length, except when we are NTT-ing one packed
+	// field
 	if (1 << log_y != full_sized_y && data.len() > 2) || (1 << log_y > full_sized_y) {
 		return Err(Error::BatchTooLarge);
 	}

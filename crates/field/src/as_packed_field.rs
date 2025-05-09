@@ -18,8 +18,8 @@ use crate::{
 ///
 /// E.g. `BinaryField64b` -> `PackedBinaryField1x64b`.
 /// Note that the underlier of the packed field may be different.
-/// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s underlier
-/// may be `M128`.
+/// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s
+/// underlier may be `M128`.
 pub trait AsSinglePacked: Field {
 	type Packed: PackedField<Scalar = Self>
 		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;

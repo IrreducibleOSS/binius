@@ -112,7 +112,8 @@ where
 		})
 	}
 
-	/// Create a new `MultilinearExtensionTransparent` from a set of values and a possibly smaller number of variables.
+	/// Create a new `MultilinearExtensionTransparent` from a set of values and a possibly smaller
+	/// number of variables.
 	pub fn from_values_and_mu(values: Data, n_vars: usize) -> Result<Self, Error> {
 		let mle = MultilinearExtension::new(n_vars, values)?;
 		Ok(Self {

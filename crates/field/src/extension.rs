@@ -58,7 +58,8 @@ pub trait ExtensionField<F: Field>:
 	/// elements with indices dividing `2^log_stride` can be nonzero.
 	///
 	/// `base_elems` should have length at most `ceil(DEGREE / 2^LOG_STRIDE)`. Note that
-	/// [`ExtensionField::from_bases`] is a special case of `from_bases_sparse` with `log_stride = 0`.
+	/// [`ExtensionField::from_bases`] is a special case of `from_bases_sparse` with `log_stride =
+	/// 0`.
 	fn from_bases_sparse(
 		base_elems: impl IntoIterator<Item = F>,
 		log_stride: usize,

@@ -59,7 +59,8 @@ impl<T, Data: Deref<Target = [T]>> Array2D<T, Data> {
 
 	/// Return the element at the given row and column without bounds checking.
 	/// # Safety
-	/// The caller must ensure that `i` and `j` are less than the number of rows and columns respectively.
+	/// The caller must ensure that `i` and `j` are less than the number of rows and columns
+	/// respectively.
 	pub unsafe fn get_unchecked(&self, i: usize, j: usize) -> &T {
 		self.data.get_unchecked(i * self.cols + j)
 	}
@@ -87,7 +88,8 @@ impl<T, Data: DerefMut<Target = [T]>> Array2D<T, Data> {
 
 	/// Return the mutable element at the given row and column without bounds checking.
 	/// # Safety
-	/// The caller must ensure that `i` and `j` are less than the number of rows and columns respectively.
+	/// The caller must ensure that `i` and `j` are less than the number of rows and columns
+	/// respectively.
 	pub unsafe fn get_unchecked_mut(&mut self, i: usize, j: usize) -> &mut T {
 		self.data.get_unchecked_mut(i * self.cols + j)
 	}

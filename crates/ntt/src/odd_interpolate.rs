@@ -16,9 +16,9 @@ pub struct OddInterpolate<F: BinaryField> {
 }
 
 impl<F: BinaryField> OddInterpolate<F> {
-	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times 2^{\ell}$.
-	/// Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and compute its inverse.
-	/// Time complexity is $\mathcal{O}(d^3).$
+	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times
+	/// 2^{\ell}$. Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and
+	/// compute its inverse. Time complexity is $\mathcal{O}(d^3).$
 	pub fn new<TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Self, Error>
 	where
 		TA: TwiddleAccess<F>,
@@ -37,18 +37,19 @@ impl<F: BinaryField> OddInterpolate<F> {
 		})
 	}
 
-	/// Let $L/\mathbb F_2$ be a binary field, and fix an $\mathbb F_2$-basis $1=:\beta_0,\ldots, \beta_{r-1}$ as usual.
-	/// Let $d\geq 1$ be an odd integer and let $\ell\geq 0$ be an integer. Let
-	/// $[a_0,\ldots, a_{d\times 2^{\ell} - 1}]$ be a list of elements of $L$. There is a unique univariate polynomial
-	/// $P(X)\in L\[X\]$ of degree less than $d\times 2^{\ell}$ such that the *evaluations* of $P$ on the "first" $d\times 2^{\ell}$
-	/// elements of $L$ (in little-Endian binary counting order with respect to the basis $\beta_0,\ldots, \beta_{r}$)
+	/// Let $L/\mathbb F_2$ be a binary field, and fix an $\mathbb F_2$-basis $1=:\beta_0,\ldots,
+	/// \beta_{r-1}$ as usual. Let $d\geq 1$ be an odd integer and let $\ell\geq 0$ be an integer.
+	/// Let $[a_0,\ldots, a_{d\times 2^{\ell} - 1}]$ be a list of elements of $L$. There is a
+	/// unique univariate polynomial $P(X)\in L\[X\]$ of degree less than $d\times 2^{\ell}$ such
+	/// that the *evaluations* of $P$ on the "first" $d\times 2^{\ell}$ elements of $L$ (in
+	/// little-Endian binary counting order with respect to the basis $\beta_0,\ldots, \beta_{r}$)
 	/// are precisely $a_0,\ldots, a_{d\times 2^{\ell} - 1}$.
 	///
-	/// We efficiently compute the coefficients of $P(X)$ with respect to the Novel Polynomial Basis (itself taken
-	/// with respect to the given ordered list $\beta_0,\ldots, \beta_{r-1}$).
+	/// We efficiently compute the coefficients of $P(X)$ with respect to the Novel Polynomial Basis
+	/// (itself taken with respect to the given ordered list $\beta_0,\ldots, \beta_{r-1}$).
 	///
-	/// Time complexity is $\mathcal{O}(d^2\times 2^{\ell} + \ell 2^{\ell})$, thus this routine is intended to be used
-	/// for small values of $d$.
+	/// Time complexity is $\mathcal{O}(d^2\times 2^{\ell} + \ell 2^{\ell})$, thus this routine is
+	/// intended to be used for small values of $d$.
 	pub fn inverse_transform<NTT>(&self, ntt: &NTT, data: &mut [F]) -> Result<(), Error>
 	where
 		// REVIEW: generalize this to any P: PackedField<Scalar=F>
@@ -78,14 +79,16 @@ impl<F: BinaryField> OddInterpolate<F> {
 			ntt.inverse_transform(chunk, shape, i as u32, 0)?;
 		}
 
-		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is $d\times d$,
-		// and vector is $d\times 2^{\ell}$. For each $i$ in $0,\ldots, 2^{\ell-1}$, let $v_i$ be the subvect
-		// given by those entries whose index is congruent to $i$ mod $2^{\ell}$. Then this computes $M v_i$,
-		// and finally "interleaves" the result (which means that we treat $M v_i = w_i$ for each $i$ and then conjure
-		// up the associated vector $w$.)
+		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is
+		// $d\times d$, and vector is $d\times 2^{\ell}$. For each $i$ in $0,\ldots, 2^{\ell-1}$,
+		// let $v_i$ be the subvect given by those entries whose index is congruent to $i$ mod
+		// $2^{\ell}$. Then this computes $M v_i$, and finally "interleaves" the result (which
+		// means that we treat $M v_i = w_i$ for each $i$ and then conjure up the associated
+		// vector $w$.)
 		let mut bases = vec![F::ZERO; d];
 		let mut novel = vec![F::ZERO; d];
-		// TODO: use `Matrix::mul_into`, implement when data is a slice of type `P: PackedField<Scalar=F>`.
+		// TODO: use `Matrix::mul_into`, implement when data is a slice of type `P:
+		// PackedField<Scalar=F>`.
 		for stride in 0..1 << ell {
 			(0..d).for_each(|i| bases[i] = data[i << ell | stride]);
 			self.vandermonde_inverse.mul_vec_into(&bases, &mut novel);
@@ -96,9 +99,10 @@ impl<F: BinaryField> OddInterpolate<F> {
 	}
 }
 
-/// Compute the Vandermonde matrix: $X^{(\ell)}_i(w^{\ell}_j)$, where $w^{\ell}_j$ is the $j^{\text{th}}$ element of the field
-/// with respect to the $\beta^{(\ell)}_i$ in little Endian order. The matrix has dimensions $d\times d$.
-/// The key trick is that $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
+/// Compute the Vandermonde matrix: $X^{(\ell)}_i(w^{\ell}_j)$, where $w^{\ell}_j$ is the
+/// $j^{\text{th}}$ element of the field with respect to the $\beta^{(\ell)}_i$ in little Endian
+/// order. The matrix has dimensions $d\times d$. The key trick is that
+/// $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
 fn novel_vandermonde<F, TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Matrix<F>, Error>
 where
 	F: BinaryField,
@@ -110,7 +114,8 @@ where
 
 	let log_d = log2_ceil_usize(d);
 
-	// This will contain the evaluations of $X^{(\ell)}_{j}(w^{(\ell)}_i)$. As usual, indexing goes from 0..d-1.
+	// This will contain the evaluations of $X^{(\ell)}_{j}(w^{(\ell)}_i)$. As usual, indexing goes
+	// from 0..d-1.
 	let mut x_ell = Matrix::zeros(d, d);
 
 	// $X_0$ is the function "1".
@@ -131,7 +136,8 @@ where
 				+ if (i >> j) & 1 == 1 { F::ONE } else { F::ZERO };
 		}
 
-		// Note that the jth column of x_ell is the ordered list of values $X_j(w_i)$ for i = 0, ..., d-1.
+		// Note that the jth column of x_ell is the ordered list of values $X_j(w_i)$ for i = 0,
+		// ..., d-1.
 		for k in 1..(1 << j).min(d - (1 << j)) {
 			for t in 0..d {
 				x_ell[(t, k + (1 << j))] = x_ell[(t, k)] * x_ell[(t, 1 << j)];

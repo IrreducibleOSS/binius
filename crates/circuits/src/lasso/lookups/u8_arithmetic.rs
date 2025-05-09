@@ -159,7 +159,8 @@ mod tests {
 
 	#[test]
 	fn test_lasso_u8add_carryfree_rejects_carry() {
-		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from randomness
+		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from
+		// randomness
 		test_circuit(|builder| {
 			let log_size = 14;
 			let x_in = unconstrained::<BinaryField8b>(builder, "x", log_size)?;
@@ -248,7 +249,8 @@ mod tests {
 
 			let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
-			// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
+			// TODO?: Make this test fail 100% of the time, even though its almost impossible with
+			// rng
 			for _ in 0..10 {
 				let mult_a = unconstrained::<BinaryField8b>(builder, "mult_a", log_size)?;
 				let mult_b = unconstrained::<BinaryField8b>(builder, "mult_b", log_size)?;

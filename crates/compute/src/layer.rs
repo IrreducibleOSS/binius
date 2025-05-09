@@ -21,7 +21,8 @@ pub trait ComputeLayer<F: Field> {
 	/// The executor that can execute operations on the device.
 	type Exec;
 
-	/// The executor that can execute operations on a kernel-level granularity (i.e., a single core).
+	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
+	/// core).
 	type KernelExec;
 
 	/// The operation (scalar) value type.
@@ -163,14 +164,16 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements that `a_in` contains.
+	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements
+	///   that `a_in` contains.
 	/// * `a_in` - the first input slice of subfield elements.
 	/// * `b_in` - the second input slice of `F` elements.
 	///
 	/// ## Throws
 	///
 	/// * if `a_edeg` is greater than `F::LOG_BITS`
-	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of two
+	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of
+	///   two
 	///
 	/// ## Returns
 	///

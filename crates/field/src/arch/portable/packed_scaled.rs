@@ -32,7 +32,8 @@ pub struct ScaledPackedField<PT, const N: usize>(pub(super) [PT; N]);
 impl<PT, const N: usize> ScaledPackedField<PT, N> {
 	pub const WIDTH_IN_PT: usize = N;
 
-	/// In general case PT != Self::Scalar, so this function has a different name from `PackedField::from_fn`
+	/// In general case PT != Self::Scalar, so this function has a different name from
+	/// `PackedField::from_fn`
 	pub fn from_direct_packed_fn(f: impl FnMut(usize) -> PT) -> Self {
 		Self(std::array::from_fn(f))
 	}

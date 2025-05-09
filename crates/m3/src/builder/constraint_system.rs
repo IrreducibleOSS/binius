@@ -289,7 +289,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 					}
 				});
 
-				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
+				// StepDown witness data is populated in
+				// WitnessIndex::into_multilinear_extension_index
 				let step_down = (!table.requires_any_po2_size())
 					.then(|| {
 						let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;

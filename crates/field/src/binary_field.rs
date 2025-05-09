@@ -44,7 +44,8 @@ where
 	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;
 
 	/// The canonical field isomorphic to this tower field.
-	/// Currently for every tower field, the canonical field is Fan-Paar's binary field of the same degree.
+	/// Currently for every tower field, the canonical field is Fan-Paar's binary field of the same
+	/// degree.
 	type Canonical: TowerField + SerializeBytes + DeserializeBytes;
 
 	/// Returns the smallest valid `TOWER_LEVEL` in the tower that can fit the same value.
@@ -70,10 +71,12 @@ where
 		<Self as ExtensionField<BinaryField1b>>::basis_checked(i << iota)
 	}
 
-	/// Multiplies a field element by the canonical primitive element of the extension $T_{\iota + 1} / T_{iota}$.
+	/// Multiplies a field element by the canonical primitive element of the extension $T_{\iota +
+	/// 1} / T_{iota}$.
 	///
-	/// We represent the tower field $T_{\iota + 1}$ as a vector space over $T_{\iota}$ with the basis $\{1, \beta^{(\iota)}_1\}$.
-	/// This operation multiplies the element by $\beta^{(\iota)}_1$.
+	/// We represent the tower field $T_{\iota + 1}$ as a vector space over $T_{\iota}$ with the
+	/// basis $\{1, \beta^{(\iota)}_1\}$. This operation multiplies the element by
+	/// $\beta^{(\iota)}_1$.
 	///
 	/// ## Throws
 	///

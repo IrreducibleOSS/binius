@@ -267,8 +267,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
-	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables) by left
-	/// padding each FSub element with zeroes.
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables)
+	/// by left padding each FSub element with zeroes.
 	pub fn add_zero_pad_upcast<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -298,8 +298,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 
 	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
 	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables).
-	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to 0.
-	/// Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
+	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to
+	/// 0. Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
 	pub fn add_zero_pad<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -399,7 +399,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// ## Parameters
 	/// - `name`: Name for the column
 	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
-	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be `FSub`
+	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be
+	///   `FSub`
 	///
 	/// ## Preconditions
 	/// * `pow_bits.len()` must be less than or equal to the width of field `FSub`
@@ -571,8 +572,8 @@ pub struct Table<F: TowerField = B128> {
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
-/// A table partition describes a part of a table where everything has the same pack factor (as well as height)
-/// Tower level does not need to be the same.
+/// A table partition describes a part of a table where everything has the same pack factor (as well
+/// as height) Tower level does not need to be the same.
 ///
 /// Zerocheck constraints can only be defined within table partitions.
 #[derive(Debug)]

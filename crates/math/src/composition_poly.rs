@@ -27,8 +27,8 @@ where
 	/// Returns the arithmetic expression representing the polynomial.
 	fn expression(&self) -> ArithCircuit<P::Scalar>;
 
-	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
-	/// The evaluation follows SIMD semantics, meaning that operations are performed
+	/// Evaluates the polynomial using packed values, where each packed value may contain multiple
+	/// scalar values. The evaluation follows SIMD semantics, meaning that operations are performed
 	/// element-wise across corresponding scalar values in the packed values.
 	///
 	/// For example, given a polynomial represented as `query[0] + query[1]`:

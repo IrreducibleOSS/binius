@@ -208,7 +208,8 @@ where
 		})
 	}
 
-	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids duplicate work.
+	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids
+	/// duplicate work.
 	pub fn with_eq_ind_partial_evals(mut self, eq_ind_partial_evals: Backend::Vec<P>) -> Self {
 		self.eq_ind_partial_evals = Some(eq_ind_partial_evals);
 		self
@@ -216,9 +217,9 @@ where
 
 	/// Specify the value of round polynomial at 1 in the first round if it is available beforehand.
 	///
-	/// Prime example of this is GPA (grand product argument), where the value of the previous GKR layer
-	/// may be used as an advice to compute the round polynomial at 1 directly with less effort compared
-	/// to direct composite evaluation.
+	/// Prime example of this is GPA (grand product argument), where the value of the previous GKR
+	/// layer may be used as an advice to compute the round polynomial at 1 directly with less
+	/// effort compared to direct composite evaluation.
 	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
 		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
 		self
@@ -447,8 +448,10 @@ type CompositionsAndSums<F, Composition> = (Vec<(Composition, ConstEvalSuffix<F>
 //
 // Algorithm outline:
 //  * sort multilinears by non-increasing const suffix length
-//  * processing multilinears in this order, symbolically substitute suffix eval for the current variable and optimize
-//  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this suffix
+//  * processing multilinears in this order, symbolically substitute suffix eval for the current
+//    variable and optimize
+//  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this
+//    suffix
 fn determine_const_eval_suffixes<F, P, Composition>(
 	composite_claims: Vec<CompositeSumClaim<F, Composition>>,
 	const_suffixes: impl IntoIterator<Item = (F, usize)>,
@@ -475,7 +478,8 @@ where
 
 			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
 				expr = expr.const_subst(var_index, suffix_eval).optimize();
-				// NB: infinity point has a different interpolation result; in characteristic 2, it's always zero.
+				// NB: infinity point has a different interpolation result; in characteristic 2,
+				// it's always zero.
 				expr_at_inf = expr_at_inf
 					.const_subst(var_index, suffix_eval + suffix_eval)
 					.optimize();
@@ -750,10 +754,11 @@ where
 		round_evals.insert(0, zero_evaluation);
 
 		if round_evals.len() > 3 {
-			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
-			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
-			// Putting "special" evaluation points at the beginning of domain allows benefitting from
-			// faster/skipped interpolation even in case of mixed degree compositions .
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then
+			// subspace points. InterpolationDomain expects "infinity" at the last position, thus
+			// reordering is needed. Putting "special" evaluation points at the beginning of
+			// domain allows benefitting from faster/skipped interpolation even in case of mixed
+			// degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}

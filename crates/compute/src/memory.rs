@@ -90,8 +90,8 @@ pub trait ComputeMemory<F> {
 /// # Fields
 /// - `slice`: An immutable slice of elements stored in compute memory, represented by
 ///   `Mem::FSlice<'a>`.
-/// - `tower_level`: A `usize` value indicating the level of the field tower for the elements
-///   in the slice.
+/// - `tower_level`: A `usize` value indicating the level of the field tower for the elements in the
+///   slice.
 ///
 /// # Usage
 /// `SubfieldSlice` is typically used in scenarios where operations need to be performed on
@@ -108,7 +108,8 @@ impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 	}
 }
 
-/// `SubfieldSliceMut` represents a mutable slice of field elements with identical semantics to `SubfieldSlice`.
+/// `SubfieldSliceMut` represents a mutable slice of field elements with identical semantics to
+/// `SubfieldSlice`.
 pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
 	pub slice: Mem::FSliceMut<'a>,
 	pub tower_level: usize,

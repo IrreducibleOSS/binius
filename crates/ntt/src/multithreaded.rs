@@ -171,8 +171,8 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 					// j indexes the outer Z tensor axis.
 					for j in 0..1 << log_z {
-						// k indexes the block within the layer. Each block performs butterfly operations with
-						// the same twiddle factor.
+						// k indexes the block within the layer. Each block performs butterfly
+						// operations with the same twiddle factor.
 						for k in 0..1 << (par_rounds - 1 - i) {
 							let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
 							// l indexes parallel stride columns
@@ -313,8 +313,8 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 
 				// j indexes the outer Z tensor axis.
 				for j in 0..1 << log_z {
-					// k indexes the block within the layer. Each block performs butterfly operations with
-					// the same twiddle factor.
+					// k indexes the block within the layer. Each block performs butterfly
+					// operations with the same twiddle factor.
 					for k in 0..1 << (par_rounds - 1 - i) {
 						let twiddle = P::broadcast(s_evals_par_i.get(coset_offset | k));
 						// l indexes parallel stride columns

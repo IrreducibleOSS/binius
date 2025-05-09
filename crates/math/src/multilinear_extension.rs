@@ -91,7 +91,8 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 
 impl<U, F, Data> MultilinearExtension<PackedType<U, F>, PackingDeref<U, F, Data>>
 where
-	// TODO: Add U: Divisible<u8>.
+	// TODO: Add U:
+	// Divisible<u8>.
 	U: UnderlierType + PackScalar<F>,
 	F: Field,
 	Data: Deref<Target = [U]>,
@@ -231,9 +232,9 @@ where
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	///
-	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1})$. Given a query
-	/// vector of length $k$ representing $(z_{\mu - k + 1}, ..., z_{\mu - 1})$, this returns the
-	/// multilinear polynomial with $\mu - k$ variables,
+	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1})$. Given a
+	/// query vector of length $k$ representing $(z_{\mu - k + 1}, ..., z_{\mu - 1})$, this returns
+	/// the multilinear polynomial with $\mu - k$ variables,
 	/// $p(X_0, ..., X_{\mu - k}, z_{\mu - k + 1}, ..., z_{\mu - 1})$.
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
@@ -359,7 +360,8 @@ where
 }
 
 impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<F, Data> {
-	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field with single element.
+	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field
+	/// with single element.
 	pub fn to_single_packed(self) -> MultilinearExtension<F::Packed> {
 		let packed_evals = self
 			.evals

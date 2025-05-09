@@ -34,7 +34,8 @@ impl GfniType for M256 {
 
 /// Specialized GFNI transformation for AVX2-packed 128-bit binary fields.
 /// Get advantage of the fact that we can multiply 4 8x8 matrices by some elements at once.
-/// Theoretically we can have similar implementation for different scalar sizes, but it is not implemented yet.
+/// Theoretically we can have similar implementation for different scalar sizes, but it is not
+/// implemented yet.
 pub struct GfniTransformation256b {
 	// Each element contains 4 8x8 matrices
 	bases_8x8: [[__m256i; 4]; 16],

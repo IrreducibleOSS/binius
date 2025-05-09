@@ -100,7 +100,8 @@ fn process_finished_claims<F: Field>(
 ///
 /// Arguments
 /// * `claims` - The kth layer LayerClaims
-/// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
+/// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to
+///   the (k+1)th
 /// * `transcript` - The verifier transcript
 fn reduce_layer_claim_batch<F, Challenger_>(
 	evaluation_order: EvaluationOrder,

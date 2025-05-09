@@ -84,8 +84,8 @@ where
 		r: &[F],
 	) -> Vec<LayerClaim<F>> {
 		let exponent_bit_claim = if self.is_last_layer(layer_no) {
-			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
-			// a_0(x) = (V_0(x) - 1)/(g - 1)
+			// the evaluation of the last exponent bit can be uniquely calculated from the previous
+			// exponentiation layer claim. a_0(x) = (V_0(x) - 1)/(g - 1)
 
 			let base = self.0.static_base.expect("static_base exist");
 

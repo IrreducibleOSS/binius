@@ -35,14 +35,15 @@ pub const fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: 
 /// Verify a batched zerocheck protocol execution.
 ///
 /// Zerocheck protocol consists of three reductions, executed one after another:
-///  * Small field univariate round over `skip_rounds` low indexed variables, reducing to MLE evaluation
-///    claims on univariatized low indexed projections. This round sums over the same number of variables
-///    in each claim, thus the batching is trivial. For more details on the inner workings of this round, see
+///  * Small field univariate round over `skip_rounds` low indexed variables, reducing to MLE
+///    evaluation claims on univariatized low indexed projections. This round sums over the same
+///    number of variables in each claim, thus the batching is trivial. For more details on the
+///    inner workings of this round, see
 ///    [zerocheck_univariate_evals](`super::prove::univariate::zerocheck_univariate_evals`).
-///  * Front-loaded batching of large-field high-to-low eq-ind sumchecks, resulting in evaluation claims
-///    on a "rectangular" univariatized domain. Note that this arrangement of rounds creates "jagged"
-///    evaluation claims, which may comprise both the challenge from univariate round (at prefix) as
-///    well as all multilinear round challenges (at suffix), with a "gap" in between.
+///  * Front-loaded batching of large-field high-to-low eq-ind sumchecks, resulting in evaluation
+///    claims on a "rectangular" univariatized domain. Note that this arrangement of rounds creates
+///    "jagged" evaluation claims, which may comprise both the challenge from univariate round (at
+///    prefix) as well as all multilinear round challenges (at suffix), with a "gap" in between.
 ///  * Single "wide" but "short" batched regular sumcheck of bivariate products between high indexed
 ///    projections of the original multilinears (at multilinear round challenges) and Lagrange basis
 ///    evaluation at univariate round challenge. This results in multilinear evaluation claims that

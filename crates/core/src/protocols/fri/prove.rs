@@ -91,7 +91,8 @@ pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {
 	pub codeword: Vec<P>,
 }
 
-/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of two
+/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of
+/// two
 pub fn to_par_scalar_big_chunks<P>(
 	packed_slice: &[P],
 	chunk_size: usize,
@@ -212,7 +213,8 @@ where
 	)
 	.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
-	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
+	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals
+	// 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
@@ -333,8 +335,9 @@ where
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
-	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
-	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead
+	/// accumulate the folding challenge for processing at a later time. This saves us from storing
+	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,

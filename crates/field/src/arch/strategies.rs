@@ -1,11 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 /// Packed strategy for arithmetic operations.
-/// (Uses arithmetic operations with underlier and subfield to simultaneously calculate the result for all packed values)
+/// (Uses arithmetic operations with underlier and subfield to simultaneously calculate the result
+/// for all packed values)
 pub struct PackedStrategy;
 /// This strategies uses bot operations over packed subfield and operations over sub-elements.
 pub struct HybridRecursiveStrategy;
-/// Pairwise recursive strategy. Calculates the result by applying recursive algorithm for each packed value independently.
+/// Pairwise recursive strategy. Calculates the result by applying recursive algorithm for each
+/// packed value independently.
 pub struct PairwiseRecursiveStrategy;
 /// Pairwise strategy. Apply the result of the operation to each packed element independently.
 pub struct PairwiseStrategy;

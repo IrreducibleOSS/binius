@@ -36,7 +36,8 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	Backend,
 >;
 
-/// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
+/// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular
+/// sumchecks.
 pub fn constraint_set_zerocheck_prover<'a, P, F, FBase, FDomain, DomainFactory, Backend>(
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
@@ -89,7 +90,8 @@ where
 	Ok(prover)
 }
 
-/// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
+/// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains
+/// zerochecks.
 pub fn constraint_set_sumcheck_prover<'a, FW, PW, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
 	constraint_set: ConstraintSet<FW>,
