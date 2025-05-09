@@ -101,7 +101,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		// If the proof is a duplicate claim, we need to check if the claim is already in the round
 		// claims, which have been verified.
 		if let EvalcheckHint::DuplicateClaim(index) = evalcheck_proof {
-			if let Some(expected_claim) = self.round_claims.get(index) {
+			if let Some(expected_claim) = self.round_claims.get(index as usize) {
 				if *expected_claim == evalcheck_claim {
 					return Ok(());
 				}
@@ -264,6 +264,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		let subproof = deserialize_evalcheck_proof(&mut transcript.message())?;
 		match subproof {
 			EvalcheckHint::DuplicateClaim(index) => {
+				let index = index as usize;
 				if self.round_claims[index].id != oracle_id
 					|| self.round_claims[index].eval_point != eval_point
 				{
