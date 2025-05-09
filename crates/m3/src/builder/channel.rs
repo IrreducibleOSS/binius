@@ -2,13 +2,14 @@
 
 use binius_core::constraint_system::channel::{ChannelId, FlushDirection};
 
-use super::column::ColumnIndex;
+use super::ColumnId;
 use crate::builder::{B1, Col};
 
 /// A flushing rule within a table.
 #[derive(Debug)]
 pub struct Flush {
-	pub column_indices: Vec<ColumnIndex>,
+	// TODO: rename to columns.
+	pub column_indices: Vec<ColumnId>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	/// The number of times the values are flushed to the channel.
@@ -16,7 +17,7 @@ pub struct Flush {
 	/// Selector columns that determine which row events are flushed
 	///
 	/// The referenced selector columns must hold 1-bit values.
-	pub selectors: Vec<ColumnIndex>,
+	pub selectors: Vec<ColumnId>,
 }
 
 /// Options for a channel flush.

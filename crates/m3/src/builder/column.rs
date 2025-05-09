@@ -9,10 +9,12 @@ use binius_math::ArithCircuit;
 use super::{structured::StructuredDynSize, table::TableId, types::B128};
 
 /// An index of a column within a table.
-pub type ColumnIndex = usize;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ColumnIndex(pub(crate) usize);
 
-/// An index of a column within a table.
-pub type ColumnPartitionIndex = usize;
+/// An index of a column within a partition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColumnPartitionIndex(pub(crate) usize);
 
 /// A typed identifier for a column in a table.
 ///
@@ -23,7 +25,7 @@ pub type ColumnPartitionIndex = usize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
 	pub table_id: TableId,
-	pub table_index: TableId,
+	pub table_index: ColumnIndex,
 	// Denormalized partition index so that we can use it to construct arithmetic expressions over
 	// the partition columns.
 	pub partition_index: ColumnPartitionIndex,
@@ -112,7 +114,7 @@ impl ColumnShape {
 ///
 /// IDs are assigned when columns are added to the constraint system and remain stable when more
 /// columns are added.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ColumnId {
 	pub table_id: TableId,
 	pub table_index: ColumnIndex,
@@ -152,7 +154,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 		log_degree: usize,
 	},
 	Computed {
-		cols: Vec<ColumnIndex>,
+		cols: Vec<ColumnId>,
 		expr: ArithCircuit<F>,
 	},
 	Constant {
@@ -164,13 +166,13 @@ pub enum ColumnDef<F: TowerField = B128> {
 		expr: ArithCircuit<F>,
 	},
 	StaticExp {
-		bit_cols: Vec<ColumnIndex>,
+		bit_cols: Vec<ColumnId>,
 		base: F,
 		base_tower_level: usize,
 	},
 	DynamicExp {
-		bit_cols: Vec<ColumnIndex>,
-		base: ColumnIndex,
+		bit_cols: Vec<ColumnId>,
+		base: ColumnId,
 		base_tower_level: usize,
 	},
 }
