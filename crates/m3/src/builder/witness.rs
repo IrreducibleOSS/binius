@@ -1068,18 +1068,20 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 					log_vals_per_row,
 				})?;
 		let expr_circuit = ArithCircuit::from(expr.expr());
+
 		let col_refs = partition
 			.columns
 			.iter()
 			.zip(expr_circuit.vars_usage())
-			.map(|(col_index, used)| {
+			.enumerate()
+			.map(|(i, (col_index, used))| {
 				used.then(|| {
 					self.get(Col::<FSub, V>::new(
 						ColumnId {
 							table_id: self.table.id(),
-							table_index: partition.columns[*col_index],
+							table_index: *col_index,
 						},
-						*col_index,
+						i,
 					))
 				})
 				.transpose()
@@ -1419,6 +1421,54 @@ mod tests {
 			let col1_val = B8::new(i as u8) + B8::new(0x40);
 			let col2_val = B8::new(i as u8) + B8::new(0x80);
 			assert_eq!(eval_i, col0_val * col1_val - col2_val);
+		}
+	}
+
+	#[test]
+	fn test_eval_expr_different_cols() {
+		let table_id = 0;
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
+		let col0 = table.add_committed::<B32, 1>("col1");
+		let col1 = table.add_committed::<B8, 8>("col2");
+		let col2 = table.add_committed::<B16, 4>("col3");
+		let col3 = table.add_committed::<B8, 8>("col4");
+
+		let allocator = bumpalo::Bump::new();
+		let table_size = 4;
+		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
+			&allocator,
+			&inner_table,
+			table_size,
+		)
+		.unwrap();
+
+		let segment = index.full_segment();
+
+		// Fill the columns with a deterministic pattern.
+		{
+			let mut col0: RefMut<'_, [u32]> = segment.get_mut_as(col0).unwrap();
+			let mut col1: RefMut<'_, [[u8; 8]]> = segment.get_mut_as(col1).unwrap();
+			let mut col2: RefMut<'_, [[u16; 4]]> = segment.get_mut_as(col2).unwrap();
+			let mut col3: RefMut<'_, [[u8; 8]]> = segment.get_mut_as(col3).unwrap();
+
+			col0[0] = 0x40;
+			col1[0] = [0x45, 0, 0, 0, 0, 0, 0, 0];
+			col2[0] = [0, 0, 0, 0x80];
+			col3[0] = [0x85, 0, 0, 0, 0, 0, 0, 00];
+		}
+
+		let evals = segment.eval_expr(&(col1 + col3)).unwrap();
+		for (i, eval_i) in evals
+			.into_iter()
+			.flat_map(PackedField::into_iter)
+			.enumerate()
+		{
+			if i == 0 {
+				assert_eq!(eval_i, B8::new(0x45) + B8::new(0x85));
+			} else {
+				assert_eq!(eval_i, B8::new(0x00));
+			}
 		}
 	}
 
