@@ -1069,14 +1069,12 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 				})?;
 		let expr_circuit = ArithCircuit::from(expr.expr());
 
-		let all_used = expr_circuit.vars_usage();
 		let col_refs = partition
 			.columns
 			.iter()
+			.zip(expr_circuit.vars_usage())
 			.enumerate()
-			.map(|(i, col_index)| {
-				let used = (i < all_used.len()) && all_used[i];
-
+			.map(|(i, (col_index, used))| {
 				used.then(|| {
 					self.get(Col::<FSub, V>::new(
 						ColumnId {
