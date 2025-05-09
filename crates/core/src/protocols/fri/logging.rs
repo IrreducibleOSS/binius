@@ -72,7 +72,11 @@ pub(super) struct FRIFoldData {
 }
 
 impl FRIFoldData {
-	pub(super) fn new<F: BinaryField, FA: BinaryField>(log_len: usize, log_batch_size: usize, num_challenges: usize) -> Self {
+	pub(super) fn new<F: BinaryField, FA: BinaryField>(
+		log_len: usize,
+		log_batch_size: usize,
+		num_challenges: usize,
+	) -> Self {
 		Self {
 			log_len,
 			log_batch_size,

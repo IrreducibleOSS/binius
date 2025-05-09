@@ -193,14 +193,24 @@ where
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
 	let dimensions_data = SortAndMergeDimensionData::new::<F>(log_elems);
-	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main", ?dimensions_data)
-		.in_scope(|| {
-			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
-		});
+	tracing::debug_span!(
+		"[task] Sort & Merge",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| {
+		message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
+	});
 
 	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", ?dimensions_data)
-		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
+	tracing::debug_span!(
+		"[task] RS Encode",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
