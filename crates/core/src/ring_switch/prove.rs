@@ -68,7 +68,7 @@ where
 		"[task] (Ring Switch) MLE Fold High",
 		phase = "ring_switch",
 		perfetto_category = "task.main",
-		dimensions_data = ?dimensions_data,
+		?dimensions_data,
 	)
 	.entered();
 
@@ -106,7 +106,7 @@ where
 		"[task] Calculate Ring Switch Eq Ind",
 		phase = "ring_switch",
 		perfetto_category = "task.main",
-		dimensions_data = ?dimensions_data,
+		?dimensions_data,
 	)
 	.entered();
 

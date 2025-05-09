@@ -241,7 +241,7 @@ where
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
 		perfetto_category = "task.main",
-		dimensions_data = ?dimensions_data,
+		?dimensions_data,
 	)
 	.entered();
 	for prover in provers {

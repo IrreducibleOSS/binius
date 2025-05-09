@@ -345,7 +345,7 @@ where
 			phase = "piop_compiler",
 			round = round,
 			perfetto_category = "phase.sub",
-			dimensions_data = ?dimensions_data,
+			?dimensions_data,
 		)
 		.entered();
 		match fri_prover.execute_fold_round(challenge)? {

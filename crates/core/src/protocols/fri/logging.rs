@@ -67,14 +67,22 @@ pub(super) struct FRIFoldData {
 	log_len: usize,
 	log_batch_size: usize,
 	num_challenges: usize,
+	codeword_tower_height: usize,
+	ntt_tower_height: usize,
 }
 
 impl FRIFoldData {
-	pub(super) fn new(log_len: usize, log_batch_size: usize, num_challenges: usize) -> Self {
+	pub(super) fn new<F: BinaryField, FA: BinaryField>(
+		log_len: usize,
+		log_batch_size: usize,
+		num_challenges: usize,
+	) -> Self {
 		Self {
 			log_len,
 			log_batch_size,
 			num_challenges,
+			codeword_tower_height: <F as ExtensionField<BinaryField1b>>::LOG_DEGREE,
+			ntt_tower_height: <FA as ExtensionField<BinaryField1b>>::LOG_DEGREE,
 		}
 	}
 

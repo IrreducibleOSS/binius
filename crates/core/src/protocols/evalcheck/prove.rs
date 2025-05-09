@@ -254,7 +254,7 @@ where
 			"[task] (Evalcheck) MLE Fold High",
 			phase = "evalcheck",
 			perfetto_category = "task.main",
-			dimensions_data = ?dimensions_data,
+			?dimensions_data,
 		)
 		.entered();
 
