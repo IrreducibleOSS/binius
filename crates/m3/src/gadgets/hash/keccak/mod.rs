@@ -102,7 +102,7 @@ impl Keccakf {
 		let mut state = state_in;
 
 		//Declaring packed state_in columns for exposing in the struct.
-		let state_in_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x,y)| {
+		let state_in_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
 			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
 		});
 
@@ -118,20 +118,20 @@ impl Keccakf {
 		});
 
 		//Declaring packed state_out columns to be exposed in the struct.
-		let state_out_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x,y)| {
+		let state_out_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
 			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
 		});
 
 		let input = array::from_fn::<_, 25, _>(|i| {
 			let x = i % 5;
 			let y = i / 5;
-			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x,y)], 0)
+			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x, y)], 0)
 		});
 
 		let output = array::from_fn::<_, 25, _>(|i| {
 			let x = i % 5;
 			let y = i / 5;
-			table.add_selected(format!("output[{x},{y}]"), state_out_packed[(x,y)], 7)
+			table.add_selected(format!("output[{x},{y}]"), state_out_packed[(x, y)], 7)
 		});
 
 		let link_sel = table.add_constant(
@@ -218,8 +218,7 @@ impl Keccakf {
 							index.get_mut_as(self.output[x + y * 5])?;
 
 						input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
-						output[k] =
-							pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
+						output[k] = pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
 					}
 				}
 			}
