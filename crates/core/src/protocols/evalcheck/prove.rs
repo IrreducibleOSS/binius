@@ -429,7 +429,7 @@ where
 		if let Some(claim_id) = claim_id {
 			serialize_evalcheck_proof(
 				&mut transcript.message(),
-				&EvalcheckHint::DuplicateClaim(*claim_id),
+				&EvalcheckHint::DuplicateClaim(*claim_id as u32),
 			);
 			return Ok(());
 		}
@@ -519,7 +519,7 @@ where
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
-							&EvalcheckHint::DuplicateClaim(*claim_index),
+							&EvalcheckHint::DuplicateClaim(*claim_index as u32),
 						);
 					} else {
 						serialize_evalcheck_proof(
