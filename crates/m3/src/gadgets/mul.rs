@@ -138,8 +138,8 @@ where
 		let x_in = table.add_computed("x_in", pack_fp(xin_bits));
 		let y_in = table.add_computed("y_in", pack_fp(yin_bits));
 
-		let generator = UX::generator().into();
-		let generator_pow_bit_len = UX::shifted_generator().into();
+		let generator = UX::generator();
+		let generator_pow_bit_len = UX::shifted_generator();
 
 		let g_pow_x = table.add_static_exp::<FExpBase>("g^x", &xin_bits, generator);
 		let g_pow_xy = table.add_dynamic_exp::<FExpBase>("(g^x)^y", &yin_bits, g_pow_x);
@@ -227,6 +227,8 @@ where
 				);
 			}
 		}
+
+		// NB: Exponentiation result columns are filled by the core constraint system prover.
 
 		Ok(())
 	}

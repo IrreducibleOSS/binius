@@ -9,7 +9,7 @@ use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::MultilinearExtension;
+use binius_math::{MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::chain;

@@ -373,7 +373,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		&mut self,
 		name: impl ToString,
 		pow_bits: &[Col<B1>],
-		base: F,
+		base: FExpBase,
 	) -> Col<FExpBase>
 	where
 		FExpBase: TowerField,
@@ -388,7 +388,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::StaticExp {
 				bit_cols,
-				base,
+				base: base.into(),
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
