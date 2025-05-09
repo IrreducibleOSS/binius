@@ -657,17 +657,6 @@ impl<F: TowerField> Table<F> {
 		self.id
 	}
 
-	/// Returns the binary logarithm of the table capacity required to accommodate the given number
-	/// of rows.
-	///
-	/// The table capacity must be a power of two (in order to be compatible with the multilinear
-	/// proof system, which associates each table index with a vertex of a boolean hypercube).
-	/// This will normally be the next power of two greater than the table size, but could require
-	/// more padding to get a minimum capacity.
-	pub fn log_capacity(&self, table_size: usize) -> usize {
-		log2_ceil_usize(table_size)
-	}
-
 	fn new_column<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
@@ -738,6 +727,16 @@ pub(crate) enum TableSizeSpec {
 	PowerOfTwo,
 	/// The table size must be a fixed power of two.
 	Fixed { log_size: usize },
+}
+
+/// Returns the binary logarithm of the table capacity required to accommodate the given number
+/// of rows.
+///
+/// The table capacity must be a power of two (in order to be compatible with the multilinear
+/// proof system, which associates each table index with a vertex of a boolean hypercube).
+/// This is be the next power of two greater than the table size.
+pub fn log_capacity(table_size: usize) -> usize {
+	log2_ceil_usize(table_size)
 }
 
 #[cfg(test)]

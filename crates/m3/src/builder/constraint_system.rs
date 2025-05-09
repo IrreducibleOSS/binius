@@ -23,7 +23,7 @@ use super::{
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
 	statement::Statement,
-	table::TablePartition,
+	table::{self, TablePartition},
 	types::B128,
 	witness::WitnessIndex,
 	Table, TableBuilder, TableSizeSpec, ZeroConstraint,
@@ -190,7 +190,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 							size: count,
 						});
 					}
-					if count != 1 << table.log_capacity(count) {
+					if count != 1 << table::log_capacity(count) {
 						panic!(
 						    "Tables with required power-of-two size currently cannot have capacity \
 						exceeding their count. This is because the flushes do not have automatic \
@@ -222,7 +222,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			}
 
 			// Add multilinear oracles for all table columns.
-			let log_capacity = table.log_capacity(count);
+			let log_capacity = table::log_capacity(count);
 			for column_info in table.columns.iter() {
 				let n_vars = log_capacity + column_info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(

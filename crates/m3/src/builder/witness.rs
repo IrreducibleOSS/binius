@@ -32,7 +32,7 @@ use itertools::Itertools;
 use super::{
 	column::{Col, ColumnShape},
 	error::Error,
-	table::{Table, TableId},
+	table::{self, Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
 	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 };
@@ -381,7 +381,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			});
 		}
 
-		let log_capacity = table.log_capacity(size);
+		let log_capacity = table::log_capacity(size);
 		let packed_elem_log_bits = P::LOG_WIDTH + F::TOWER_LEVEL;
 
 		let mut cols = Vec::new();
