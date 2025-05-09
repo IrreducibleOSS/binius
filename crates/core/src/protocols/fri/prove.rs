@@ -337,8 +337,16 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _)) => FRIFoldData::new(log2_strict_usize(codeword.len()), 0),
-			None => FRIFoldData::new(self.params.rs_code().log_len(), self.params.log_batch_size()),
+			Some((codeword, _)) => FRIFoldData::new(
+				log2_strict_usize(codeword.len()),
+				0,
+				self.unprocessed_challenges.len(),
+			),
+			None => FRIFoldData::new(
+				self.params.rs_code().log_len(),
+				self.params.log_batch_size(),
+				self.unprocessed_challenges.len(),
+			),
 		};
 
 		let fri_fold_span = tracing::debug_span!(
