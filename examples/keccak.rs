@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::iter::repeat_with;
+use std::{array, iter::repeat_with};
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
@@ -43,8 +43,7 @@ impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
 		let mut table = cs.add_table("Keccak permutation");
 
-		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let keccakf = keccak::Keccakf::new(&mut table, state_in);
+		let keccakf = keccak::Keccakf::new(&mut table);
 
 		Self {
 			table_id: table.id(),
@@ -58,7 +57,7 @@ where
 	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
-	type Event = StateMatrix<u64>;
+	type Event = [u64; 25];
 
 	fn id(&self) -> TableId {
 		self.table_id
@@ -99,7 +98,7 @@ fn main() -> Result<()> {
 	};
 
 	let mut rng = thread_rng();
-	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
+	let events = repeat_with(|| array::from_fn::<u64, 25, _>(|_|rng.next_u64()))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
