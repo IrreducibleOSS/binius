@@ -149,7 +149,7 @@ where
 	// it can be shown that this strategy beats any strategy which terminates later than it does (in other words, by doing this, we are NOT terminating TOO early!).
 	// this doesn't mean that we should't terminate EVEN earlier (maybe we should). but this approach is conservative and simple; and it's easy to show that you won't lose by doing this.
 
-	// see PR for proof of this fact
+	// see https://github.com/IrreducibleOSS/binius/pull/300 for proof of this fact
 
 	// how should we handle the case `fold_arities = []`, i.e. total_vars + log_inv_rate - cap_height < arity? in that case, we would lose nothing by making the entire thing interleaved,
 	// i.e., setting `log_batch_size := total_vars`, so `terminal_codeword` lives in the interleaving of the repetition code (and so is itself a repetition codeword!). encoding is trivial.
