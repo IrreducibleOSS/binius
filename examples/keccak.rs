@@ -98,7 +98,7 @@ fn main() -> Result<()> {
 	};
 
 	let mut rng = thread_rng();
-	let events = repeat_with(|| array::from_fn::<u64, 25, _>(|_|rng.next_u64()))
+	let events = repeat_with(|| array::from_fn::<u64, 25, _>(|_| rng.next_u64()))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
