@@ -21,7 +21,7 @@ mod test_vector;
 mod trace;
 
 // This implementation tries to be as close to the
-// [Keccak Specification Summary][keccak_spec_summary] and as such i///////.// //t is highly recommended to
+// [Keccak Specification Summary][keccak_spec_summary] and as such it is highly recommended to
 // get familiar with it. A lot of terminology is carried over from that spec.
 //
 // [keccak_spec_summary]: https://keccak.team/keccak_specs_summary.html
@@ -101,12 +101,12 @@ impl Keccakf {
 
 		let mut state = state_in;
 
-		//Declaring packed state_in columns for exposing in the struct.
+		// Declaring packed state_in columns for exposing in the struct.
 		let state_in_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
 			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
 		});
 
-		//Constructing the batches of rounds. The final value of `state` will be the permutation output.
+		// Constructing the batches of rounds. The final value of `state` will be the permutation output.
 		let batches = array::from_fn(|batch_no| {
 			let batch = RoundBatch::new(
 				&mut table.with_namespace(format!("batch[{batch_no}]")),
@@ -117,7 +117,7 @@ impl Keccakf {
 			batch
 		});
 
-		//Declaring packed state_out columns to be exposed in the struct.
+		// Declaring packed state_out columns to be exposed in the struct.
 		let state_out_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
 			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
 		});
@@ -202,7 +202,6 @@ impl Keccakf {
 						index.get_as(self.batches[0].state_in[(x, y)])?;
 					let batch_2_state_out: std::cell::Ref<'_, [u64]> =
 						index.get_as(self.batches[2].state_out[(x, y)])?;
-
 					for track in 0..TRACKS_PER_BATCH - 1 {
 						next_state_in[TRACKS_PER_BATCH * k + track] =
 							batch_0_state_in[TRACKS_PER_BATCH * k + track + 1];
@@ -210,16 +209,15 @@ impl Keccakf {
 							next_state_in[TRACKS_PER_BATCH * k + track],
 							batch_2_state_out[TRACKS_PER_BATCH * k + track]
 						);
-
-						//Populating the packed and selected input and output columns.
-						let mut input: std::cell::RefMut<'_, [u64]> =
-							index.get_mut_as(self.input[x + y * 5])?;
-						let mut output: std::cell::RefMut<'_, [u64]> =
-							index.get_mut_as(self.output[x + y * 5])?;
-
-						input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
-						output[k] = pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
 					}
+					// Populating the packed and selected input and output columns.
+					let mut input: std::cell::RefMut<'_, [u64]> =
+						index.get_mut_as(self.input[x + y * 5])?;
+					let mut output: std::cell::RefMut<'_, [u64]> =
+						index.get_mut_as(self.output[x + y * 5])?;
+
+					input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
+					output[k] = pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
 				}
 			}
 		}
@@ -647,8 +645,6 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let mut table = cs.add_table("test");
 
-		// let state_in: StateMatrix<PackedLane8> =
-		// 	StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
 		let keccakf = Keccakf::new(&mut table);
 
 		let allocator = Bump::new();
