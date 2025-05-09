@@ -193,13 +193,13 @@ where
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
 	let dimensions_data = SortAndMergeDimensionData::new::<F>(log_elems);
-	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
+	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main", ?dimensions_data)
 		.in_scope(|| {
 			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 		});
 
 	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
+	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", ?dimensions_data)
 		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
 	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
@@ -337,12 +337,12 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _)) => FRIFoldData::new(
+			Some((codeword, _)) => FRIFoldData::new::<F, FA>(
 				log2_strict_usize(codeword.len()),
 				0,
 				self.unprocessed_challenges.len(),
 			),
-			None => FRIFoldData::new(
+			None => FRIFoldData::new::<F, FA>(
 				self.params.rs_code().log_len(),
 				self.params.log_batch_size(),
 				self.unprocessed_challenges.len(),
@@ -353,7 +353,7 @@ where
 			"[task] FRI Fold",
 			phase = "piop_compiler",
 			perfetto_category = "task.main",
-			dimensions_data = ?dimensions_data
+			?dimensions_data
 		)
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.

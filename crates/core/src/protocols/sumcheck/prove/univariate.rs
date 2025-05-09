@@ -292,7 +292,7 @@ where
 		"[task] Expand Query",
 		phase = "zerocheck",
 		perfetto_category = "task.main",
-		dimensions_data = ?dimensions_data,
+		?dimensions_data,
 	)
 	.entered();
 	let partial_eq_ind_evals: <Backend as ComputationBackend>::Vec<P> =
@@ -316,7 +316,7 @@ where
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
 		perfetto_category = "task.main",
-		dimensions_data = ?dimensions_data,
+		?dimensions_data,
 	)
 	.entered();
 
