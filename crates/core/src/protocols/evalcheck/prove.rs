@@ -515,9 +515,10 @@ where
 				let position = self
 					.new_mlechecks_constraints
 					.iter()
-					.position(|(ep, _)| *ep == eval_point);
+					.position(|(ep, _)| *ep == eval_point)
+					.unwrap_or(self.new_mlechecks_constraints.len());
 
-				transcript.message().write(&position);
+				transcript.message().write(&(position as u32));
 
 				add_composite_sumcheck_to_constraints(
 					position,

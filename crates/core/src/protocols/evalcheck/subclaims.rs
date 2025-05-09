@@ -144,7 +144,7 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
-	position: Option<usize>,
+	position: usize,
 	eval_point: &EvalPoint<F>,
 	constraint_builders: &mut Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 	comp: &CompositeMLE<F>,
@@ -152,8 +152,8 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 ) {
 	let oracle_ids = comp.inner().clone();
 
-	if let Some(position) = position {
-		constraint_builders[position].1.add_sumcheck(
+	if let Some(constraint_builder) = constraint_builders.get_mut(position) {
+		constraint_builder.1.add_sumcheck(
 			oracle_ids,
 			<_ as CompositionPoly<F>>::expression(comp.c()),
 			eval,
@@ -162,7 +162,7 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 		let mut new_builder = ConstraintSetBuilder::new();
 		new_builder.add_sumcheck(oracle_ids, <_ as CompositionPoly<F>>::expression(comp.c()), eval);
 		constraint_builders.push((eval_point.clone(), new_builder));
-	};
+	}
 }
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
