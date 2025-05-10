@@ -20,7 +20,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
-use itertools::chain;
+use itertools::{chain, izip, multiunzip};
 use tracing::instrument;
 
 use super::{
@@ -32,7 +32,7 @@ use super::{
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
-		exp,
+		exp::{self, reorder_exponents},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -103,7 +103,7 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents);
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
@@ -168,6 +168,12 @@ where
 		.into_iter()
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
+
+	let mut exponents_witnesses_claims =
+		izip!(exponents, exp_witnesses, exp_claims,).collect::<Vec<_>>();
+	exponents_witnesses_claims.sort_by_key(|(_, _, claim)| std::cmp::Reverse(claim.n_vars));
+	let (exponents, exp_witnesses, exp_claims): (Vec<_>, Vec<_>, Vec<_>) =
+		multiunzip(exponents_witnesses_claims);
 
 	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
 		EvaluationOrder::HighToLow,

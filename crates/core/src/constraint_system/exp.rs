@@ -12,7 +12,6 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::{MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use itertools::chain;
 use tracing::instrument;
 
 use super::{
@@ -68,16 +67,8 @@ where
 	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
-	// Since dynamic witnesses may need the `exp_result` of static witnesses,
-	// we start processing with static ones first.
-	let static_exponents_iter = exponents
+	exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
-	let dynamic_exponents_iter = exponents
-		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
-
-	chain!(static_exponents_iter, dynamic_exponents_iter)
 		.map(|exp| {
 			let fast_exponent_witnesses =
 				get_fast_exponent_witnesses::<U, Tower>(witness, &exp.bits_ids)?;
@@ -138,25 +129,17 @@ pub fn make_claims<F>(
 where
 	F: TowerField,
 {
-	let static_exponents_iter = exponents
+	let constant_bases = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
-	let dynamic_exponents_iter = exponents
-		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
-	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
-
-	let constant_bases = exponents_iter
-		.clone()
 		.map(|exp| match exp.base {
 			OracleOrConst::Const { base, .. } => Some(base),
 			OracleOrConst::Oracle(_) => None,
 		})
 		.collect::<Vec<_>>();
 
-	let exponents_ids = exponents_iter
-		.cloned()
-		.map(|exp| exp.bits_ids)
+	let exponents_ids = exponents
+		.iter()
+		.map(|exp| exp.bits_ids.clone())
 		.collect::<Vec<_>>();
 
 	gkr_exp::construct_gkr_exp_claims(&exponents_ids, evals, constant_bases, oracles, eval_point)
@@ -167,25 +150,17 @@ pub fn make_eval_claims<F: TowerField>(
 	exponents: &[Exp<F>],
 	base_exp_output: BaseExpReductionOutput<F>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
-	let static_exponents_iter = exponents
+	let dynamic_base_ids = exponents
 		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Const { .. }));
-	let dynamic_exponents_iter = exponents
-		.iter()
-		.filter(|exp| matches!(exp.base, OracleOrConst::Oracle(_)));
-	let exponents_iter = chain!(static_exponents_iter, dynamic_exponents_iter);
-
-	let dynamic_base_ids = exponents_iter
-		.clone()
 		.map(|exp| match exp.base {
 			OracleOrConst::Const { .. } => None,
 			OracleOrConst::Oracle(base_id) => Some(base_id),
 		})
 		.collect::<Vec<_>>();
 
-	let metas = exponents_iter
-		.cloned()
-		.map(|exp| exp.bits_ids)
+	let metas = exponents
+		.iter()
+		.map(|exp| exp.bits_ids.clone())
 		.collect::<Vec<_>>();
 
 	gkr_exp::make_eval_claims(metas, base_exp_output, dynamic_base_ids).map_err(Error::from)
@@ -337,4 +312,13 @@ where
 				.map_err(Error::from)
 		})
 		.collect::<Result<Vec<_>, _>>()
+}
+
+pub fn reorder_exponents<F: Field>(exponents: &mut [Exp<F>]) {
+	// Since dynamic witnesses may need the `exp_result` of static witnesses,
+	// we start processing with static ones first.
+	exponents.sort_by_key(|exp| match exp.base {
+		OracleOrConst::Const { .. } => 0,
+		OracleOrConst::Oracle(_) => 1,
+	});
 }

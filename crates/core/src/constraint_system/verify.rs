@@ -8,13 +8,14 @@ use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
-use itertools::{chain, Itertools};
+use itertools::{chain, izip, Itertools};
 use tracing::instrument;
 
 use super::{
 	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
-	exp, ConstraintSystem, Proof,
+	exp::{self, reorder_exponents},
+	ConstraintSystem, Proof,
 };
 use crate::{
 	constraint_system::{
@@ -84,7 +85,7 @@ where
 	let commitment = reader.read::<Output<Hash>>()?;
 
 	// GKR exp multiplication
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
@@ -94,6 +95,10 @@ where
 	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
 		.into_iter()
 		.collect::<Vec<_>>();
+
+	let mut exponents_claims = izip!(exponents, exp_claims).collect::<Vec<_>>();
+	exponents_claims.sort_by_key(|(_, claim)| std::cmp::Reverse(claim.n_vars));
+	let (exponents, exp_claims): (Vec<_>, Vec<_>) = exponents_claims.into_iter().unzip();
 
 	let base_exp_output =
 		gkr_exp::batch_verify(EvaluationOrder::HighToLow, &exp_claims, &mut transcript)?;
