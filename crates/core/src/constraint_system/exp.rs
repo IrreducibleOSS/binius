@@ -1,5 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::cmp::Reverse;
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
@@ -314,11 +316,14 @@ where
 		.collect::<Result<Vec<_>, _>>()
 }
 
-pub fn reorder_exponents<F: Field>(exponents: &mut [Exp<F>]) {
+pub fn reorder_exponents<F: TowerField>(
+	exponents: &mut [Exp<F>],
+	oracles: &MultilinearOracleSet<F>,
+) {
 	// Since dynamic witnesses may need the `exp_result` of static witnesses,
 	// we start processing with static ones first.
 	exponents.sort_by_key(|exp| match exp.base {
-		OracleOrConst::Const { .. } => 0,
-		OracleOrConst::Oracle(_) => 1,
+		OracleOrConst::Const { .. } => (Reverse(exp.n_vars(oracles)), 0),
+		OracleOrConst::Oracle(_) => (Reverse(exp.n_vars(oracles)), 1),
 	});
 }

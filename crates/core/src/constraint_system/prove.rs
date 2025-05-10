@@ -20,7 +20,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
-use itertools::{chain, izip, multiunzip};
+use itertools::chain;
 use tracing::instrument;
 
 use super::{
@@ -103,7 +103,7 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	reorder_exponents(&mut exponents);
+	reorder_exponents(&mut exponents, &oracles);
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
@@ -168,12 +168,6 @@ where
 		.into_iter()
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
-
-	let mut exponents_witnesses_claims =
-		izip!(exponents, exp_witnesses, exp_claims,).collect::<Vec<_>>();
-	exponents_witnesses_claims.sort_by_key(|(_, _, claim)| std::cmp::Reverse(claim.n_vars));
-	let (exponents, exp_witnesses, exp_claims): (Vec<_>, Vec<_>, Vec<_>) =
-		multiunzip(exponents_witnesses_claims);
 
 	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
 		EvaluationOrder::HighToLow,
