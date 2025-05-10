@@ -14,7 +14,8 @@ use tracing::instrument;
 use super::{
 	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
-	exp, ConstraintSystem, Proof,
+	exp::{self, reorder_exponents},
+	ConstraintSystem, Proof,
 };
 use crate::{
 	constraint_system::{
@@ -84,7 +85,7 @@ where
 	let commitment = reader.read::<Output<Hash>>()?;
 
 	// GKR exp multiplication
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents, &oracles);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
