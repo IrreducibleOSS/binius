@@ -254,7 +254,7 @@ impl Keccakf {
 	pub fn populate_state_in<'a, P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		state_ins: impl IntoIterator<Item = &'a [u64; 25]>,
+		state_ins: impl IntoIterator<Item = &'a StateMatrix<u64>>,
 	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
@@ -461,7 +461,7 @@ impl RoundBatch {
 		&self,
 		index: &mut TableWitnessSegment<P>,
 		track: usize,
-		state_ins: impl IntoIterator<Item = &'a [u64; 25]>,
+		state_ins: impl IntoIterator<Item = &'a StateMatrix<u64>>,
 	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
@@ -472,7 +472,7 @@ impl RoundBatch {
 				for y in 0..5 {
 					let mut state_in_data: std::cell::RefMut<'_, [u64]> =
 						index.get_mut_as(self.state_in[(x, y)])?;
-					state_in_data[TRACKS_PER_BATCH * k + track] = state_in[x + y * 5];
+					state_in_data[TRACKS_PER_BATCH * k + track] = state_in[(x, y)];
 				}
 			}
 		}
@@ -657,7 +657,7 @@ mod tests {
 
 		let state_ins = TEST_VECTOR
 			.iter()
-			.map(|&[state_in, _]| state_in)
+			.map(|&[state_in, _]| StateMatrix::from_values(state_in))
 			.collect::<Vec<_>>();
 
 		keccakf.populate_state_in(&mut segment, &state_ins).unwrap();

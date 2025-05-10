@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, iter::repeat_with};
+use std::iter::repeat_with;
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
@@ -16,7 +16,7 @@ use binius_m3::{
 		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
 		B128, B64, B8,
 	},
-	gadgets::hash::keccak::{self, Keccakf},
+	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
@@ -60,7 +60,7 @@ where
 		+ PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
-	type Event = [u64; 25];
+	type Event = StateMatrix<u64>;
 
 	fn id(&self) -> TableId {
 		self.table_id
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
 	};
 
 	let mut rng = thread_rng();
-	let events = repeat_with(|| array::from_fn::<u64, 25, _>(|_| rng.next_u64()))
+	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
