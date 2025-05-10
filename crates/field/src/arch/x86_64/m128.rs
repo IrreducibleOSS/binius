@@ -6,6 +6,11 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	serialization::{assert_enough_data_for, assert_enough_space_for},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{must_cast, Pod, Zeroable};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
@@ -104,6 +109,37 @@ impl From<M128> for __m128i {
 	#[inline(always)]
 	fn from(value: M128) -> Self {
 		value.0
+	}
+}
+
+impl SerializeBytes for M128 {
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		_mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
+
+		let raw_value: u128 = self.clone().into();
+
+		write_buf.put_u128_le(raw_value);
+		Ok(())
+	}
+}
+
+impl DeserializeBytes for M128 {
+	fn deserialize(
+		mut read_buf: impl Buf,
+		_mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		assert_enough_data_for(&read_buf, std::mem::size_of::<Self>())?;
+
+		let raw_value = read_buf.get_u128_le();
+
+		Ok(Self::from(raw_value))
 	}
 }
 
@@ -972,7 +1008,9 @@ impl_iteration!(M128,
 
 #[cfg(test)]
 mod tests {
+	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;
@@ -1082,5 +1120,21 @@ mod tests {
 		assert_ne!(a, b);
 		assert_ne!(a, c);
 		assert_ne!(b, c);
+	}
+
+	#[test]
+	fn test_serialize_and_deserialize_m128() {
+		let mode = SerializationMode::Native;
+
+		let mut rng = StdRng::from_seed([0; 32]);
+
+		let original_value = M128::from(rng.gen::<u128>());
+
+		let mut buf = BytesMut::new();
+		original_value.serialize(&mut buf, mode).unwrap();
+
+		let deserialized_value = M128::deserialize(buf.freeze(), mode).unwrap();
+
+		assert_eq!(original_value, deserialized_value);
 	}
 }

@@ -1,6 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::ops::Mul;
+use std::{marker::PhantomData, ops::Mul};
+
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 
 use super::{
 	super::portable::{
@@ -14,7 +19,10 @@ use super::{
 	},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy},
+	arch::{
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field, PackedStrategy,
+		PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy, InvertOrZero, MulAlpha, Square,
@@ -33,6 +41,15 @@ pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
 pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
 pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
 pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
+
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x32b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x64b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x128b);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField128x1b);

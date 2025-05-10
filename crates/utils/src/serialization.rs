@@ -414,7 +414,10 @@ impl<N: ArrayLength<u8>> DeserializeBytes for GenericArray<u8, N> {
 }
 
 #[inline]
-fn assert_enough_space_for(write_buf: &impl BufMut, size: usize) -> Result<(), SerializationError> {
+pub fn assert_enough_space_for(
+	write_buf: &impl BufMut,
+	size: usize,
+) -> Result<(), SerializationError> {
 	if write_buf.remaining_mut() < size {
 		return Err(SerializationError::WriteBufferFull);
 	}
@@ -422,7 +425,7 @@ fn assert_enough_space_for(write_buf: &impl BufMut, size: usize) -> Result<(), S
 }
 
 #[inline]
-fn assert_enough_data_for(read_buf: &impl Buf, size: usize) -> Result<(), SerializationError> {
+pub fn assert_enough_data_for(read_buf: &impl Buf, size: usize) -> Result<(), SerializationError> {
 	if read_buf.remaining() < size {
 		return Err(SerializationError::NotEnoughBytes);
 	}

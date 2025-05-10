@@ -1,9 +1,18 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::marker::PhantomData;
+
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use cfg_if::cfg_if;
 
 use super::{
-	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},
+	packed::{
+		impl_broadcast, impl_ops_for_zero_height,
+		impl_serialize_deserialize_for_packed_binary_field, PackedPrimitiveType,
+	},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
@@ -24,6 +33,14 @@ pub type PackedBinaryField8x8b = PackedPrimitiveType<u64, BinaryField8b>;
 pub type PackedBinaryField4x16b = PackedPrimitiveType<u64, BinaryField16b>;
 pub type PackedBinaryField2x32b = PackedPrimitiveType<u64, BinaryField32b>;
 pub type PackedBinaryField1x64b = PackedPrimitiveType<u64, BinaryField64b>;
+
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x32b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x64b);
 
 // Define broadcast
 impl_broadcast!(u64, BinaryField1b);
