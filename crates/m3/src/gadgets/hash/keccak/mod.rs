@@ -106,7 +106,8 @@ impl Keccakf {
 			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
 		});
 
-		// Constructing the batches of rounds. The final value of `state` will be the permutation output.
+		// Constructing the batches of rounds. The final value of `state` will be the permutation
+		// output.
 		let batches = array::from_fn(|batch_no| {
 			let batch = RoundBatch::new(
 				&mut table.with_namespace(format!("batch[{batch_no}]")),
