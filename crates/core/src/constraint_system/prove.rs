@@ -32,7 +32,7 @@ use super::{
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
-		exp,
+		exp::{self, reorder_exponents},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -103,7 +103,7 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents, &oracles);
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
