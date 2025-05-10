@@ -117,8 +117,7 @@ mod tests {
 	use std::{cmp::Reverse, iter::repeat_with};
 
 	use binius_field::{
-		arch::OptimalUnderlier128b,
-		as_packed_field::PackedType,
+		arch::OptimalUnderlier,
 		ext_basis,
 		packed::{get_packed_slice, set_packed_slice},
 		PackedFieldIndexable,
@@ -160,8 +159,7 @@ mod tests {
 		let looker_2_size = 6;
 
 		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::new(&cs, &allocator);
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
@@ -229,7 +227,7 @@ mod tests {
 			.fill_table_sequential(&incr_lookup, &sorted_counts)
 			.unwrap();
 
-		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
 	}
 
 	fn merge_incr_cols(
