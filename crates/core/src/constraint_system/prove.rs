@@ -487,7 +487,7 @@ where
 	// The function is on the critical path, parallelize.
 	let indices_to_update: Vec<(OracleId, MultilinearWitness<'a, _>)> = flush_oracle_ids
 		.par_iter()
-		.map(|&flush_oracle| match oracles.oracle(flush_oracle).variant {
+		.map(|&flush_oracle| match &oracles[flush_oracle].variant {
 			MultilinearPolyVariant::Composite(composite) => {
 				let inner_polys = composite.inner();
 

@@ -181,7 +181,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			// Append oracles for constant columns that are repeated.
 			let mut count = 0;
 			for (oracle_id_offset, col) in cols.into_iter().enumerate() {
-				let oracle_id = first_oracle_id_in_table + oracle_id_offset;
+				let oracle_id = OracleId::from_index(first_oracle_id_in_table + oracle_id_offset);
 				let log_capacity = if col.is_single_row {
 					0
 				} else {
@@ -204,7 +204,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				// Every table partition has a step_down appended to the end of the table to support
 				// non-power of two height tables.
 				for log_values_per_row in table.partitions.keys() {
-					let oracle_id = first_oracle_id_in_table + count;
+					let oracle_id = OracleId::from_index(first_oracle_id_in_table + count);
 					let size = table_witness.size << log_values_per_row;
 					let log_size = table_witness.log_capacity + log_values_per_row;
 					let witness = StepDown::new(log_size, size)
@@ -331,7 +331,7 @@ pub struct WitnessIndexColumn<'a, P: PackedField> {
 #[derive(Debug, Clone)]
 enum WitnessColumnInfo<T> {
 	Owned(T),
-	SameAsOracleIndex(usize),
+	SameAsOracleId(OracleId),
 }
 
 type WitnessDataMut<'a, P> = WitnessColumnInfo<&'a mut [P]>;
@@ -362,7 +362,7 @@ fn immutable_witness_index_columns<P: PackedField>(
 			shape: col.shape,
 			data: match col.data {
 				WitnessDataMut::Owned(data) => data,
-				WitnessDataMut::SameAsOracleIndex(index) => result[index].data,
+				WitnessDataMut::SameAsOracleId(id) => result[id.index()].data,
 			},
 			is_single_row: col.is_single_row,
 		});
@@ -391,7 +391,8 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 
 		for col in &table.columns {
 			if matches!(col.col, ColumnDef::Constant { .. }) {
-				transparent_single_backing[col.id.table_index] = Some(oracle_offset);
+				transparent_single_backing[col.id.table_index] =
+					Some(OracleId::from_index(oracle_offset));
 				cols.push(WitnessIndexColumn {
 					shape: col.shape,
 					data: WitnessDataMut::new_owned(
@@ -409,9 +410,10 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			shape: col.shape,
 			data: match col.col {
 				ColumnDef::Packed { col: inner_col, .. } => {
-					WitnessDataMut::SameAsOracleIndex(oracle_offset + inner_col.table_index)
+					let oracle_id = OracleId::from_index(oracle_offset + inner_col.table_index);
+					WitnessDataMut::SameAsOracleId(oracle_id)
 				}
-				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleIndex(
+				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleId(
 					transparent_single_backing[col.id.table_index].unwrap(),
 				),
 				_ => WitnessDataMut::new_owned(
@@ -460,7 +462,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.cols
 			.iter_mut()
 			.map(|col| match &mut col.data {
-				WitnessDataMut::SameAsOracleIndex(index) => RefCellData::SameAsOracleIndex(*index),
+				WitnessDataMut::SameAsOracleId(id) => RefCellData::SameAsOracleId(*id),
 				WitnessDataMut::Owned(data) => RefCellData::Owned(RefCell::new(data)),
 			})
 			.collect();
@@ -590,7 +592,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.iter_mut()
 			.map(|col| match col {
 				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
-				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+				RefCellData::SameAsOracleId(idx) => WitnessColumnInfo::SameAsOracleId(*idx),
 			})
 			.collect::<Vec<_>>();
 
@@ -690,7 +692,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.iter_mut()
 			.map(|col| match col {
 				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
-				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+				RefCellData::SameAsOracleId(idx) => WitnessColumnInfo::SameAsOracleId(*idx),
 			})
 			.collect::<Vec<_>>();
 
@@ -758,9 +760,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 						.saturating_sub(P::LOG_WIDTH + F::TOWER_LEVEL);
 					WitnessColumnInfo::Owned((&mut **data, 1 << chunk_size))
 				}
-				WitnessColumnInfo::SameAsOracleIndex(idx) => {
-					WitnessColumnInfo::SameAsOracleIndex(*idx)
-				}
+				WitnessColumnInfo::SameAsOracleId(id) => WitnessColumnInfo::SameAsOracleId(*id),
 			})
 			.collect::<Vec<_>>();
 		Self {
@@ -789,10 +789,9 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 						WitnessColumnInfo::Owned((data_1, *chunk_size)),
 					)
 				}
-				WitnessColumnInfo::SameAsOracleIndex(idx) => (
-					WitnessColumnInfo::SameAsOracleIndex(*idx),
-					WitnessColumnInfo::SameAsOracleIndex(*idx),
-				),
+				WitnessColumnInfo::SameAsOracleId(id) => {
+					(WitnessColumnInfo::SameAsOracleId(*id), WitnessColumnInfo::SameAsOracleId(*id))
+				}
 			})
 			.unzip();
 		(
@@ -835,8 +834,8 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 							data.chunks_mut(chunk_size)
 								.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
 						),
-						WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
-							iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
+						WitnessColumnInfo::SameAsOracleId(id) => itertools::Either::Right(
+							iter::repeat_n(id, n_segments).map(RefCellData::SameAsOracleId),
 						),
 					})
 					.collect(),
@@ -882,9 +881,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 					WitnessColumnInfo::Owned((data, chunk_size)) => {
 						WitnessColumnInfo::Owned((data, chunk_size))
 					}
-					WitnessColumnInfo::SameAsOracleIndex(index) => {
-						WitnessColumnInfo::SameAsOracleIndex(index)
-					}
+					WitnessColumnInfo::SameAsOracleId(id) => WitnessColumnInfo::SameAsOracleId(id),
 				}
 			})
 			.collect::<Vec<_>>();
@@ -893,9 +890,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			let col_strides = cols
 				.iter()
 				.map(|col| match col {
-					WitnessColumnInfo::SameAsOracleIndex(index) => {
-						RefCellData::SameAsOracleIndex(*index)
-					}
+					WitnessColumnInfo::SameAsOracleId(id) => RefCellData::SameAsOracleId(*id),
 					WitnessColumnInfo::Owned((data, chunk_size)) => {
 						RefCellData::Owned(RefCell::new(unsafe {
 							// Safety: The function borrows self mutably, so we have mutable access
@@ -1115,13 +1110,14 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	}
 
 	fn get_col_data(&self, table_index: ColumnIndex) -> Option<&RefCell<&'a mut [P]>> {
-		self.get_col_data_by_oracle_offset(self.oracle_offset + table_index)
+		let oracle_id = OracleId::from_index(self.oracle_offset + table_index);
+		self.get_col_data_by_oracle_offset(oracle_id)
 	}
 
 	fn get_col_data_by_oracle_offset(&self, oracle_id: OracleId) -> Option<&RefCell<&'a mut [P]>> {
-		match self.cols.get(oracle_id) {
+		match self.cols.get(oracle_id.index()) {
 			Some(RefCellData::Owned(data)) => Some(data),
-			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
+			Some(RefCellData::SameAsOracleId(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
 	}
@@ -1694,7 +1690,10 @@ mod tests {
 		oracles: &MultilinearOracleSet<B128>,
 		name: &str,
 	) -> Option<OracleId> {
-		(0..oracles.size()).find(|&oracle| oracles.oracle(oracle).name() == Some(name))
+		oracles
+			.iter()
+			.find(|(_, oracle)| oracle.name() == Some(name))
+			.map(|(id, _)| id)
 	}
 
 	#[test]

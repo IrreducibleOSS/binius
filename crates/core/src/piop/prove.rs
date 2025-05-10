@@ -29,16 +29,15 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
+	oracle::OracleId,
 	piop::{
 		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 		CommitMeta,
 	},
 	protocols::{
-		fri,
-		fri::{FRIFolder, FRIParams, FoldRoundOutput},
-		sumcheck,
+		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			immediate_switchover_heuristic,
+			self, immediate_switchover_heuristic,
 			prove::{
 				front_loaded::BatchProver as SumcheckBatchProver, RegularSumcheckProver,
 				SumcheckProver,
@@ -152,7 +151,9 @@ where
 	let packed_multilins = multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 	if !is_sorted_ascending(packed_multilins.iter().map(|mle| mle.n_vars())) {
 		return Err(Error::CommittedsNotSorted);
@@ -226,7 +227,8 @@ where
 		.iter()
 		.enumerate()
 		.map(|(i, unpacked_committed)| {
-			packed_committed(i, unpacked_committed).map(MLEDirectAdapter::from)
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+				.map(MLEDirectAdapter::from)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -375,7 +377,9 @@ where
 	let packed_committed = committed_multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for (i, claim) in claims.iter().enumerate() {
@@ -419,7 +423,7 @@ where
 /// the polynomial is extended by padding with more variables, which corresponds to repeating its
 /// subcube evaluations.
 fn packed_committed<F, P, M>(
-	id: usize,
+	id: OracleId,
 	unpacked_committed: &M,
 ) -> Result<MultilinearExtension<P, Cow<'_, [P]>>, Error>
 where

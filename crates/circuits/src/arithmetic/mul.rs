@@ -174,7 +174,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	let name = name.to_string();
 
 	let [xin_low, xin_high] = array::from_fn(|i| {
-		let bits: [(usize, F); 16] =
+		let bits: [(OracleId, F); 16] =
 			array::from_fn(|j| (xin_bits[16 * i + j], <F as TowerField>::basis(0, j).unwrap()));
 
 		builder
@@ -266,7 +266,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		builder.add_committed_multiple("cout_bits", log_rows, BinaryField1b::TOWER_LEVEL);
 
 	let cout: [OracleId; 4] = array::from_fn(|i| {
-		let bits: [(usize, F); 16] =
+		let bits: [(OracleId, F); 16] =
 			array::from_fn(|j| (cout_bits[16 * i + j], <F as TowerField>::basis(0, j).unwrap()));
 
 		builder

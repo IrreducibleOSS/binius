@@ -31,7 +31,7 @@ mod tests {
 			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
 		},
 		fiat_shamir::HasherChallenger,
-		oracle::ShiftVariant,
+		oracle::{OracleId, ShiftVariant},
 		polynomial::ArithCircuitPoly,
 	};
 	use binius_field::{
@@ -338,7 +338,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let mut add_witness_col_b128 = |oracle_id: usize, values: &[B128]| {
+		let mut add_witness_col_b128 = |oracle_id: OracleId, values: &[B128]| {
 			builder
 				.witness()
 				.unwrap()
