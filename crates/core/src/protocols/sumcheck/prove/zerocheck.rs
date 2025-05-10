@@ -74,8 +74,8 @@ where
 	Ok(())
 }
 
-// Pad a small field multilinear to at least `min_n_vars` variables. Padding is on the high indexed variables
-// via concatenating `2^(min_n_vars - n_vars)` copies of evals.
+// Pad a small field multilinear to at least `min_n_vars` variables. Padding is on the high indexed
+// variables via concatenating `2^(min_n_vars - n_vars)` copies of evals.
 pub fn high_pad_small_multilinear<PBase, P, M>(
 	min_n_vars: usize,
 	multilinear: M,
@@ -120,12 +120,14 @@ where
 
 /// Small-field aware zerocheck prover.
 ///
-/// This is a state machine satisfying the contract of [ZerocheckProver](`super::ZerocheckProver`) trait.
-/// Object safety of the latter allows batching several zerocheck provers over different base fields together.
+/// This is a state machine satisfying the contract of [ZerocheckProver](`super::ZerocheckProver`)
+/// trait. Object safety of the latter allows batching several zerocheck provers over different base
+/// fields together.
 ///
-/// Full zerocheck reduction is laid out in the [batch_verify_zerocheck](super::super::batch_verify_zerocheck).
-/// This struct implements the univariate round, witness folding and prover construction for multilinear rounds,
-/// and witness projection for the univariatizing reduction.
+/// Full zerocheck reduction is laid out in the
+/// [batch_verify_zerocheck](super::super::batch_verify_zerocheck). This struct implements the
+/// univariate round, witness folding and prover construction for multilinear rounds, and witness
+/// projection for the univariatizing reduction.
 #[derive(Debug)]
 #[allow(clippy::type_complexity)]
 pub struct ZerocheckProverImpl<

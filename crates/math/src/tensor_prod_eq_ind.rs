@@ -9,10 +9,11 @@ use bytemuck::zeroed_vec;
 
 use crate::Error;
 
-/// Tensor Product expansion of values with partial eq indicator evaluated at extra_query_coordinates
+/// Tensor Product expansion of values with partial eq indicator evaluated at
+/// extra_query_coordinates
 ///
-/// Let $n$ be log_n_values, $p$, $k$ be the lengths of `packed_values` and `extra_query_coordinates`.
-/// Requires
+/// Let $n$ be log_n_values, $p$, $k$ be the lengths of `packed_values` and
+/// `extra_query_coordinates`. Requires
 ///     * $n \geq k$
 ///     * p = max(1, 2^{n+k} / P::WIDTH)
 /// Let $v$ be a vector corresponding to the first $2^n$ scalar values of `values`.

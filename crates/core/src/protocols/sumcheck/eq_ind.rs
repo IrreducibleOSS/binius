@@ -76,7 +76,8 @@ where
 /// A reduction from a set of eq-ind sumcheck claims to the set of regular sumcheck claims.
 ///
 /// Requirement: eq-ind sumcheck challenges have been sampled before this is called. This routine
-/// adds an extra multiplication by the equality indicator (which is the last multilinear, by agreement).
+/// adds an extra multiplication by the equality indicator (which is the last multilinear, by
+/// agreement).
 pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
@@ -146,7 +147,8 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		bail!(VerificationError::NumberOfRounds);
 	}
 
-	// Incremental equality indicator computation by linear scan over claims in ascending `n_vars` order.
+	// Incremental equality indicator computation by linear scan over claims in ascending `n_vars`
+	// order.
 	let mut eq_ind_eval = F::ONE;
 	let mut last_n_vars = 0;
 	for (claim, multilinear_evals) in claims_evals_non_desc {
@@ -405,8 +407,8 @@ mod tests {
 	fn test_eq_ind_sumcheck_prove_verify_256b() {
 		let n_vars = 8;
 
-		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 2.
+		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 2.
 		test_prove_verify_bivariate_product_helper::<
 			OptimalUnderlier256b,
 			BinaryField128b,
@@ -418,8 +420,8 @@ mod tests {
 	fn test_eq_ind_sumcheck_prove_verify_512b() {
 		let n_vars = 8;
 
-		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 4.
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 4.
 		test_prove_verify_bivariate_product_helper::<
 			OptimalUnderlier512b,
 			BinaryField128b,

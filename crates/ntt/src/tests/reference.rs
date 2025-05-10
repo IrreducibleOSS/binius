@@ -146,7 +146,8 @@ where
 	Ok(())
 }
 
-/// Simple NTT implementation that uses the reference implementation for the forward and inverse NTT.
+/// Simple NTT implementation that uses the reference implementation for the forward and inverse
+/// NTT.
 pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	s_evals: Vec<TA>,
 	_marker: PhantomData<F>,

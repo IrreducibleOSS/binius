@@ -721,9 +721,11 @@ impl MulSU32 {
 	}
 }
 
-/// Simple struct to convert to and from Two's complement representation based on bits. See [`SignConverter::new`]
+/// Simple struct to convert to and from Two's complement representation based on bits. See
+/// [`SignConverter::new`]
 ///
-/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by caller*
+/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by
+/// caller*
 #[derive(Debug)]
 pub struct SignConverter<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
 	twos_complement: TwosComplement<UPrimitive, BIT_LENGTH>,
@@ -744,7 +746,6 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	/// ## Example
 	/// - If the conditional is zero, the output will be the input bits.
 	/// - If the conditional is one, the output will be the two's complement of input bits.
-	///
 	pub fn new(
 		table: &mut TableBuilder,
 		xin: [Col<B1>; BIT_LENGTH],

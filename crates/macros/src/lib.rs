@@ -225,7 +225,6 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 ///
 /// Additionally, `eval_generics` can be used to fix multiple params:
 /// `eval_generics(F = BinaryField128b, G = binius_field::BinaryField64b)`
-///
 #[proc_macro_derive(DeserializeBytes, attributes(deserialize_bytes))]
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
@@ -329,9 +328,11 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 
 /// Use on an impl block for MultivariatePoly, to automatically implement erased_serialize_bytes.
 ///
-/// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data type.
+/// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data
+/// type.
 ///
-/// This prefix can be used to figure out which concrete data type it should use for deserialization later.
+/// This prefix can be used to figure out which concrete data type it should use for deserialization
+/// later.
 #[proc_macro_attribute]
 pub fn erased_serialize_bytes(_attr: TokenStream, item: TokenStream) -> TokenStream {
 	let mut item_impl: ItemImpl = parse_macro_input!(item);

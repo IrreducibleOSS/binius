@@ -71,7 +71,8 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 	)
 }
 
-/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
+/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
+/// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_shifted_sumcheck<F, P>(
 	shifted: &Shifted,
@@ -170,7 +171,8 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	constraint_builders[n_vars].add_sumcheck(oracle_ids, expr, eval);
 }
 
-/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
+/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
+/// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_packed_sumcheck<F, P>(
 	oracles: &MultilinearOracleSet<F>,
@@ -301,8 +303,8 @@ where
 	Ok(())
 }
 
-/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
-/// composite oracle -> None
+/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the
+/// projected eval_point) composite oracle -> None
 #[allow(clippy::type_complexity)]
 #[instrument(
 	skip_all,
@@ -395,7 +397,8 @@ where
 	Ok(())
 }
 
-/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of multilinears
+/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of
+/// multilinears
 #[allow(clippy::type_complexity)]
 pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
 	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,

@@ -8,8 +8,8 @@
 /// Each have pros and cons under little endian representation of multilinears:
 ///  1) Low-to-high - good locality of access (especially for univariate skip), but needs
 ///     deinterleaving which prevents byteslicing; computes partial low foldings.
-///  2) High-to-low - worse locality of access in univariate skip, but byteslicing friendly,
-///     has inplace multithreaded folding; computes partial high foldings.
+///  2) High-to-low - worse locality of access in univariate skip, but byteslicing friendly, has
+///     inplace multithreaded folding; computes partial high foldings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvaluationOrder {
 	/// Substituting lower indexed variables first.

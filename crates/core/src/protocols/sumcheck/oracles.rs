@@ -27,8 +27,8 @@ pub struct OracleClaimMeta {
 	pub oracle_ids: Vec<OracleId>,
 }
 
-/// Create a sumcheck claim out of constraint set. Fails when the constraint set contains zerochecks.
-/// Returns claim and metadata used for evalcheck claim construction.
+/// Create a sumcheck claim out of constraint set. Fails when the constraint set contains
+/// zerochecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	constraint_set: ConstraintSet<F>,
@@ -56,8 +56,8 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	Ok((claim, meta))
 }
 
-/// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular sumchecks.
-/// Returns claim and metadata used for evalcheck claim construction.
+/// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular
+/// sumchecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	constraint_set: ConstraintSet<F>,
@@ -183,8 +183,8 @@ pub fn make_zerocheck_eval_claims<F: Field>(
 
 	let mut evalcheck_claims = Vec::new();
 	for ((oracle_id, n_vars), eval) in iter::zip(ids_with_n_vars, concat_multilinear_evals) {
-		// NB. Two stages of zerocheck reduction (univariate skip and front-loaded high-to-low sumchecks)
-		//     may result in a "gap" between challenges prefix and suffix.
+		// NB. Two stages of zerocheck reduction (univariate skip and front-loaded high-to-low
+		// sumchecks)     may result in a "gap" between challenges prefix and suffix.
 		let eval_point = [
 			&skipped_challenges[..n_vars.min(skipped_challenges.len())],
 			&unskipped_challenges[(max_n_vars - n_vars).min(unskipped_challenges.len())..],

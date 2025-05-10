@@ -233,7 +233,8 @@ where
 		+ PackedExtension<B64>
 		+ PackedExtension<B128>,
 {
-	/// Automatically populate the witness data for all the constant columns in all the tables with a [`TableWitnessIndex<P>`].
+	/// Automatically populate the witness data for all the constant columns in all the tables with
+	/// a [`TableWitnessIndex<P>`].
 	pub fn fill_constant_cols(&mut self) -> Result<(), Error> {
 		for table in self.tables.iter_mut() {
 			match table.as_mut() {
@@ -1211,7 +1212,8 @@ where
 	}
 }
 
-/// Type erased interface for viewing witness columns. Note that `F` will be an extension field of the underlying column's field.
+/// Type erased interface for viewing witness columns. Note that `F` will be an extension field of
+/// the underlying column's field.
 pub trait WitnessColView<F> {
 	/// Returns the scalar at a given index
 	fn get(&self, index: usize) -> F;

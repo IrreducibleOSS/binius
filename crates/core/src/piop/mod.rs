@@ -12,8 +12,8 @@
 //! cryptographically large field $\mathcal{T}_\tau$ by
 //!
 //! 1) ensuring they are in sorted order from fewest number of variables to greatest,
-//! 2) concatenating their coefficients in reverse order and padding with zeros to the next power
-//!    of two size,
+//! 2) concatenating their coefficients in reverse order and padding with zeros to the next power of
+//!    two size,
 //! 3) committing that message with FRI
 //!
 //! Then polynomial IOP (PIOP) proceeds with oracle access to sumcheck claims over these

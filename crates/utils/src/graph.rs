@@ -19,7 +19,6 @@ use std::cmp::Ordering;
 ///     vec![0, 0, 0, 0, 4, 5, 5, 5, 5, 0]
 /// );
 /// ```
-///
 pub fn connected_components(data: &[&[usize]]) -> Vec<usize> {
 	if data.is_empty() {
 		return vec![];

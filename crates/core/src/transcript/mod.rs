@@ -24,7 +24,8 @@ use tracing::warn;
 
 use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
 
-/// Prover transcript over some Challenger that writes to the internal tape and `CanSample<F: TowerField>`
+/// Prover transcript over some Challenger that writes to the internal tape and `CanSample<F:
+/// TowerField>`
 ///
 /// A Transcript is an abstraction over Fiat-Shamir so the prover and verifier can send and receive
 /// data.
@@ -34,7 +35,8 @@ pub struct ProverTranscript<Challenger> {
 	debug_assertions: bool,
 }
 
-/// Verifier transcript over some Challenger that reads from the internal tape and `CanSample<F: TowerField>`
+/// Verifier transcript over some Challenger that reads from the internal tape and `CanSample<F:
+/// TowerField>`
 ///
 /// You must manually call the destructor with `finalize()` to check anything that's written is
 /// fully read out
@@ -78,7 +80,8 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 	unsafe fn advance_mut(&mut self, cnt: usize) {
 		assert!(cnt <= self.buffer.remaining_mut());
 		let written = self.buffer.chunk_mut();
-		// Because out internal buffer is BytesMut cnt <= written.len(), but adding as per implementation notes
+		// Because out internal buffer is BytesMut cnt <= written.len(), but adding as per
+		// implementation notes
 		assert!(cnt <= written.len());
 
 		// NOTE: This is the unsafe part, you are reading the next cnt bytes on the assumption that
@@ -144,7 +147,8 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 		}
 	}
 
-	/// Returns a writeable buffer that only writes the data to the proof tape, without observing it.
+	/// Returns a writeable buffer that only writes the data to the proof tape, without observing
+	/// it.
 	///
 	/// This method should only be used to write openings of commitments that were already written
 	/// to the transcript as an observed message. For example, in the FRI protocol, the prover sends
@@ -212,9 +216,11 @@ impl<Challenger_: Challenger> VerifierTranscript<Challenger_> {
 		}
 	}
 
-	/// Returns a readable buffer that only reads the data from the proof tape, without observing it.
+	/// Returns a readable buffer that only reads the data from the proof tape, without observing
+	/// it.
 	///
-	/// This method should only be used to read advice that was previously written to the transcript as an observed message.
+	/// This method should only be used to read advice that was previously written to the transcript
+	/// as an observed message.
 	pub fn decommitment(&mut self) -> TranscriptReader<impl Buf + '_> {
 		TranscriptReader {
 			buffer: &mut self.combined.buffer,

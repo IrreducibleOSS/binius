@@ -336,7 +336,8 @@ mod tests {
 			(0x00000000, 0x00000001, 0x00000000, 0xFFFFFFFF, true), // 0 - 1 = max_u32 (underflow)
 			(0xFFFFFFFF, 0x00000001, 0x00000000, 0xFFFFFFFE, false), // max - 1 = max - 1
 			(0x80000000, 0x00000001, 0x00000000, 0x7FFFFFFF, false), // Sign bit transition
-			(0x00000005, 0x00000005, 0x00000001, 0xFFFFFFFF, true), // 5 - 5 - 1 = -1 (borrow_in causes underflow)
+			(0x00000005, 0x00000005, 0x00000001, 0xFFFFFFFF, true), /* 5 - 5 - 1 = -1 (borrow_in
+			                                                         * causes underflow) */
 		];
 		TestPlan {
 			dyn_borrow_in: true,

@@ -50,7 +50,8 @@ pub struct NTTOptions {
 	pub thread_settings: ThreadingSettings,
 }
 
-/// An enum that can be used to switch between different NTT implementations without passing AdditiveNTT as a type parameter.
+/// An enum that can be used to switch between different NTT implementations without passing
+/// AdditiveNTT as a type parameter.
 #[derive(Debug)]
 pub enum DynamicDispatchNTT<F: BinaryField> {
 	SingleThreaded(SingleThreadedNTT<F>),

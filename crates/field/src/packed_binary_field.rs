@@ -541,8 +541,8 @@ pub mod test_utils {
 		};
 	}
 
-	/// Test if `mul_alpha_func` operation is a valid multiply by alpha operation on the given value for
-	/// all possible packed fields.
+	/// Test if `mul_alpha_func` operation is a valid multiply by alpha operation on the given value
+	/// for all possible packed fields.
 	macro_rules! define_mul_alpha_tests {
 		($mul_alpha_func:path, $constraint:path) => {
 			$crate::packed_binary_field::test_utils::define_check_packed_mul_alpha!(
@@ -642,8 +642,8 @@ pub mod test_utils {
 		};
 	}
 
-	/// Test if `$constraint::make_packed_transformation` operation creates a valid transformation operation on the given value for
-	/// all possible packed fields.
+	/// Test if `$constraint::make_packed_transformation` operation creates a valid transformation
+	/// operation on the given value for all possible packed fields.
 	macro_rules! define_transformation_tests {
 		($constraint:path) => {
 			$crate::packed_binary_field::test_utils::define_check_packed_transformation!(

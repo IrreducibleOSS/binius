@@ -539,8 +539,8 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 ///    IOP is compiled to an interactive protocol, these polynomial are committed with a polynomial
 ///    commitment scheme.
 /// 3. *Virtual oracles*. A virtual multilinear oracle is not actually sent by the prover, but
-///    instead admits an interactive reduction for evaluation queries to evaluation queries to
-///    other oracles. This is formalized in [DP23] Section 4.
+///    instead admits an interactive reduction for evaluation queries to evaluation queries to other
+///    oracles. This is formalized in [DP23] Section 4.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[derive(Debug, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]

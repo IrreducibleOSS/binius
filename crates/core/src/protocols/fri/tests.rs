@@ -111,7 +111,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let eval_query = backend
 		.multilinear_query::<F>(&verifier_challenges)
 		.unwrap();
-	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.
+	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean
+	// hypercube of) a multilinear polynomial.
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();
 

@@ -393,8 +393,8 @@ impl RoundBatch {
 					//
 					// That means two things:
 					// 1. The value is assigned by `a_theta`.
-					// 2. We have to skip mutably borrowing it here because that would overlap
-					//    with the mutable borrow of `a_theta` above.
+					// 2. We have to skip mutably borrowing it here because that would overlap with
+					//    the mutable borrow of `a_theta` above.
 					let mut b: Option<std::cell::RefMut<'_, [u64]>> = if (x, y) != (0, 0) {
 						Some(index.get_mut_as(self.b[(x, y)])?)
 					} else {

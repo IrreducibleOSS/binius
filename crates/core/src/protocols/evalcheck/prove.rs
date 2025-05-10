@@ -49,9 +49,11 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
-	/// Mutable reference to the oracle set which is modified to create new claims arising from sumchecks
+	/// Mutable reference to the oracle set which is modified to create new claims arising from
+	/// sumchecks
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
-	/// Mutable reference to the witness index which is is populated by the prover for new claims arising from sumchecks
+	/// Mutable reference to the witness index which is is populated by the prover for new claims
+	/// arising from sumchecks
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
 
 	/// The committed evaluation claims arising in this round
@@ -73,7 +75,8 @@ where
 
 	// The unique index of a claim in this round.
 	claim_to_index: EvalPointOracleIdMap<usize, F>,
-	// Claims that have been visited in this round, used to deduplicate claims when collecting subclaims in a BFS manner.
+	// Claims that have been visited in this round, used to deduplicate claims when collecting
+	// subclaims in a BFS manner.
 	visited_claims: EvalPointOracleIdMap<(), F>,
 	// Memoization of evaluations of claims the prover sees in this round
 	evals_memoization: EvalPointOracleIdMap<F, F>,
@@ -88,8 +91,8 @@ where
 	Backend: ComputationBackend,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and
-	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles & multilinears)
-	/// as well as committed eval claims accumulator.
+	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles
+	/// & multilinears) as well as committed eval claims accumulator.
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
 		witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
@@ -125,17 +128,19 @@ where
 	/// Prove an evalcheck claim.
 	///
 	/// Given a prover state containing [`MultilinearOracleSet`] indexing into given
-	/// [`MultilinearExtensionIndex`], we prove an [`EvalcheckMultilinearClaim`] (stating that given composite
-	/// `poly` equals `eval` at `eval_point`) by recursively processing each of the multilinears.
-	/// This way the evalcheck claim gets transformed into an [`EvalcheckHint`]
+	/// [`MultilinearExtensionIndex`], we prove an [`EvalcheckMultilinearClaim`] (stating that given
+	/// composite `poly` equals `eval` at `eval_point`) by recursively processing each of the
+	/// multilinears. This way the evalcheck claim gets transformed into an [`EvalcheckHint`]
 	/// and a new set of claims on:
 	///  * Committed polynomial evaluations
-	///  * New sumcheck constraints that need to be proven in subsequent rounds (those get appended to `new_sumchecks`)
+	///  * New sumcheck constraints that need to be proven in subsequent rounds (those get appended
+	///    to `new_sumchecks`)
 	///
 	/// All of the `new_sumchecks` constraints follow the same pattern:
 	///  * they are always a product of two multilins (composition polynomial is `BivariateProduct`)
 	///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
-	///  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
+	///  * other multilin is a projection of one of the evalcheck claim multilins to its first
+	///    variables
 	pub fn prove<Challenger_: Challenger>(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
@@ -162,8 +167,10 @@ where
 
 		self.claims_queue.extend(evalcheck_claims.clone());
 
-		// Step 1: Use modified BFS to memoize evaluations. For each claim, if there is a subclaim and we know the evaluation of the subclaim, we add the subclaim to the claims_queue
-		// Otherwise, we find the evaluation of the claim by querying the witness data from the oracle id and evaluation point
+		// Step 1: Use modified BFS to memoize evaluations. For each claim, if there is a subclaim
+		// and we know the evaluation of the subclaim, we add the subclaim to the claims_queue
+		// Otherwise, we find the evaluation of the claim by querying the witness data from the
+		// oracle id and evaluation point
 		let mle_fold_full_span = tracing::debug_span!(
 			"[task] MLE Fold Full",
 			phase = "evalcheck",
@@ -223,8 +230,8 @@ where
 		}
 		drop(mle_fold_full_span);
 
-		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the subclaims by stepping through subclaims in a DFS manner
-		// and deduplicating claims.
+		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the
+		// subclaims by stepping through subclaims in a DFS manner and deduplicating claims.
 		for claim in evalcheck_claims {
 			self.prove_multilinear(claim, transcript)?;
 		}
@@ -652,7 +659,8 @@ where
 		}
 	}
 
-	/// Function that queries the witness data from the oracle id and evaluation point to find the evaluation of the multilinear
+	/// Function that queries the witness data from the oracle id and evaluation point to find the
+	/// evaluation of the multilinear
 	#[instrument(
 		skip_all,
 		name = "EvalcheckProverState::make_new_eval_claim",

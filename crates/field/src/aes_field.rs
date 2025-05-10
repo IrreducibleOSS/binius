@@ -39,7 +39,8 @@ use crate::{
 // that is isomorphically included into binary tower, i.e.:
 //  - AESTowerField16b is GF(2^16) / (x^2 + x * x_2 + 1) where `x_2` is 0x10 from
 // BinaryField8b isomorphically projected to AESTowerField8b.
-//  - AESTowerField32b is GF(2^32) / (x^2 + x * x_3 + 1), where `x_3` is 0x1000 from AESTowerField16b.
+//  - AESTowerField32b is GF(2^32) / (x^2 + x * x_3 + 1), where `x_3` is 0x1000 from
+//    AESTowerField16b.
 //  ...
 binary_field!(pub AESTowerField8b(u8), 0xD0);
 binary_field!(pub AESTowerField16b(u16), 0x4745);

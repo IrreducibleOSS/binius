@@ -270,8 +270,8 @@ impl DivSS32 {
 			);
 		}
 
-		// Add constraint to make sure that |r| < |q| by computing s = |r| - |q| in a larger bit length.
-		// There maybe a better way to do it with channels and simpler comparator logic.
+		// Add constraint to make sure that |r| < |q| by computing s = |r| - |q| in a larger bit
+		// length. There maybe a better way to do it with channels and simpler comparator logic.
 		let r_is_negative = out_rem_bits[31];
 		let mut inner_abs_rem_table = table.with_namespace("rem_abs_value");
 		let abs_r_value =

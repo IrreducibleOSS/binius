@@ -223,7 +223,8 @@ where
 						max_degree_remaining,
 						..
 					}) => {
-						// Must finish all claims that are ready this round before receiving the round proof.
+						// Must finish all claims that are ready this round before receiving the
+						// round proof.
 						if claim.n_vars() == self.round {
 							return Err(Error::ExpectedFinishClaim);
 						}

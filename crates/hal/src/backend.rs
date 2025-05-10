@@ -30,7 +30,8 @@ pub trait HalSlice<P: Debug + Send + Sync>:
 
 impl<P: Send + Sync + Debug + 'static> HalSlice<P> for Vec<P> {}
 
-/// An abstraction to interface with acceleration hardware to perform computation intensive operations.
+/// An abstraction to interface with acceleration hardware to perform computation intensive
+/// operations.
 pub trait ComputationBackend: Send + Sync + Debug {
 	type Vec<P: Send + Sync + Debug + 'static>: HalSlice<P>;
 

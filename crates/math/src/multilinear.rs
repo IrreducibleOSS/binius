@@ -20,7 +20,8 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		1 << self.n_vars()
 	}
 
-	/// Binary logarithm of the extension degree (always exists because we only support power-of-two extension degrees)
+	/// Binary logarithm of the extension degree (always exists because we only support power-of-two
+	/// extension degrees)
 	fn log_extension_degree(&self) -> usize;
 
 	/// Get the evaluations of the polynomial at a vertex of the hypercube.
@@ -97,13 +98,13 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// Get a subcube of the boolean hypercube of a given size.
 	///
 	/// Subcube of a multilinear is a set of evaluations $M(\beta_i\Vert x_j)$ , where
-	/// $\beta_i \in \mathcal{B}_k$ iterates over `subcube_vars`-sized hypercube and $x_j$ is a binary
-	/// representation of the `subcube_index`.
+	/// $\beta_i \in \mathcal{B}_k$ iterates over `subcube_vars`-sized hypercube and $x_j$ is a
+	/// binary representation of the `subcube_index`.
 	///
-	/// The result slice `evals` holds subcube evaluations in lexicographic order of $\beta_i$, with the
-	/// fastest stride corresponding to the first variable. Each scalar of the packed field `P` is assumed
-	/// to be a `2^log_embedding_degree` extension field, where subcube evaluations are assigned to bases
-	/// in lexicographic order of the lowest `log_embedding_degree` variables.
+	/// The result slice `evals` holds subcube evaluations in lexicographic order of $\beta_i$, with
+	/// the fastest stride corresponding to the first variable. Each scalar of the packed field `P`
+	/// is assumed to be a `2^log_embedding_degree` extension field, where subcube evaluations are
+	/// assigned to bases in lexicographic order of the lowest `log_embedding_degree` variables.
 	///
 	/// Note that too large `log_embedding_degree` values may cause this method to fail.
 	fn subcube_evals(

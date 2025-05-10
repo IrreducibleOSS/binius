@@ -22,14 +22,14 @@ use crate::{extrapolate_line_scalar, Error};
 /// ## Arguments
 ///
 /// * `point` - the evaluation point. The length specifies the number of variables in the
-///     concatenated multilinear.
+///   concatenated multilinear.
 /// * `n_pieces_by_vars` - the number of multilinear pieces, indexed by the number of variables.
-///     Entry at index `i` is the number of multilinears with `i` variables. The sum of
-///     `n_pieces_by_vars[i] * 2^i` for all indices `i` must be at most `2^n`, where `n` is the
-///     length of `point.`.
+///   Entry at index `i` is the number of multilinears with `i` variables. The sum of
+///   `n_pieces_by_vars[i] * 2^i` for all indices `i` must be at most `2^n`, where `n` is the length
+///   of `point.`.
 /// * `piece_evals` - the evaluations of the multilinear pieces at the corresponding prefixes of
-///     `point`. The length must be equal to the sum of the values in `n_pieces_by_vars`. This must
-///     be in the *same order* as the corresponding multilinears are implicitly concatenated.
+///   `point`. The length must be equal to the sum of the values in `n_pieces_by_vars`. This must be
+///   in the *same order* as the corresponding multilinears are implicitly concatenated.
 ///
 /// ## Example
 ///

@@ -426,7 +426,8 @@ mod tests {
 		.unwrap()
 	}
 
-	//Testing with larger oracles, and random constants, in a random order. To see if given appropriate flushes with constants the channel balances.
+	//Testing with larger oracles, and random constants, in a random order. To see if given
+	// appropriate flushes with constants the channel balances.
 	#[test]
 	fn test_flush_with_const_large() {
 		test_circuit(|builder| {

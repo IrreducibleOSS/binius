@@ -14,7 +14,8 @@ use crate::{
 	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 
-/// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
+/// Implementation of ComputationBackend for the default Backend that uses the CPU for all
+/// computations.
 #[derive(Clone, Debug)]
 pub struct CpuBackend;
 

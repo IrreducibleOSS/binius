@@ -70,7 +70,8 @@ where
 		constraint_system.max_channel_id,
 	)?;
 
-	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually shifts).
+	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually
+	// shifts).
 	for oracle in constraint_system.oracles.iter() {
 		validate_virtual_oracle_witness(oracle, &constraint_system.oracles, witness)?;
 	}
@@ -101,7 +102,8 @@ where
 
 	match oracle.variant {
 		MultilinearPolyVariant::Committed => {
-			// Committed oracles don't need to be checked as they are allowed to contain any data here
+			// Committed oracles don't need to be checked as they are allowed to contain any data
+			// here
 		}
 		MultilinearPolyVariant::Transparent(inner) => {
 			for i in 0..1 << n_vars {

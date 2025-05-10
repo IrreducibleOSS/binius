@@ -29,15 +29,15 @@ use crate::{
 /// A zerocheck prover interface.
 ///
 /// The primary reason for providing this logic via a trait is the ability to type erase univariate
-/// round small fields, which may differ between the provers, and to decouple the batch prover implementation
-/// from the relatively complex type signatures of the individual provers.
+/// round small fields, which may differ between the provers, and to decouple the batch prover
+/// implementation from the relatively complex type signatures of the individual provers.
 ///
 /// The batch prover must obey a specific sequence of calls: [`Self::execute_univariate_round`]
-/// should be followed by [`Self::fold_univariate_round`], and then [`Self::project_to_skipped_variables`].
-/// Getters [`Self::n_vars`] and [`Self::domain_size`] are used for alignment and maximal domain size calculation
-/// required by the Lagrange representation of the univariate round polynomial.
-/// Folding univariate round results in a [`SumcheckProver`] instance that can be driven to completion to prove the
-/// remaining multilinear rounds.
+/// should be followed by [`Self::fold_univariate_round`], and then
+/// [`Self::project_to_skipped_variables`]. Getters [`Self::n_vars`] and [`Self::domain_size`] are
+/// used for alignment and maximal domain size calculation required by the Lagrange representation
+/// of the univariate round polynomial. Folding univariate round results in a [`SumcheckProver`]
+/// instance that can be driven to completion to prove the remaining multilinear rounds.
 ///
 /// This trait is object-safe.
 pub trait ZerocheckProver<'a, P: PackedField> {
@@ -46,7 +46,8 @@ pub trait ZerocheckProver<'a, P: PackedField> {
 
 	/// Maximal required Lagrange domain size among compositions in this prover.
 	///
-	/// Returns `None` if the current prover state doesn't contain information about the domain size.
+	/// Returns `None` if the current prover state doesn't contain information about the domain
+	/// size.
 	fn domain_size(&self, skip_rounds: usize) -> Option<usize>;
 
 	/// Computes the prover message for the univariate round as a univariate polynomial.
@@ -139,8 +140,8 @@ where
 		.upcast_arc_dyn(),
 	);
 
-	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but this sumcheck
-	//         is very small anyway.
+	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but
+	// this sumcheck         is very small anyway.
 	let prover = RegularSumcheckProver::<FDomain, P, _, _, _>::new(
 		EvaluationOrder::HighToLow,
 		projected_multilinears,

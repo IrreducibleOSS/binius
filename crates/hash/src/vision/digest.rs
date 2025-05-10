@@ -369,7 +369,8 @@ mod tests {
 		let data = [0xde, 0xad, 0xbe, 0xef];
 		hasher.update(data);
 		let out = hasher.finalize();
-		// This hash is retrieved from a modified python implementation with the Keccak padding scheme and the changed mds matrix.
+		// This hash is retrieved from a modified python implementation with the Keccak padding
+		// scheme and the changed mds matrix.
 		let expected = &hex!("8ed389809fabe91cead4786eb08e2d32647a9ac69143040de500e4465c72f173");
 		assert_eq!(expected, &*out);
 	}

@@ -292,7 +292,8 @@ pub trait PackedField:
 
 /// Iterate over scalar values in a packed field slice.
 ///
-/// The iterator skips the first `offset` elements. This is more efficient than skipping elements of the iterator returned.
+/// The iterator skips the first `offset` elements. This is more efficient than skipping elements of
+/// the iterator returned.
 #[inline]
 pub fn iter_packed_slice_with_offset<P: PackedField>(
 	packed: &[P],
@@ -326,7 +327,8 @@ pub unsafe fn get_packed_slice_unchecked<P: PackedField>(packed: &[P], i: usize)
 		unsafe { *(packed.as_ptr() as *const P::Scalar).add(i) }
 	} else {
 		// Safety:
-		// - `i / P::WIDTH` is within the bounds of `packed` if `i` is less than `len_packed_slice(packed)`
+		// - `i / P::WIDTH` is within the bounds of `packed` if `i` is less than
+		//   `len_packed_slice(packed)`
 		// - `i % P::WIDTH` is always less than `P::WIDTH
 		unsafe {
 			packed

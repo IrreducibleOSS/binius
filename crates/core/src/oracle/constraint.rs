@@ -15,7 +15,8 @@ use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
 /// concrete types.
 pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 
-/// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
+/// Constraint is a type erased composition along with a predicate on its values on the boolean
+/// hypercube
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Constraint<F: Field> {
 	pub name: String,
@@ -23,15 +24,16 @@ pub struct Constraint<F: Field> {
 	pub predicate: ConstraintPredicate<F>,
 }
 
-/// Predicate can either be a sum of values of a composition on the hypercube (sumcheck) or equality to zero
-/// on the hypercube (zerocheck)
+/// Predicate can either be a sum of values of a composition on the hypercube (sumcheck) or equality
+/// to zero on the hypercube (zerocheck)
 #[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
 pub enum ConstraintPredicate<F: Field> {
 	Sum(F),
 	Zero,
 }
 
-/// Constraint set is a group of constraints that operate over the same set of oracle-identified multilinears
+/// Constraint set is a group of constraints that operate over the same set of oracle-identified
+/// multilinears
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct ConstraintSet<F: Field> {
 	pub n_vars: usize,
@@ -39,7 +41,8 @@ pub struct ConstraintSet<F: Field> {
 	pub constraints: Vec<Constraint<F>>,
 }
 
-// A deferred constraint constructor that instantiates index composition after the superset of oracles is known
+// A deferred constraint constructor that instantiates index composition after the superset of
+// oracles is known
 #[allow(clippy::type_complexity)]
 struct UngroupedConstraint<F: Field> {
 	name: String,
@@ -49,7 +52,8 @@ struct UngroupedConstraint<F: Field> {
 }
 
 /// A builder struct that turns individual compositions over oraclized multilinears into a set of
-/// type erased `IndexComposition` instances operating over a superset of oracles of all constraints.
+/// type erased `IndexComposition` instances operating over a superset of oracles of all
+/// constraints.
 #[derive(Default)]
 pub struct ConstraintSetBuilder<F: Field> {
 	constraints: Vec<UngroupedConstraint<F>>,

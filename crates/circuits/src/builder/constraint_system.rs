@@ -410,14 +410,15 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.transparent(poly)
 	}
 
-	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars` variables.
+	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars`
+	/// variables.
 	///
 	/// Arguments:
 	/// - `name`: The name of the oracle.
 	/// - `id`: The id of the oracle.
 	/// - `n_pad_vars`: The number of padding variables in the new column.
-	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1 << m`,
-	///   and it is the index of the nonzero block.
+	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1
+	///   << m`, and it is the index of the nonzero block.
 	pub fn add_zero_padded(
 		&mut self,
 		name: impl ToString,
@@ -441,7 +442,8 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		}
 	}
 
-	/// Anything pushed to the namespace will become part of oracle name, which is useful for debugging.
+	/// Anything pushed to the namespace will become part of oracle name, which is useful for
+	/// debugging.
 	///
 	/// Use `pop_namespace(&mut self)` to remove the latest name.
 	///
@@ -478,7 +480,8 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	///
 	/// Fails if no columns are provided, or not all columns have the same number of rows.
 	///
-	/// This is useful for writing circuits with internal columns that depend on the height of input columns.
+	/// This is useful for writing circuits with internal columns that depend on the height of input
+	/// columns.
 	pub fn log_rows(
 		&self,
 		oracle_ids: impl IntoIterator<Item = OracleId>,

@@ -20,7 +20,8 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// * $1, X_0, X_1, X_0X_1, X_2, \ldots, X_0 X_1 \ldots X_{\iota-1}$
 ///
 /// Thus, $\mathcal{T}_{\iota+k}$ has a $\mathcal{T}_{\iota}$-basis of size $2^k$:
-/// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1} \ldots X_{\iota+k-1}$
+/// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1}
+///   \ldots X_{\iota+k-1}$
 #[derive(Debug, Copy, Clone, SerializeBytes, DeserializeBytes)]
 pub struct TowerBasis<F: Field> {
 	k: usize,

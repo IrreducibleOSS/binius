@@ -18,8 +18,9 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, NTTShape, SingleThreadedNTT};
 
-/// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and inverse transformation of `reference_ntt` on `data`
-/// and that the result of the roundtrip is the same as the original data.
+/// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and
+/// inverse transformation of `reference_ntt` on `data` and that the result of the roundtrip is the
+/// same as the original data.
 fn check_roundtrip_with_reference<F, P>(
 	reference_ntt: &impl AdditiveNTT<F>,
 	ntt: &impl AdditiveNTT<F>,

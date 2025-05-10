@@ -66,7 +66,8 @@ where
 	}
 
 	lhs.iter_mut().enumerate().for_each(|(i, lhs_elem)| {
-		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
+		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing
+		// PackedExtension
 		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
@@ -91,7 +92,8 @@ where
 	}
 
 	lhs.par_iter_mut().enumerate().for_each(|(i, lhs_elem)| {
-		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
+		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing
+		// PackedExtension
 		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);

@@ -38,7 +38,8 @@ pub struct EvalcheckVerifier<'a, F>
 where
 	F: TowerField,
 {
-	/// Mutable reference to the oracle set which is modified to create new claims arising from sumchecks
+	/// Mutable reference to the oracle set which is modified to create new claims arising from
+	/// sumchecks
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
 	/// The committed evaluation claims in this round
@@ -76,8 +77,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 	/// Verify an evalcheck claim.
 	///
-	/// For each claim, we verify the proof by recursively verifying the subclaims in a DFS manner deduplicating previously verified claims
-	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for more details.
+	/// For each claim, we verify the proof by recursively verifying the subclaims in a DFS manner
+	/// deduplicating previously verified claims
+	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for more
+	/// details.
 	#[instrument(skip_all, name = "EvalcheckVerifierState::verify", level = "debug")]
 	pub fn verify<Challenger_: Challenger>(
 		&mut self,

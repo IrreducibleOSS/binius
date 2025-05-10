@@ -11,8 +11,8 @@ use super::{
 /// different `std::iter::Iterator` types while `IndexedParallelIterator` is implemented for
 /// `ParallelWrapper<I>` where `I` is `IndexedParallelIteratorInner`.
 ///
-/// Currently only those methods are implemented that are used in the `binius` code base. All other methods
-/// can be implemented upon request.
+/// Currently only those methods are implemented that are used in the `binius` code base. All other
+/// methods can be implemented upon request.
 pub(crate) trait IndexedParallelIteratorInner: ParallelIteratorInner {
 	#[inline(always)]
 	fn with_min_len(self, _min: usize) -> Self
@@ -101,9 +101,10 @@ impl<I: Iterator> Iterator for Chunks<I> {
 impl<I: Iterator> IndexedParallelIteratorInner for Chunks<I> {}
 
 // Implement `IndexedParallelIteratorInner` for different `std::iter::Iterator` types.
-// Unfortunately, we can't implement it for all `std::iter::Iterator` types because of the collisions
-// with generic implementation for tuples (see `multizip_impls!` macro in `parallel_iterator.rs`).
-// If you need to implement it for some other type, please add implementation here.
+// Unfortunately, we can't implement it for all `std::iter::Iterator` types because of the
+// collisions with generic implementation for tuples (see `multizip_impls!` macro in
+// `parallel_iterator.rs`). If you need to implement it for some other type, please add
+// implementation here.
 impl<Idx> IndexedParallelIteratorInner for std::ops::Range<Idx> where Self: Iterator<Item = Idx> {}
 impl<T> IndexedParallelIteratorInner for std::slice::IterMut<'_, T> {}
 impl<L: IndexedParallelIteratorInner, R: IndexedParallelIteratorInner> IndexedParallelIteratorInner

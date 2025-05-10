@@ -321,7 +321,8 @@ fn verify_channels_balance<F: TowerField>(
 }
 
 /// For each flush,
-/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)$
+/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r
+///   + F_0 + F_1 s + F_2 s^1 + …)$
 /// - otherwise the product is over the linear combination $r + F_0 + F_1 s + F_2 s^1 + …$
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,

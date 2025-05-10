@@ -91,8 +91,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 	///
 	/// ## Throws
 	///
-	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
-	///   elements.
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
 	fn encode_batch_inplace<P: PackedField<Scalar = F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
 		ntt: &NTT,
