@@ -10,17 +10,45 @@ use super::{
 	B64, B8,
 };
 
+/// Indexed lookup tables are fixed-size tables where every entry is easily determined by its
+/// index.
+///
+/// Indexed lookup tables cover a large and useful class of tables, such as lookup tables for
+/// bitwise operations, addition of small integer values, multiplication, etc. The entry encodes
+/// an input and an output, where the index encodes the input. For example, a bitwise AND table
+/// would have 2 8-bit input values and one 8-bit output value. The index encodes the input by
+/// concatenating the 8-bit inputs into a 16-bit unsigned integer.
+///
+/// This trait helps to count the number of times a table, which is already filled, reads from a
+/// lookup table. See the documentation for [`tally`] for more information.
 pub trait IndexedLookup<F: TowerField> {
 	/// Binary logarithm of the number of table entries.
-	///
-	/// This must be at most 32.
 	fn log_size(&self) -> usize;
 
+	/// Encode a table entry as a table index.
 	fn entry_to_index(&self, entry: &[F]) -> usize;
 }
 
+/// Determine the read counts of each entry in an indexed lookup table.
+///
+/// Before a lookup table witness can be filled, the number of times each entry is read must be
+/// known. Reads from indexed lookup tables are a special case where the counts are difficult to
+/// track during emulation, because the use of the lookup tables is an arithmetization detail. For
+/// example, emulation of the system model should not need to know whether integer additions within
+/// a table are constraint using zero constraints or a lookup table for the limbs. In most cases of
+/// practical interest, the lookup table is indexed.
+///
+/// The method to tally counts is to scan all tables in the constraint system and boundaries
+/// values, and identify those that pull from the lookup table's channel. Then we iterate over the
+/// values read from the table and count all the indices.
+///
+/// ## Returns
+///
+/// A vector of counts, whose length is equal to `1 << indexed_lookup.log_size()`.
 pub fn tally<P>(
 	cs: &ConstraintSystem<B128>,
+	// TODO: This doesn't actually need mutable access. But must of the WitnessIndex methods only
+	// allow mutable access.
 	witness: &mut WitnessIndex<P>,
 	boundaries: &[Boundary<B128>],
 	chan: ChannelId,
@@ -43,14 +71,24 @@ where
 			for flush in &partition.flushes {
 				if flush.channel_id == chan && flush.direction == FlushDirection::Pull {
 					if let Some(table_index) = witness.get_table(table.id()) {
+						let table_size = table_index.size();
+						// TODO: This should be parallelized, which is pretty tricky.
 						let segment = table_index.full_segment();
 						let cols = flush
 							.column_indices
 							.iter()
 							.map(|&col_index| segment.get_dyn(col_index))
 							.collect::<Result<Vec<_>, _>>()?;
+
+						if !flush.selectors.is_empty() {
+							// TODO: check flush selectors
+							todo!("tally does not support selected table reads yet");
+						}
+
 						let mut elems = vec![B128::ZERO; cols.len()];
-						for i in 0..segment.size() {
+						// It's important that this is only the table size, not the full segment
+						// size. The entries after the table size are not flushed.
+						for i in 0..table_size {
 							for (elem, col) in iter::zip(&mut elems, &cols) {
 								*elem = col.get(i);
 							}
@@ -76,7 +114,7 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::{iter::repeat_with, sync::atomic::AtomicU32};
+	use std::{cmp::Reverse, iter::repeat_with};
 
 	use binius_field::{
 		arch::OptimalUnderlier128b,
@@ -85,9 +123,9 @@ mod tests {
 		packed::{get_packed_slice, set_packed_slice},
 		PackedFieldIndexable,
 	};
-	use binius_math::MultilinearPoly;
 	use bumpalo::Bump;
-	use rand::prelude::StdRng;
+	use itertools::Itertools;
+	use rand::prelude::{Rng, SeedableRng, StdRng};
 
 	use super::*;
 	use crate::{
@@ -97,6 +135,102 @@ mod tests {
 		},
 		gadgets::lookup::LookupProducer,
 	};
+
+	/// Unit test for a fixed lookup table, which requires counting lookups during witness
+	/// generation of the looker tables.
+	#[test]
+	fn test_fixed_lookup_producer() {
+		let mut cs = ConstraintSystem::new();
+		let incr_lookup_chan = cs.add_channel("incr lookup");
+
+		let n_multiplicity_bits = 8;
+
+		let mut incr_table = cs.add_table("increment");
+		let incr_lookup = IncrLookup::new(&mut incr_table, incr_lookup_chan, n_multiplicity_bits);
+
+		let mut looker_1 = cs.add_table("looker 1");
+		let looker_1_id = looker_1.id();
+		let incr_1 = IncrLooker::new(&mut looker_1, incr_lookup_chan);
+
+		let mut looker_2 = cs.add_table("looker 2");
+		let looker_2_id = looker_2.id();
+		let incr_2 = IncrLooker::new(&mut looker_2, incr_lookup_chan);
+
+		let looker_1_size = 5;
+		let looker_2_size = 6;
+
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let inputs_1 = repeat_with(|| {
+			let input = rng.gen::<u8>();
+			let carry_in_bit = rng.gen_bool(0.5);
+			(input, carry_in_bit)
+		})
+		.take(looker_1_size)
+		.collect::<Vec<_>>();
+
+		witness
+			.fill_table_sequential(
+				&ClosureFiller::new(looker_1_id, |inputs, segment| {
+					incr_1.populate(segment, inputs.iter().copied())
+				}),
+				&inputs_1,
+			)
+			.unwrap();
+
+		let inputs_2 = repeat_with(|| {
+			let input = rng.gen::<u8>();
+			let carry_in_bit = rng.gen_bool(0.5);
+			(input, carry_in_bit)
+		})
+		.take(looker_2_size)
+		.collect::<Vec<_>>();
+
+		witness
+			.fill_table_sequential(
+				&ClosureFiller::new(looker_2_id, |inputs, segment| {
+					incr_2.populate(segment, inputs.iter().copied())
+				}),
+				&inputs_2,
+			)
+			.unwrap();
+
+		let boundary_reads = vec![
+			merge_incr_vals(111, false, 111, false),
+			merge_incr_vals(111, true, 112, false),
+			merge_incr_vals(255, false, 255, false),
+			merge_incr_vals(255, true, 0, true),
+		];
+		let boundaries = boundary_reads
+			.into_iter()
+			.map(|val| Boundary {
+				values: vec![B32::new(val).into()],
+				direction: FlushDirection::Pull,
+				channel_id: incr_lookup_chan,
+				multiplicity: 1,
+			})
+			.collect::<Vec<_>>();
+
+		// Tally the lookup counts from the looker tables
+		let counts =
+			tally(&cs, &mut witness, &boundaries, incr_lookup_chan, &IncrIndexedLookup).unwrap();
+
+		// Fill the lookup table with the sorted counts
+		let sorted_counts = counts
+			.into_iter()
+			.enumerate()
+			.sorted_by_key(|(_, count)| Reverse(*count))
+			.collect::<Vec<_>>();
+
+		witness
+			.fill_table_sequential(&incr_lookup, &sorted_counts)
+			.unwrap();
+
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
+	}
 
 	fn merge_incr_cols(
 		table: &mut TableBuilder,
@@ -117,7 +251,7 @@ mod tests {
 		)
 	}
 
-	fn merge_incr_vals(input: u8, carry_out: bool, output: u8, carry_in: bool) -> u32 {
+	fn merge_incr_vals(input: u8, carry_in: bool, output: u8, carry_out: bool) -> u32 {
 		((carry_out as u32) << 17)
 			| ((carry_in as u32) << 16)
 			| ((output as u32) << 8)
@@ -178,9 +312,6 @@ mod tests {
 					| ((carry_in_bit as u32) << 16)
 					| ((output_i as u32) << 8)
 					| input_i as u32;
-				//
-				// let index = ((carry_in_bit as usize) << 8) | input_i as usize;
-				// lookup_counts[index].fetch_add(1, Ordering::AcqRel);
 			}
 
 			Ok(())
@@ -212,7 +343,10 @@ mod tests {
 			events: impl Iterator<Item = &'a (u8, bool)>,
 		) -> anyhow::Result<()>
 		where
-			P: PackedFieldIndexable<Scalar: TowerField> + PackedExtension<B1> + PackedExtension<B8>,
+			P: PackedFieldIndexable<Scalar = B128>
+				+ PackedExtension<B1>
+				+ PackedExtension<B8>
+				+ PackedExtension<B32>,
 		{
 			{
 				let mut input = witness.get_mut_as::<u8, _, 1>(self.input)?;
@@ -229,32 +363,6 @@ mod tests {
 		}
 	}
 
-	struct IncrLookerFiller<'a> {
-		table_id: usize,
-		incr_looker: &'a IncrLooker,
-		lookup_counts: &'a [AtomicU32],
-	}
-
-	impl<P> TableFiller<P> for IncrLookerFiller<'_>
-	where
-		P: PackedField<Scalar: TowerField> + PackedExtension<B1>,
-	{
-		type Event = (u8, bool);
-
-		fn id(&self) -> TableId {
-			self.table_id
-		}
-
-		fn fill<'a>(
-			&'a self,
-			events: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<P>,
-		) -> anyhow::Result<()> {
-			self.incr_looker
-				.populate(witness, events, self.lookup_counts)
-		}
-	}
-
 	struct IncrLookup {
 		table_id: TableId,
 		merged: Col<B32>,
@@ -263,6 +371,7 @@ mod tests {
 
 	impl IncrLookup {
 		fn new(table: &mut TableBuilder, chan: ChannelId, n_multiplicity_bits: usize) -> Self {
+			table.require_fixed_size(IncrIndexedLookup.log_size());
 			let merged = table.add_committed::<B32, 1>("merged");
 			let lookup_producer = LookupProducer::new(table, chan, &[merged], n_multiplicity_bits);
 			Self {
@@ -273,8 +382,10 @@ mod tests {
 		}
 	}
 
+	// TODO: It seems very possible to make a generic table filler for indexed lookup tables.
 	impl TableFiller for IncrLookup {
-		type Event = (u32, u32);
+		// Tuple of index and count
+		type Event = (usize, u32);
 
 		fn id(&self) -> TableId {
 			self.table_id
@@ -288,12 +399,13 @@ mod tests {
 			{
 				let mut merged = witness.get_mut_as::<u32, _, 1>(self.merged)?;
 				for (merged_i, &(index, _)) in iter::zip(&mut *merged, rows.clone()) {
-					let input_i = index % (1 << 8);
+					let input_i = (index % (1 << 8)) as u8;
 					let carry_in_bit = (index >> 8) & 1 == 1;
 					let (output_i, carry_out_bit) = input_i.overflowing_add(carry_in_bit.into());
 					*merged_i = ((carry_out_bit as u32) << 17)
 						| ((carry_in_bit as u32) << 16)
-						| (output_i << 8) | input_i;
+						| ((output_i as u32) << 8)
+						| input_i as u32;
 				}
 			}
 			self.lookup_producer
@@ -302,93 +414,20 @@ mod tests {
 		}
 	}
 
-	/// Unit test for a fixed lookup table, which requires counting lookups during witness
-	/// generation of the looker tables.
-	#[test]
-	fn test_fixed_lookup_producer() {
-		let mut cs = ConstraintSystem::new();
-		let incr_lookup_chan = cs.add_channel("incr lookup");
+	struct IncrIndexedLookup;
 
-		let incr_table_log_len = 9;
-		let n_multiplicity_bits = 8;
+	impl IndexedLookup<B128> for IncrIndexedLookup {
+		fn log_size(&self) -> usize {
+			// Input is an 8-bit value plus 1-bit carry-in
+			8 + 1
+		}
 
-		let mut incr_table = cs.add_table("increment");
-		incr_table.require_fixed_size(incr_table_log_len);
-		let incr_lookup = IncrLookup::new(&mut incr_table, incr_lookup_chan, n_multiplicity_bits);
-		let incr_table_id = incr_table.id();
-
-		let mut looker_1 = cs.add_table("looker 1");
-		let looker_1_id = looker_1.id();
-		let incr_1 = IncrLooker::new(&mut looker_1, incr_lookup_chan);
-
-		let mut looker_2 = cs.add_table("looker 2");
-		let looker_2_id = looker_2.id();
-		let incr_2 = IncrLooker::new(&mut looker_2, incr_lookup_chan);
-
-		let looker_1_size = 55;
-		let looker_2_size = 66;
-
-		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
-
-		let mut rng = StdRng::seed_from_u64(0);
-		let inputs_1 = repeat_with(|| {
-			let input = rng.gen::<u8>();
-			let carry_in_bit = rng.gen_bool(0.5);
-			(input, carry_in_bit)
-		})
-		.take(looker_1_size)
-		.collect::<Vec<_>>();
-
-		witness
-			.fill_table_sequential(
-				&ClosureFiller::new(looker_1_id, |inputs, segment| {
-					incr_1.populate(segment, inputs)
-				}),
-				&inputs_1,
-			)
-			.unwrap();
-
-		let inputs_2 = repeat_with(|| {
-			let input = rng.gen::<u8>();
-			let carry_in_bit = rng.gen_bool(0.5);
-			(input, carry_in_bit)
-		})
-		.take(looker_2_size)
-		.collect::<Vec<_>>();
-
-		witness
-			.fill_table_sequential(
-				&ClosureFiller::new(looker_2_id, |inputs, segment| {
-					incr_2.populate(segment, inputs)
-				}),
-				&inputs_2,
-			)
-			.unwrap();
-
-		let boundary_reads = vec![
-			merge_incr_vals(111, false, 111, false),
-			merge_incr_vals(111, true, 112, false),
-			merge_incr_vals(255, false, 255, false),
-			merge_incr_vals(255, true, 0, true),
-		];
-		let boundaries = boundary_reads
-			.into_iter()
-			.map(|val| Boundary {
-				values: vec![B32::new(val).into()],
-				direction: FlushDirection::Pull,
-				channel_id: incr_lookup_chan,
-				multiplicity: 1,
-			})
-			.collect::<Vec<_>>();
-
-		let counts = tally(&cs, &witness, &boundaries, incr_lookup_chan, &incr_lookup);
-
-		// witness.fill_table_sequential(incr_table_id).unwrap();
-		// let mut segment = table_witness.fill
-		// incr_lookup.fill(counts.iter(), &mut segment).unwrap();
-
-		validate_system_witness(cs, witness, boundaries);
+		fn entry_to_index(&self, entry: &[B128]) -> usize {
+			debug_assert_eq!(entry.len(), 1);
+			let merged_val = entry[0].val() as u32;
+			let input_i = merged_val & 0xFF;
+			let carry_in_bit = (merged_val >> 16) & 1 == 1;
+			(carry_in_bit as usize) << 8 | input_i as usize
+		}
 	}
 }
