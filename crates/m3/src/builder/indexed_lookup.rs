@@ -27,6 +27,9 @@ pub trait IndexedLookup<F: TowerField> {
 
 	/// Encode a table entry as a table index.
 	fn entry_to_index(&self, entry: &[F]) -> usize;
+
+	/// Decode a table index to an entry.
+	fn index_to_entry(&self, index: usize, entry: &mut [F]);
 }
 
 /// Determine the read counts of each entry in an indexed lookup table.
@@ -395,18 +398,16 @@ mod tests {
 			rows: impl Iterator<Item = &'a Self::Event> + Clone,
 			witness: &'a mut TableWitnessSegment,
 		) -> anyhow::Result<()> {
+			// Fill the merged column
 			{
-				let mut merged = witness.get_mut_as::<u32, _, 1>(self.merged)?;
+				let mut merged = witness.get_scalars_mut(self.merged)?;
+				let mut buffer = [B128::default()];
 				for (merged_i, &(index, _)) in iter::zip(&mut *merged, rows.clone()) {
-					let input_i = (index % (1 << 8)) as u8;
-					let carry_in_bit = (index >> 8) & 1 == 1;
-					let (output_i, carry_out_bit) = input_i.overflowing_add(carry_in_bit.into());
-					*merged_i = ((carry_out_bit as u32) << 17)
-						| ((carry_in_bit as u32) << 16)
-						| ((output_i as u32) << 8)
-						| input_i as u32;
+					IncrIndexedLookup.index_to_entry(index, &mut buffer);
+					*merged_i = B32::try_from(buffer[0]).expect("guaranteed by IncrIndexedLookup");
 				}
 			}
+
 			self.lookup_producer
 				.populate(witness, rows.map(|&(_i, count)| count))?;
 			Ok(())
@@ -424,9 +425,18 @@ mod tests {
 		fn entry_to_index(&self, entry: &[B128]) -> usize {
 			debug_assert_eq!(entry.len(), 1);
 			let merged_val = entry[0].val() as u32;
-			let input_i = merged_val & 0xFF;
+			let input = merged_val & 0xFF;
 			let carry_in_bit = (merged_val >> 16) & 1 == 1;
-			(carry_in_bit as usize) << 8 | input_i as usize
+			(carry_in_bit as usize) << 8 | input as usize
+		}
+
+		fn index_to_entry(&self, index: usize, entry: &mut [B128]) {
+			debug_assert_eq!(entry.len(), 1);
+			let input = (index % (1 << 8)) as u8;
+			let carry_in_bit = (index >> 8) & 1 == 1;
+			let (output, carry_out_bit) = input.overflowing_add(carry_in_bit.into());
+			let entry_u32 = merge_incr_vals(input, carry_in_bit, output, carry_out_bit);
+			entry[0] = B32::new(entry_u32).into();
 		}
 	}
 }
