@@ -14,7 +14,7 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
 		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B8,
+		B128, B64, B8,
 	},
 	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
 };
@@ -43,8 +43,7 @@ impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
 		let mut table = cs.add_table("Keccak permutation");
 
-		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let keccakf = keccak::Keccakf::new(&mut table, state_in);
+		let keccakf = keccak::Keccakf::new(&mut table);
 
 		Self {
 			table_id: table.id(),
@@ -55,7 +54,10 @@ impl PermutationTable {
 
 impl<P> TableFiller<P> for PermutationTable
 where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+	P: PackedFieldIndexable<Scalar = B128>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
 	type Event = StateMatrix<u64>;
