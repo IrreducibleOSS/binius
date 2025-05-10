@@ -111,7 +111,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	/// Returns `None` if no value is found.
 	pub fn get(&self, id: OracleId, eval_point: &[F]) -> Option<&T> {
 		self.data
-			.get(id)?
+			.get(id.index())?
 			.iter()
 			.find(|(ep, _)| **ep == *eval_point)
 			.map(|(_, val)| val)
@@ -121,11 +121,11 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	///
 	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
-		if id >= self.data.len() {
-			self.data.resize(id + 1, Vec::new());
+		if id.index() >= self.data.len() {
+			self.data.resize(id.index() + 1, Vec::new());
 		}
 
-		self.data[id].push((eval_point, val))
+		self.data[id.index()].push((eval_point, val))
 	}
 
 	/// Flatten the data structure into a vector of values.

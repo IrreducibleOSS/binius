@@ -165,7 +165,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.constraints
 			.iter()
 			.map(|constraint| constraint.oracle_ids.clone())
-			.chain(oracles.iter().filter_map(|oracle| match oracle.variant {
+			.chain(oracles.polys().filter_map(|oracle| match &oracle.variant {
 				MultilinearPolyVariant::Shifted(ref shifted) => {
 					Some(vec![oracle.id(), shifted.id()])
 				}
@@ -176,12 +176,12 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			}))
 			.collect::<Vec<_>>();
 
-		let groups = binius_utils::graph::connected_components(
-			&connected_oracle_chunks
-				.iter()
-				.map(|x| x.as_slice())
-				.collect::<Vec<_>>(),
-		);
+		let connected_oracle_chunks = connected_oracle_chunks
+			.iter()
+			.map(|x| x.iter().map(|y| y.index()).collect::<Vec<usize>>())
+			.collect::<Vec<Vec<usize>>>();
+
+		let groups = binius_utils::graph::connected_components(&connected_oracle_chunks);
 
 		let n_vars_and_constraints = self
 			.constraints
@@ -215,8 +215,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 
 		let grouped_constraints = n_vars_and_constraints
 			.into_iter()
-			.sorted_by_key(|(_, constraint)| groups[constraint.oracle_ids[0]])
-			.chunk_by(|(_, constraint)| groups[constraint.oracle_ids[0]]);
+			.sorted_by_key(|(_, constraint)| groups[constraint.oracle_ids[0].index()])
+			.chunk_by(|(_, constraint)| groups[constraint.oracle_ids[0].index()]);
 
 		let constraint_sets = grouped_constraints
 			.into_iter()

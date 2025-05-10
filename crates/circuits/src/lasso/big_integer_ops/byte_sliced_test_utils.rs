@@ -197,8 +197,8 @@ where
 
 pub fn test_bytesliced_modular_mul<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<Data<usize>: Debug>,
-	TL::Base: TowerLevel<Data<usize> = [OracleId; WIDTH]>,
+	TL: TowerLevel<Data<OracleId>: Debug>,
+	TL::Base: TowerLevel<Data<OracleId> = [OracleId; WIDTH]>,
 {
 	test_circuit(|builder| {
 		let log_size = 12;

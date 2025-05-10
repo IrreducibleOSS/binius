@@ -10,8 +10,10 @@ mod composite;
 mod constraint;
 mod error;
 mod multilinear;
+mod oracle_id;
 
 pub use composite::*;
 pub use constraint::*;
 pub use error::Error;
 pub use multilinear::*;
+pub use oracle_id::*;

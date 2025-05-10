@@ -102,7 +102,7 @@ pub fn sha256(
 		Err(anyhow::Error::msg("log_size too small"))?
 	}
 
-	let mut w = [OracleId::MAX; 64];
+	let mut w = [OracleId::invalid(); 64];
 
 	w[0..16].copy_from_slice(&input);
 

@@ -72,7 +72,7 @@ where
 
 	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually
 	// shifts).
-	for oracle in constraint_system.oracles.iter() {
+	for oracle in constraint_system.oracles.polys() {
 		validate_virtual_oracle_witness(oracle, &constraint_system.oracles, witness)?;
 	}
 
@@ -80,7 +80,7 @@ where
 }
 
 pub fn validate_virtual_oracle_witness<F, P>(
-	oracle: MultilinearPolyOracle<F>,
+	oracle: &MultilinearPolyOracle<F>,
 	oracles: &MultilinearOracleSet<F>,
 	witness: &MultilinearExtensionIndex<P>,
 ) -> Result<(), Error>
@@ -100,7 +100,7 @@ where
 		})
 	}
 
-	match oracle.variant {
+	match &oracle.variant {
 		MultilinearPolyVariant::Committed => {
 			// Committed oracles don't need to be checked as they are allowed to contain any data
 			// here
@@ -131,8 +131,8 @@ where
 			}
 		}
 		MultilinearPolyVariant::Repeating { id, .. } => {
-			let unrepeated_poly = witness.get_multilin_poly(id)?;
-			let unrepeated_n_vars = oracles.n_vars(id);
+			let unrepeated_poly = witness.get_multilin_poly(*id)?;
+			let unrepeated_n_vars = oracles.n_vars(*id);
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
 				let expected =
@@ -305,7 +305,7 @@ pub mod nonzerocheck {
 					if multilinear.evaluate_on_hypercube(hypercube_index)? == F::ZERO {
 						bail!(Error::NonzerocheckNaiveValidationFailure {
 							hypercube_index,
-							oracle: oracles.oracle(*id).label()
+							oracle: oracles[*id].label()
 						})
 					}
 					Ok(())

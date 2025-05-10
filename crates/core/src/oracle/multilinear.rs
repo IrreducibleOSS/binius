@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, fmt::Debug, sync::Arc};
+use std::{array, sync::Arc};
 
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
@@ -9,14 +9,11 @@ use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode
 use getset::{CopyGetters, Getters};
 
 use crate::{
-	oracle::{CompositePolyOracle, Error},
+	oracle::{CompositePolyOracle, Error, OracleId},
 	polynomial::{
 		ArithCircuitPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
 	},
 };
-
-/// Identifier for a multilinear oracle in a [`MultilinearOracleSet`].
-pub type OracleId = usize;
 
 /// Meta struct that lets you add optional `name` for the Multilinear before adding to the
 /// [`MultilinearOracleSet`]
@@ -68,7 +65,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn repeating(self, inner_id: OracleId, log_count: usize) -> Result<OracleId, Error> {
-		if inner_id >= self.mut_ref.oracles.len() {
+		if inner_id.index() >= self.mut_ref.oracles.len() {
 			bail!(Error::InvalidOracleId(inner_id));
 		}
 
@@ -95,7 +92,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		block_bits: usize,
 		variant: ShiftVariant,
 	) -> Result<OracleId, Error> {
-		if inner_id >= self.mut_ref.oracles.len() {
+		if inner_id.index() >= self.mut_ref.oracles.len() {
 			bail!(Error::InvalidOracleId(inner_id));
 		}
 
@@ -127,7 +124,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn packed(self, inner_id: OracleId, log_degree: usize) -> Result<OracleId, Error> {
-		if inner_id >= self.mut_ref.oracles.len() {
+		if inner_id.index() >= self.mut_ref.oracles.len() {
 			bail!(Error::InvalidOracleId(inner_id));
 		}
 
@@ -236,7 +233,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|(inner_id, coeff)| {
-				if inner_id >= self.mut_ref.oracles.len() {
+				if inner_id.index() >= self.mut_ref.oracles.len() {
 					return Err(Error::InvalidOracleId(inner_id));
 				}
 				if self.mut_ref.n_vars(inner_id) != n_vars {
@@ -275,7 +272,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|inner_id| {
-				if inner_id >= self.mut_ref.oracles.len() {
+				if inner_id.index() >= self.mut_ref.oracles.len() {
 					return Err(Error::InvalidOracleId(inner_id));
 				}
 				if self.mut_ref.n_vars(inner_id) != n_vars {
@@ -376,8 +373,19 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.oracles.len()
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item = MultilinearPolyOracle<F>> + '_ {
-		(0..self.oracles.len()).map(|id| self.oracle(id))
+	pub fn polys(&self) -> impl Iterator<Item = &MultilinearPolyOracle<F>> + '_ {
+		(0..self.oracles.len()).map(|index| &self[OracleId::from_index(index)])
+	}
+
+	pub fn ids(&self) -> impl Iterator<Item = OracleId> {
+		(0..self.oracles.len()).map(OracleId::from_index)
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = (OracleId, &MultilinearPolyOracle<F>)> + '_ {
+		(0..self.oracles.len()).map(|index| {
+			let oracle_id = OracleId::from_index(index);
+			(oracle_id, &self[oracle_id])
+		})
 	}
 
 	pub const fn add(&mut self) -> MultilinearOracleSetAddition<F> {
@@ -395,20 +403,20 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	}
 
 	pub fn is_valid_oracle_id(&self, id: OracleId) -> bool {
-		id < self.oracles.len()
+		id.index() < self.oracles.len()
 	}
 
 	fn add_to_set(
 		&mut self,
 		oracle: impl FnOnce(OracleId) -> MultilinearPolyOracle<F>,
 	) -> OracleId {
-		let id = self.oracles.len();
+		let id = OracleId::from_index(self.oracles.len());
 		self.oracles.push(oracle(id));
 		id
 	}
 
 	fn get_from_set(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self.oracles[id].clone()
+		self[id].clone()
 	}
 
 	pub fn add_transparent(
@@ -506,20 +514,28 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	}
 
 	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self.oracles[id].clone()
+		self[id].clone()
 	}
 
 	pub fn n_vars(&self, id: OracleId) -> usize {
-		self.oracles[id].n_vars()
+		self[id].n_vars()
 	}
 
 	pub fn label(&self, id: OracleId) -> String {
-		self.oracles[id].label()
+		self[id].label()
 	}
 
 	/// Maximum tower level of the oracle's values over the boolean hypercube.
 	pub fn tower_level(&self, id: OracleId) -> usize {
-		self.oracles[id].binary_tower_level()
+		self[id].binary_tower_level()
+	}
+}
+
+impl<F: TowerField> std::ops::Index<OracleId> for MultilinearOracleSet<F> {
+	type Output = MultilinearPolyOracle<F>;
+
+	fn index(&self, id: OracleId) -> &Self::Output {
+		&self.oracles[id.index()]
 	}
 }
 
@@ -557,7 +573,7 @@ pub struct MultilinearPolyOracle<F: TowerField> {
 pub enum MultilinearPolyVariant<F: TowerField> {
 	Committed,
 	Transparent(TransparentPolyOracle<F>),
-	Repeating { id: usize, log_count: usize },
+	Repeating { id: OracleId, log_count: usize },
 	Projected(Projected<F>),
 	Shifted(Shifted),
 	Packed(Packed),

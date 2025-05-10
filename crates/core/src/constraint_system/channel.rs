@@ -63,7 +63,7 @@ pub type ChannelId = usize;
 
 #[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub enum OracleOrConst<F: Field> {
-	Oracle(usize),
+	Oracle(OracleId),
 	Const { base: F, tower_level: usize },
 }
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
