@@ -504,7 +504,7 @@ where
 	}
 }
 
-pub struct FRIFolderCL<'a, F, FA, P, NTT, MerkleProver, VCS, CL>
+pub struct FRIFolderCL<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
 where
 	FA: BinaryField,
 	F: BinaryField,
@@ -519,14 +519,15 @@ where
 	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
 	round_committed:
-		Vec<(Vec<F>, <CL::DevMem as ComputeMemory<F>>::FSliceMut<'a>, MerkleProver::Committed)>,
+		Vec<(Vec<F>, <CL::DevMem as ComputeMemory<F>>::FSliceMut<'b>, MerkleProver::Committed)>,
 	curr_round: usize,
 	next_commit_round: Option<usize>,
 	unprocessed_challenges: Vec<F>,
-	cl: &'a CL,
+	cl: &'b CL,
 }
 
-impl<'a, F, FA, P, NTT, MerkleProver, VCS, CL> FRIFolderCL<'a, F, FA, P, NTT, MerkleProver, VCS, CL>
+impl<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
+	FRIFolderCL<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
@@ -543,7 +544,7 @@ where
 		merkle_prover: &'a MerkleProver,
 		committed_codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
-		cl: &'a CL,
+		cl: &'b CL,
 	) -> Result<Self, Error> {
 		if len_packed_slice(committed_codeword) < 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
@@ -596,7 +597,7 @@ where
 	pub fn execute_fold_round(
 		&mut self,
 		exec: &mut CL::Exec,
-		allocator: &mut impl ComputeAllocator<'a, F, CL::DevMem>,
+		allocator: &mut impl ComputeAllocator<'b, F, CL::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
@@ -644,8 +645,8 @@ where
 				unpack_if_possible(
 					&self.codeword,
 					|scalars| self.cl.copy_h2d(&scalars, &mut original_codeword),
-					|packed| unimplemented!("non-dense packed fields not suported"),
-				);
+					|_packed| unimplemented!("non-dense packed fields not suported"),
+				)?;
 				let mut folded_codeword =
 					allocator.alloc(self.codeword.len() - self.unprocessed_challenges.len())?;
 				self.cl.fri_fold(
