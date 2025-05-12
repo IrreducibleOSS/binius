@@ -10,6 +10,7 @@ use binius_math::{extrapolate_line_scalar, ArithCircuit, ArithExpr};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
+use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
@@ -225,6 +226,25 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			})
 			.sum::<T::B128>();
 		*accumulator += ret * batch_coeff;
+		Ok(())
+	}
+
+	fn kernel_add(
+		&self,
+		_exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: FSlice<'_, T::B128, Self>,
+		src2: FSlice<'_, T::B128, Self>,
+		dst: &mut FSliceMut<'_, T::B128, Self>,
+	) -> Result<(), Error> {
+		assert_eq!(src1.len(), 1 << log_len);
+		assert_eq!(src2.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
+			*dst_i = src1_i + src2_i;
+		}
+		
 		Ok(())
 	}
 

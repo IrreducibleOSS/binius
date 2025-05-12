@@ -278,6 +278,33 @@ pub trait ComputeLayer<F: Field> {
 		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error>;
 
+	/// A kernel-local operation that performs point-wise addition of two input buffers into an output
+	/// buffer.
+	///
+	/// Let each of the input buffers, `src1` and `src2`, contain \$2^n\$ elements, where `n` is the
+	/// `log_len` parameter. This operation computes the element-wise sum:
+	///
+	/// $$
+	/// \text{dst}[i] = \text{src1}[i] + \text{src2}[i], \quad \text{for } i = 0, \ldots, 2^n - 1.
+	/// $$
+	///
+	/// The result is written into the destination buffer `dst`.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in all three buffers.
+	/// * `src1` - the first input buffer.
+	/// * `src2` - the second input buffer.
+	/// * `dst` - the output buffer that receives the element-wise sum.
+	fn kernel_add(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: FSlice<'_, F, Self>,
+		src2: FSlice<'_, F, Self>,
+		dst: &mut FSliceMut<'_, F, Self>,
+	) -> Result<(), Error>;
+
 	/// FRI-fold the interleaved codeword using the given challenges.
 	///
 	/// The FRI-fold operation folds a length $2^{n+b+\eta}$ vector of field elements into a length
