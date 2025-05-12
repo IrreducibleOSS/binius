@@ -278,8 +278,8 @@ pub trait ComputeLayer<F: Field> {
 		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error>;
 
-	/// A kernel-local operation that performs point-wise addition of two input buffers into an output
-	/// buffer.
+	/// A kernel-local operation that performs point-wise addition of two input buffers into an
+	/// output buffer.
 	///
 	/// Let each of the input buffers, `src1` and `src2`, contain \$2^n\$ elements, where `n` is the
 	/// `log_len` parameter. This operation computes the element-wise sum:
