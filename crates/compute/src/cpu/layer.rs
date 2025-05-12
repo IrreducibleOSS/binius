@@ -765,109 +765,92 @@ mod tests {
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
 		log_len: usize,
 	) where
-		<C as ComputeLayer<F>>::DevMem: 'a,
+		C::DevMem: 'a,
 	{
 		let mut rng = StdRng::seed_from_u64(0);
 		let log_min_chunk_size = 3;
 
+		let device_allocator =
+			BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
+
 		// Allocate buffers a and b to be device mapped
-		let mut src1_buffer = compute.host_alloc(1 << log_len);
-		let src1_buffer = src1_buffer.as_mut();
-		for x_i in src1_buffer.iter_mut() {
+		let mut a_buffer = compute.host_alloc(1 << log_len);
+		let a_buffer = a_buffer.as_mut();
+		for x_i in a_buffer.iter_mut() {
 			*x_i = <F as Field>::random(&mut rng);
 		}
-		let src1 = src1_buffer.to_vec();
+		let a = a_buffer.to_vec();
 
-		let mut src2_buffer = compute.host_alloc(1 << log_len);
-		let src2_buffer = src2_buffer.as_mut();
-		for x_i in src2_buffer.iter_mut() {
+		let mut b_buffer = compute.host_alloc(1 << log_len);
+		let b_buffer = b_buffer.as_mut();
+		for x_i in b_buffer.iter_mut() {
 			*x_i = <F as Field>::random(&mut rng);
 		}
-		let src2 = src2_buffer.to_vec();
-
-		let mut dst_buffer = compute.host_alloc(1 << log_len);
-		let dst_buffer = dst_buffer.as_mut();
-		for x_i in dst_buffer.iter_mut() {
-			*x_i = <F as Field>::random(&mut rng);
-		}
-		// let mut dst = dst_buffer.to_vec();
-
-		let (mut dst_slice, device_memory) =
-			C::DevMem::split_at_mut(device_memory, dst_buffer.len());
-		compute.copy_h2d(dst_buffer, &mut dst_slice).unwrap();
-		// let dst_slice = C::DevMem::as_const(&dst_slice);
+		let b = b_buffer.to_vec();
 
 		// Copy a and b to device (creating F-slices)
-		let (mut src1_slice, device_memory) =
-			C::DevMem::split_at_mut(device_memory, src1_buffer.len());
-		compute.copy_h2d(src1_buffer, &mut src1_slice).unwrap();
-		let src1_slice = C::DevMem::as_const(&src1_slice);
+		let mut a_slice = device_allocator.alloc(1 << log_len).unwrap();
+		compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
+		let a_slice = C::DevMem::as_const(&a_slice);
 
-		let (mut src2_slice, device_memory) =
-			C::DevMem::split_at_mut(device_memory, src2_buffer.len());
-		compute.copy_h2d(src2_buffer, &mut src2_slice).unwrap();
-		let src2_slice = C::DevMem::as_const(&src2_slice);
+		let mut b_slice = device_allocator.alloc(1 << log_len).unwrap();
+		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
+		let b_slice = C::DevMem::as_const(&b_slice);
 
-		// Run the HAL operation to compute the kernel add operation
-		let res = compute
+		// Run the HAL operation to compute the inner product
+		let arith = ArithExpr::Var(0);
+		let eval = compute.compile_expr(&arith).unwrap();
+		let [actual] = compute
 			.execute(|exec| {
-				let src1_slice: KernelMemMap<F, C::DevMem> = KernelMemMap::Chunked {
-					data: src1_slice,
+				let a_slice = KernelMemMap::Chunked {
+					data: a_slice,
 					log_min_chunk_size,
 				};
-				let src2_slice: KernelMemMap<F, C::DevMem> = KernelMemMap::Chunked {
-					data: src2_slice,
+				let b_slice = KernelMemMap::Chunked {
+					data: b_slice,
 					log_min_chunk_size,
 				};
-				let dst_slice: KernelMemMap<F, C::DevMem> = KernelMemMap::ChunkedMut {
-					data: dst_slice,
-					log_min_chunk_size,
-				};
+				let c_slice = KernelMemMap::Local { log_size: log_len };
 				let results = compute.accumulate_kernels(
 					exec,
 					|kernel_exec, _log_chunks, kernel_data| {
-						let [src1, src2, mut dst] = kernel_data
+						let [a, b, c] = kernel_data
 							.try_into()
-							.unwrap_or_else(|_| panic!("Expected three result"));
-						let src1 = src1.to_ref();
-						let src2 = src2.to_ref();
-						let dst = todo!();
-						/*let dst = match &mut dst {
-							KernelBuffer::Mut(slice) => slice,
-							_ => unreachable!()
-						};*/
-
-						let log_len = checked_log_2(src1.len());
-						compute
-							.kernel_add(kernel_exec, log_len, src1, src2, dst)
-							.unwrap();
-						Ok(vec![])
+							.unwrap_or_else(|_| panic!("expected 3 buffers"));
+						let a = a.to_ref();
+						let b = b.to_ref();
+						let mut c = match c {
+							KernelBuffer::Mut(c) => c,
+							_ => unreachable!(),
+						};
+						let log_len = checked_log_2(a.len());
+						compute.kernel_add(kernel_exec, log_len, a, b, &mut c)?;
+						let c = C::DevMem::as_const(&c);
+						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
+						compute.sum_composition_evals(
+							kernel_exec,
+							log_len,
+							&[c],
+							&eval,
+							F::ONE,
+							&mut res,
+						)?;
+						Ok(vec![res])
 					},
-					vec![src1_slice, src2_slice /* dst_slice */],
+					vec![a_slice, b_slice, c_slice],
 				)?;
-				assert!(results.is_empty());
-				Ok(vec![])
+				assert_eq!(results.len(), 1);
+				Ok(results)
 			})
+			.unwrap()
+			.try_into()
 			.unwrap();
-		assert!(res.is_empty());
-
-		// let dst_slice = C::DevMem::as_const(&dst_slice);
-		// compute.copy_d2h(dst_slice, &mut dst_buffer);
-
-		// let _ = src1_slice_mut;
-		// let _ = src2_slice;
 
 		// Compute the expected value and compare
-		/*for (dst_i, src1_i, src2_i) in izip!(&mut dst, src1, src2) {
-			*dst_i = src1_i + src2_i;
-		}*/
-
-		drop(device_memory)
-
-		/*let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&src1)), &src2)
-			.map(|(a_i, &b_i)| b_i * a_i)
+		let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
+			.map(|(a_i, &b_i)| b_i + a_i)
 			.sum::<F>();
-		assert_eq!(actual, expected);*/
+		assert_eq!(actual, expected);
 	}
 
 	fn test_generic_fri_fold<'a, F, FSub, C>(
