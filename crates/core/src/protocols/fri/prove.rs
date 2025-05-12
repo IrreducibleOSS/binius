@@ -633,7 +633,7 @@ where
 					log2_strict_usize(prev_codeword.len()),
 					0,
 					&self.unprocessed_challenges,
-					CL::DevMem::as_const(&prev_codeword),
+					CL::DevMem::as_const(prev_codeword),
 					&mut folded_codeword,
 				)?;
 
@@ -643,8 +643,8 @@ where
 				let codeword_len = len_packed_slice(self.codeword);
 				let mut original_codeword = allocator.alloc(codeword_len)?;
 				unpack_if_possible(
-					&self.codeword,
-					|scalars| self.cl.copy_h2d(&scalars, &mut original_codeword),
+					self.codeword,
+					|scalars| self.cl.copy_h2d(scalars, &mut original_codeword),
 					|_packed| unimplemented!("non-dense packed fields not suported"),
 				)?;
 				let mut folded_codeword = allocator.alloc(

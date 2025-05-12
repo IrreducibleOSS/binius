@@ -26,7 +26,7 @@ pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
 impl<T: TowerFamily> Default for CpuLayer<T> {
 	fn default() -> Self {
-		CpuLayer(PhantomData)
+		Self(PhantomData)
 	}
 }
 
