@@ -797,7 +797,7 @@ mod tests {
 		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
 		let b_slice = C::DevMem::as_const(&b_slice);
 
-		// Run the HAL operation to compute the inner product
+		// Run the HAL operation to compute the a + b
 		let arith = ArithExpr::Var(0);
 		let eval = compute.compile_expr(&arith).unwrap();
 		let [actual] = compute
@@ -847,9 +847,7 @@ mod tests {
 			.unwrap();
 
 		// Compute the expected value and compare
-		let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
-			.map(|(a_i, &b_i)| b_i + a_i)
-			.sum::<F>();
+		let expected = a.iter().chain(b.iter()).sum::<F>();
 		assert_eq!(actual, expected);
 	}
 
