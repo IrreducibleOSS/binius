@@ -52,6 +52,7 @@ pub trait Field:
 	+ WithUnderlier<Underlier: PackScalar<Self>>
 	+ SerializeBytes
 	+ DeserializeBytes
+	+ 'static
 {
 	/// The zero element of the field, the additive identity.
 	const ZERO: Self;

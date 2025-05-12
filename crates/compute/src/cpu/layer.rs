@@ -28,11 +28,12 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
 	type KernelExec = CpuExecutor;
 	type DevMem = CpuMemory;
+	type HostMemory<'a> = Vec<T::B128>;
 	type OpValue = T::B128;
 	type KernelValue = T::B128;
 	type ExprEval = ArithCircuit<T::B128>;
 
-	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
+	fn host_alloc(&self, n: usize) -> Self::HostMemory<'_> {
 		vec![<T::B128 as Field>::ZERO; n]
 	}
 
