@@ -21,8 +21,14 @@ use crate::{
 #[derive(Debug)]
 pub struct CpuExecutor;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
+
+impl<T: TowerFamily> Default for CpuLayer<T> {
+	fn default() -> Self {
+		CpuLayer(PhantomData)
+	}
+}
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
