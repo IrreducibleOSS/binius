@@ -458,27 +458,35 @@ pub(crate) use impl_ops_for_zero_height;
 
 macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 	($bin_type:ty) => {
-		impl SerializeBytes for $bin_type
-		where
-			<$bin_type as crate::PackedField>::Scalar: crate::BinaryField,
-		{
+		macro_rules! assert_scalar_matches_canonical {
+			() => {
+				use std::any::TypeId;
+				debug_assert_eq!(
+					TypeId::of::<<$bin_type as crate::PackedField>::Scalar>(),
+					TypeId::of::<
+						<<$bin_type as crate::PackedField>::Scalar as crate::TowerField>::Canonical,
+					>()
+				);
+			};
+		}
+
+		impl SerializeBytes for $bin_type {
 			fn serialize(
 				&self,
 				write_buf: impl BufMut,
 				mode: SerializationMode,
 			) -> Result<(), SerializationError> {
+				assert_scalar_matches_canonical!();
 				self.0.serialize(write_buf, mode)
 			}
 		}
 
-		impl DeserializeBytes for $bin_type
-		where
-			<$bin_type as crate::PackedField>::Scalar: crate::BinaryField,
-		{
+		impl DeserializeBytes for $bin_type {
 			fn deserialize(
 				read_buf: impl Buf,
 				mode: SerializationMode,
 			) -> Result<Self, SerializationError> {
+				assert_scalar_matches_canonical!();
 				Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?, PhantomData))
 			}
 		}
