@@ -493,19 +493,19 @@ where
 		)));
 	}
 
-	if query.len() != num_cols {
+	if query.len() != num_rows {
 		return Err(Error::InputValidation(format!(
 			"query has {} elements, expected {}",
 			query.len(),
-			num_cols
+			num_rows
 		)));
 	}
 
-	if out.len() != num_rows {
+	if out.len() != num_cols {
 		return Err(Error::InputValidation(format!(
 			"output has {} elements, expected {}",
 			out.len(),
-			num_rows
+			num_cols
 		)));
 	}
 
@@ -982,6 +982,91 @@ mod tests {
 		assert_eq!(out, expected_out);
 	}
 
+	fn test_generic_single_right_fold<
+		'a,
+		'b,
+		F: Field + TowerField,
+		F2: ExtensionField<F> + TowerField,
+		C,
+	>(
+		compute: &'b C,
+		device_memory: <C::DevMem as ComputeMemory<F2>>::FSliceMut<'a>,
+		log_evals_size: usize,
+		log_query_size: usize,
+	) where
+		C: ComputeLayer<F2>,
+		'a: 'b,
+		<C as ComputeLayer<F2>>::DevMem: 'a,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
+		let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
+		let evals = repeat_with(|| F2::random(&mut rng))
+			.take(1 << log_evals_size_f2)
+			.collect::<Vec<_>>();
+		let query = repeat_with(|| F2::random(&mut rng))
+			.take(1 << log_query_size)
+			.collect::<Vec<_>>();
+		let mut out = compute.host_alloc(1 << (log_evals_size - log_query_size));
+		let out = out.as_mut();
+		for x_i in out.iter_mut() {
+			*x_i = F2::random(&mut rng);
+		}
+
+		let device_allocator =
+			BumpAllocator::<'a, F2, <C as ComputeLayer<F2>>::DevMem>::new(device_memory);
+		let mut out_slice = device_allocator.alloc(out.len()).unwrap();
+		let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
+		let mut query_slice = device_allocator.alloc(query.len()).unwrap();
+		compute.copy_h2d(out, &mut out_slice).unwrap();
+		compute
+			.copy_h2d(evals.as_slice(), &mut evals_slice)
+			.unwrap();
+		compute
+			.copy_h2d(query.as_slice(), &mut query_slice)
+			.unwrap();
+		let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
+		let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
+		let evals_slice_with_tower_level =
+			SubfieldSlice::<'_, F2, <C as ComputeLayer<F2>>::DevMem>::new(
+				const_evals_slice,
+				F::TOWER_LEVEL,
+			);
+		compute
+			.execute(|exec| {
+				compute
+					.fold_right(
+						exec,
+						evals_slice_with_tower_level,
+						const_query_slice,
+						&mut out_slice,
+					)
+					.unwrap();
+				Ok(vec![])
+			})
+			.unwrap();
+		compute
+			.copy_d2h(<C as ComputeLayer<F2>>::DevMem::as_const(&out_slice), out)
+			.unwrap();
+
+		let mut expected_out = out.iter().map(|x| *x).collect::<Vec<_>>();
+		let evals_as_f1_slice = evals
+			.iter()
+			.flat_map(<F2 as ExtensionField<F>>::iter_bases)
+			.collect::<Vec<_>>();
+		binius_math::fold_right(
+			&evals_as_f1_slice,
+			log_evals_size,
+			&query,
+			log_query_size,
+			expected_out.as_mut_slice(),
+		)
+		.unwrap();
+		assert_eq!(out.len(), expected_out.len());
+		assert_eq!(out, expected_out);
+	}
+
 	#[test]
 	fn test_exec_single_tensor_expand() {
 		type F = BinaryField128b;
@@ -999,6 +1084,21 @@ mod tests {
 		let mut device_memory = vec![F2::ZERO; 1 << n_vars];
 		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 		test_generic_single_left_fold::<F, F2, _>(
+			&compute,
+			device_memory.as_mut_slice(),
+			n_vars / 2,
+			n_vars / 8,
+		);
+	}
+
+	#[test]
+	fn test_exec_single_right_fold() {
+		type F = BinaryField16b;
+		type F2 = BinaryField128b;
+		let n_vars = 8;
+		let mut device_memory = vec![F2::ZERO; 1 << n_vars];
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		test_generic_single_right_fold::<F, F2, _>(
 			&compute,
 			device_memory.as_mut_slice(),
 			n_vars / 2,
