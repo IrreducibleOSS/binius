@@ -626,8 +626,10 @@ where
 					|scalars| self.cl.copy_h2d(&scalars, &mut original_codeword),
 					|_packed| unimplemented!("non-dense packed fields not suported"),
 				)?;
-				let mut folded_codeword =
-					allocator.alloc(self.codeword.len() - self.unprocessed_challenges.len())?;
+				let mut folded_codeword = allocator.alloc(
+					1 << (self.params.rs_code().log_len()
+						- (self.unprocessed_challenges.len() - self.params.log_batch_size())),
+				)?;
 				self.cl.fri_fold(
 					exec,
 					self.ntt,
