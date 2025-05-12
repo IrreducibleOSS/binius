@@ -74,6 +74,11 @@ const STATE_OUT_TRACK: usize = 7;
 /// with the input state matrix. See [`Self::populate_state_in`] if you have values handy.
 pub struct Keccakf {
 	batches: [RoundBatch; BATCHES_PER_PERMUTATION],
+	/// The lanes of the input and output state columns. These are exposed to make it convenient to
+	/// use the gadget along with flushing.
+	pub input: StateMatrix<Col<B64>>,
+	pub output: StateMatrix<Col<B64>>,
+
 	/// Represents a variation of the `state_in` state matrix of the 0th batch where each track is
 	/// shifted in place of previous one, meaning that the 0th track will store the `state_in` for
 	/// the 3rd round.
@@ -81,8 +86,6 @@ pub struct Keccakf {
 	/// This is used for the state-in to state-out linking rule.
 	next_state_in: StateMatrix<PackedLane8>,
 
-	pub input: StateMatrix<Col<B64>>,
-	pub output: StateMatrix<Col<B64>>,
 	/// Link selector.
 	///
 	/// This is all ones for the first 7 tracks and all zeroes for the last one.
@@ -182,15 +185,15 @@ impl Keccakf {
 	{
 		// `state_in` for the first track of the first batch specifies the initial state for
 		// permutation. Read it out, gather trace and populate each batch.
-		let pts = self.batches[0]
+		let permutation_traces = self.batches[0]
 			.read_state_ins(index, 0)?
 			.map(trace::keccakf_trace)
 			.collect::<Vec<PermutationTrace>>();
 		for batch in &self.batches {
-			batch.populate(index, &pts)?;
+			batch.populate(index, &permutation_traces)?;
 		}
 
-		for k in 0..pts.len() {
+		for k in 0..permutation_traces.len() {
 			for x in 0..5 {
 				for y in 0..5 {
 					let mut next_state_in: std::cell::RefMut<'_, [u64]> =
@@ -213,8 +216,8 @@ impl Keccakf {
 					let mut output: std::cell::RefMut<'_, [u64]> =
 						index.get_mut_as(self.output[(x, y)])?;
 
-					input[k] = pts[k].per_batch(0)[0].state_in[(x, y)];
-					output[k] = pts[k].per_batch(2)[TRACKS_PER_BATCH - 1].state_out[(x, y)];
+					input[k] = permutation_traces[k].input()[(x, y)];
+					output[k] = permutation_traces[k].output()[(x, y)];
 				}
 			}
 		}
@@ -392,13 +395,13 @@ impl RoundBatch {
 	fn populate<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		pts: &[trace::PermutationTrace],
+		permutation_traces: &[trace::PermutationTrace],
 	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
-		for (k, trace) in pts.iter().enumerate() {
+		for (k, trace) in permutation_traces.iter().enumerate() {
 			// Gather all batch round traces for the batch number.
 			let brt = trace.per_batch(self.batch_no);
 
