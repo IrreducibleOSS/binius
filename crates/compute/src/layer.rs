@@ -247,6 +247,37 @@ pub trait ComputeLayer<F: Field> {
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
+	/// Computes right matrix-vector multiplication of a subfield matrix with a big field vector.
+	///
+	/// ## Mathematical Definition
+	///
+	/// This operation accepts
+	///
+	/// * $n \in \mathbb{N}$ (`vec.len()`),
+	/// * $m \in \mathbb{N}$ (`out.len()`),
+	/// * $M \in K^{n \times m}$ (`mat`),
+	/// * $v \in K^m$ (`vec`),
+	///
+	/// and computes the vector $((v')M)'$. The prime denotes a transpose
+	///
+	/// ## Args
+	///
+	/// * `mat` - a slice of elements from a subfield of `F`.
+	/// * `vec` - a slice of `F` elements.
+	/// * `out` - a buffer for the output vector of `F` elements.
+	///
+	/// ## Throws
+	///
+	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
+	/// * Returns an error if `mat` is not a subfield of `F`.
+	fn fold_right<'a>(
+		&'a self,
+		exec: &'a mut Self::Exec,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
 	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
 	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
 	///

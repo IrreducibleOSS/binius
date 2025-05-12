@@ -183,6 +183,31 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		)
 	}
 
+	fn fold_right<'a>(
+		&'a self,
+		_exec: &'a mut Self::Exec,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: FSlice<'_, T::B128, Self>,
+		out: &mut FSliceMut<'_, T::B128, Self>,
+	) -> Result<(), Error> {
+		if mat.tower_level > T::B128::TOWER_LEVEL {
+			return Err(Error::InputValidation(format!(
+				"invalid evals: tower_level={} > {}",
+				mat.tower_level,
+				T::B128::TOWER_LEVEL
+			)));
+		}
+		let log_evals_size =
+			mat.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - mat.tower_level;
+		// Dispatch to the binary field of type T corresponding to the tower level of the evals
+		// slice.
+		each_tower_subfield!(
+			mat.tower_level,
+			T,
+			compute_right_fold::<_, T>(mat.slice, log_evals_size, vec, out)
+		)
+	}
+
 	fn tensor_expand(
 		&self,
 		_exec: &mut Self::Exec,
@@ -383,7 +408,7 @@ impl<T: TowerFamily> CpuLayer<T> {
 
 /// Compute the left fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
@@ -400,37 +425,94 @@ where
 		.flat_map(<T::B128 as ExtensionField<EvalType>>::iter_bases)
 		.collect::<Vec<_>>();
 	let log_query_size = query.len().ilog2() as usize;
-	let num_rows = 1 << log_query_size;
-	let num_cols = 1 << (log_evals_size - log_query_size);
+	let num_cols = 1 << log_query_size;
+	let num_rows = 1 << (log_evals_size - log_query_size);
 
-	if evals.len() != num_rows * num_cols {
+	if evals.len() != num_cols * num_rows {
 		return Err(Error::InputValidation(format!(
 			"evals has {} elements, expected {}",
 			evals.len(),
-			num_rows * num_cols
+			num_cols * num_rows
 		)));
 	}
 
-	if query.len() != num_rows {
+	if query.len() != num_cols {
 		return Err(Error::InputValidation(format!(
 			"query has {} elements, expected {}",
 			query.len(),
+			num_cols
+		)));
+	}
+
+	if out.len() != num_rows {
+		return Err(Error::InputValidation(format!(
+			"output has {} elements, expected {}",
+			out.len(),
 			num_rows
 		)));
 	}
 
-	if out.len() != num_cols {
+	for i in 0..num_rows {
+		let mut acc = T::B128::ZERO;
+		for j in 0..num_cols {
+			acc += T::B128::from(evals[j * num_rows + i]) * query[j];
+		}
+		out[i] = acc;
+	}
+
+	Ok(())
+}
+
+/// Compute the right fold operation.
+///
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// with the corresponding query element. The result is written to the `output` slice of values.
+/// The evals slice may be any field extension defined by the tower family T.
+fn compute_right_fold<EvalType: TowerField, T: TowerFamily>(
+	evals_as_b128: &[T::B128],
+	log_evals_size: usize,
+	query: &[T::B128],
+	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
+) -> Result<(), Error>
+where
+	<T as TowerFamily>::B128: ExtensionField<EvalType>,
+{
+	let evals = evals_as_b128
+		.iter()
+		.flat_map(<T::B128 as ExtensionField<EvalType>>::iter_bases)
+		.collect::<Vec<_>>();
+	let log_query_size = query.len().ilog2() as usize;
+	let num_rows = 1 << log_query_size;
+	let num_cols = 1 << (log_evals_size - log_query_size);
+
+	if evals.len() != num_cols * num_rows {
+		return Err(Error::InputValidation(format!(
+			"evals has {} elements, expected {}",
+			evals.len(),
+			num_cols * num_rows
+		)));
+	}
+
+	if query.len() != num_cols {
+		return Err(Error::InputValidation(format!(
+			"query has {} elements, expected {}",
+			query.len(),
+			num_cols
+		)));
+	}
+
+	if out.len() != num_rows {
 		return Err(Error::InputValidation(format!(
 			"output has {} elements, expected {}",
 			out.len(),
-			num_cols
+			num_rows
 		)));
 	}
 
 	for i in 0..num_cols {
 		let mut acc = T::B128::ZERO;
 		for j in 0..num_rows {
-			acc += T::B128::from(evals[j * num_cols + i]) * query[j];
+			acc += T::B128::from(evals[i * num_rows + j]) * query[j];
 		}
 		out[i] = acc;
 	}
