@@ -18,6 +18,10 @@ pub trait ComputeLayer<F: Field> {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
+	type HostMemory<'a>: AsMut<[F]> + 'a
+	where
+		Self: 'a;
+
 	/// The executor that can execute operations on the device.
 	type Exec;
 
@@ -40,7 +44,7 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// The returned buffer is lifetime bound to the compute layer, allowing return types to have
 	/// drop methods referencing data in the compute layer.
-	fn host_alloc(&self, n: usize) -> impl AsMut<[F]> + '_;
+	fn host_alloc(&self, n: usize) -> Self::HostMemory<'_>;
 
 	/// Copy data from the host to the device.
 	///

@@ -2,6 +2,8 @@
 
 use std::ops::RangeBounds;
 
+use binius_field::TowerField;
+
 pub trait SizedSlice {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
@@ -100,11 +102,22 @@ pub trait ComputeMemory<F> {
 pub struct SubfieldSlice<'a, F, Mem: ComputeMemory<F>> {
 	pub slice: Mem::FSlice<'a>,
 	pub tower_level: usize,
+	pub count: usize,
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
+impl<'a, F: TowerField, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
-		Self { slice, tower_level }
+		let count = slice.len() << (F::TOWER_LEVEL - tower_level);
+
+		Self::new_with_count(slice, tower_level, count)
+	}
+
+	pub fn new_with_count(slice: Mem::FSlice<'a>, tower_level: usize, count: usize) -> Self {
+		Self {
+			slice,
+			tower_level,
+			count,
+		}
 	}
 }
 
@@ -112,10 +125,25 @@ impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
 	pub slice: Mem::FSliceMut<'a>,
 	pub tower_level: usize,
+	pub count: usize,
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
+impl<'a, F: TowerField, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
 	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
-		Self { slice, tower_level }
+		let count = slice.len() << (F::TOWER_LEVEL - tower_level);
+
+		Self::new_with_count(slice, tower_level, count)
+	}
+
+	pub fn new_with_count(slice: Mem::FSliceMut<'a>, tower_level: usize, count: usize) -> Self {
+		Self {
+			slice,
+			tower_level,
+			count,
+		}
+	}
+
+	pub fn as_const(&self) -> SubfieldSlice<'_, F, Mem> {
+		SubfieldSlice::new_with_count(Mem::as_const(&self.slice), self.tower_level, self.count)
 	}
 }
