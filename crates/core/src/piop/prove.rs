@@ -286,7 +286,7 @@ pub fn prove_compute_layer<
 	MTProver,
 	Challenger_,
 	Backend,
-	CL: ComputeLayer<F>,
+	CL,
 >(
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,

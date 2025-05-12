@@ -5,12 +5,11 @@ use std::iter::repeat_with;
 use binius_compute::{
 	alloc::BumpAllocator,
 	cpu::{layer::CpuExecutor, CpuLayer},
-	layer::{ComputeLayer, FSliceMut},
 };
 use binius_field::{
 	tower::{AESTowerFamily, CanonicalTowerFamily, TowerFamily},
 	AESTowerField16b, AESTowerField8b, BinaryField, BinaryField16b, BinaryField8b,
-	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField,
+	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -108,7 +107,7 @@ where
 
 enum ComputeLayerType {
 	None,
-	CPU,
+	Cpu,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -157,7 +156,7 @@ where
 			transcript,
 			&backend,
 		),
-		ComputeLayerType::CPU => {
+		ComputeLayerType::Cpu => {
 			let compute_layer = CpuLayer::<T>::default();
 			let mut slice = zeroed_vec(1 << 15);
 			let mut allocator = BumpAllocator::new(&mut slice[..]);
@@ -316,7 +315,7 @@ fn test_with_one_poly() {
 		BinaryField16b,
 		PackedBinaryField2x128b,
 		_,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::CPU);
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -339,7 +338,7 @@ fn test_without_opening_claims() {
 		BinaryField16b,
 		PackedBinaryField2x128b,
 		_,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::CPU);
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -362,7 +361,7 @@ fn test_with_one_n_vars() {
 		BinaryField16b,
 		PackedBinaryField2x128b,
 		_,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::CPU);
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -385,7 +384,7 @@ fn test_commit_prove_verify() {
 		BinaryField16b,
 		PackedBinaryField2x128b,
 		_,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::CPU);
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
