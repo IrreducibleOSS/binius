@@ -1050,7 +1050,7 @@ mod tests {
 			.copy_d2h(<C as ComputeLayer<F2>>::DevMem::as_const(&out_slice), out)
 			.unwrap();
 
-		let mut expected_out = out.iter().map(|x| *x).collect::<Vec<_>>();
+		let mut expected_out = out.iter().map(|_| F2::ZERO).collect::<Vec<_>>();
 		let evals_as_f1_slice = evals
 			.iter()
 			.flat_map(<F2 as ExtensionField<F>>::iter_bases)
