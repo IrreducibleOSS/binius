@@ -6,6 +6,9 @@ Binius is a Rust library implementing a cryptographic *succinct non-interactive 
 
 Comprehensive documentation is available at [binius.xyz](https://www.binius.xyz/).
 
+[![Docs](https://img.shields.io/badge/docs-up-green)](https://www.binius.xyz/)
+[![Twitter Irreducible](https://img.shields.io/twitter/follow/Irreducible?style=social)](https://x.com/IrreducibleHW)
+
 ## Usage
 
 At this stage, the primary interfaces are the unit tests and benchmarks. The benchmarks use the [criterion](https://docs.rs/criterion/0.3.4/criterion/) library.
