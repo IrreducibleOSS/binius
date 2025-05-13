@@ -1,0 +1,15 @@
+[package]
+name = "binius_fast_compute"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+binius_field = { path = "../field", default-features = false }
+binius_compute = { path = "../compute", default-features = false }
+
+[dev-dependencies]
+rand = { workspace = true, features = ["std"] }

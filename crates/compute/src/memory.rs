@@ -3,6 +3,7 @@
 use std::ops::RangeBounds;
 
 pub trait DevSlice<T> {
+	#[inline(always)]
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
