@@ -103,7 +103,7 @@ fn main() -> Result<()> {
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
-	witness.fill_table_sequential(&table, &events)?;
+	witness.fill_table_parallel(&table, &events)?;
 
 	drop(trace_gen_scope);
 
