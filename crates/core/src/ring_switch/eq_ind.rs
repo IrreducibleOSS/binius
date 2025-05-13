@@ -91,20 +91,39 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
+	pub fn multilinear_extension<P: PackedField<Scalar = F> + PackedExtension<FSub>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error>
+	where
+		F: ExtensionField<FSub>,
+	{
+		println!("{},{}",self.row_batch_coeffs.query.len(),F::LOG_DEGREE);
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
 
-		evals.par_iter_mut().for_each(|val| {
-			*val = P::from_scalars(
-				val.iter()
-					.map(|v| inner_product_subfield(v, &self.row_batch_coeffs)),
-			);
-		});
-		Ok(MultilinearExtension::new(self.z_vals.len(), evals)?)
+		let subfield_vector = <P as PackedExtension<FSub>>::cast_bases(&evals);
+
+		let subfield_vector_mle = MLEEmbeddingAdapter::<_, P, _>::from(
+			MultilinearExtension::from_values_slice(subfield_vector)?,
+		);
+
+		let row_batching_query_expansion = MultilinearQuery::expand(&self.row_batch_coeffs.query[0..F::LOG_DEGREE]);
+
+		let partial_low_eval = subfield_vector_mle
+			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
+
+		// println!("{} {}", partial_low_eval.n_vars(), self.z_vals.len());
+		let factor: F = self.row_batch_coeffs.query[F::LOG_DEGREE..].iter().map(
+			|eval|{*eval + F::ONE}
+		).product();
+
+		let partial_low_multiplied = partial_low_eval.evals().iter().map(
+			|eval|{*eval*factor}
+		).collect::<Vec<_>>();
+
+
+		Ok(MultilinearExtension::new(self.z_vals.len(),partial_low_multiplied)?)
 	}
 }
 
