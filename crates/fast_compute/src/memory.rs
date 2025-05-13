@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use binius_compute::memory::{ComputeMemory, DevSlice};
 use binius_field::PackedField;
 
-struct PackedMemory<P>(PhantomData<P>);
+pub struct PackedMemory<P>(PhantomData<P>);
 
 impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 	const MIN_SLICE_LEN: usize = P::WIDTH;
@@ -69,7 +69,7 @@ impl<P: PackedField> PackedMemory<P> {
 
 #[derive(Clone, Copy)]
 pub struct PackedMemorySlice<'a, P: PackedField> {
-	data: &'a [P],
+	pub(crate) data: &'a [P],
 }
 
 impl<'a, P: PackedField> PackedMemorySlice<'a, P> {
@@ -92,7 +92,7 @@ impl<'a, P: PackedField> DevSlice<P::Scalar> for PackedMemorySlice<'a, P> {
 }
 
 pub struct PackedMemorySliceMut<'a, P: PackedField> {
-	data: &'a mut [P],
+	pub(crate) data: &'a mut [P],
 }
 
 impl<'a, P: PackedField> PackedMemorySliceMut<'a, P> {
