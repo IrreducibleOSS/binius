@@ -281,16 +281,17 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		{
 			// Apply folding with interleaved challenges.
 			values[..(1 << challenges.len())].copy_from_slice(chunk);
-			let mut current_width = 1 << challenges.len();
+			let mut current_values = &mut values[0..1 << challenges.len()];
 			for challenge in interleave_challenges {
-				for out_idx in 0..current_width / 2 {
-					values[out_idx] = extrapolate_line_scalar(
-						values[out_idx * 2],
-						values[out_idx * 2 + 1],
+				let new_num_elements = current_values.len() / 2;
+				for out_idx in 0..new_num_elements {
+					current_values[out_idx] = extrapolate_line_scalar(
+						current_values[out_idx * 2],
+						current_values[out_idx * 2 + 1],
 						*challenge,
 					);
 				}
-				current_width /= 2;
+				current_values = &mut current_values[0..new_num_elements];
 			}
 
 			// Apply the inverse NTT to the folded values.
