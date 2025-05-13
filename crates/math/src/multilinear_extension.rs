@@ -105,7 +105,7 @@ where
 impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
 	pub const fn from_values_slice(v: &'a [P]) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
-			bail!(Error::PowerOfTwoLengthRequired);
+			return Err(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
 		Ok(Self { mu, evals: v })
