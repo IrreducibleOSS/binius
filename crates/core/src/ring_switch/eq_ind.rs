@@ -27,10 +27,11 @@ pub struct RowBatchCoeffs<F> {
 	/// This is a lookup table for the partial sums of the coefficients
 	/// that is used to efficiently fold with 1-bit coefficients.
 	partial_sums_lookup_table: Vec<F>,
+	query: Vec<F>,
 }
 
 impl<F: Field> RowBatchCoeffs<F> {
-	pub fn new(coeffs: Vec<F>) -> Self {
+	pub fn new(coeffs: Vec<F>, query: Vec<F>) -> Self {
 		let partial_sums_lookup_table = if coeffs.len() >= 8 {
 			create_partial_sums_lookup_tables(coeffs.as_slice())
 		} else {
@@ -40,6 +41,7 @@ impl<F: Field> RowBatchCoeffs<F> {
 		Self {
 			coeffs,
 			partial_sums_lookup_table,
+			query,
 		}
 	}
 
@@ -95,6 +97,7 @@ where
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
+
 		evals.par_iter_mut().for_each(|val| {
 			*val = P::from_scalars(
 				val.iter()
@@ -204,10 +207,16 @@ mod tests {
 			.take(n_vars)
 			.collect::<Arc<[_]>>();
 
-		let row_batch_coeffs = repeat_with(|| <F as Field>::random(&mut rng))
-			.take(1 << kappa)
+		// Changed to a query being expanded
+
+		let row_batch_challenges = repeat_with(|| <F as Field>::random(&mut rng))
+			.take(kappa)
 			.collect::<Vec<_>>();
-		let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(row_batch_coeffs));
+
+		let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
+			MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
+			row_batch_challenges,
+		));
 
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)

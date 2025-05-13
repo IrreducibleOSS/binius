@@ -94,6 +94,7 @@ where
 	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
 	let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
 		MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
+		row_batch_challenges,
 	));
 
 	let row_batched_evals =
