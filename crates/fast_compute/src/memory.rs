@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use binius_compute::memory::{ComputeMemory, DevSlice};
+use binius_compute::memory::{ComputeMemory, SizedSlice};
 use binius_field::PackedField;
 
 pub struct PackedMemory<P>(PhantomData<P>);
@@ -45,6 +45,10 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 		let (left, right) = data.data.split_at_mut(mid);
 		(Self::FSliceMut { data: left }, Self::FSliceMut { data: right })
 	}
+
+	fn narrow<'a>(data: &'a Self::FSlice<'_>) -> Self::FSlice<'a> {
+		Self::FSlice { data: data.data }
+	}
 }
 
 impl<P: PackedField> PackedMemory<P> {
@@ -79,7 +83,7 @@ impl<'a, P: PackedField> PackedMemorySlice<'a, P> {
 	}
 }
 
-impl<'a, P: PackedField> DevSlice<P::Scalar> for PackedMemorySlice<'a, P> {
+impl<'a, P: PackedField> SizedSlice for PackedMemorySlice<'a, P> {
 	#[inline(always)]
 	fn is_empty(&self) -> bool {
 		self.data.is_empty()
@@ -107,7 +111,7 @@ impl<'a, P: PackedField> PackedMemorySliceMut<'a, P> {
 	}
 }
 
-impl<'a, P: PackedField> DevSlice<P::Scalar> for PackedMemorySliceMut<'a, P> {
+impl<'a, P: PackedField> SizedSlice for PackedMemorySliceMut<'a, P> {
 	#[inline(always)]
 	fn is_empty(&self) -> bool {
 		self.data.is_empty()
