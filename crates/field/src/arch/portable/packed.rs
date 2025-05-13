@@ -461,11 +461,10 @@ macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 		macro_rules! assert_scalar_matches_canonical {
 			() => {
 				use std::any::TypeId;
+				type FieldScalar = <$bin_type as crate::PackedField>::Scalar;
 				debug_assert_eq!(
-					TypeId::of::<<$bin_type as crate::PackedField>::Scalar>(),
-					TypeId::of::<
-						<<$bin_type as crate::PackedField>::Scalar as crate::TowerField>::Canonical,
-					>()
+					TypeId::of::<FieldScalar>(),
+					TypeId::of::<<FieldScalar as crate::TowerField>::Canonical>()
 				);
 			};
 		}
