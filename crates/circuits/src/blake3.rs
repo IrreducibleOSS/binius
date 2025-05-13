@@ -313,7 +313,7 @@ pub fn blake3_compress(
 			let mut state_offset = 1usize;
 			let mut temp_vars_offset = 0usize;
 
-			fn add(a: u32, b: u32) -> (u32, u32, u32) {
+			const fn add(a: u32, b: u32) -> (u32, u32, u32) {
 				let zout;
 				let carry;
 

@@ -90,7 +90,7 @@ impl<P: PackedField> GrandProductWitness<P> {
 	}
 
 	/// Base-two logarithm of the number of inputs to the GKR grand product circuit
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.circuit_layers.len() - 1
 	}
 

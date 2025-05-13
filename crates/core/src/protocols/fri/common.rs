@@ -221,7 +221,7 @@ where
 	}
 
 	/// Number of oracles sent during the fold rounds.
-	pub fn n_oracles(&self) -> usize {
+	pub const fn n_oracles(&self) -> usize {
 		self.fold_arities.len()
 	}
 

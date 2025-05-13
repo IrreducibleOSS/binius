@@ -31,7 +31,7 @@ impl<'a, T> RowsBatch<'a, T> {
 	}
 
 	#[inline(always)]
-	pub fn get_ref(&self) -> RowsBatchRef<'_, T> {
+	pub const fn get_ref(&self) -> RowsBatchRef<'_, T> {
 		RowsBatchRef {
 			rows: self.rows.as_slice(),
 			row_len: self.row_len,
@@ -67,7 +67,7 @@ impl<'a, T> RowsBatchRef<'a, T> {
 	}
 
 	#[inline(always)]
-	pub fn rows(&self) -> &[&'a [T]] {
+	pub const fn rows(&self) -> &[&'a [T]] {
 		self.rows
 	}
 
@@ -77,7 +77,7 @@ impl<'a, T> RowsBatchRef<'a, T> {
 	}
 
 	#[inline(always)]
-	pub fn row_len(&self) -> usize {
+	pub const fn row_len(&self) -> usize {
 		self.row_len
 	}
 

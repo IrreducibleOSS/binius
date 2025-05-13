@@ -36,7 +36,7 @@ impl<F: Field> EqIndPartialEval<F> {
 		Self { r: r.into() }
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.r.len()
 	}
 

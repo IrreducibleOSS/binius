@@ -46,7 +46,7 @@ pub(super) struct FriFoldRoundsData {
 }
 
 impl FriFoldRoundsData {
-	pub(super) fn new(round: usize, log_batch_size: usize, codeword_len: usize) -> Self {
+	pub(super) const fn new(round: usize, log_batch_size: usize, codeword_len: usize) -> Self {
 		Self {
 			round,
 			log_batch_size,

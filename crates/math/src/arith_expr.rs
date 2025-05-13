@@ -1027,7 +1027,7 @@ struct StepNode<'a, F: Field> {
 }
 
 impl<F: Field> StepNode<'_, F> {
-	fn prev_step(&self, step: usize) -> Self {
+	const fn prev_step(&self, step: usize) -> Self {
 		StepNode {
 			index: step,
 			steps: self.steps,
@@ -1135,7 +1135,7 @@ impl EvalCost {
 	/// Since the evaluation time is dominated by the number of multiplications we can roughly
 	/// gauge the cost by the number of the multiplications. We count the number of squares
 	/// as 1/5th of a single multiplication.
-	pub fn mult_cost_approx(&self) -> usize {
+	pub const fn mult_cost_approx(&self) -> usize {
 		self.n_muls + self.n_squares.div_ceil(5)
 	}
 }

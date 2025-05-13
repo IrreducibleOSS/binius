@@ -48,7 +48,7 @@ pub struct Proof {
 }
 
 impl Proof {
-	pub fn get_proof_size(&self) -> usize {
+	pub const fn get_proof_size(&self) -> usize {
 		self.transcript.len()
 	}
 }

@@ -103,7 +103,7 @@ pub struct SubfieldSlice<'a, F, Mem: ComputeMemory<F>> {
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
-	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
+	pub const fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
 	}
 }
@@ -116,7 +116,7 @@ pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
-	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
+	pub const fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
 	}
 }

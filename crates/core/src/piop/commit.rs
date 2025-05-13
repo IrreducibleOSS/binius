@@ -107,7 +107,9 @@ where
 		.collect())
 }
 
-fn n_packed_vars_for_committed_oracle<F: TowerField>(oracle: &MultilinearPolyOracle<F>) -> usize {
+const fn n_packed_vars_for_committed_oracle<F: TowerField>(
+	oracle: &MultilinearPolyOracle<F>,
+) -> usize {
 	let n_vars = oracle.n_vars();
 	let tower_level = oracle.binary_tower_level();
 	(n_vars + tower_level).saturating_sub(F::TOWER_LEVEL)

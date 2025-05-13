@@ -9,7 +9,7 @@ pub(super) struct MLEFoldHighDimensionsData {
 }
 
 impl MLEFoldHighDimensionsData {
-	pub(super) fn new(n_claims: usize) -> Self {
+	pub(super) const fn new(n_claims: usize) -> Self {
 		Self { n_claims }
 	}
 }

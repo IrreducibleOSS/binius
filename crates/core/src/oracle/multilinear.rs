@@ -369,7 +369,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		}
 	}
 
-	pub fn size(&self) -> usize {
+	pub const fn size(&self) -> usize {
 		self.oracles.len()
 	}
 
@@ -402,7 +402,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		}
 	}
 
-	pub fn is_valid_oracle_id(&self, id: OracleId) -> bool {
+	pub const fn is_valid_oracle_id(&self, id: OracleId) -> bool {
 		id.index() < self.oracles.len()
 	}
 
@@ -835,7 +835,7 @@ impl<F: TowerField> LinearCombination<F> {
 		})
 	}
 
-	pub fn n_polys(&self) -> usize {
+	pub const fn n_polys(&self) -> usize {
 		self.inner.len()
 	}
 
@@ -893,7 +893,7 @@ impl<F: TowerField> CompositeMLE<F> {
 		self.inner.iter().copied()
 	}
 
-	pub fn n_polys(&self) -> usize {
+	pub const fn n_polys(&self) -> usize {
 		self.inner.len()
 	}
 }

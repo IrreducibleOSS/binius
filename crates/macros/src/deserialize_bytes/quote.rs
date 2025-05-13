@@ -23,7 +23,7 @@ impl<'gen, 'attr> GenericsSplit<'gen, 'attr> {
 	/// ## Arguments
 	/// * `generics`: The generics from DeriveInput.
 	/// * `eval_generics`: The generics bindings coming from the `eval_generics` attribute.
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+	pub const fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			impl_generics: ImplGenerics::new(generics, eval_generics),
 			type_generics: TypeGenerics::new(generics, eval_generics),
@@ -39,7 +39,7 @@ pub struct ImplGenerics<'gen, 'attr> {
 }
 
 impl<'gen, 'attr> ImplGenerics<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+	pub const fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -79,7 +79,7 @@ pub struct TypeGenerics<'gen, 'attr> {
 }
 
 impl<'gen, 'attr> TypeGenerics<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+	pub const fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -122,7 +122,7 @@ pub struct WhereClause<'gen, 'attr> {
 }
 
 impl<'gen, 'attr> WhereClause<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+	pub const fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,

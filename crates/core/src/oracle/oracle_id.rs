@@ -15,14 +15,14 @@ impl OracleId {
 	/// [`super::MultilinearOracleSet`].
 	///
 	/// Largely an escape hatch and discouraged to use.
-	pub fn from_index(index: usize) -> Self {
+	pub const fn from_index(index: usize) -> Self {
 		Self(index)
 	}
 
 	/// Returns the index in the associated [`super::MultilinearOracleSet`].
 	///
 	/// Largely an escape hatch and discouraged to use.
-	pub fn index(&self) -> usize {
+	pub const fn index(&self) -> usize {
 		self.0
 	}
 

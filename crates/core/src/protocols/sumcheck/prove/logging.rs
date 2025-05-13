@@ -61,7 +61,7 @@ pub struct ExpandQueryData {
 }
 
 impl ExpandQueryData {
-	pub fn new<F: Field>(query: &[F]) -> Self {
+	pub const fn new<F: Field>(query: &[F]) -> Self {
 		let log_n = if query.is_empty() {
 			0
 		} else {
@@ -82,7 +82,12 @@ pub struct UnivariateSkipCalculateCoeffsData {
 }
 
 impl UnivariateSkipCalculateCoeffsData {
-	pub fn new(n_vars: usize, skip_vars: usize, n_multilinears: usize, log_batch: usize) -> Self {
+	pub const fn new(
+		n_vars: usize,
+		skip_vars: usize,
+		n_multilinears: usize,
+		log_batch: usize,
+	) -> Self {
 		Self {
 			n_vars,
 			skip_vars,

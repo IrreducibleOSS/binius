@@ -64,7 +64,7 @@ impl<F: BinaryField> BinarySubspace<F> {
 	}
 
 	/// Returns the dimension of the subspace.
-	pub fn dim(&self) -> usize {
+	pub const fn dim(&self) -> usize {
 		self.basis.len()
 	}
 

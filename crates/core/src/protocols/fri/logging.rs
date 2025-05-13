@@ -11,7 +11,7 @@ pub(super) struct SortAndMergeDimensionData {
 }
 
 impl SortAndMergeDimensionData {
-	pub(super) fn new<F: BinaryField>(log_elems: usize) -> Self {
+	pub(super) const fn new<F: BinaryField>(log_elems: usize) -> Self {
 		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
 		Self {
 			log_elems,
@@ -30,7 +30,7 @@ pub(super) struct RSEncodeDimensionData {
 }
 
 impl RSEncodeDimensionData {
-	pub(super) fn new<F: BinaryField>(log_elems: usize, log_batch_size: usize) -> Self {
+	pub(super) const fn new<F: BinaryField>(log_elems: usize, log_batch_size: usize) -> Self {
 		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
 		Self {
 			log_elems,
@@ -50,7 +50,7 @@ pub(super) struct MerkleTreeDimensionData {
 }
 
 impl MerkleTreeDimensionData {
-	pub(super) fn new<F: BinaryField>(log_elems: usize, batch_size: usize) -> Self {
+	pub(super) const fn new<F: BinaryField>(log_elems: usize, batch_size: usize) -> Self {
 		let element_size = <F as ExtensionField<BinaryField1b>>::DEGREE;
 		Self {
 			log_elems,
@@ -72,7 +72,7 @@ pub(super) struct FRIFoldData {
 }
 
 impl FRIFoldData {
-	pub(super) fn new<F: BinaryField, FA: BinaryField>(
+	pub(super) const fn new<F: BinaryField, FA: BinaryField>(
 		log_len: usize,
 		log_batch_size: usize,
 		num_challenges: usize,
@@ -86,7 +86,7 @@ impl FRIFoldData {
 		}
 	}
 
-	pub(super) fn log_len(&self) -> usize {
+	pub(super) const fn log_len(&self) -> usize {
 		self.log_len
 	}
 }

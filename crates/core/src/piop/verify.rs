@@ -80,7 +80,7 @@ impl CommitMeta {
 	}
 
 	/// Returns the maximum number of variables of any individual multilinear.
-	pub fn max_n_vars(&self) -> usize {
+	pub const fn max_n_vars(&self) -> usize {
 		self.n_multilins_by_vars.len().saturating_sub(1)
 	}
 

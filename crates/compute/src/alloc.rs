@@ -32,7 +32,7 @@ where
 	F: 'static,
 	Mem: ComputeMemory<F> + 'a,
 {
-	pub fn new(buffer: Mem::FSliceMut<'a>) -> Self {
+	pub const fn new(buffer: Mem::FSliceMut<'a>) -> Self {
 		Self {
 			buffer: Cell::new(Some(buffer)),
 		}

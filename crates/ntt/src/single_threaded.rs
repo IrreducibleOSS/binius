@@ -316,7 +316,7 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	Ok(())
 }
 
-pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
+pub const fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	log_domain_size: usize,
 	data: &[PB],
 	shape: NTTShape,

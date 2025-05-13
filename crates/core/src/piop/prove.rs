@@ -48,7 +48,7 @@ use crate::{
 };
 
 #[inline(always)]
-fn reverse_bits(x: usize, log_len: usize) -> usize {
+const fn reverse_bits(x: usize, log_len: usize) -> usize {
 	x.reverse_bits()
 		.wrapping_shr((usize::BITS as usize - log_len) as _)
 }

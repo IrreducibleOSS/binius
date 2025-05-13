@@ -43,7 +43,7 @@ impl<P: PackedField, M: MultilinearPoly<P>> SumcheckMultilinear<P, M> {
 		}
 	}
 
-	pub fn const_suffix(&self, n_vars: usize) -> (P::Scalar, usize) {
+	pub const fn const_suffix(&self, n_vars: usize) -> (P::Scalar, usize) {
 		match self {
 			Self::Transparent { const_suffix, .. } => *const_suffix,
 			Self::Folded {

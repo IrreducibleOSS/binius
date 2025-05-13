@@ -22,7 +22,7 @@ pub struct EvalClaimPrefixDesc<F: Field> {
 }
 
 impl<F: Field> EvalClaimPrefixDesc<F> {
-	pub fn kappa(&self) -> usize {
+	pub const fn kappa(&self) -> usize {
 		self.prefix.len()
 	}
 }

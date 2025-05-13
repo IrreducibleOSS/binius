@@ -130,11 +130,11 @@ impl<F: Field> EvaluationDomain<F> {
 		})
 	}
 
-	pub fn size(&self) -> usize {
+	pub const fn size(&self) -> usize {
 		self.finite_points.len() + if self.with_infinity { 1 } else { 0 }
 	}
 
-	pub fn finite_points(&self) -> &[F] {
+	pub const fn finite_points(&self) -> &[F] {
 		self.finite_points.as_slice()
 	}
 
@@ -204,11 +204,11 @@ impl<F: Field> EvaluationDomain<F> {
 }
 
 impl<F: Field> InterpolationDomain<F> {
-	pub fn size(&self) -> usize {
+	pub const fn size(&self) -> usize {
 		self.evaluation_domain.size()
 	}
 
-	pub fn finite_points(&self) -> &[F] {
+	pub const fn finite_points(&self) -> &[F] {
 		self.evaluation_domain.finite_points()
 	}
 
