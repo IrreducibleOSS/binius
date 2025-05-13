@@ -88,6 +88,16 @@ impl PermutationTrace {
 	pub fn per_batch(&self, batch_no: usize) -> PerBatchLens<'_> {
 		PerBatchLens { pt: self, batch_no }
 	}
+
+	/// Get the input state for the permutation.
+	pub fn input(&self) -> &StateMatrix<u64> {
+		&self.round_traces[0].state_in
+	}
+
+	/// Get the output state for the permutation.
+	pub fn output(&self) -> &StateMatrix<u64> {
+		&self.round_traces[ROUNDS_PER_PERMUTATION - 1].state_out
+	}
 }
 
 /// This is specialization of [`PermutationTrace`] for a particular batch.

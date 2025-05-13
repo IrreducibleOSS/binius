@@ -52,8 +52,10 @@ impl BarrelShifter {
 	///
 	/// * `table` - A mutable reference to the `TableBuilder` used to define the gadget.
 	/// * `input` - The input column of type `Col<B1, 32>`.
-	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant bits are ignored.
-	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or circular left shift.
+	/// * `shift_amount` - The shift amount column of type `Col<B1, 16>`. The 11 most significant
+	///   bits are ignored.
+	/// * `variant` - Indicates whether the circuits performs a logical left, logical right, or
+	///   circular left shift.
 	///
 	/// # Returns
 	///
@@ -104,8 +106,7 @@ impl BarrelShifter {
 	///
 	/// # Arguments
 	///
-	/// * `index` - A mutable reference to the `TableWitness` used to populate
-	///   the table.
+	/// * `index` - A mutable reference to the `TableWitness` used to populate the table.
 	///
 	/// # Returns
 	///

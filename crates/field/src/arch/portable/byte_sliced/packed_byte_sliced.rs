@@ -644,7 +644,8 @@ macro_rules! define_byte_sliced_3d_1b {
 					.to_underlier()
 			}
 
-			/// Convert the byte-sliced field to an array of "ordinary" packed fields preserving the order of scalars.
+			/// Convert the byte-sliced field to an array of "ordinary" packed fields preserving the
+			/// order of scalars.
 			#[inline]
 			pub fn transpose_to(
 				&self,
@@ -659,7 +660,8 @@ macro_rules! define_byte_sliced_3d_1b {
 				);
 			}
 
-			/// Convert an array of "ordinary" packed fields to a byte-sliced field preserving the order of scalars.
+			/// Convert an array of "ordinary" packed fields to a byte-sliced field preserving the
+			/// order of scalars.
 			#[inline]
 			pub fn transpose_from(
 				underliers: &[PackedType<<$packed_storage as WithUnderlier>::Underlier, BinaryField1b>;

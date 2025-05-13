@@ -16,12 +16,13 @@ use tracing::instrument;
 use super::{
 	common::{vcs_optimal_layers_depths_iter, FRIParams},
 	error::Error,
+	logging::{MerkleTreeDimensionData, RSEncodeDimensionData, SortAndMergeDimensionData},
 	TerminateCodeword,
 };
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	protocols::fri::common::fold_interleaved_chunk,
+	protocols::fri::{common::fold_interleaved_chunk, logging::FRIFoldData},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{ProverTranscript, TranscriptWriter},
 };
@@ -40,7 +41,7 @@ use crate::{
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[instrument(skip_all, level = "debug")]
-fn fold_interleaved<F, FS, NTT, P>(
+pub fn fold_interleaved<F, FS, NTT, P>(
 	ntt: &NTT,
 	codeword: &[P],
 	challenges: &[F],
@@ -90,7 +91,8 @@ pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {
 	pub codeword: Vec<P>,
 }
 
-/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of two
+/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of
+/// two
 pub fn to_par_scalar_big_chunks<P>(
 	packed_slice: &[P],
 	chunk_size: usize,
@@ -191,23 +193,37 @@ where
 
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
-	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main")
-		.in_scope(|| {
-			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
-		});
+	let dimensions_data = SortAndMergeDimensionData::new::<F>(log_elems);
+	tracing::debug_span!(
+		"[task] Sort & Merge",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| {
+		message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
+	});
 
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main")
-		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
+	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
+	tracing::debug_span!(
+		"[task] RS Encode",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
-	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
+	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals
+	// 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
-
+	let dimension_data = MerkleTreeDimensionData::new::<F>(log_len, 1 << coset_log_len);
 	let merkle_tree_span = tracing::debug_span!(
 		"[task] Merkle Tree",
 		phase = "commit",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		dimensions_data = ?dimension_data
 	)
 	.entered();
 	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
@@ -304,6 +320,14 @@ where
 		self.curr_round
 	}
 
+	/// The length of the current codeword.
+	pub fn current_codeword_len(&self) -> usize {
+		match self.round_committed.last() {
+			Some((codeword, _)) => codeword.len(),
+			None => len_packed_slice(self.codeword),
+		}
+	}
+
 	fn is_commitment_round(&self) -> bool {
 		self.next_commit_round
 			.is_some_and(|round| round == self.curr_round)
@@ -311,8 +335,9 @@ where
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
-	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
-	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead
+	/// accumulate the folding challenge for processing at a later time. This saves us from storing
+	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -324,10 +349,24 @@ where
 			return Ok(FoldRoundOutput::NoCommitment);
 		}
 
+		let dimensions_data = match self.round_committed.last() {
+			Some((codeword, _)) => FRIFoldData::new::<F, FA>(
+				log2_strict_usize(codeword.len()),
+				0,
+				self.unprocessed_challenges.len(),
+			),
+			None => FRIFoldData::new::<F, FA>(
+				self.params.rs_code().log_len(),
+				self.params.log_batch_size(),
+				self.unprocessed_challenges.len(),
+			),
+		};
+
 		let fri_fold_span = tracing::debug_span!(
 			"[task] FRI Fold",
 			phase = "piop_compiler",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			?dimensions_data
 		)
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
@@ -366,11 +405,13 @@ where
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
 			.unwrap_or_else(|| 1 << self.params.n_final_challenges());
-
+		let dimension_data =
+			MerkleTreeDimensionData::new::<F>(dimensions_data.log_len(), coset_size);
 		let merkle_tree_span = tracing::debug_span!(
 			"[task] Merkle Tree",
 			phase = "piop_compiler",
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?dimension_data
 		)
 		.entered();
 		let (commitment, committed) = self

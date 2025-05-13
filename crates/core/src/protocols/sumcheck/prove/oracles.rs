@@ -2,15 +2,22 @@
 
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomainFactory, EvaluationOrder};
+use binius_math::{EvaluationDomainFactory, EvaluationOrder, MultilinearPoly};
 use binius_utils::bail;
 
-use super::{RegularSumcheckProver, ZerocheckProverImpl};
+use super::{
+	eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder},
+	RegularSumcheckProver, ZerocheckProverImpl,
+};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
 	polynomial::ArithCircuitPoly,
-	protocols::sumcheck::{
-		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
+	protocols::{
+		evalcheck::{subclaims::MemoizedData, EvalPoint},
+		sumcheck::{
+			constraint_set_mlecheck_claim, constraint_set_sumcheck_claim, CompositeSumClaim, Error,
+			OracleClaimMeta,
+		},
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -36,7 +43,17 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	Backend,
 >;
 
-/// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
+pub type OracleMLECheckProver<'a, FDomain, P, Backend> = EqIndSumcheckProver<
+	'a,
+	FDomain,
+	P,
+	ArithCircuitPoly<<P as PackedField>::Scalar>,
+	MultilinearWitness<'a, P>,
+	Backend,
+>;
+
+/// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular
+/// sumchecks.
 pub fn constraint_set_zerocheck_prover<'a, P, F, FBase, FDomain, DomainFactory, Backend>(
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
@@ -89,22 +106,23 @@ where
 	Ok(prover)
 }
 
-/// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
-pub fn constraint_set_sumcheck_prover<'a, FW, PW, FDomain, Backend>(
+/// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains
+/// zerochecks.
+pub fn constraint_set_sumcheck_prover<'a, F, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_set: ConstraintSet<FW>,
-	witness: &MultilinearExtensionIndex<'a, PW>,
+	constraint_set: ConstraintSet<F>,
+	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	backend: &'a Backend,
-) -> Result<OracleSumcheckProver<'a, FDomain, PW, Backend>, Error>
+) -> Result<OracleSumcheckProver<'a, FDomain, P, Backend>, Error>
 where
-	PW: PackedField<Scalar = FW> + PackedExtension<FDomain>,
-	FW: TowerField + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set::<FW, PW>(constraint_set, witness)?;
+	let (constraints, multilinears) = split_constraint_set::<F, P>(constraint_set, witness)?;
 
 	let mut sums = Vec::new();
 
@@ -135,17 +153,74 @@ where
 	Ok(prover)
 }
 
-type ConstraintsAndMultilinears<'a, F, PW> = (Vec<Constraint<F>>, Vec<MultilinearWitness<'a, PW>>);
+/// Construct mlecheck prover from the constraint set. Fails when constraint set contains
+/// zerochecks.
+#[allow(clippy::too_many_arguments)]
+pub fn constraint_set_mlecheck_prover<'a, 'b, F, P, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
+	constraint_set: ConstraintSet<F>,
+	eq_ind_challenges: &[F],
+	memoized_data: &mut MemoizedData<'b, P, Backend>,
+	witness: &MultilinearExtensionIndex<'a, P>,
+	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+	switchover_fn: impl Fn(usize) -> usize + Clone,
+	backend: &'a Backend,
+) -> Result<OracleMLECheckProver<'a, FDomain, P, Backend>, Error>
+where
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: Field,
+	Backend: ComputationBackend,
+{
+	let (constraints, multilinears) = split_constraint_set::<F, P>(constraint_set, witness)?;
+
+	let mut sums = Vec::new();
+
+	for Constraint {
+		composition,
+		predicate,
+		..
+	} in constraints
+	{
+		match predicate {
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
+				composition: ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
+				sum,
+			}),
+			_ => bail!(Error::MixedBatchingNotSupported),
+		}
+	}
+
+	let n_vars = eq_ind_challenges.len();
+
+	let eq_ind_partial = match evaluation_order {
+		EvaluationOrder::LowToHigh => &eq_ind_challenges[n_vars.min(1)..],
+		EvaluationOrder::HighToLow => &eq_ind_challenges[..n_vars.saturating_sub(1)],
+	};
+
+	let eq_ind_partial_evals = memoized_data
+		.full_query(eq_ind_partial, backend)?
+		.expansion()
+		.to_vec();
+
+	let prover = EqIndSumcheckProverBuilder::with_switchover(multilinears, switchover_fn, backend)?
+		.with_eq_ind_partial_evals(Backend::to_hal_slice(eq_ind_partial_evals))
+		.build(evaluation_order, eq_ind_challenges, sums, evaluation_domain_factory)?;
+
+	Ok(prover)
+}
+
+type ConstraintsAndMultilinears<'a, F, P> = (Vec<Constraint<F>>, Vec<MultilinearWitness<'a, P>>);
 
 #[allow(clippy::type_complexity)]
-pub fn split_constraint_set<'a, F, PW>(
+pub fn split_constraint_set<'a, F, P>(
 	constraint_set: ConstraintSet<F>,
-	witness: &MultilinearExtensionIndex<'a, PW>,
-) -> Result<ConstraintsAndMultilinears<'a, F, PW>, Error>
+	witness: &MultilinearExtensionIndex<'a, P>,
+) -> Result<ConstraintsAndMultilinears<'a, F, P>, Error>
 where
 	F: Field,
-	PW: PackedField,
-	PW::Scalar: ExtensionField<F>,
+	P: PackedField,
+	P::Scalar: ExtensionField<F>,
 {
 	let ConstraintSet {
 		oracle_ids,
@@ -168,28 +243,28 @@ where
 	Ok((constraints, multilinears))
 }
 
-pub struct SumcheckProversWithMetas<'a, PW, FDomain, Backend>
+pub struct SumcheckProversWithMetas<'a, P, FDomain, Backend>
 where
-	PW: PackedField,
+	P: PackedField,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	pub provers: Vec<OracleSumcheckProver<'a, FDomain, PW, Backend>>,
+	pub provers: Vec<OracleSumcheckProver<'a, FDomain, P, Backend>>,
 	pub metas: Vec<OracleClaimMeta>,
 }
 
 /// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
-pub fn constraint_sets_sumcheck_provers_metas<'a, PW, FDomain, Backend>(
+pub fn constraint_sets_sumcheck_provers_metas<'a, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_sets: Vec<ConstraintSet<PW::Scalar>>,
-	witness: &MultilinearExtensionIndex<'a, PW>,
+	constraint_sets: Vec<ConstraintSet<P::Scalar>>,
+	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,
 	backend: &'a Backend,
-) -> Result<SumcheckProversWithMetas<'a, PW, FDomain, Backend>, Error>
+) -> Result<SumcheckProversWithMetas<'a, P, FDomain, Backend>, Error>
 where
-	PW: PackedExtension<FDomain>,
-	PW::Scalar: TowerField + ExtensionField<FDomain>,
+	P: PackedExtension<FDomain>,
+	P::Scalar: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
@@ -210,4 +285,47 @@ where
 		provers.push(prover);
 	}
 	Ok(SumcheckProversWithMetas { provers, metas })
+}
+
+pub struct MLECheckProverWithMeta<'a, P, FDomain, Backend>
+where
+	P: PackedField,
+	FDomain: Field,
+	Backend: ComputationBackend,
+{
+	pub prover: OracleMLECheckProver<'a, FDomain, P, Backend>,
+	pub meta: OracleClaimMeta,
+}
+
+/// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
+#[allow(clippy::too_many_arguments)]
+pub fn constraint_sets_mlecheck_prover_meta<'a, 'b, P, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
+	constraint_set: ConstraintSet<P::Scalar>,
+	eq_ind_challenges: EvalPoint<P::Scalar>,
+	memoized_data: &mut MemoizedData<'b, P, Backend>,
+	witness: &MultilinearExtensionIndex<'a, P>,
+	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+	switchover_fn: impl Fn(usize) -> usize,
+	backend: &'a Backend,
+) -> Result<MLECheckProverWithMeta<'a, P, FDomain, Backend>, Error>
+where
+	P: PackedExtension<FDomain>,
+	P::Scalar: TowerField + ExtensionField<FDomain>,
+	FDomain: Field,
+	Backend: ComputationBackend,
+{
+	let (_, meta) = constraint_set_mlecheck_claim(constraint_set.clone())?;
+	let prover = constraint_set_mlecheck_prover(
+		evaluation_order,
+		constraint_set,
+		&eq_ind_challenges,
+		memoized_data,
+		witness,
+		evaluation_domain_factory,
+		&switchover_fn,
+		backend,
+	)?;
+
+	Ok(MLECheckProverWithMeta { prover, meta })
 }

@@ -231,7 +231,8 @@ impl Vision32MDSTransform {
 /// 3 x `PackedAESBinaryField8x32b` with a different coset for each item in a single go.
 #[derive(Clone)]
 pub struct FastNTT {
-	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
+	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast
+	// twiddles for coset 2]
 	round_0_twiddles: [PackedAESBinaryField32x8b; 2],
 	round_1_twiddles: [PackedAESBinaryField32x8b; 2],
 	round_2_twiddles: [PackedAESBinaryField32x8b; 2],
@@ -297,16 +298,17 @@ impl FastNTT {
 	/// This method does a single forward NTT transformation round for two pairs (data, coset).
 	/// `twiddles` must contain interleaved twiddles for the given round.
 	/// Given an input:
-	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1, ...].
-	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1,
+	/// ...]. data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
 	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
 	/// returns
 	/// (
-	///   [data_0_0 + data_0_1 * coset_0_twiddles_0, data_0_1 + data_0_0 + data_0_1 * coset_0_twiddles_0, ...],
-	///   [data_1_0 + data_1_1 * coset_1_twiddles_0, data_1_1 + data_1_0 + data_1_1 * coset_1_twiddles_0, ...],
-	/// )
+	///   [data_0_0 + data_0_1 * coset_0_twiddles_0, data_0_1 + data_0_0 + data_0_1 *
+	/// coset_0_twiddles_0, ...],   [data_1_0 + data_1_1 * coset_1_twiddles_0, data_1_1 + data_1_0
+	/// + data_1_1 * coset_1_twiddles_0, ...], )
 	///
-	/// This method allows us to perform forward NTT transformation for two pieces of data using the same number of vector operations as for one piece.
+	/// This method allows us to perform forward NTT transformation for two pieces of data using the
+	/// same number of vector operations as for one piece.
 	fn transform_forward_round_pair(
 		twiddles: PackedAESBinaryField32x8b,
 		data_0: PackedAESBinaryField32x8b,
@@ -345,8 +347,8 @@ impl FastNTT {
 	/// This method does a single inverse NTT transformation round for two pairs '(data, coset)'.
 	/// `twiddles` must contain interleaved twiddles for the given round.
 	/// Given an input:
-	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_1_twiddles_1, ...].
-	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_1_twiddles_1,
+	/// ...]. data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
 	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
 	/// returns
 	/// (
@@ -354,7 +356,8 @@ impl FastNTT {
 	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, data_1_0 + data_1_1, ...],
 	/// )
 	///
-	/// This method allows us to perform inverse NTT transformation for two pieces of data using the same number of vector operations as for one piece.
+	/// This method allows us to perform inverse NTT transformation for two pieces of data using the
+	/// same number of vector operations as for one piece.
 	fn transform_inverse_round_pair(
 		twiddles: PackedAESBinaryField32x8b,
 		data_0: PackedAESBinaryField32x8b,
@@ -403,7 +406,8 @@ pub const HASHES_PER_BYTE_SLICED_PERMUTATION: usize = 32;
 
 #[derive(Clone)]
 struct FastNttByteSliced {
-	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
+	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast
+	// twiddles for coset 2]
 	round_0_twiddles: [[PackedAESBinaryField32x8b; 4]; 3],
 	round_1_twiddles: [[PackedAESBinaryField32x8b; 2]; 3],
 	round_2_twiddles: [[PackedAESBinaryField32x8b; 1]; 3],
@@ -652,7 +656,8 @@ mod tests {
 			.collect();
 
 		for (i, col) in mds_trans.iter().enumerate() {
-			// Transform the data 0, ..., 0,  1, 0, ..., 0 where the ith position is the unit element through the mds and check that you get ith column as the output.
+			// Transform the data 0, ..., 0,  1, 0, ..., 0 where the ith position is the unit
+			// element through the mds and check that you get ith column as the output.
 			let mut data = [PackedAESBinaryField8x32b::zero(); 3];
 			set_packed_slice(&mut data, i, AESTowerField32b::one());
 

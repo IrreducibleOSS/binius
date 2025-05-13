@@ -9,22 +9,19 @@
 //!  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 //!  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 
-use std::{
-	collections::{HashMap, HashSet},
-	iter,
-};
+use std::collections::HashSet;
 
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithCircuit, ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
-	MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
+	MultilinearExtension, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use tracing::instrument;
 
-use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPointOracleIdMap};
+use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPoint, EvalPointOracleIdMap};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
@@ -34,13 +31,17 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
 		self,
-		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
+		prove::{
+			front_loaded,
+			oracles::{
+				constraint_sets_mlecheck_prover_meta, constraint_sets_sumcheck_provers_metas,
+				MLECheckProverWithMeta, SumcheckProversWithMetas,
+			},
+		},
 		Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
-	transparent::{
-		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
-	},
+	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -68,7 +69,8 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 	)
 }
 
-/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
+/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
+/// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_shifted_sumcheck<F, P>(
 	shifted: &Shifted,
@@ -128,14 +130,6 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	})
 }
 
-pub fn composite_mlecheck_meta<F: TowerField>(
-	oracles: &mut MultilinearOracleSet<F>,
-	eval_point: &[F],
-) -> Result<CompositeMLECheckMeta, Error> {
-	let eq_ind_id = oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?;
-	Ok(CompositeMLECheckMeta { eq_ind_id })
-}
-
 pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 	meta: &ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
@@ -150,24 +144,29 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 }
 
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
-	meta: CompositeMLECheckMeta,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
+	position: usize,
+	eval_point: &EvalPoint<F>,
+	constraint_builders: &mut Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 	comp: &CompositeMLE<F>,
 	eval: F,
 ) {
-	let n_vars = comp.n_vars();
-	let mut oracle_ids = comp.inner().clone();
-	oracle_ids.push(meta.eq_ind_id); // eq
+	let oracle_ids = comp.inner().clone();
 
-	// Var(comp.n_polys()) corresponds to the eq MLE
-	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithCircuit::var(comp.n_polys());
-	if n_vars >= constraint_builders.len() {
-		constraint_builders.resize_with(n_vars + 1, || ConstraintSetBuilder::new());
+	if let Some((_, constraint_builder)) = constraint_builders.get_mut(position) {
+		constraint_builder.add_sumcheck(
+			oracle_ids,
+			<_ as CompositionPoly<F>>::expression(comp.c()),
+			eval,
+		);
+	} else {
+		let mut new_builder = ConstraintSetBuilder::new();
+		new_builder.add_sumcheck(oracle_ids, <_ as CompositionPoly<F>>::expression(comp.c()), eval);
+		constraint_builders.push((eval_point.clone(), new_builder));
 	}
-	constraint_builders[n_vars].add_sumcheck(oracle_ids, expr, eval);
 }
 
-/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
+/// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
+/// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_packed_sumcheck<F, P>(
 	oracles: &MultilinearOracleSet<F>,
@@ -200,11 +199,6 @@ where
 
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, packed.log_degree(), eval);
 	Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CompositeMLECheckMeta {
-	pub eq_ind_id: OracleId,
 }
 
 /// Metadata about a sumcheck over a bivariate product of two multilinears.
@@ -298,8 +292,8 @@ where
 	Ok(())
 }
 
-/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
-/// composite oracle -> None
+/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the
+/// projected eval_point) composite oracle -> None
 #[allow(clippy::type_complexity)]
 #[instrument(
 	skip_all,
@@ -345,54 +339,8 @@ where
 		.collect::<Result<Vec<Option<_>>, Error>>()
 }
 
-/// Each composite oracle induces a new eq oracle, for which we need to fill the witness
-pub fn fill_eq_witness_for_composites<F, P, Backend>(
-	metas: &[CompositeMLECheckMeta],
-	memoized_queries: &mut MemoizedData<P, Backend>,
-	composite_mle_claims: &[EvalcheckMultilinearClaim<F>],
-	witness_index: &mut MultilinearExtensionIndex<P>,
-	backend: &Backend,
-) -> Result<(), Error>
-where
-	P: PackedField<Scalar = F>,
-	F: TowerField,
-	Backend: ComputationBackend,
-{
-	let dedup_eval_points = composite_mle_claims
-		.iter()
-		.map(|claim| claim.eval_point.as_ref())
-		.collect::<HashSet<_>>();
-
-	memoized_queries.memoize_query_par(dedup_eval_points.iter().copied(), backend)?;
-
-	let eq_indicators = dedup_eval_points
-		.into_iter()
-		.map(|eval_point| {
-			let mle = MLEDirectAdapter::from(MultilinearExtension::new(
-				eval_point.len(),
-				memoized_queries
-					.full_query_readonly(eval_point)
-					.expect("computed above")
-					.expansion()
-					.to_vec(),
-			)?)
-			.upcast_arc_dyn();
-			Ok((eval_point, mle))
-		})
-		.collect::<Result<HashMap<_, _>, Error>>()?;
-
-	for (claim, meta) in iter::zip(composite_mle_claims, metas) {
-		let eq_ind = eq_indicators
-			.get(claim.eval_point.as_ref())
-			.expect("was added above");
-
-		witness_index.update_multilin_poly(vec![(meta.eq_ind_id, eq_ind.clone())])?;
-	}
-
-	Ok(())
-}
-
-/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of multilinears
+/// Struct for memoizing tensor expansions of evaluation points and partial evaluations of
+/// multilinears
 #[allow(clippy::type_complexity)]
 pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
 	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
@@ -412,7 +360,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 		&mut self,
 		eval_point: &[P::Scalar],
 		backend: &Backend,
-	) -> Result<&MultilinearQuery<P, Backend::Vec<P>>, Error> {
+	) -> Result<&MultilinearQuery<P, Backend::Vec<P>>, binius_hal::Error> {
 		if let Some(index) = self
 			.query
 			.iter()
@@ -533,10 +481,62 @@ where
 		backend,
 	)?;
 
-	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
+	let batch_prover = front_loaded::BatchProver::new(provers, transcript)?;
+
+	let mut sumcheck_output = batch_prover.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	sumcheck_output.challenges.reverse();
 
 	let evalcheck_claims =
 		sumcheck::make_eval_claims(EvaluationOrder::HighToLow, metas, sumcheck_output)?;
+
+	Ok(evalcheck_claims)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mlecheck_with_switchover<'a, F, P, DomainField, Transcript, Backend>(
+	witness: &MultilinearExtensionIndex<P>,
+	constraint_set: ConstraintSet<F>,
+	eq_ind_challenges: EvalPoint<F>,
+	memoized_data: &mut MemoizedData<'a, P, Backend>,
+	transcript: &mut ProverTranscript<Transcript>,
+	switchover_fn: impl Fn(usize) -> usize + 'static,
+	domain_factory: impl EvaluationDomainFactory<DomainField>,
+	backend: &Backend,
+) -> Result<SumcheckProofEvalcheckClaims<F>, SumcheckError>
+where
+	P: PackedField<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<DomainField>,
+	F: TowerField + ExtensionField<DomainField>,
+	DomainField: Field,
+	Transcript: Challenger,
+	Backend: ComputationBackend,
+{
+	let MLECheckProverWithMeta { prover, meta } = constraint_sets_mlecheck_prover_meta(
+		EvaluationOrder::HighToLow,
+		constraint_set,
+		eq_ind_challenges,
+		memoized_data,
+		witness,
+		domain_factory,
+		&switchover_fn,
+		backend,
+	)?;
+
+	let batch_prover = front_loaded::BatchProver::new(vec![prover], transcript)?;
+
+	let mut sumcheck_output = batch_prover.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	sumcheck_output.challenges.reverse();
+
+	// extract eq_ind_eval
+	sumcheck_output.multilinear_evals[0].pop();
+
+	let evalcheck_claims =
+		sumcheck::make_eval_claims(EvaluationOrder::HighToLow, vec![meta], sumcheck_output)?;
 
 	Ok(evalcheck_claims)
 }

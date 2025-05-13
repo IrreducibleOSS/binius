@@ -2,19 +2,21 @@
 
 use std::iter::repeat_with;
 
-use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::OptimalUnderlier,
-	packed::{get_packed_slice, set_packed_slice},
-	tower::CanonicalTowerFamily,
+	arch::{OptimalUnderlier, OptimalUnderlier128b},
+	as_packed_field::PackedType,
+	packed::get_packed_slice,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
-		B1, B32, B64,
+		test_utils::{validate_system_witness, ClosureFiller},
+		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B128,
+		B32, B64,
 	},
-	gadgets::mul::{MulSS32, MulSU32, MulUU32, MulUU64, SignConverter, UnsignedMulPrimitives},
+	gadgets::{
+		div::{DivSS32, DivUU32},
+		mul::{MulSS32, MulSU32, MulUU32, MulUU64},
+	},
 };
 use bumpalo::Bump;
 use bytemuck::Contiguous;
@@ -31,9 +33,7 @@ where
 	fn check_outputs(&self, inputs: &[Self::Event], table_witness: &TableWitnessSegment);
 }
 
-struct MulDivTestSuite {
-	pub prove_verify: bool,
-}
+struct MulDivTestSuite;
 
 impl MulDivTestSuite {
 	fn execute<Test>(
@@ -54,44 +54,7 @@ impl MulDivTestSuite {
 		let table_index = witness.get_table(test_table.id()).unwrap();
 		test_table.check_outputs(&inputs, &table_index.full_segment());
 
-		const LOG_INV_RATE: usize = 1;
-
-		// Lower security bits for testing only!!
-		const SECURITY_BITS: usize = 70;
-		let ccs = cs.compile(&statement)?;
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(
-			&ccs,
-			&statement.boundaries,
-			&witness,
-		)?;
-
-		if self.prove_verify {
-			let proof = binius_core::constraint_system::prove::<
-				OptimalUnderlier,
-				CanonicalTowerFamily,
-				Groestl256,
-				Groestl256ByteCompression,
-				HasherChallenger<Groestl256>,
-				_,
-			>(
-				&ccs,
-				LOG_INV_RATE,
-				SECURITY_BITS,
-				&statement.boundaries,
-				witness,
-				&binius_hal::make_portable_backend(),
-			)?;
-
-			binius_core::constraint_system::verify::<
-				OptimalUnderlier,
-				CanonicalTowerFamily,
-				Groestl256,
-				Groestl256ByteCompression,
-				HasherChallenger<Groestl256>,
-			>(&ccs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)?;
-		}
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, statement.boundaries);
 		Ok(())
 	}
 }
@@ -159,14 +122,17 @@ fn test_muluu64() {
 		table_sizes: vec![1 << 9],
 	};
 	let muluu = MulUU64TestTable::new(&mut cs);
-	let test_suite = MulDivTestSuite { prove_verify: true };
-	test_suite.execute(cs, allocator, statement, muluu).unwrap();
+	MulDivTestSuite
+		.execute(cs, allocator, statement, muluu)
+		.unwrap();
 }
 
 enum MulDivType {
 	MulUU32,
 	MulSU32,
 	MulSS32,
+	DivUU32,
+	DivSS32,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -174,6 +140,8 @@ enum MulDivEnum {
 	MulUU32(MulUU32),
 	MulSU32(MulSU32),
 	MulSS32(MulSS32),
+	DivUU32(DivUU32),
+	DivSS32(DivSS32),
 }
 
 struct MulDiv32TestTable {
@@ -189,6 +157,8 @@ impl MulDiv32TestTable {
 			MulDivType::MulUU32 => MulDivEnum::MulUU32(MulUU32::new(&mut table)),
 			MulDivType::MulSU32 => MulDivEnum::MulSU32(MulSU32::new(&mut table)),
 			MulDivType::MulSS32 => MulDivEnum::MulSS32(MulSS32::new(&mut table)),
+			MulDivType::DivUU32 => MulDivEnum::DivUU32(DivUU32::new(&mut table)),
+			MulDivType::DivSS32 => MulDivEnum::DivSS32(DivSS32::new(&mut table)),
 		};
 		Self { table_id, mul_div }
 	}
@@ -212,6 +182,8 @@ impl TableFiller for MulDiv32TestTable {
 			MulDivEnum::MulUU32(muluu) => muluu.populate_with_inputs(witness, x_vals, y_vals)?,
 			MulDivEnum::MulSU32(mulsu) => mulsu.populate_with_inputs(witness, x_vals, y_vals)?,
 			MulDivEnum::MulSS32(mulss) => mulss.populate_with_inputs(witness, x_vals, y_vals)?,
+			MulDivEnum::DivUU32(divuu) => divuu.populate_with_inputs(witness, x_vals, y_vals)?,
+			MulDivEnum::DivSS32(divss) => divss.populate_with_inputs(witness, x_vals, y_vals)?,
 		};
 		Ok(())
 	}
@@ -224,6 +196,8 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 			MulDivEnum::MulUU32(_) => 0xdeadbeef,
 			MulDivEnum::MulSU32(_) => 0xc0ffee,
 			MulDivEnum::MulSS32(_) => 0xbadcafe,
+			MulDivEnum::DivUU32(_) => 0xdeadbeef,
+			MulDivEnum::DivSS32(_) => 0xc0ffee,
 		};
 		let mut rng = StdRng::seed_from_u64(seed);
 		match self.mul_div {
@@ -252,6 +226,18 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 			})
 			.take(table_size)
 			.collect(),
+			MulDivEnum::DivUU32(_) => {
+				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
+					.filter(|(_, y)| y.val() != 0)
+					.take(table_size)
+					.collect()
+			}
+			MulDivEnum::DivSS32(_) => {
+				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
+					.filter(|(_, y)| y.val() != 0)
+					.take(table_size)
+					.collect()
+			}
 		}
 	}
 
@@ -287,6 +273,30 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 					assert!((prod >> 32) as u32 == high.val() && prod as u32 == low.val());
 				}
 			}
+			MulDivEnum::DivUU32(divuu) => {
+				let out_div = table_witness.get(divuu.out_div).unwrap();
+				let out_rem = table_witness.get(divuu.out_rem).unwrap();
+				for (i, (p, q)) in inputs.iter().enumerate() {
+					let exp_div = p.val() / q.val();
+					let exp_rem = p.val() % q.val();
+					let got_div = get_packed_slice(&out_div, i).val();
+					let got_rem = get_packed_slice(&out_rem, i).val();
+					assert!(exp_div == got_div && exp_rem == got_rem);
+				}
+			}
+			MulDivEnum::DivSS32(divss) => {
+				let out_div = table_witness.get(divss.out_div).unwrap();
+				let out_rem = table_witness.get(divss.out_rem).unwrap();
+				for (i, (p, q)) in inputs.iter().enumerate() {
+					let p_i32 = p.val() as i32;
+					let q_i32 = q.val() as i32;
+					let exp_div = p_i32 / q_i32;
+					let exp_rem = p_i32 % q_i32;
+					let got_div = get_packed_slice(&out_div, i).val() as i32;
+					let got_rem = get_packed_slice(&out_rem, i).val() as i32;
+					assert!(exp_div == got_div && exp_rem == got_rem);
+				}
+			}
 		};
 	}
 }
@@ -300,8 +310,7 @@ fn test_muluu32() {
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulUU32);
-	let test_suite = MulDivTestSuite { prove_verify: true };
-	test_suite
+	MulDivTestSuite
 		.execute(cs, allocator, statement, mul_div_32)
 		.unwrap();
 }
@@ -315,8 +324,7 @@ fn test_mulsu32() {
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSU32);
-	let test_suite = MulDivTestSuite { prove_verify: true };
-	test_suite
+	MulDivTestSuite
 		.execute(cs, allocator, statement, mul_div_32)
 		.unwrap();
 }
@@ -330,106 +338,74 @@ fn test_mulss32() {
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSS32);
-	let test_suite = MulDivTestSuite { prove_verify: true };
-	test_suite
+	MulDivTestSuite
 		.execute(cs, allocator, statement, mul_div_32)
 		.unwrap();
 }
 
-#[derive(Debug)]
-pub struct AbsoluteValueTable {
-	table_id: TableId,
-	input: [Col<B1>; 32],
-	abs_value_bits: [Col<B1>; 32],
-	signed_input: SignConverter<u32, 32>,
-}
-
-impl AbsoluteValueTable {
-	pub fn new(cs: &mut ConstraintSystem) -> Self {
-		let mut table = cs.add_table("TwosComplementTestTable");
-		let table_id = table.id();
-		let input = table.add_committed_multiple("input");
-		let signed_input = SignConverter::new(&mut table, input, input[31].into());
-		let abs_value_bits = signed_input.converted_bits;
-		Self {
-			table_id,
-			input,
-			signed_input,
-			abs_value_bits,
-		}
-	}
-}
-
-impl TableFiller for AbsoluteValueTable {
-	type Event = B32;
-
-	fn id(&self) -> TableId {
-		self.table_id
-	}
-
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		{
-			let mut input_witness = array_util::try_map(self.input, |col| witness.get_mut(col))?;
-			let mut abs_input_witness =
-				array_util::try_map(self.abs_value_bits, |col| witness.get_mut(col))?;
-
-			for (i, val) in rows.enumerate() {
-				let val_i32 = val.val() as i32;
-				let abs_val = if val_i32 >= 0 {
-					val_i32 as u32
-				} else {
-					(-val_i32) as u32
-				};
-				for bit in 0..32 {
-					set_packed_slice(
-						&mut input_witness[bit],
-						i,
-						B1::from(u32::is_bit_set_at(*val, bit)),
-					);
-					set_packed_slice(
-						&mut abs_input_witness[bit],
-						i,
-						B1::from(u32::is_bit_set_at(B32::new(abs_val), bit)),
-					);
-				}
-			}
-		}
-		self.signed_input.populate(witness)?;
-		Ok(())
-	}
-}
-
-impl MulDivTestSuiteHelper for AbsoluteValueTable {
-	fn generate_inputs(&self, table_size: usize) -> Vec<B32> {
-		let mut rng = StdRng::seed_from_u64(0);
-		repeat_with(|| B32::new(rng.gen::<i32>() as u32))
-			.take(table_size)
-			.collect()
-	}
-
-	fn check_outputs(&self, _inputs: &[B32], _table_witness: &TableWitnessSegment) {
-		// It's redundant to check here
-	}
+#[test]
+fn test_divuu32() {
+	let mut cs = ConstraintSystem::new();
+	let allocator = Bump::new();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![1 << 9],
+	};
+	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivUU32);
+	MulDivTestSuite
+		.execute(cs, allocator, statement, mul_div_32)
+		.unwrap();
 }
 
 #[test]
-fn test_twos_complement() {
+fn test_divss32() {
 	let mut cs = ConstraintSystem::new();
-
 	let allocator = Bump::new();
-
-	const TABLE_SIZE: usize = 1 << 9;
-
 	let statement = Statement {
 		boundaries: vec![],
-		table_sizes: vec![TABLE_SIZE],
+		table_sizes: vec![1 << 9],
 	};
+	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivSS32);
+	MulDivTestSuite
+		.execute(cs, allocator, statement, mul_div_32)
+		.unwrap();
+}
 
-	let table = AbsoluteValueTable::new(&mut cs);
-	let test_suite = MulDivTestSuite { prove_verify: true };
-	test_suite.execute(cs, allocator, statement, table).unwrap()
+// This test exercises the case when a multiplication gadget is embedded in the same table as a
+// column with a different stacking factor. In this case, table column indices and partition column
+// indices don't align.
+#[test]
+fn test_mul_next_to_stacked_col() {
+	let mut cs = ConstraintSystem::new();
+	let mut table = cs.add_table("test");
+	let table_id = table.id();
+	let _stacked_col = table.add_committed::<B32, 2>("dummy");
+	let mul = MulUU32::new(&mut table.with_namespace("mul1"));
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let test_inputs = repeat_with(|| {
+		let a = rng.gen::<u32>();
+		let b = rng.gen::<u32>();
+		(a, b)
+	})
+	.take(17)
+	.collect::<Vec<_>>();
+
+	let allocator = Bump::new();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+	witness
+		.fill_table_sequential(
+			&ClosureFiller::new(table_id, |events, witness| {
+				mul.populate_with_inputs(
+					witness,
+					events.iter().map(|(a, _)| B32::new(*a)),
+					events.iter().map(|(_, b)| B32::new(*b)),
+				)?;
+				Ok(())
+			}),
+			&test_inputs,
+		)
+		.unwrap();
+
+	validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
 }

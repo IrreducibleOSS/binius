@@ -21,7 +21,7 @@ pub fn byte_sliced_double_conditional_increment<Level: TowerLevel<Data<OracleId>
 	first_carry_in: OracleId,
 	second_carry_in: OracleId,
 	log_size: usize,
-	zero_oracle_carry: usize,
+	zero_oracle_carry: OracleId,
 	lookup_batch_dci: &mut LookupBatch,
 ) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error> {
 	if Level::WIDTH == 1 {

@@ -18,9 +18,9 @@ use crate::Matrix;
 /// to reconstruct a degree <= d. This struct supports Barycentric extrapolation.
 ///
 /// A domain may optionally include a Karatsuba "infinity" point, "evaluating" a polynomial at which
-/// results in taking the coefficient at the highest degree term. This point requires special treatment
-/// but sometimes unlocks optimization opportunities. The "Evaluation" section of the Wikipedia article
-/// on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) gives
+/// results in taking the coefficient at the highest degree term. This point requires special
+/// treatment but sometimes unlocks optimization opportunities. The "Evaluation" section of the
+/// Wikipedia article on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) gives
 /// a great explanation of the concept.
 #[derive(Debug, Clone)]
 pub struct EvaluationDomain<F: Field> {
@@ -40,14 +40,14 @@ pub struct InterpolationDomain<F: Field> {
 /// Wraps type information to enable instantiating EvaluationDomains.
 #[auto_impl(&)]
 pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
-	/// Instantiates an EvaluationDomain of `size` points from $K \mathbin{/} \mathbb{F}\_2 \cup \infty$
-	/// where $K$ is a finite extension of degree $d$.
-	/// For `size >= 3`, the first `size - 1` domain points are a "lexicographic prefix" of the binary
-	/// subspace defined by the $\mathbb{F}\_2$-basis $\beta_0,\ldots ,\beta_{d-1}$. The additional assumption
-	/// $\beta_0 = 1$ means that first two points of the basis are always 0 and 1 of the field $K$.
-	/// The last point of the domain is Karatsuba "infinity" (denoted $\infty$), which is the coefficient of the
-	/// highest power in the interpolated polynomial (see the "Evaluation" section of the Wikipedia article
-	/// on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) for
+	/// Instantiates an EvaluationDomain of `size` points from $K \mathbin{/} \mathbb{F}\_2 \cup
+	/// \infty$ where $K$ is a finite extension of degree $d$.
+	/// For `size >= 3`, the first `size - 1` domain points are a "lexicographic prefix" of the
+	/// binary subspace defined by the $\mathbb{F}\_2$-basis $\beta_0,\ldots ,\beta_{d-1}$. The
+	/// additional assumption $\beta_0 = 1$ means that first two points of the basis are always 0
+	/// and 1 of the field $K$. The last point of the domain is Karatsuba "infinity" (denoted
+	/// $\infty$), which is the coefficient of the highest power in the interpolated polynomial
+	/// (see the "Evaluation" section of the Wikipedia article on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) for
 	/// an introduction).
 	///
 	/// "Infinity" point is not included when `size <= 2`.
@@ -172,7 +172,8 @@ impl<F: Field> EvaluationDomain<F> {
 		result
 	}
 
-	/// Evaluate the unique interpolated polynomial at any point, for a given set of values, in $O(N)$.
+	/// Evaluate the unique interpolated polynomial at any point, for a given set of values, in
+	/// $O(N)$.
 	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
 	where
 		PE: PackedField<Scalar: ExtensionField<F>>,

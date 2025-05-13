@@ -109,7 +109,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 					return Err(Error::EvalcheckClaimForDerivedPoly { id: eval_claim.id });
 				}
 				let committed_idx = oracle_to_commit_index
-					.get(oracle.id())
+					.get(oracle.id().index())
 					.copied()
 					.ok_or_else(|| Error::OracleToCommitIndexMissingEntry { id: eval_claim.id })?;
 				let suffix_desc_idx = eval_claim_to_suffix_desc_index[i];

@@ -3,7 +3,6 @@
 use std::{
 	hash::Hash,
 	ops::{Deref, Range},
-	slice,
 	sync::Arc,
 };
 
@@ -27,7 +26,7 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub eval: F,
 }
 
-#[repr(u8)]
+#[repr(u32)]
 #[derive(Debug)]
 enum EvalcheckNumerics {
 	NewClaim = 1,
@@ -45,11 +44,11 @@ enum EvalcheckNumerics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalcheckHint {
 	NewClaim,
-	DuplicateClaim(usize),
+	DuplicateClaim(u32),
 }
 
 impl EvalcheckNumerics {
-	const fn from(x: u8) -> Result<Self, Error> {
+	const fn from(x: u32) -> Result<Self, Error> {
 		match x {
 			1 => Ok(Self::NewClaim),
 			2 => Ok(Self::DuplicateClaim),
@@ -65,10 +64,10 @@ pub fn serialize_evalcheck_proof<B: BufMut>(
 ) {
 	match evalcheck {
 		EvalcheckHint::NewClaim => {
-			transcript.write_bytes(&[EvalcheckNumerics::NewClaim as u8]);
+			transcript.write(&(EvalcheckNumerics::NewClaim as u32));
 		}
 		EvalcheckHint::DuplicateClaim(index) => {
-			transcript.write_bytes(&[EvalcheckNumerics::DuplicateClaim as u8]);
+			transcript.write(&(EvalcheckNumerics::DuplicateClaim as u32));
 			transcript.write(index);
 		}
 	}
@@ -78,9 +77,9 @@ pub fn serialize_evalcheck_proof<B: BufMut>(
 pub fn deserialize_evalcheck_proof<B: Buf>(
 	transcript: &mut TranscriptReader<B>,
 ) -> Result<EvalcheckHint, Error> {
-	let mut ty = 0;
-	transcript.read_bytes(slice::from_mut(&mut ty))?;
-	let as_enum = EvalcheckNumerics::from(ty)?;
+	let mut bytes = [0; size_of::<u32>()];
+	transcript.read_bytes(&mut bytes)?;
+	let as_enum = EvalcheckNumerics::from(u32::from_le_bytes(bytes))?;
 
 	match as_enum {
 		EvalcheckNumerics::NewClaim => Ok(EvalcheckHint::NewClaim),
@@ -93,9 +92,9 @@ pub fn deserialize_evalcheck_proof<B: Buf>(
 
 /// Data structure for efficiently querying and inserting evaluations of claims.
 ///
-/// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the data.
-/// This data structure is more memory efficient for small number of evaluation points and OracleIds which
-/// are grouped together.
+/// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the
+/// data. This data structure is more memory efficient for small number of evaluation points and
+/// OracleIds which are grouped together.
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -112,7 +111,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	/// Returns `None` if no value is found.
 	pub fn get(&self, id: OracleId, eval_point: &[F]) -> Option<&T> {
 		self.data
-			.get(id)?
+			.get(id.index())?
 			.iter()
 			.find(|(ep, _)| **ep == *eval_point)
 			.map(|(_, val)| val)
@@ -122,11 +121,11 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	///
 	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
-		if id >= self.data.len() {
-			self.data.resize(id + 1, Vec::new());
+		if id.index() >= self.data.len() {
+			self.data.resize(id.index() + 1, Vec::new());
 		}
 
-		self.data[id].push((eval_point, val))
+		self.data[id.index()].push((eval_point, val))
 	}
 
 	/// Flatten the data structure into a vector of values.

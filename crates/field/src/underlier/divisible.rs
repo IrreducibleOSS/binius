@@ -7,7 +7,8 @@ use std::{
 };
 
 /// Underlier value that can be split into a slice of smaller `U` values.
-/// This trait is unsafe because it allows to reinterpret the memory of a type as a slice of another type.
+/// This trait is unsafe because it allows to reinterpret the memory of a type as a slice of another
+/// type.
 ///
 /// # Safety
 /// Implementors must ensure that `&Self` can be safely bit-cast to `&[U; Self::WIDTH]` and
@@ -19,8 +20,8 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 		size_of::<Self>() / size_of::<U>()
 	};
 
-	/// This is actually `[U; Self::WIDTH]` but we can't use it as the default value in the trait definition
-	/// without `generic_const_exprs` feature enabled.
+	/// This is actually `[U; Self::WIDTH]` but we can't use it as the default value in the trait
+	/// definition without `generic_const_exprs` feature enabled.
 	type Array: IntoIterator<Item = U, IntoIter: Send + Clone>;
 
 	fn split_val(self) -> Self::Array;
@@ -29,15 +30,17 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 
 	fn split_slice(values: &[Self]) -> &[U] {
 		let ptr = values.as_ptr() as *const U;
-		// Safety: if `&Self` can be reinterpreted as a sequence of `Self::WIDTH` elements of `U` then
-		// `&[Self]` can be reinterpreted as a sequence of `Self::Width * values.len()` elements of `U`.
+		// Safety: if `&Self` can be reinterpreted as a sequence of `Self::WIDTH` elements of `U`
+		// then `&[Self]` can be reinterpreted as a sequence of `Self::Width * values.len()`
+		// elements of `U`.
 		unsafe { from_raw_parts(ptr, values.len() * Self::WIDTH) }
 	}
 
 	fn split_slice_mut(values: &mut [Self]) -> &mut [U] {
 		let ptr = values.as_mut_ptr() as *mut U;
-		// Safety: if `&mut Self` can be reinterpreted as a sequence of `Self::WIDTH` elements of `U` then
-		// `&mut [Self]` can be reinterpreted as a sequence of `Self::Width * values.len()` elements of `U`.
+		// Safety: if `&mut Self` can be reinterpreted as a sequence of `Self::WIDTH` elements of
+		// `U` then `&mut [Self]` can be reinterpreted as a sequence of `Self::Width *
+		// values.len()` elements of `U`.
 		unsafe { from_raw_parts_mut(ptr, values.len() * Self::WIDTH) }
 	}
 }

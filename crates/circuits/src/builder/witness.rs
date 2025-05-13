@@ -116,7 +116,7 @@ impl<'arena> Builder<'arena> {
 			bail!(anyhow!("OracleId {id} does not exist in MultilinearOracleSet"));
 		}
 		let entry = entries
-			.get(id)
+			.get(id.index())
 			.and_then(|entry| entry.as_ref())
 			.ok_or_else(|| anyhow!("Witness for {} is missing", oracles.label(id)))?;
 
@@ -139,7 +139,7 @@ impl<'arena> Builder<'arena> {
 
 	pub fn set<FS: TowerField>(
 		&self,
-		id: OracleId,
+		oracle_id: OracleId,
 		entry: WitnessEntry<'arena, FS>,
 	) -> Result<(), Error>
 	where
@@ -147,14 +147,15 @@ impl<'arena> Builder<'arena> {
 		F: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
-		if !oracles.is_valid_oracle_id(id) {
-			bail!(anyhow!("OracleId {id} does not exist in MultilinearOracleSet"));
+		if !oracles.is_valid_oracle_id(oracle_id) {
+			bail!(anyhow!("OracleId {oracle_id} does not exist in MultilinearOracleSet"));
 		}
 		let mut entries = self.entries.borrow_mut();
-		if id >= entries.len() {
-			entries.resize_with(id + 1, || None);
+		let oracle_index = oracle_id.index();
+		if oracle_index >= entries.len() {
+			entries.resize_with(oracle_index + 1, || None);
 		}
-		entries[id] = Some(WitnessBuilderEntry {
+		entries[oracle_index] = Some(WitnessBuilderEntry {
 			data: entry.data,
 			nonzero_scalars_prefix: entry.nonzero_scalars_prefix,
 			tower_level: FS::TOWER_LEVEL,
@@ -171,7 +172,7 @@ impl<'arena> Builder<'arena> {
 			.into_inner()
 			.into_iter()
 			.enumerate()
-			.filter_map(|(id, entry)| entry.map(|entry| Ok((id, entry.witness?, entry.nonzero_scalars_prefix))))
+			.filter_map(|(index, entry)| entry.map(|entry| Ok((OracleId::from_index(index), entry.witness?, entry.nonzero_scalars_prefix))))
 			.collect::<Result<Vec<_>, Error>>()?;
 		result.update_multilin_poly_with_nonzero_scalars_prefixes(entries)?;
 		Ok(result)
@@ -272,12 +273,12 @@ where
 	fn drop(&mut self) {
 		let data = Option::take(&mut self.data).expect("data is always Some until this point");
 		let mut entries = self.entries.borrow_mut();
-		let id = self.id;
+		let oracle_index = self.id.index();
 		let nonzero_scalars_prefix = self.nonzero_scalars_prefix;
-		if id >= entries.len() {
-			entries.resize_with(id + 1, || None);
+		if oracle_index >= entries.len() {
+			entries.resize_with(oracle_index + 1, || None);
 		}
-		entries[id] = Some(WitnessBuilderEntry {
+		entries[oracle_index] = Some(WitnessBuilderEntry {
 			data,
 			nonzero_scalars_prefix,
 			tower_level: FS::TOWER_LEVEL,

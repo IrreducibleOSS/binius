@@ -29,13 +29,15 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	piop::CommitMeta,
+	oracle::OracleId,
+	piop::{
+		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
+		CommitMeta,
+	},
 	protocols::{
-		fri,
-		fri::{FRIFolder, FRIParams, FoldRoundOutput},
-		sumcheck,
+		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			immediate_switchover_heuristic,
+			self, immediate_switchover_heuristic,
 			prove::{
 				front_loaded::BatchProver as SumcheckBatchProver, RegularSumcheckProver,
 				SumcheckProver,
@@ -129,8 +131,8 @@ fn merge_multilins<F, P, Data>(
 /// * `fri_params` - the FRI parameters for the commitment opening protocol
 /// * `merkle_prover` - the Merkle tree prover used in FRI
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
-///   defined over subfields of `F`. They must be in ascending order by the number of variables
-///   in the packed multilinear (ie. number of variables minus log extension degree).
+///   defined over subfields of `F`. They must be in ascending order by the number of variables in
+///   the packed multilinear (ie. number of variables minus log extension degree).
 pub fn commit<F, FEncode, P, M, NTT, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
@@ -149,7 +151,9 @@ where
 	let packed_multilins = multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 	if !is_sorted_ascending(packed_multilins.iter().map(|mle| mle.n_vars())) {
 		return Err(Error::CommittedsNotSorted);
@@ -223,7 +227,8 @@ where
 		.iter()
 		.enumerate()
 		.map(|(i, unpacked_committed)| {
-			packed_committed(i, unpacked_committed).map(MLEDirectAdapter::from)
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+				.map(MLEDirectAdapter::from)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -306,32 +311,43 @@ where
 			perfetto_category = "phase.sub"
 		)
 		.entered();
+		let provers_dimensions_data =
+			SumcheckBatchProverDimensionsData::new(round, sumcheck_batch_prover.provers());
 		let bivariate_sumcheck_calculate_coeffs_span = tracing::debug_span!(
 			"[task] (PIOP Compiler) Calculate Coeffs",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
 		)
 		.entered();
 		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
 		drop(bivariate_sumcheck_calculate_coeffs_span);
+
 		let challenge = transcript.sample();
 		let bivariate_sumcheck_all_folds_span = tracing::debug_span!(
 			"[task] (PIOP Compiler) Fold (All Rounds)",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "task.main"
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
 		)
 		.entered();
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 		drop(bivariate_sumcheck_all_folds_span);
 		drop(bivariate_sumcheck_span);
 
+		let dimensions_data = FriFoldRoundsData::new(
+			round,
+			fri_params.log_batch_size(),
+			fri_prover.current_codeword_len(),
+		);
 		let fri_fold_rounds_span = tracing::debug_span!(
 			"[step] FRI Fold Rounds",
 			phase = "piop_compiler",
 			round = round,
-			perfetto_category = "phase.sub"
+			perfetto_category = "phase.sub",
+			?dimensions_data,
 		)
 		.entered();
 		match fri_prover.execute_fold_round(challenge)? {
@@ -361,7 +377,9 @@ where
 	let packed_committed = committed_multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for (i, claim) in claims.iter().enumerate() {
@@ -405,7 +423,7 @@ where
 /// the polynomial is extended by padding with more variables, which corresponds to repeating its
 /// subcube evaluations.
 fn packed_committed<F, P, M>(
-	id: usize,
+	id: OracleId,
 	unpacked_committed: &M,
 ) -> Result<MultilinearExtension<P, Cow<'_, [P]>>, Error>
 where
@@ -421,7 +439,11 @@ where
 		let packed_evals = unpacked_committed
 			.packed_evals()
 			.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
-		MultilinearExtension::from_values_generic(Cow::Borrowed(packed_evals))
+
+		MultilinearExtension::new(
+			unpacked_n_vars - unpacked_committed.log_extension_degree(),
+			Cow::Borrowed(packed_evals),
+		)
 	}?;
 	Ok(packed_committed)
 }

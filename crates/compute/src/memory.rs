@@ -2,7 +2,7 @@
 
 use std::ops::RangeBounds;
 
-pub trait DevSlice<T> {
+pub trait SizedSlice {
 	#[inline(always)]
 	fn is_empty(&self) -> bool {
 		self.len() == 0
@@ -11,13 +11,13 @@ pub trait DevSlice<T> {
 	fn len(&self) -> usize;
 }
 
-impl<T> DevSlice<T> for &[T] {
+impl<T> SizedSlice for &[T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
 }
 
-impl<T> DevSlice<T> for &mut [T] {
+impl<T> SizedSlice for &mut [T] {
 	fn len(&self) -> usize {
 		(**self).len()
 	}
@@ -28,10 +28,13 @@ pub trait ComputeMemory<F> {
 	const MIN_SLICE_LEN: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
-	type FSlice<'a>: Copy + DevSlice<F>;
+	type FSlice<'a>: Copy + SizedSlice;
 
 	/// An opaque handle to a mutable slice of elements stored in a compute memory.
-	type FSliceMut<'a>: DevSlice<F>;
+	type FSliceMut<'a>: SizedSlice;
+
+	/// Borrows an immutable memory slice, narrowing the lifetime.
+	fn narrow<'a>(data: &'a Self::FSlice<'_>) -> Self::FSlice<'a>;
 
 	/// Borrows a mutable memory slice as immutable.
 	///
@@ -71,5 +74,50 @@ pub trait ComputeMemory<F> {
 	) -> (Self::FSliceMut<'a>, Self::FSliceMut<'a>) {
 		let borrowed = Self::slice_mut(data, ..);
 		Self::split_at_mut(borrowed, mid)
+	}
+}
+
+/// `SubfieldSlice` is a structure that represents a slice of elements stored in a compute memory,
+/// along with an associated tower level. This structure is used to handle subfield operations
+/// within a computational context, where the `slice` is an immutable reference to the data
+/// and `tower_level` indicates the level of the field tower to which the elements belong.
+///
+/// # Type Parameters
+/// - `'a`: The lifetime of the slice reference.
+/// - `F`: The type of the field elements stored in the slice.
+/// - `Mem`: A type that implements the `ComputeMemory` trait, which provides the necessary
+///   operations for handling memory slices.
+///
+/// # Fields
+/// - `slice`: An immutable slice of elements stored in compute memory, represented by
+///   `Mem::FSlice<'a>`.
+/// - `tower_level`: A `usize` value indicating the level of the field tower for the elements in the
+///   slice.
+///
+/// # Usage
+/// `SubfieldSlice` is typically used in scenarios where operations need to be performed on
+/// specific subfields of a larger field structure, allowing for efficient computation and
+/// manipulation of data within a hierarchical field system.
+pub struct SubfieldSlice<'a, F, Mem: ComputeMemory<F>> {
+	pub slice: Mem::FSlice<'a>,
+	pub tower_level: usize,
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
+	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
+		Self { slice, tower_level }
+	}
+}
+
+/// `SubfieldSliceMut` represents a mutable slice of field elements with identical semantics to
+/// `SubfieldSlice`.
+pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
+	pub slice: Mem::FSliceMut<'a>,
+	pub tower_level: usize,
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
+	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
+		Self { slice, tower_level }
 	}
 }

@@ -267,8 +267,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
-	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables) by left
-	/// padding each FSub element with zeroes.
+	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables)
+	/// by left padding each FSub element with zeroes.
 	pub fn add_zero_pad_upcast<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -298,8 +298,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 
 	/// Given the representation at a tower level FSub (with `VALUES_PER_ROW` variables),
 	/// returns the representation at a higher tower level F (with `NEW_VALUES_PER_ROW` variables).
-	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to 0.
-	/// Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
+	/// This is done by keeping the `nonzero-index`-th FSub element, and setting all the others to
+	/// 0. Note that `0 <= nonzero_index < NEW_VALUES_PER_ROW / VALUES_PER_ROW`.
 	pub fn add_zero_pad<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -352,6 +352,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::Constant {
 				poly: Arc::new(mle),
+				data: constants.map(|f_sub| f_sub.into()).to_vec(),
 			},
 		)
 	}
@@ -372,7 +373,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		&mut self,
 		name: impl ToString,
 		pow_bits: &[Col<B1>],
-		base: F,
+		base: FExpBase,
 	) -> Col<FExpBase>
 	where
 		FExpBase: TowerField,
@@ -387,7 +388,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			namespaced_name,
 			ColumnDef::StaticExp {
 				bit_cols,
-				base,
+				base: base.into(),
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
@@ -398,7 +399,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// ## Parameters
 	/// - `name`: Name for the column
 	/// - `pow_bits`: The bits of exponent columns from LSB to MSB
-	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be `FSub`
+	/// - `base`: The column of base to exponentiate. The field used in exponentiation will be
+	///   `FSub`
 	///
 	/// ## Preconditions
 	/// * `pow_bits.len()` must be less than or equal to the width of field `FSub`
@@ -443,7 +445,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert!(
-			self.table.is_power_of_two_sized(),
+			self.table.requires_any_po2_size(),
 			"Structured dynamic size columns may only be added to tables that are power of two sized"
 		);
 		let namespaced_name = self.namespaced_name(name);
@@ -570,8 +572,8 @@ pub struct Table<F: TowerField = B128> {
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
 }
 
-/// A table partition describes a part of a table where everything has the same pack factor (as well as height)
-/// Tower level does not need to be the same.
+/// A table partition describes a part of a table where everything has the same pack factor (as well
+/// as height) Tower level does not need to be the same.
 ///
 /// Zerocheck constraints can only be defined within table partitions.
 #[derive(Debug)]
@@ -623,16 +625,20 @@ impl<F: TowerField> TablePartition<F> {
 				col.table_index
 			})
 			.collect();
-		let selector = opts.selector.map(|selector| {
-			assert_eq!(selector.table_id, self.table_id);
-			selector.table_index
-		});
+		let selectors = opts
+			.selectors
+			.iter()
+			.map(|selector| {
+				assert_eq!(selector.table_id, self.table_id);
+				selector.table_index
+			})
+			.collect::<Vec<_>>();
 		self.flushes.push(Flush {
 			column_indices,
 			channel_id,
 			direction,
 			multiplicity: opts.multiplicity,
-			selector,
+			selectors,
 		});
 	}
 }
@@ -650,17 +656,6 @@ impl<F: TowerField> Table<F> {
 
 	pub fn id(&self) -> TableId {
 		self.id
-	}
-
-	/// Returns the binary logarithm of the table capacity required to accommodate the given number
-	/// of rows.
-	///
-	/// The table capacity must be a power of two (in order to be compatible with the multilinear
-	/// proof system, which associates each table index with a vertex of a boolean hypercube).
-	/// This will normally be the next power of two greater than the table size, but could require
-	/// more padding to get a minimum capacity.
-	pub fn log_capacity(&self, table_size: usize) -> usize {
-		log2_ceil_usize(table_size)
 	}
 
 	fn new_column<FSub, const V: usize>(
@@ -702,8 +697,14 @@ impl<F: TowerField> Table<F> {
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
 
-	pub fn is_power_of_two_sized(&self) -> bool {
+	/// Returns true if this table requires to have any power-of-two size.
+	pub fn requires_any_po2_size(&self) -> bool {
 		matches!(self.table_size_spec, TableSizeSpec::PowerOfTwo)
+	}
+
+	/// Returns the size constraint of this table.
+	pub(crate) fn size_spec(&self) -> TableSizeSpec {
+		self.table_size_spec
 	}
 
 	pub fn stat(&self) -> TableStat {
@@ -719,14 +720,24 @@ const fn partition_id<const V: usize>() -> usize {
 ///
 /// M3 tables can have size restrictions, where certain columns, specifically structured columns,
 /// are only allowed for certain size specifications.
-#[derive(Debug)]
-enum TableSizeSpec {
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum TableSizeSpec {
 	/// The table size may be arbitrary.
 	Arbitrary,
 	/// The table size may be any power of two.
 	PowerOfTwo,
 	/// The table size must be a fixed power of two.
 	Fixed { log_size: usize },
+}
+
+/// Returns the binary logarithm of the table capacity required to accommodate the given number
+/// of rows.
+///
+/// The table capacity must be a power of two (in order to be compatible with the multilinear
+/// proof system, which associates each table index with a vertex of a boolean hypercube).
+/// This is be the next power of two greater than the table size.
+pub fn log_capacity(table_size: usize) -> usize {
+	log2_ceil_usize(table_size)
 }
 
 #[cfg(test)]

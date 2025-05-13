@@ -27,7 +27,8 @@ impl TowerSimdType for M512 {
 		unsafe {
 			let alpha = Self::alpha::<Scalar>();
 			let mask = even_mask::<Scalar>();
-			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not a
+			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not
+			// a
 			_mm512_mask_blend_epi8(mask, alpha.0, self.0)
 		}
 		.into()

@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, marker::PhantomData};
+use std::{array, marker::PhantomData, ops::Deref};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
@@ -138,6 +138,120 @@ impl U32Add {
 				}
 			}
 		};
+		Ok(())
+	}
+}
+
+/// Gadget for unsigned addition using non-packed one-bit columns generic over `u32` and `u64`
+#[derive(Debug)]
+pub struct WideAdd<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
+	pub x_in: [Col<B1>; BIT_LENGTH],
+	pub y_in: [Col<B1>; BIT_LENGTH],
+
+	cin: [Col<B1>; BIT_LENGTH],
+
+	pub z_out: [Col<B1>; BIT_LENGTH],
+	pub final_carry_out: Col<B1>,
+	/// This gadget always exposes the final carry bit.
+	pub flags: U32AddFlags,
+	// TODO: Maybe make a serperate flag for handling unsigned adds of arbitrary bit length.
+	_marker: PhantomData<UX>,
+}
+impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideAdd<UX, BIT_LENGTH> {
+	pub fn new(
+		table: &mut TableBuilder,
+		x_in: [Col<B1>; BIT_LENGTH],
+		y_in: [Col<B1>; BIT_LENGTH],
+		flags: U32AddFlags,
+	) -> Self {
+		assert_eq!(BIT_LENGTH, UX::BIT_LENGTH);
+		let cin = array::from_fn(|i| {
+			if i != 0 {
+				table.add_committed(format!("cin[{i}]"))
+			} else {
+				flags
+					.carry_in_bit
+					.map(|carry_col| table.add_selected("cin[0]", carry_col, 0))
+					.unwrap_or_else(|| table.add_committed("cin[0]"))
+			}
+		});
+		let zout = if flags.commit_zout {
+			let zout = table.add_committed_multiple("z_out");
+			for bit in 0..BIT_LENGTH {
+				table.assert_zero(
+					format!("sum[{bit}]"),
+					x_in[bit] + y_in[bit] + cin[bit] - zout[bit],
+				);
+			}
+			zout
+		} else {
+			array::from_fn(|i| table.add_computed(format!("zout[{i}]"), x_in[i] + y_in[i] + cin[i]))
+		};
+		let final_carry_out = table.add_committed("final_carry_out");
+		let cout: [_; BIT_LENGTH] = array::from_fn(|i| {
+			if i != BIT_LENGTH - 1 {
+				cin[i + 1]
+			} else {
+				final_carry_out
+			}
+		});
+		for bit in 0..BIT_LENGTH {
+			table.assert_zero(
+				format!("carry_{bit}"),
+				(x_in[bit] + cin[bit]) * (y_in[bit] + cin[bit]) + cin[bit] - cout[bit],
+			);
+		}
+
+		Self {
+			x_in,
+			y_in,
+			cin,
+			z_out: zout,
+			final_carry_out,
+			flags,
+			_marker: PhantomData,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedField<Scalar = B128> + PackedExtension<B1>,
+	{
+		let x_in = array_util::try_map(self.x_in, |bit| index.get(bit))?;
+		let y_in = array_util::try_map(self.y_in, |bit| index.get(bit))?;
+		let mut cin = array_util::try_map(self.cin, |bit| index.get_mut(bit))?;
+		let mut zout = array_util::try_map(self.z_out, |bit| index.get_mut(bit))?;
+		let mut final_carry_out = index.get_mut(self.final_carry_out)?;
+
+		let mut carry_in = if self.flags.carry_in_bit.is_none() {
+			let initial_carry = PackedSubfield::<P, B1>::default();
+			vec![initial_carry; cin[0].len()]
+		} else {
+			index
+				.get(self.flags.carry_in_bit.expect("carry_in_bit is not None"))?
+				.deref()
+				.to_vec()
+		};
+		for bit in 0..BIT_LENGTH {
+			for (x_in_packed, y_in_packed, c_in_packed, zout_packed, carry_in) in izip!(
+				x_in[bit].iter(),
+				y_in[bit].iter(),
+				cin[bit].iter_mut(),
+				zout[bit].iter_mut(),
+				carry_in.iter_mut()
+			) {
+				let sum = *x_in_packed + *y_in_packed + *carry_in;
+				let new_carry = (*x_in_packed + *carry_in) * (*y_in_packed + *carry_in) + *carry_in;
+				*c_in_packed = *carry_in;
+				*zout_packed = sum;
+				*carry_in = new_carry;
+			}
+		}
+
+		for (final_carry, carry) in izip!(final_carry_out.iter_mut(), carry_in.iter()) {
+			*final_carry = *carry;
+		}
+
 		Ok(())
 	}
 }

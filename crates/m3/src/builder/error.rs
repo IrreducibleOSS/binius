@@ -22,6 +22,8 @@ pub enum Error {
 	},
 	#[error("cannot construct witness index for empty table {table_id}")]
 	EmptyTable { table_id: TableId },
+	#[error("failed to write element to a column with a lower tower height")]
+	FieldElementTooBig,
 	#[error("structured column error: {0}")]
 	Structured(#[from] StructuredError),
 	#[error("table {table_id} index has already been initialized")]
@@ -33,6 +35,8 @@ pub enum Error {
 	},
 	#[error("table {table_id} is required to have a power-of-two size, instead got {size}")]
 	TableSizePowerOfTwoRequired { table_id: TableId, size: usize },
+	#[error("table {table_id} is required to have a fixed power-of-two size, instead got {size}")]
+	TableSizeFixedRequired { table_id: TableId, size: usize },
 	// TODO: These should have column IDs
 	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrow(#[source] BorrowError),

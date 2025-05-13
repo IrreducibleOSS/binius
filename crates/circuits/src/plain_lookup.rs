@@ -24,36 +24,44 @@ use crate::builder::{
 /// * `lookups_u` - the set of "looked up" tables
 /// * `lookup_t` - the lookup table
 ///
-/// Both looked up and lookup tables are defined by tuples of column oracles, where each column has the same `FTable` type.
-/// Primary reason to support this behaviour is to be able to lookup into tables "wider" than the largest 128-bit field.
+/// Both looked up and lookup tables are defined by tuples of column oracles, where each column has
+/// the same `FTable` type. Primary reason to support this behaviour is to be able to lookup into
+/// tables "wider" than the largest 128-bit field.
 ///
-/// Looked up tables are assumed to have `n_lookups` values each, whereas `lookup_t` is considered to be always full.
+/// Looked up tables are assumed to have `n_lookups` values each, whereas `lookup_t` is considered
+/// to be always full.
 ///
-/// The prover needs to provide multiplicities of the lookup table elements; the helper [`count_multiplicities`] method
-/// does that using a hash map of counters, but in some cases it should be possible to compute this table more efficiently
-/// or in an indirect way.
+/// The prover needs to provide multiplicities of the lookup table elements; the helper
+/// [`count_multiplicities`] method does that using a hash map of counters, but in some cases it
+/// should be possible to compute this table more efficiently or in an indirect way.
 ///
 /// # How this Works
 /// We create two channel for this lookup - a multiplicity channel and a permutation channel.
-/// We let the prover push all values in `lookups_u`, that is all values to be looked up, into the multiplicity channel.
-/// We also must pull valid table values (i.e. values that appear in `lookup_t`) from this channel if the channel is to balance.
-/// By ensuring that only valid table values get pulled from the channel, and observing the channel to balance, we ensure
-/// that only valid table values get pushed (by the prover) into the channel. Therefore our construction is sound.
+/// We let the prover push all values in `lookups_u`, that is all values to be looked up, into the
+/// multiplicity channel. We also must pull valid table values (i.e. values that appear in
+/// `lookup_t`) from this channel if the channel is to balance. By ensuring that only valid table
+/// values get pulled from the channel, and observing the channel to balance, we ensure
+/// that only valid table values get pushed (by the prover) into the channel. Therefore our
+/// construction is sound.
 ///
-/// In order for the construction to be complete, allowing an honest prover to pass, we must pull each
-/// table value from the multiplicity channel with exactly the same multiplicity (duplicate count) that the prover pushed that table
-/// value into the channel. To do so, we allow the prover to commit information on the multiplicity of each table value.
+/// In order for the construction to be complete, allowing an honest prover to pass, we must pull
+/// each table value from the multiplicity channel with exactly the same multiplicity (duplicate
+/// count) that the prover pushed that table value into the channel. To do so, we allow the prover
+/// to commit information on the multiplicity of each table value.
 ///
-/// The prover counts the multiplicity of each table value, and creates a bit column for each of the LOG_MAX_MULTIPLICITY bits in
-/// the bit-decomposition of the multiplicities.
-/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit column as the 'selector' oracle to select
-/// which values in the table actually get pushed into the channel flushed. When flushing the table with the i'th bit column as the selector,
-///we flush with multiplicity 1 << i.
+/// The prover counts the multiplicity of each table value, and creates a bit column for each of the
+/// LOG_MAX_MULTIPLICITY bits in the bit-decomposition of the multiplicities.
+/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit
+/// column as the 'selector' oracle to select which values in the table actually get pushed into the
+/// channel flushed. When flushing the table with the i'th bit column as the selector, we flush with
+/// multiplicity 1 << i.
 ///
-/// The reason for using _two_ channels is a prover-side optimization - instead of counting multiplicities on the original `lookup_t`, we
-/// commit a permuted version of that with non-decreasing multiplicities. This enforces nonzero scalars prefixes on the committed multiplicity
-/// bits columns, which can be used to optimize the flush and GKR reduction sumchecks. In order to constrain this committed lookup to be a
-/// permutation of lookup_t we do a push/pull on the permutation channel.
+/// The reason for using _two_ channels is a prover-side optimization - instead of counting
+/// multiplicities on the original `lookup_t`, we commit a permuted version of that with
+/// non-decreasing multiplicities. This enforces nonzero scalars prefixes on the committed
+/// multiplicity bits columns, which can be used to optimize the flush and GKR reduction sumchecks.
+/// In order to constrain this committed lookup to be a permutation of lookup_t we do a push/pull on
+/// the permutation channel.
 pub fn plain_lookup<FTable, const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
@@ -167,7 +175,7 @@ where
 		builder.flush_custom(
 			FlushDirection::Pull,
 			multiplicity_channel,
-			bit,
+			vec![bit],
 			permuted_lookup_t.iter().copied().map(OracleOrConst::Oracle),
 			1 << i,
 		)?
@@ -308,7 +316,7 @@ mod count_multiplicity_tests {
 		let table: Vec<i32> = vec![];
 		let values = vec![1, 2, 3];
 		let result = count_multiplicities(&table, &values, false).unwrap();
-		assert_eq!(result, vec![]);
+		assert!(result.is_empty());
 	}
 
 	#[test]
@@ -367,7 +375,8 @@ mod tests {
 
 			let witness = builder.take_witness().unwrap();
 			let constraint_system = builder.build().unwrap();
-			// validating witness with `validate_witness` is too slow for large transparents like the `table`
+			// validating witness with `validate_witness` is too slow for large transparents like
+			// the `table`
 
 			let backend = make_portable_backend();
 

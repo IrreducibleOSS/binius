@@ -12,11 +12,8 @@ use itertools::izip;
 use crate::{
 	builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
 	gadgets::{
-		u32::{
-			add::{Incr, UnsignedAddPrimitives},
-			sub::WideU32Sub,
-			U32SubFlags,
-		},
+		add::{Incr, UnsignedAddPrimitives},
+		sub::{U32SubFlags, WideU32Sub},
 		util::pack_fp,
 	},
 };
@@ -141,8 +138,8 @@ where
 		let x_in = table.add_computed("x_in", pack_fp(xin_bits));
 		let y_in = table.add_computed("y_in", pack_fp(yin_bits));
 
-		let generator = UX::generator().into();
-		let generator_pow_bit_len = UX::shifted_generator().into();
+		let generator = UX::generator();
+		let generator_pow_bit_len = UX::shifted_generator();
 
 		let g_pow_x = table.add_static_exp::<FExpBase>("g^x", &xin_bits, generator);
 		let g_pow_xy = table.add_dynamic_exp::<FExpBase>("(g^x)^y", &yin_bits, g_pow_x);
@@ -230,6 +227,8 @@ where
 				);
 			}
 		}
+
+		// NB: Exponentiation result columns are filled by the core constraint system prover.
 
 		Ok(())
 	}
@@ -722,9 +721,11 @@ impl MulSU32 {
 	}
 }
 
-/// Simple struct to convert to and from Two's complement representation based on bits. See [`SignConverter::new`]
+/// Simple struct to convert to and from Two's complement representation based on bits. See
+/// [`SignConverter::new`]
 ///
-/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by caller*
+/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by
+/// caller*
 #[derive(Debug)]
 pub struct SignConverter<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
 	twos_complement: TwosComplement<UPrimitive, BIT_LENGTH>,
@@ -745,7 +746,6 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	/// ## Example
 	/// - If the conditional is zero, the output will be the input bits.
 	/// - If the conditional is one, the output will be the two's complement of input bits.
-	///
 	pub fn new(
 		table: &mut TableBuilder,
 		xin: [Col<B1>; BIT_LENGTH],

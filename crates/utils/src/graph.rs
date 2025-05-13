@@ -19,14 +19,18 @@ use std::cmp::Ordering;
 ///     vec![0, 0, 0, 0, 4, 5, 5, 5, 5, 0]
 /// );
 /// ```
-///
-pub fn connected_components(data: &[&[usize]]) -> Vec<usize> {
+pub fn connected_components<T: AsRef<[impl AsRef<[usize]>]>>(data: T) -> Vec<usize> {
+	let data = data.as_ref();
 	if data.is_empty() {
 		return vec![];
 	}
 
 	// Determine the maximum node ID
-	let max_id = *data.iter().flat_map(|ids| ids.iter()).max().unwrap_or(&0);
+	let max_id = *data
+		.iter()
+		.flat_map(|ids| ids.as_ref().iter())
+		.max()
+		.unwrap_or(&0);
 
 	let n = max_id + 1;
 	let mut uf = UnionFind::new(n);
@@ -36,9 +40,10 @@ pub fn connected_components(data: &[&[usize]]) -> Vec<usize> {
 	// we can simply connect each node in the subset to the minimum node in that subset.
 	// This still ensures they all become part of one connected component.
 	for ids in data {
+		let ids = ids.as_ref();
 		if ids.len() > 1 {
 			let &base = ids.iter().min().unwrap();
-			for &node in *ids {
+			for &node in ids {
 				if node != base {
 					uf.union(base, node);
 				}

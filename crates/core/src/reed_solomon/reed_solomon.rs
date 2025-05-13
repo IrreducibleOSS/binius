@@ -6,8 +6,7 @@
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
 use binius_math::BinarySubspace;
-use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, Error as NTTError, NTTShape};
+use binius_ntt::{AdditiveNTT, NTTShape};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 
@@ -92,8 +91,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 	///
 	/// ## Throws
 	///
-	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
-	///   elements.
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
 	fn encode_batch_inplace<P: PackedField<Scalar = F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
 		ntt: &NTT,
@@ -103,6 +101,15 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		if ntt.subspace(ntt.log_domain_size() - self.log_len()) != self.subspace {
 			bail!(Error::EncoderSubspaceMismatch);
 		}
+		let expected_buffer_len =
+			1 << (self.log_len() + log_batch_size).saturating_sub(P::LOG_WIDTH);
+		if code.len() != expected_buffer_len {
+			bail!(Error::IncorrectBufferLength {
+				expected: expected_buffer_len,
+				actual: code.len(),
+			});
+		}
+
 		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
@@ -110,29 +117,33 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 			symbol_bits = F::N_BITS,
 		)
 		.entered();
-		if (code.len() << log_batch_size) < self.len() {
-			bail!(Error::NTT(NTTError::BufferTooSmall {
-				log_code_len: self.len(),
-			}));
-		}
-		if self.dim() % P::WIDTH != 0 {
-			bail!(Error::NTT(NTTError::PackingWidthMustDivideDimension));
+
+		// Repeat the message to fill the entire buffer.
+
+		// First, if the message is less than the packing width, we need to repeat it to fill one
+		// packed element.
+		if self.dim() + log_batch_size < P::LOG_WIDTH {
+			let repeated_values = code[0]
+				.into_iter()
+				.take(1 << (self.log_dim() + log_batch_size))
+				.cycle();
+			code[0] = P::from_scalars(repeated_values);
 		}
 
-		let msgs_len = (self.dim() / P::WIDTH) << log_batch_size;
-		for i in 1..(1 << self.log_inv_rate) {
-			code.copy_within(0..msgs_len, i * msgs_len);
+		// Repeat the packed message to fill the entire buffer.
+		let mut chunks =
+			code.chunks_mut(1 << (self.log_dim() + log_batch_size).saturating_sub(P::LOG_WIDTH));
+		let first_chunk = chunks.next().expect("code is not empty; checked above");
+		for chunk in chunks {
+			chunk.copy_from_slice(first_chunk);
 		}
 
 		let shape = NTTShape {
 			log_x: log_batch_size,
-			log_y: self.log_dim(),
+			log_y: self.log_len(),
 			..Default::default()
 		};
-		(0..(1 << self.log_inv_rate))
-			.into_par_iter()
-			.zip(code.par_chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| ntt.forward_transform(data, shape, i))?;
+		ntt.forward_transform(code, shape, 0, self.log_inv_rate)?;
 		Ok(())
 	}
 

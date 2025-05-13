@@ -8,7 +8,8 @@ use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, Wh
 use super::parse::GenericBinding;
 
 /// Contains information about the generics used in the implementation.
-/// It is geneally used in the following way: quote! {impl #impl_generics MyStruct #type_generics #where_clause}
+/// It is geneally used in the following way: quote! {impl #impl_generics MyStruct #type_generics
+/// #where_clause}
 #[derive(Debug, Clone)]
 pub struct GenericsSplit<'gen, 'attr> {
 	pub impl_generics: ImplGenerics<'gen, 'attr>,

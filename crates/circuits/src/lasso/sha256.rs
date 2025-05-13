@@ -187,7 +187,7 @@ pub fn sha256(
 
 	let mut several_maj = SeveralBitwise::new(builder, |a, b, c| (a & b) ^ (a & c) ^ (b & c))?;
 
-	let mut w = [OracleId::MAX; 64];
+	let mut w = [OracleId::invalid(); 64];
 
 	w[0..16].copy_from_slice(&input);
 

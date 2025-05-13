@@ -61,7 +61,8 @@ where
 		for inner_index in 0..min(PE::WIDTH, 1 << log_evals_size) {
 			// Index of the current Scalar in `out`.
 			let outer_scalar_index = outer_word_start + inner_index;
-			// Column index, within the reshaped `evals`, where we start the dot-product with the query elements.
+			// Column index, within the reshaped `evals`, where we start the dot-product with the
+			// query elements.
 			let inner_col = outer_scalar_index % nb_elts_per_row;
 			// Row index.
 			let inner_row = outer_scalar_index / nb_elts_per_row;
@@ -122,8 +123,8 @@ where
 /// Execute the left fold operation.
 ///
 /// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
-/// with the corresponding query element. The results is written to the `output` slice of packed values.
-/// If the function returns `Ok(())`, then `out` can be safely interpreted as initialized.
+/// with the corresponding query element. The results is written to the `output` slice of packed
+/// values. If the function returns `Ok(())`, then `out` can be safely interpreted as initialized.
 ///
 /// Please note that this method is single threaded. Currently we always have some
 /// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
@@ -218,7 +219,8 @@ where
 			for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
 				// Index of the current Scalar in `out`.
 				let outer_scalar_index = outer_word_start + inner_index;
-				// Column index, within the reshaped `evals`, where we start the dot-product with the query elements.
+				// Column index, within the reshaped `evals`, where we start the dot-product with
+				// the query elements.
 				let inner_i = outer_scalar_index % lower_indices_size;
 				// Row index.
 				let inner_j = outer_scalar_index / lower_indices_size;
@@ -582,10 +584,10 @@ where
 /// function, we can implement it separately.
 ///
 /// Also note that left folds are often intended to be used with non-indexable packed fields that
-/// have inefficient scalar access; fully generic handling of all interesting cases that can leverage
-/// spread multiplication requires dynamically checking the `PackedExtension` relations, so for now we
-/// just handle the simplest yet important case of a single variable left fold in packed field P with
-/// a lerp query of its scalar (and not a nontrivial extension field!).
+/// have inefficient scalar access; fully generic handling of all interesting cases that can
+/// leverage spread multiplication requires dynamically checking the `PackedExtension` relations, so
+/// for now we just handle the simplest yet important case of a single variable left fold in packed
+/// field P with a lerp query of its scalar (and not a nontrivial extension field!).
 pub fn fold_left_lerp<P>(
 	evals: &[P],
 	non_const_prefix: usize,
@@ -734,9 +736,9 @@ fn get_arch_optimal_packed_type_id<F: ArchOptimal>() -> TypeId {
 	TypeId::of::<ArchOptimalType<F>>()
 }
 
-/// Use optimized algorithm for 1-bit evaluations with 128-bit query values packed with the optimal underlier.
-/// Returns true if the optimized algorithm was used. In this case `out` can be safely interpreted
-/// as initialized.
+/// Use optimized algorithm for 1-bit evaluations with 128-bit query values packed with the optimal
+/// underlier. Returns true if the optimized algorithm was used. In this case `out` can be safely
+/// interpreted as initialized.
 ///
 /// We could potentially this of specializing for other query fields, but that would require
 /// separate implementations.
@@ -1183,8 +1185,9 @@ mod tests {
 			)
 			.unwrap();
 
-			// Every `1 << start_index` consecutive bits from the original `evals` are placed at index `nonzero_index`
-			// within a block of size `1 << (LOGS_EVALS_SIZE + num_extra_vals)`.
+			// Every `1 << start_index` consecutive bits from the original `evals` are placed at
+			// index `nonzero_index` within a block of size `1 << (LOGS_EVALS_SIZE +
+			// num_extra_vals)`.
 			for (i, out_val) in out.iter().enumerate() {
 				let expansion = 1 << num_extra_vars;
 				if i % expansion == nonzero_index {

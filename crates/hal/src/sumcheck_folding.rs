@@ -53,7 +53,8 @@ where
 				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
-					// At switchover we partially evaluate the multilinear at an expanded tensor query.
+					// At switchover we partially evaluate the multilinear at an expanded tensor
+					// query.
 					let tensor_query = tensor_query
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
@@ -120,7 +121,8 @@ where
 
 				fold_right_lerp(
 					evals.as_slice(),
-					// evals is optimally truncated, upper bound on non const scalars is quite tight
+					// evals is optimally truncated, upper bound on non const scalars is quite
+					// tight
 					evals.len() * P::WIDTH,
 					challenge,
 					suffix_eval,
@@ -162,7 +164,8 @@ where
 				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
-					// At switchover we partially evaluate the multilinear at an expanded tensor query.
+					// At switchover we partially evaluate the multilinear at an expanded tensor
+					// query.
 					let tensor_query = tensor_query
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");

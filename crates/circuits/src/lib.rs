@@ -31,7 +31,7 @@ mod tests {
 			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
 		},
 		fiat_shamir::HasherChallenger,
-		oracle::ShiftVariant,
+		oracle::{OracleId, ShiftVariant},
 		polynomial::ArithCircuitPoly,
 	};
 	use binius_field::{
@@ -338,7 +338,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let mut add_witness_col_b128 = |oracle_id: usize, values: &[B128]| {
+		let mut add_witness_col_b128 = |oracle_id: OracleId, values: &[B128]| {
 			builder
 				.witness()
 				.unwrap()
@@ -426,7 +426,8 @@ mod tests {
 		.unwrap()
 	}
 
-	//Testing with larger oracles, and random constants, in a random order. To see if given appropriate flushes with constants the channel balances.
+	//Testing with larger oracles, and random constants, in a random order. To see if given
+	// appropriate flushes with constants the channel balances.
 	#[test]
 	fn test_flush_with_const_large() {
 		test_circuit(|builder| {

@@ -71,12 +71,14 @@ fn convert_circuit_steps<F: Field>(
 
 				if let CircuitStepArgument::Expr(CircuitNode::Slot(left)) = left {
 					if let ArithCircuitStep::Mul(mleft, mright) = &original_steps[*right] {
-						// Only handling e1 + (e2 * e3), not (e1 * e2) + e3, as latter was not observed in practice
-						// (the former can be enforced by rewriting expression)
+						// Only handling e1 + (e2 * e3), not (e1 * e2) + e3, as latter was not
+						// observed in practice (the former can be enforced by rewriting
+						// expression)
 						let mleft = convert_step(*mleft, original_steps, result, node_to_step);
 						let mright = convert_step(*mright, original_steps, result, node_to_step);
 
-						// Since we'we changed the value of `left` to a new value, we need to clear the cache for it
+						// Since we'we changed the value of `left` to a new value, we need to clear
+						// the cache for it
 						node_to_step.clear_step(left);
 						node_to_step.register(original_step, left);
 						result.push(CircuitStep::AddMul(left, mleft, mright));
@@ -161,8 +163,9 @@ enum CircuitStepArgument<F> {
 
 /// Describes computation symbolically. This is used internally by ArithCircuitPoly.
 ///
-/// ExprIds used by an Expr has to be less than the index of the Expr itself within the ArithCircuitPoly,
-/// to ensure it represents a directed acyclic graph that can be computed in sequence.
+/// ExprIds used by an Expr has to be less than the index of the Expr itself within the
+/// ArithCircuitPoly, to ensure it represents a directed acyclic graph that can be computed in
+/// sequence.
 #[derive(Debug)]
 enum CircuitStep<F: Field> {
 	Add(CircuitStepArgument<F>, CircuitStepArgument<F>),
@@ -175,8 +178,9 @@ enum CircuitStep<F: Field> {
 ///
 /// This is meant as an alternative to a hard-coded CompositionPoly.
 ///
-/// The advantage over a hard coded CompositionPoly is that this can be constructed and manipulated dynamically at runtime
-/// and the object representing different polnomials can be stored in a homogeneous collection.
+/// The advantage over a hard coded CompositionPoly is that this can be constructed and manipulated
+/// dynamically at runtime and the object representing different polnomials can be stored in a
+/// homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: Field> {
 	expr: ArithCircuit<F>,
@@ -304,11 +308,13 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
 		stackalloc_uninit::<P, _, _>(self.steps.len().max(1), |evals| {
 			let get_argument_value = |input: CircuitStepArgument<F>, evals: &[P]| match input {
-				// Safety: The index is guaranteed to be within bounds by the construction of the circuit
+				// Safety: The index is guaranteed to be within bounds by the construction of the
+				// circuit
 				CircuitStepArgument::Expr(CircuitNode::Var(index)) => unsafe {
 					*query.get_unchecked(index)
 				},
-				// Safety: The index is guaranteed to be within bounds by the circuit evaluation order
+				// Safety: The index is guaranteed to be within bounds by the circuit evaluation
+				// order
 				CircuitStepArgument::Expr(CircuitNode::Slot(slot)) => unsafe {
 					*evals.get_unchecked(slot)
 				},
@@ -316,7 +322,8 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			};
 
 			for (i, expr) in self.steps.iter().enumerate() {
-				// Safety: previous evaluations are initialized by the previous loop iterations (if dereferenced)
+				// Safety: previous evaluations are initialized by the previous loop iterations (if
+				// dereferenced)
 				let (before, after) = unsafe { evals.split_at_mut_unchecked(i) };
 				let before = unsafe { slice_assume_init_mut(before) };
 				match expr {
@@ -327,7 +334,8 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 					CircuitStep::AddMul(target_slot, x, y) => {
 						let intermediate =
 							get_argument_value(*x, before) * get_argument_value(*y, before);
-						// Safety: we know by evaluation order and construction of steps that `target.slot` is initialized
+						// Safety: we know by evaluation order and construction of steps that
+						// `target.slot` is initialized
 						let target_slot = unsafe { before.get_unchecked_mut(*target_slot) };
 						*target_slot += intermediate;
 					}
@@ -364,7 +372,8 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			for (i, expr) in self.steps.iter().enumerate() {
 				let (before, current) = sparse_evals.split_at_mut(i * row_len);
 
-				// Safety: `before` is guaranteed to be initialized by the previous loop iterations (if dereferenced).
+				// Safety: `before` is guaranteed to be initialized by the previous loop iterations
+				// (if dereferenced).
 				let before = unsafe { slice_assume_init_mut(before) };
 				let current = &mut current[..row_len];
 
@@ -398,7 +407,8 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 							CircuitStepArgument::Expr(node) => {
 								let id_chunk = node.get_sparse_chunk(batch_query, before, row_len);
 								for j in 0..row_len {
-									// Safety: `current` and `id_chunk` have length equal to `row_len`
+									// Safety: `current` and `id_chunk` have length equal to
+									// `row_len`
 									unsafe {
 										current
 											.get_unchecked_mut(j)
@@ -460,7 +470,8 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 }
 
 /// Apply a binary operation to two arguments and store the result in `current_evals`.
-/// `op` must be a function that takes two arguments and initialized the result with the third argument.
+/// `op` must be a function that takes two arguments and initialized the result with the third
+/// argument.
 fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 	left: &CircuitStepArgument<F>,
 	right: &CircuitStepArgument<F>,

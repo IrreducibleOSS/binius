@@ -27,6 +27,7 @@
 mod common;
 mod eq_ind;
 mod error;
+mod logging;
 mod prove;
 #[cfg(test)]
 mod tests;

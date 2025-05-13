@@ -1,12 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
-//! The purpose of this module is to enable serialization/deserialization of generic MultivariatePoly implementations
+//! The purpose of this module is to enable serialization/deserialization of generic
+//! MultivariatePoly implementations
 //!
-//! The simplest way to do this would be to create an enum with all the possible structs that implement MultivariatePoly
+//! The simplest way to do this would be to create an enum with all the possible structs that
+//! implement MultivariatePoly
 //!
 //! This has a few problems, though:
 //! - Third party code is not able to define custom transparent polynomials
-//! - The enum would inherit, or be forced to enumerate possible type parameters of every struct variant
+//! - The enum would inherit, or be forced to enumerate possible type parameters of every struct
+//!   variant
 
 use std::{collections::HashMap, sync::LazyLock};
 
