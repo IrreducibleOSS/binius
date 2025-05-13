@@ -501,7 +501,7 @@ where
 				let n_vars = composite.n_vars();
 				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
 
-				let packed_len = 1 << n_vars.saturating_sub(log_width);
+				let packed_len: usize = 1 << n_vars.saturating_sub(log_width);
 
 				let inner_c = composite.c();
 
@@ -525,7 +525,7 @@ where
 					.max()
 					.unwrap_or(0);
 
-				let mut composite_data = (0..packed_len - max_packed_zero_suffix)
+				let mut composite_data = (0..packed_len.saturating_sub(max_packed_zero_suffix))
 					.into_par_iter()
 					.map(|i| {
 						let evals = polys
@@ -546,7 +546,15 @@ where
 
 				// `ArithExpr::Const(F::ONE) + selector * arith_expr_linear` — so if one of the
 				// polynomials is zero, we fill with ones.
-				composite_data.resize(packed_len, ones);
+				if n_vars < PackedType::<U, FExt<Tower>>::LOG_WIDTH {
+					let ones = PackedType::<U, FExt<Tower>>::from_scalars(vec![
+						FExt::<Tower>::ONE;
+						1 << n_vars
+					]);
+					composite_data.resize(packed_len, ones);
+				} else {
+					composite_data.resize(packed_len, ones);
+				}
 
 				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
 					.expect("data is constructed with the correct length with respect to n_vars");

@@ -79,7 +79,9 @@ impl<P: PackedField, M: MultilinearPoly<P>> SumcheckMultilinear<P, M> {
 						new_suffix_len += P::WIDTH << multilinear.log_extension_degree();
 					}
 
-					for i in (0..(1 << n_vars) - new_suffix_len).rev() {
+					new_suffix_len = new_suffix_len.min(1 << n_vars);
+
+					for i in (0..((1 << n_vars) as usize).saturating_sub(new_suffix_len)).rev() {
 						if multilinear
 							.evaluate_on_hypercube(i)
 							.expect("poly has correct length")
