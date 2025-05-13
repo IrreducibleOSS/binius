@@ -484,6 +484,8 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 {
+	let zeros = PackedType::<U, FExt<Tower>>::zero();
+	let ones = PackedType::<U, FExt<Tower>>::one();
 	// The function is on the critical path, parallelize.
 	let indices_to_update: Vec<(OracleId, MultilinearWitness<'a, _>)> = flush_oracle_ids
 		.par_iter()
@@ -503,22 +505,48 @@ where
 
 				let inner_c = composite.c();
 
-				let composite_data = (0..packed_len)
+				let max_packed_zero_suffix = polys
+					.iter()
+					.map(|poly| {
+						if let Some(packed_evals) = poly.packed_evals() {
+							let mut zero_suffix_len = 0;
+
+							for &packed_evals in packed_evals.iter().rev() {
+								if packed_evals != zeros {
+									break;
+								}
+								zero_suffix_len += 1 << poly.log_extension_degree();
+							}
+							zero_suffix_len
+						} else {
+							0
+						}
+					})
+					.max()
+					.unwrap_or(0);
+
+				let mut composite_data = (0..packed_len - max_packed_zero_suffix)
 					.into_par_iter()
 					.map(|i| {
-						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-							let evals = polys
-								.iter()
-								.map(|poly| poly.evaluate_on_hypercube(index).unwrap_or_default())
-								.collect::<Vec<_>>();
+						let evals = polys
+							.iter()
+							.map(|poly| {
+								<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+									let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+									poly.evaluate_on_hypercube(index).unwrap_or_default()
+								})
+							})
+							.collect::<Vec<_>>();
 
-							inner_c
-								.evaluate(&evals)
-								.expect("query length is the same as poly length")
-						})
+						inner_c
+							.evaluate(&evals)
+							.expect("query length is the same as poly length")
 					})
 					.collect::<Vec<_>>();
+
+				// `ArithExpr::Const(F::ONE) + selector * arith_expr_linear` — so if one of the
+				// polynomials is zero, we fill with ones.
+				composite_data.resize(packed_len, ones);
 
 				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
 					.expect("data is constructed with the correct length with respect to n_vars");

@@ -205,6 +205,7 @@ where
 
 	let prover = EqIndSumcheckProverBuilder::with_switchover(multilinears, switchover_fn, backend)?
 		.with_eq_ind_partial_evals(Backend::to_hal_slice(eq_ind_partial_evals))
+		.with_auto_zero_suffixes()
 		.build(evaluation_order, eq_ind_challenges, sums, evaluation_domain_factory)?;
 
 	Ok(prover)
