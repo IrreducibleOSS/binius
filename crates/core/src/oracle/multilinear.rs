@@ -682,6 +682,7 @@ pub struct Projected<F: TowerField> {
 }
 
 impl<F: TowerField> Projected<F> {
+	#[allow(clippy::missing_const_for_fn)]
 	fn new(
 		oracle: &MultilinearPolyOracle<F>,
 		values: Vec<F>,
@@ -714,20 +715,20 @@ pub struct ZeroPadded {
 }
 
 impl ZeroPadded {
-	fn new<F: TowerField>(
+	const fn new<F: TowerField>(
 		oracle: &MultilinearPolyOracle<F>,
 		n_pad_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<Self, Error> {
 		if start_index > oracle.n_vars() {
-			bail!(Error::InvalidStartIndex {
+			return Err(Error::InvalidStartIndex {
 				expected: oracle.n_vars(),
 			});
 		}
 
 		if nonzero_index > 1 << n_pad_vars {
-			bail!(Error::InvalidNonzeroIndex {
+			return Err(Error::InvalidNonzeroIndex {
 				expected: 1 << n_pad_vars,
 			});
 		}
@@ -761,23 +762,23 @@ pub struct Shifted {
 }
 
 impl Shifted {
-	fn new<F: TowerField>(
+	const fn new<F: TowerField>(
 		oracle: &MultilinearPolyOracle<F>,
 		shift_offset: usize,
 		block_size: usize,
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
 		if block_size > oracle.n_vars() {
-			bail!(PolynomialError::InvalidBlockSize {
+			return Err(Error::Polynomial(PolynomialError::InvalidBlockSize {
 				n_vars: oracle.n_vars(),
-			});
+			}));
 		}
 
 		if shift_offset == 0 || shift_offset >= 1 << block_size {
-			bail!(PolynomialError::InvalidShiftOffset {
+			return Err(Error::Polynomial(PolynomialError::InvalidShiftOffset {
 				max_shift_offset: (1 << block_size) - 1,
 				shift_offset,
-			});
+			}));
 		}
 
 		Ok(Self {

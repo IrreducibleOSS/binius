@@ -208,18 +208,18 @@ const fn get_left_shift_offset(block_size: usize, right_shift_offset: usize) -> 
 }
 
 /// Checks validity of shift indicator arguments
-fn assert_valid_shift_ind_args<F: Field>(
+const fn assert_valid_shift_ind_args<F: Field>(
 	block_size: usize,
 	shift_offset: usize,
 	partial_query_point: &[F],
 ) -> Result<(), Error> {
 	if partial_query_point.len() != block_size {
-		bail!(Error::IncorrectQuerySize {
+		return Err(Error::IncorrectQuerySize {
 			expected: block_size,
 		});
 	}
 	if shift_offset == 0 || shift_offset >= 1 << block_size {
-		bail!(Error::InvalidShiftOffset {
+		return Err(Error::InvalidShiftOffset {
 			max_shift_offset: (1 << block_size) - 1,
 			shift_offset,
 		});
