@@ -49,7 +49,7 @@ where
 				front_loaded::BatchVerifier::new(&new_bivariate_sumchecks_claims, transcript)?;
 			let mut sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
 
-			// Reverse challenges since foldling high-to-low
+			// Reverse challenges since folding high-to-low
 			sumcheck_output.challenges.reverse();
 
 			let evalcheck_claims =

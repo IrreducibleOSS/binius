@@ -152,8 +152,8 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 ) {
 	let oracle_ids = comp.inner().clone();
 
-	if let Some(constraint_builder) = constraint_builders.get_mut(position) {
-		constraint_builder.1.add_sumcheck(
+	if let Some((_, constraint_builder)) = constraint_builders.get_mut(position) {
+		constraint_builder.add_sumcheck(
 			oracle_ids,
 			<_ as CompositionPoly<F>>::expression(comp.c()),
 			eval,

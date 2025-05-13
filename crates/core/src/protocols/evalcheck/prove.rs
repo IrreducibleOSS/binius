@@ -518,7 +518,7 @@ where
 					.position(|(ep, _)| *ep == eval_point)
 					.unwrap_or(self.new_mlechecks_constraints.len());
 
-				transcript.message().write(&(position as u32));
+				transcript.decommitment().write(&(position as u32));
 
 				add_composite_sumcheck_to_constraints(
 					position,
