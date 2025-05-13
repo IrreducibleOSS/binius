@@ -10,7 +10,7 @@ use crate::{
 	arch::{
 		portable::{
 			packed::{
-				impl_ops_for_zero_height, impl_serialize_deserialize_for_packed_canonical,
+				impl_ops_for_zero_height, impl_serialize_deserialize_for_packed_binary_field,
 				PackedPrimitiveType,
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
@@ -35,14 +35,14 @@ pub type PackedBinaryField16x32b = PackedPrimitiveType<M512, BinaryField32b>;
 pub type PackedBinaryField8x64b = PackedPrimitiveType<M512, BinaryField64b>;
 pub type PackedBinaryField4x128b = PackedPrimitiveType<M512, BinaryField128b>;
 
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField512x1b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField256x2b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField128x4b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField64x8b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField32x16b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField16x32b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField8x64b);
-impl_serialize_deserialize_for_packed_canonical!(PackedBinaryField4x128b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField512x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField256x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x32b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x64b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x128b);
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField512x1b);
