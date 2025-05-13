@@ -592,8 +592,9 @@ where
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
-	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
-	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead
+	/// accumulate the folding challenge for processing at a later time. This saves us from storing
+	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		exec: &mut CL::Exec,
@@ -608,8 +609,14 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _, _)) => FRIFoldData::new(log2_strict_usize(codeword.len()), 0),
-			None => FRIFoldData::new(self.params.rs_code().log_len(), self.params.log_batch_size()),
+			Some((codeword, _, _)) => {
+				FRIFoldData::new::<F, FA>(log2_strict_usize(codeword.len()), 0, 0)
+			}
+			None => FRIFoldData::new::<F, FA>(
+				self.params.rs_code().log_len(),
+				self.params.log_batch_size(),
+				0,
+			),
 		};
 
 		let fri_fold_span = tracing::debug_span!(
