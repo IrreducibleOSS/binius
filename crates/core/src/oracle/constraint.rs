@@ -166,10 +166,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.iter()
 			.map(|constraint| constraint.oracle_ids.clone())
 			.chain(oracles.polys().filter_map(|oracle| match &oracle.variant {
-				MultilinearPolyVariant::Shifted(ref shifted) => {
-					Some(vec![oracle.id(), shifted.id()])
-				}
-				MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+				MultilinearPolyVariant::Shifted(shifted) => Some(vec![oracle.id(), shifted.id()]),
+				MultilinearPolyVariant::LinearCombination(linear_combination) => {
 					Some(linear_combination.polys().chain([oracle.id()]).collect())
 				}
 				_ => None,

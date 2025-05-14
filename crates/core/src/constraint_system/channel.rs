@@ -215,7 +215,7 @@ where
 			let unbalanced_flushes: Vec<_> = channel
 				.multiplicities
 				.iter()
-				.filter(|(_, &c)| c != 0i64)
+				.filter(|(_, c)| **c != 0i64)
 				.collect();
 
 			tracing::debug!("Channel {:?} unbalanced: {:?}", id, unbalanced_flushes);

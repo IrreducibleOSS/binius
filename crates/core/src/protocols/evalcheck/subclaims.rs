@@ -365,14 +365,14 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			.iter()
 			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
 		{
-			let (_, ref query) = &self.query[index];
+			let (_, query) = &self.query[index];
 			return Ok(query);
 		}
 
 		let query = backend.multilinear_query(eval_point)?;
 		self.query.push((eval_point.to_vec(), query));
 
-		let (_, ref query) = self.query.last().expect("pushed query immediately above");
+		let (_, query) = self.query.last().expect("pushed query immediately above");
 		Ok(query)
 	}
 
@@ -385,7 +385,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			.iter()
 			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
 			.map(|index| {
-				let (_, ref query) = &self.query[index];
+				let (_, query) = &self.query[index];
 				query
 			})
 	}

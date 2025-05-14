@@ -41,10 +41,7 @@ where
 		n_multilinears: usize,
 		eq_ind_composite_sums: Vec<CompositeSumClaim<F, Composition>>,
 	) -> Result<Self, Error> {
-		for CompositeSumClaim {
-			ref composition, ..
-		} in &eq_ind_composite_sums
-		{
+		for CompositeSumClaim { composition, .. } in &eq_ind_composite_sums {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
 					actual: composition.n_vars(),

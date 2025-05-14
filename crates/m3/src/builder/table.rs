@@ -186,7 +186,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.vars_usage()
 			.iter()
 			.enumerate()
-			.filter(|(_, &used)| used)
+			.filter(|(_, used)| **used)
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>();
 		let cols = partition_indexes
