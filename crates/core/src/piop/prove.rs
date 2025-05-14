@@ -300,7 +300,6 @@ pub fn prove_compute_layer<
 	claims: &[PIOPSumcheckClaim<F>],
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
-	exec: &mut CL::Exec,
 	cl: &'a CL,
 	allocator: &mut impl ComputeAllocator<'a, F, CL::DevMem>,
 ) -> Result<(), Error>
@@ -369,7 +368,6 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 
 	prove_interleaved_fri_sumcheck_compute_layer(
-		exec,
 		allocator,
 		cl,
 		commit_meta.total_vars(),
@@ -397,7 +395,6 @@ fn prove_interleaved_fri_sumcheck_compute_layer<
 	Challenger_,
 	CL,
 >(
-	exec: &mut CL::Exec,
 	allocator: &mut impl ComputeAllocator<'a, F, CL::DevMem>,
 	cl: &'a CL,
 	n_rounds: usize,
@@ -474,7 +471,7 @@ where
 			dimensions_data = ?dimensions_data,
 		)
 		.entered();
-		match fri_prover.execute_fold_round(exec, allocator, challenge)? {
+		match fri_prover.execute_fold_round(allocator, challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
 				transcript.message().write(&round_commitment);

@@ -575,7 +575,6 @@ where
 	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
-		exec: &mut CL::Exec,
 		allocator: &mut impl ComputeAllocator<'b, F, CL::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
@@ -606,14 +605,20 @@ where
 
 				let mut folded_codeword =
 					allocator.alloc(prev_codeword.len() - self.unprocessed_challenges.len())?;
-				self.cl.fri_fold(
-					exec,
-					self.ntt,
-					log2_strict_usize(prev_codeword.len()),
-					0,
-					&self.unprocessed_challenges,
-					CL::DevMem::as_const(prev_codeword),
-					&mut folded_codeword,
+				self.cl.execute(
+					|exec| {
+						self.cl.fri_fold(
+							exec,
+							self.ntt,
+							log2_strict_usize(prev_codeword.len()),
+							0,
+							&self.unprocessed_challenges,
+							CL::DevMem::as_const(prev_codeword),
+							&mut folded_codeword,
+						)?;
+
+						Ok(vec![])
+					},
 				)?;
 
 				folded_codeword
@@ -630,14 +635,20 @@ where
 					1 << (self.params.rs_code().log_len()
 						- (self.unprocessed_challenges.len() - self.params.log_batch_size())),
 				)?;
-				self.cl.fri_fold(
-					exec,
-					self.ntt,
-					self.params.rs_code().log_len(),
-					self.params.log_batch_size(),
-					&self.unprocessed_challenges,
-					CL::DevMem::as_const(&original_codeword),
-					&mut folded_codeword,
+				self.cl.execute(
+					|exec| {
+						self.cl.fri_fold(
+							exec,
+							self.ntt,
+							self.params.rs_code().log_len(),
+							self.params.log_batch_size(),
+							&self.unprocessed_challenges,
+							CL::DevMem::as_const(&original_codeword),
+							&mut folded_codeword,
+						)?;
+
+						Ok(vec![])
+					}
 				)?;
 
 				folded_codeword

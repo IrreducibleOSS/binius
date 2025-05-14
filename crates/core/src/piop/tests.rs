@@ -4,7 +4,7 @@ use std::iter::repeat_with;
 
 use binius_compute::{
 	alloc::BumpAllocator,
-	cpu::{layer::CpuExecutor, CpuLayer},
+	cpu::CpuLayer,
 };
 use binius_field::{
 	tower::{AESTowerFamily, CanonicalTowerFamily, TowerFamily},
@@ -160,7 +160,6 @@ where
 			let compute_layer = CpuLayer::<T>::default();
 			let mut slice = zeroed_vec(1 << 15);
 			let mut allocator = BumpAllocator::new(&mut slice[..]);
-			let mut exec = CpuExecutor {};
 
 			prove_compute_layer(
 				fri_params,
@@ -175,7 +174,6 @@ where
 				claims,
 				transcript,
 				&backend,
-				&mut exec,
 				&compute_layer,
 				&mut allocator,
 			)
