@@ -124,16 +124,15 @@ mod model {
 			node_channel: &mut Channel<NodeFlush>,
 			root_channel: &mut Channel<RootFlush>,
 		) {
-			//Pull the root node value presumed to have been pushed to the nodes channel from the merkle path table.
+			//Pull the root node value presumed to have been pushed to the nodes channel from the
+			// merkle path table.
 			node_channel.pull((self.root_id, self.digest, 0, 0));
-			//Pull the root node from the roots channel, presumed to have been pushed as a boundary value.
+			//Pull the root node from the roots channel, presumed to have been pushed as a boundary
+			// value.
 			root_channel.pull((self.root_id, self.digest));
 		}
 	}
 
-
-
 	#[test]
-	fn test_high_level_model_inclusion()
-	}
+	fn test_high_level_model_inclusion() {}
 }
