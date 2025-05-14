@@ -513,16 +513,14 @@ mod tests {
 		P: PackedField,
 		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 	{
-		let new_vals = values
+		values
 			.iter()
 			.flat_map(|v| {
 				(P::WIDTH * start_index..P::WIDTH * (start_index + 1))
 					.map(|i| v.get(i))
 					.collect::<Vec<_>>()
 			})
-			.collect::<Vec<_>>();
-
-		new_vals
+			.collect::<Vec<_>>()
 	}
 
 	#[test]
