@@ -68,6 +68,14 @@ impl U32Sub {
 			.expose_final_borrow
 			.then(|| table.add_selected("final_borrow", bout, 31));
 
+		// Check that the equation holds:
+		//
+		//     (bin + (1 - xin)) * (bin + yin) + bin = bout
+		//
+		// Note that we can't use the actual expression does `xin - B1::ONE` because of the expr
+		// builder, but in tower fields the order does not matter.
+		table.assert_zero("borrow_out", (bin + (xin - B1::ONE)) * (bin + yin) + bin - bout);
+
 		let zout = if flags.commit_zout {
 			let zout = table.add_committed("zout");
 			table.assert_zero("zout", xin + yin + bin - zout);
