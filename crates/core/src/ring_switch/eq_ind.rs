@@ -107,24 +107,27 @@ where
 			MultilinearExtension::from_values_slice(subfield_vector)?,
 		);
 
-		let row_batching_query_expansion =
-			MultilinearQuery::expand(&self.row_batch_coeffs.query[0..F::LOG_DEGREE]);
-
-		let partial_low_eval = subfield_vector_mle
-			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
-
-		let factor: F = self.row_batch_coeffs.query[F::LOG_DEGREE..]
+		let extra_queries_factor: F = self.row_batch_coeffs.query[F::LOG_DEGREE..]
 			.iter()
 			.map(|eval| *eval + F::ONE)
 			.product();
 
-		let partial_low_multiplied = partial_low_eval
-			.evals()
-			.iter()
-			.map(|eval| *eval * factor)
-			.collect::<Vec<_>>();
+		let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
 
-		Ok(MultilinearExtension::new(self.z_vals.len(), partial_low_multiplied)?)
+		factor_as_packed_arr[0].set(0, extra_queries_factor);
+
+		let row_batching_query_expansion =
+			MultilinearQuery::with_expansion(0, &mut factor_as_packed_arr[0..])?;
+
+		let row_batching_query_expansion = MultilinearQuery::update(
+			row_batching_query_expansion,
+			&self.row_batch_coeffs.query[0..F::LOG_DEGREE],
+		)?;
+
+		let partial_low_eval = subfield_vector_mle
+			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
+
+		Ok(partial_low_eval)
 	}
 }
 
