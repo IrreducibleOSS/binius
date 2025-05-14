@@ -9,9 +9,9 @@ use binius_field::{
 };
 use binius_m3::{
 	builder::{
-		test_utils::{validate_system_witness, ClosureFiller},
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B128,
-		B32, B64,
+		B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex,
+		test_utils::{ClosureFiller, validate_system_witness},
 	},
 	gadgets::{
 		div::{DivSS32, DivUU32},
@@ -21,7 +21,7 @@ use binius_m3::{
 use bumpalo::Bump;
 use bytemuck::Contiguous;
 use itertools::chain;
-use rand::{prelude::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, prelude::StdRng};
 
 // This needs to create witness data as well as later query for checking outputs.
 trait MulDivTestSuiteHelper
@@ -216,7 +216,10 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 
 				chain!(
 					EXPLICIT_TESTS.into_iter(),
-					repeat_with(|| (B32::new(rng.r#gen::<i32>() as u32), B32::new(rng.r#gen::<u32>())))
+					repeat_with(|| (
+						B32::new(rng.r#gen::<i32>() as u32),
+						B32::new(rng.r#gen::<u32>())
+					))
 				)
 				.take(table_size)
 				.collect()

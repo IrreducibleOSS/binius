@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
+	AESTowerField8b, AESTowerField128b, BinaryField, BinaryField1b, ByteSliced16x128x1b,
+	ByteSlicedAES16x16x8b, ByteSlicedAES16x128b, Field, PackedExtension, PackedField,
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField1b, ByteSliced16x128x1b,
-	ByteSlicedAES16x128b, ByteSlicedAES16x16x8b, Field, PackedExtension, PackedField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
@@ -11,7 +11,7 @@ use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
 	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use super::{batch_prove, common::BaseExpReductionOutput};
 use crate::{
@@ -134,8 +134,8 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 }
 
 #[allow(clippy::type_complexity)]
-fn generate_mul_witnesses_claims_with_different_log_size<'a>(
-) -> (Vec<BaseExpWitness<'a, P>>, Vec<ExpClaim<F>>) {
+fn generate_mul_witnesses_claims_with_different_log_size<'a>()
+-> (Vec<BaseExpWitness<'a, P>>, Vec<ExpClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;

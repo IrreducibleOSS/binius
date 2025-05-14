@@ -7,7 +7,7 @@ use binius_utils::bail;
 use itertools::izip;
 use tracing::instrument;
 
-use super::{error::Error, BaseExpReductionOutput, BaseExpWitness, ExpClaim};
+use super::{BaseExpReductionOutput, BaseExpWitness, ExpClaim, error::Error};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::{evalcheck::EvalcheckMultilinearClaim, gkr_exp::LayerClaim},

@@ -3,15 +3,16 @@
 use std::{array, mem::MaybeUninit};
 
 use binius_field::{
-	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	make_binary_to_aes_packed_transformer, underlier::WithUnderlier, AesToBinaryTransformation,
-	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, PackedAESBinaryField8x32b,
-	PackedBinaryField8x32b, PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	AesToBinaryTransformation, BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable, linear_transformation::Transformation,
+	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
+	underlier::WithUnderlier,
 };
 use digest::{
+	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
 	consts::{U32, U96},
 	core_api::BlockSizeUser,
-	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
 };
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
@@ -359,8 +360,8 @@ mod tests {
 	use hex_literal::hex;
 
 	use super::{
-		MultiDigest, VisionHasherDigest, VisionHasherDigestByteSliced,
-		HASHES_PER_BYTE_SLICED_PERMUTATION,
+		HASHES_PER_BYTE_SLICED_PERMUTATION, MultiDigest, VisionHasherDigest,
+		VisionHasherDigestByteSliced,
 	};
 
 	#[test]

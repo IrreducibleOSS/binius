@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
+	TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	TowerField,
 };
 use binius_utils::sparse_index::SparseIndex;
 

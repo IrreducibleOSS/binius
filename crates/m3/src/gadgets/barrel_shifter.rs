@@ -3,9 +3,9 @@
 use std::cell::RefMut;
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedFieldIndexable};
+use binius_field::{Field, PackedExtension, PackedFieldIndexable, packed::set_packed_slice};
 
-use crate::builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32};
+use crate::builder::{B1, B32, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_col};
 
 /// Maximum number of bits of the shift amount, i.e. 0 < shift_amount < 1 <<
 /// SHIFT_MAX_BITS - 1 = 31 where dst_val = src_val >> shift_amount or dst_val =
@@ -152,7 +152,7 @@ mod tests {
 
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
@@ -178,7 +178,9 @@ mod tests {
 		let mut segment = table_witness.full_segment();
 
 		let mut rng = StdRng::seed_from_u64(0x1234);
-		let test_inputs = repeat_with(|| rng.r#gen()).take(1 << 8).collect::<Vec<u32>>();
+		let test_inputs = repeat_with(|| rng.r#gen())
+			.take(1 << 8)
+			.collect::<Vec<u32>>();
 
 		for (i, (input, shift_amount)) in (*segment.get_mut_as(input).unwrap())
 			.iter_mut()

@@ -1,17 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},
+	packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
+	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+	BinaryField64b, BinaryField128b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b,
 };
 
 // Define 128 bit packed field types

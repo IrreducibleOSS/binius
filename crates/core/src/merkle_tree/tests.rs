@@ -5,7 +5,7 @@ use std::iter::repeat_with;
 
 use binius_field::{BinaryField16b, Field};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
 use crate::{fiat_shamir::HasherChallenger, transcript::ProverTranscript};

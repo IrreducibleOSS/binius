@@ -5,8 +5,8 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, N
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
 use super::{
-	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
+	underlier_type::{NumCast, UnderlierType},
 };
 use crate::tower_levels::TowerLevel;
 

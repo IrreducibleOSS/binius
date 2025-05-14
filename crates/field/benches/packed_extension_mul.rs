@@ -1,11 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	ext_base_mul, packed::set_packed_slice_unchecked, BinaryField128b, BinaryField16b,
-	BinaryField1b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b, PackedExtension,
-	PackedField,
+	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField128b, ExtensionField, Field,
+	PackedBinaryField2x128b, PackedExtension, PackedField, ext_base_mul,
+	packed::set_packed_slice_unchecked,
 };
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rand::thread_rng;
 
 // Constants for input sizes

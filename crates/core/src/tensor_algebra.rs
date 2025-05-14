@@ -8,7 +8,7 @@ use std::{
 };
 
 use binius_field::{
-	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
+	ExtensionField, Field, PackedExtension, square_transpose, util::inner_product_unchecked,
 };
 
 /// An element of the tensor algebra defined as the tensor product of `FE` and `FE` as fields.
@@ -214,8 +214,8 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField128b, BinaryField8b};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_field::{BinaryField8b, BinaryField128b};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

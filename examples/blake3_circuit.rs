@@ -5,7 +5,7 @@ use std::array;
 use anyhow::Result;
 use binius_circuits::{
 	blake3::Blake3CompressState,
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::tower::CanonicalTowerFamily;
@@ -13,8 +13,8 @@ use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
-use rand::{rngs::OsRng, Rng};
+use clap::{Parser, value_parser};
+use rand::{Rng, rngs::OsRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

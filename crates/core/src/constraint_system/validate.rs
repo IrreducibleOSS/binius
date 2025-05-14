@@ -6,9 +6,9 @@ use binius_math::MultilinearPoly;
 use binius_utils::bail;
 
 use super::{
+	ConstraintSystem,
 	channel::{self, Boundary},
 	error::Error,
-	ConstraintSystem,
 };
 use crate::{
 	oracle::{
@@ -16,7 +16,7 @@ use crate::{
 		ShiftVariant,
 	},
 	polynomial::{
-		test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly, MultilinearComposite,
+		ArithCircuitPoly, MultilinearComposite, test_utils::decompose_index_to_hypercube_point,
 	},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,

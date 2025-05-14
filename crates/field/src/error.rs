@@ -5,7 +5,9 @@
 pub enum Error {
 	#[error("the argument does not match the field extension degree")]
 	ExtensionDegreeMismatch,
-	#[error("the amount of scalars in the first array is not the same as the amount of scalars in the second")]
+	#[error(
+		"the amount of scalars in the first array is not the same as the amount of scalars in the second"
+	)]
 	MismatchedLengths,
 	#[error("the argument has too large a field extension degree")]
 	ExtensionDegreeTooHigh,

@@ -4,8 +4,8 @@ use std::fmt::Debug;
 
 use bytemuck::{NoUninit, Zeroable};
 use rand::{
-	distributions::{Distribution, Standard},
 	Rng, RngCore,
+	distributions::{Distribution, Standard},
 };
 use subtle::ConstantTimeEq;
 

@@ -1,8 +1,8 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use bytemuck::{bytes_of_mut, must_cast};
-use digest::{core_api::Block, Digest};
-use sha2::{compress256, digest::Output, Sha256};
+use digest::{Digest, core_api::Block};
+use sha2::{Sha256, compress256, digest::Output};
 
 use crate::{CompressionFunction, PseudoCompressionFunction};
 

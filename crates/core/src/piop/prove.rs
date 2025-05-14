@@ -3,7 +3,7 @@
 use std::{borrow::Cow, ops::Deref};
 
 use binius_field::{
-	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
+	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -13,34 +13,33 @@ use binius_math::{
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
-	bail,
+	SerializeBytes, bail,
 	checked_arithmetics::checked_log_2,
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
-	SerializeBytes,
 };
 use either::Either;
-use itertools::{chain, Itertools};
+use itertools::{Itertools, chain};
 
 use super::{
 	error::Error,
-	verify::{make_sumcheck_claim_descs, PIOPSumcheckClaim},
+	verify::{PIOPSumcheckClaim, make_sumcheck_claim_descs},
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	oracle::OracleId,
 	piop::{
-		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 		CommitMeta,
+		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 	},
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
 			self, immediate_switchover_heuristic,
 			prove::{
-				front_loaded::BatchProver as SumcheckBatchProver, RegularSumcheckProver,
-				SumcheckProver,
+				RegularSumcheckProver, SumcheckProver,
+				front_loaded::BatchProver as SumcheckBatchProver,
 			},
 		},
 	},
@@ -476,7 +475,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::PackedBinaryField2x128b;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

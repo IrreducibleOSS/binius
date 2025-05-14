@@ -6,34 +6,34 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
-use bytemuck::{must_cast, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
+	BinaryField,
 	arch::{
 		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
-			packed::{impl_pack_scalar, PackedPrimitiveType},
+			packed::{PackedPrimitiveType, impl_pack_scalar},
 			packed_arithmetic::{
-				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
 			},
 		},
 		x86_64::{
-			m128::{bitshift_128b, M128},
+			m128::{M128, bitshift_128b},
 			m256::M256,
 		},
 	},
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
+		NumCast, Random, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration,
 		pair_unpack_lo_hi_128b_lanes, spread_fallback, transpose_128b_blocks_low_to_high,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback,
 	},
-	BinaryField,
 };
 
 /// 512-bit value that is used for 512-bit SIMD operations

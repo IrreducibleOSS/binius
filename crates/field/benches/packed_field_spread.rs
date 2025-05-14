@@ -3,13 +3,13 @@
 use std::array;
 
 use binius_field::{
-	PackedBinaryField128x1b, PackedBinaryField16x16b, PackedBinaryField16x8b,
-	PackedBinaryField256x1b, PackedBinaryField32x16b, PackedBinaryField32x8b,
-	PackedBinaryField4x16b, PackedBinaryField512x1b, PackedBinaryField64x1b,
-	PackedBinaryField64x8b, PackedBinaryField8x16b, PackedBinaryField8x8b, PackedField,
+	PackedBinaryField4x16b, PackedBinaryField8x8b, PackedBinaryField8x16b, PackedBinaryField16x8b,
+	PackedBinaryField16x16b, PackedBinaryField32x8b, PackedBinaryField32x16b,
+	PackedBinaryField64x1b, PackedBinaryField64x8b, PackedBinaryField128x1b,
+	PackedBinaryField256x1b, PackedBinaryField512x1b, PackedField,
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Throughput,
+	BenchmarkGroup, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
 use rand::thread_rng;
 

@@ -1,16 +1,16 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{impl_broadcast, PackedPrimitiveType},
+	packed::{PackedPrimitiveType, impl_broadcast},
 	packed_arithmetic::impl_tower_constants,
 };
 use crate::{
+	AESTowerField8b, AESTowerField16b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	AESTowerField16b, AESTowerField8b,
 };
 
 // Define 16 bit packed field types

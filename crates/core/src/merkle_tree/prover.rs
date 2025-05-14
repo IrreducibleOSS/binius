@@ -1,10 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::TowerField;
-use binius_hash::{multi_digest::ParallelDigest, PseudoCompressionFunction};
+use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_maybe_rayon::iter::IndexedParallelIterator;
 use bytes::BufMut;
-use digest::{core_api::BlockSizeUser, FixedOutputReset, Output};
+use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use getset::Getters;
 
 use super::{

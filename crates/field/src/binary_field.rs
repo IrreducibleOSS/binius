@@ -8,8 +8,8 @@ use std::{
 };
 
 use binius_utils::{
-	bytes::{Buf, BufMut},
 	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	bytes::{Buf, BufMut},
 };
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
@@ -19,8 +19,8 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 };
 use crate::{
-	underlier::{U1, U2, U4},
 	Field,
+	underlier::{U1, U2, U4},
 };
 
 /// A finite field with characteristic 2.
@@ -895,12 +895,12 @@ impl From<BinaryField4b> for u8 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-	use binius_utils::{bytes::BytesMut, SerializationMode};
+	use binius_utils::{SerializationMode, bytes::BytesMut};
 	use proptest::prelude::*;
 
 	use super::{
-		BinaryField16b as BF16, BinaryField1b as BF1, BinaryField2b as BF2, BinaryField4b as BF4,
-		BinaryField64b as BF64, BinaryField8b as BF8, *,
+		BinaryField1b as BF1, BinaryField2b as BF2, BinaryField4b as BF4, BinaryField8b as BF8,
+		BinaryField16b as BF16, BinaryField64b as BF64, *,
 	};
 
 	#[test]

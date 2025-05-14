@@ -19,9 +19,9 @@ use std::ops::Mul;
 
 use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
-	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
-	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	BinaryField128bPolyval, PackedField,
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{InvertOrZero, impl_square_with, impl_transformation_with_strategy},
 };
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;

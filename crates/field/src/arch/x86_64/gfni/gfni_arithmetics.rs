@@ -5,17 +5,17 @@ use std::array;
 use binius_utils::checked_arithmetics::checked_int_div;
 
 use crate::{
+	BinaryField, PackedField, TowerField,
 	arch::{
+		GfniStrategy,
 		portable::packed::PackedPrimitiveType,
 		x86_64::{m128::m128_from_u128, simd::simd_arithmetic::TowerSimdType},
-		GfniStrategy,
 	},
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedPackedTransformationFactory},
 	is_aes_tower, is_canonical_tower,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{Divisible, UnderlierType, WithUnderlier},
-	BinaryField, PackedField, TowerField,
 };
 
 #[rustfmt::skip]

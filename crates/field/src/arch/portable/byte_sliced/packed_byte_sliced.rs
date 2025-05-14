@@ -3,7 +3,7 @@
 use std::{
 	array,
 	fmt::Debug,
-	iter::{zip, Product, Sum},
+	iter::{Product, Sum, zip},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
@@ -12,6 +12,10 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
+	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
+	PackedField,
 	arch::{
 		byte_sliced::underlier::ByteSlicedUnderlier, portable::packed_scaled::ScaledPackedField,
 	},
@@ -21,12 +25,8 @@ use crate::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed_aes_field::PackedAESBinaryField32x8b,
-	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
+	tower_levels::{TowerLevel, TowerLevel1, TowerLevel2, TowerLevel4, TowerLevel8, TowerLevel16},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
-	PackedField,
 };
 
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.

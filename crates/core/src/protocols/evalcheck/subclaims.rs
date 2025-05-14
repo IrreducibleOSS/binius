@@ -21,7 +21,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use tracing::instrument;
 
-use super::{error::Error, evalcheck::EvalcheckMultilinearClaim, EvalPoint, EvalPointOracleIdMap};
+use super::{EvalPoint, EvalPointOracleIdMap, error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
@@ -30,15 +30,14 @@ use crate::{
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
-		self,
+		self, Error as SumcheckError,
 		prove::{
 			front_loaded,
 			oracles::{
-				constraint_sets_mlecheck_prover_meta, constraint_sets_sumcheck_provers_metas,
 				MLECheckProverWithMeta, SumcheckProversWithMetas,
+				constraint_sets_mlecheck_prover_meta, constraint_sets_sumcheck_provers_metas,
 			},
 		},
-		Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
 	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},

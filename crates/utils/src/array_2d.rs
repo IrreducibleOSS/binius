@@ -2,7 +2,7 @@
 
 use std::ops::{AddAssign, Deref, DerefMut, Index, IndexMut};
 
-use bytemuck::{allocation::zeroed_vec, Zeroable};
+use bytemuck::{Zeroable, allocation::zeroed_vec};
 
 /// 2D array with row-major layout.
 #[derive(Debug)]

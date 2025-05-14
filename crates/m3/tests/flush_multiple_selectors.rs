@@ -1,13 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
-	arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::set_packed_slice, Field,
+	Field, arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::set_packed_slice,
 };
 use binius_m3::{
 	builder::{
-		test_utils::{validate_system_witness, ClosureFiller},
-		Boundary, ConstraintSystem, FlushDirection, FlushOpts, StructuredDynSize, WitnessIndex, B1,
-		B128, B32,
+		B1, B32, B128, Boundary, ConstraintSystem, FlushDirection, FlushOpts, StructuredDynSize,
+		WitnessIndex,
+		test_utils::{ClosureFiller, validate_system_witness},
 	},
 	gadgets::structured::fill_incrementing_b32,
 };

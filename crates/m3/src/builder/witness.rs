@@ -13,10 +13,10 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 	arch::OptimalUnderlier,
 	as_packed_field::PackedType,
 	packed::{get_packed_slice, set_packed_slice},
-	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{
 	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
@@ -24,17 +24,17 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
+use bytemuck::{Pod, must_cast_slice, must_cast_slice_mut, zeroed_vec};
 use either::Either;
 use getset::CopyGetters;
 use itertools::Itertools;
 
 use super::{
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 	column::{Col, ColumnShape},
 	error::Error,
 	table::{self, Table, TableId},
-	types::{B1, B128, B16, B32, B64, B8},
-	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
+	types::{B1, B8, B16, B32, B64, B128},
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -1288,12 +1288,12 @@ mod tests {
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
 	};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		types::{B1, B32, B8},
 		ConstraintSystem, Statement, TableBuilder,
+		types::{B1, B8, B32},
 	};
 
 	#[test]

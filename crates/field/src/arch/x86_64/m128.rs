@@ -6,29 +6,29 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
-use bytemuck::{must_cast, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
+	BinaryField,
 	arch::{
 		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
-			packed::{impl_pack_scalar, PackedPrimitiveType},
+			packed::{PackedPrimitiveType, impl_pack_scalar},
 			packed_arithmetic::{
-				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
 			},
 		},
 	},
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
-		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		NumCast, Random, SmallU, SpreadToByte, U1, U2, U4, UnderlierType, UnderlierWithBitOps,
+		WithUnderlier, impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback,
 	},
-	BinaryField,
 };
 
 /// 128-bit value that is used for 128-bit SIMD operations
@@ -184,11 +184,7 @@ impl Not for M128 {
 
 /// `std::cmp::max` isn't const, so we need our own implementation
 pub(crate) const fn max_i32(left: i32, right: i32) -> i32 {
-	if left > right {
-		left
-	} else {
-		right
-	}
+	if left > right { left } else { right }
 }
 
 /// This solution shows 4X better performance.

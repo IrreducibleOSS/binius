@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use crate::{
+	PackedExtension, PackedField, TowerField,
 	arch::PackedStrategy,
 	arithmetic_traits::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
@@ -10,7 +11,6 @@ use crate::{
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
-	PackedExtension, PackedField, TowerField,
 };
 
 pub trait UnderlierWithBitConstants: UnderlierWithBitOps
@@ -409,17 +409,17 @@ mod tests {
 
 	use super::*;
 	use crate::{
+		BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+		BinaryField64b,
 		arch::portable::packed_128::{
-			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-			PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
-			PackedBinaryField8x16b,
+			PackedBinaryField1x128b, PackedBinaryField2x64b, PackedBinaryField4x32b,
+			PackedBinaryField8x16b, PackedBinaryField16x8b, PackedBinaryField32x4b,
+			PackedBinaryField64x2b,
 		},
 		test_utils::{
 			define_invert_tests, define_mul_alpha_tests, define_multiply_tests,
 			define_square_tests, define_transformation_tests,
 		},
-		BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-		BinaryField64b, BinaryField8b,
 	};
 
 	const NUM_TESTS: u64 = 100;

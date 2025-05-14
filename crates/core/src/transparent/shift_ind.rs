@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField, util::eq};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -431,8 +431,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;

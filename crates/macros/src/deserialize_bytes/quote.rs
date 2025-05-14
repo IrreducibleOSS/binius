@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use quote::{quote, ToTokens};
-use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, WherePredicate};
+use quote::{ToTokens, quote};
+use syn::{GenericParam, Generics, Type, WherePredicate, punctuated::Punctuated, token::Comma};
 
 use super::parse::GenericBinding;
 
@@ -164,7 +164,7 @@ mod tests {
 	use quote::quote;
 	use syn::ItemStruct;
 
-	use crate::deserialize_bytes::{parse::ContainerAttributes, GenericsSplit};
+	use crate::deserialize_bytes::{GenericsSplit, parse::ContainerAttributes};
 
 	#[test]
 	fn test_generics() {

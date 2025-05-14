@@ -11,14 +11,14 @@ use itertools::{chain, izip};
 use tracing::instrument;
 
 use super::{
+	EvalPoint, EvalPointOracleIdMap,
 	error::Error,
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	serialize_evalcheck_proof,
 	subclaims::{
-		add_composite_sumcheck_to_constraints, calculate_projected_mles, MemoizedData,
-		ProjectedBivariateMeta,
+		MemoizedData, ProjectedBivariateMeta, add_composite_sumcheck_to_constraints,
+		calculate_projected_mles,
 	},
-	EvalPoint, EvalPointOracleIdMap,
 };
 use crate::{
 	fiat_shamir::Challenger,

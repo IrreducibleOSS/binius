@@ -3,10 +3,10 @@
 use std::{marker::PhantomData, mem, sync::Arc};
 
 use binius_field::{
-	packed::{copy_packed_from_scalars_slice, get_packed_slice, set_packed_slice},
-	util::powers,
 	ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, RepackedExtension,
 	TowerField,
+	packed::{copy_packed_from_scalars_slice, get_packed_slice, set_packed_slice},
+	util::powers,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -16,24 +16,24 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use itertools::{izip, Either};
+use itertools::{Either, izip};
 use tracing::instrument;
 
 use crate::{
 	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		common::{equal_n_vars_check, CompositeSumClaim},
+		Error,
+		common::{CompositeSumClaim, equal_n_vars_check},
 		prove::{
+			SumcheckProver, ZerocheckProver,
 			common::fold_partial_eq_ind,
 			eq_ind::EqIndSumcheckProverBuilder,
 			univariate::{
-				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
-				ZerocheckUnivariateFoldResult,
+				ZerocheckUnivariateEvalsOutput, ZerocheckUnivariateFoldResult,
+				zerocheck_univariate_evals,
 			},
-			SumcheckProver, ZerocheckProver,
 		},
-		zerocheck::{domain_size, ZerocheckRoundEvals},
-		Error,
+		zerocheck::{ZerocheckRoundEvals, domain_size},
 	},
 };
 

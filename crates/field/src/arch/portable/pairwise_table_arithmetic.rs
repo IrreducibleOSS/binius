@@ -2,11 +2,11 @@
 
 use super::packed::PackedPrimitiveType;
 use crate::{
+	AESTowerField8b, BinaryField2b, BinaryField4b, BinaryField8b,
 	arch::PairwiseTableStrategy,
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	packed::PackedField,
 	underlier::UnderlierType,
-	AESTowerField8b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
 
 impl<U: UnderlierType> TaggedMul<PairwiseTableStrategy> for PackedPrimitiveType<U, BinaryField2b>

@@ -467,8 +467,8 @@ pub type FSliceMut<'a, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{tower::CanonicalTowerFamily, BinaryField128b, Field, TowerField};
-	use rand::{prelude::StdRng, SeedableRng};
+	use binius_field::{BinaryField128b, Field, TowerField, tower::CanonicalTowerFamily};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{

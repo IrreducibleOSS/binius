@@ -20,12 +20,12 @@ use subtle::{Choice, ConstantTimeEq};
 
 use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
+	BinaryField, PackedField,
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	underlier::{
-		IterationMethods, IterationStrategy, NumCast, UnderlierType, UnderlierWithBitOps,
-		WithUnderlier, U1, U2, U4,
+		IterationMethods, IterationStrategy, NumCast, U1, U2, U4, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier,
 	},
-	BinaryField, PackedField,
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Default, bytemuck::TransparentWrapper)]

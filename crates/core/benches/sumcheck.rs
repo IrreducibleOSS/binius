@@ -6,13 +6,13 @@ use binius_core::{
 	composition::BivariateProduct,
 	fiat_shamir::HasherChallenger,
 	polynomial::MultilinearComposite,
-	protocols::sumcheck::{batch_prove, prove::RegularSumcheckProver, CompositeSumClaim},
+	protocols::sumcheck::{CompositeSumClaim, batch_prove, prove::RegularSumcheckProver},
 	transcript::ProverTranscript,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField8b, BinaryField,
-	BinaryField128b, BinaryField128bPolyval, BinaryField8b, ByteSlicedAES32x128b, ExtensionField,
-	PackedExtension, PackedField, TowerField,
+	AESTowerField8b, BinaryField, BinaryField8b, BinaryField128b, BinaryField128bPolyval,
+	ByteSlicedAES32x128b, ExtensionField, PackedExtension, PackedField, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackedType,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
@@ -20,7 +20,7 @@ use binius_math::{
 	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
 };
 use binius_maybe_rayon::prelude::*;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::thread_rng;
 
 fn bench_bivariate_with_evaluation_order<

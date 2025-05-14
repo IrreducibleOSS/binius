@@ -354,7 +354,7 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField, BinaryField16b, BinaryField32b, BinaryField8b};
+	use binius_field::{BinaryField, BinaryField8b, BinaryField16b, BinaryField32b};
 	use binius_math::BinarySubspace;
 	use lazy_static::lazy_static;
 	use proptest::prelude::*;

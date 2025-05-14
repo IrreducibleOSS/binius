@@ -12,6 +12,7 @@ use rand::RngCore;
 use subtle::ConstantTimeEq;
 
 use crate::{
+	Field, PackedField,
 	arithmetic_traits::MulAlpha,
 	as_packed_field::PackScalar,
 	linear_transformation::{
@@ -19,7 +20,6 @@ use crate::{
 	},
 	packed::PackedBinaryField,
 	underlier::{ScaledUnderlier, UnderlierType, WithUnderlier},
-	Field, PackedField,
 };
 
 /// Packed field that just stores smaller packed field N times and performs all operations

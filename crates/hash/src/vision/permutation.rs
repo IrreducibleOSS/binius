@@ -3,16 +3,16 @@
 use std::array;
 
 use binius_field::{
+	AESTowerField8b, AESTowerField32b, BinaryField8b, ByteSlicedAES32x32b,
+	PackedAESBinaryField8x32b, PackedAESBinaryField32x8b, PackedExtension, PackedField,
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::packed_from_fn_with_offset,
-	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b,
-	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension, PackedField,
 };
 use binius_ntt::{
-	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
 	AdditiveNTT, SingleThreadedNTT,
+	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
 };
 use lazy_static::lazy_static;
 
@@ -522,8 +522,8 @@ impl FastNttByteSliced {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{packed::set_packed_slice, BinaryField32b, PackedExtension};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_field::{BinaryField32b, PackedExtension, packed::set_packed_slice};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

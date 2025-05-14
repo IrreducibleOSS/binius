@@ -5,7 +5,7 @@ use std::{array, sync::Arc};
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::ArithCircuit;
-use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail};
 use getset::{CopyGetters, Getters};
 
 use crate::{
@@ -946,7 +946,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField128b, BinaryField1b, Field, TowerField};
+	use binius_field::{BinaryField1b, BinaryField128b, Field, TowerField};
 
 	use super::MultilinearOracleSet;
 

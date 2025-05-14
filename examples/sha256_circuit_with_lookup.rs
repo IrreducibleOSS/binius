@@ -2,18 +2,18 @@
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 	unconstrained::unconstrained,
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily, BinaryField1b,
+	BinaryField1b, arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 // P:LOG_WIDTH + BinaryField8b::TOWER_LEVEL - COMPRESSION_LOG_LEN

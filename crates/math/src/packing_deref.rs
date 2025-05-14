@@ -3,9 +3,9 @@
 use std::{marker::PhantomData, ops::Deref};
 
 use binius_field::{
+	Field,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	Field,
 };
 
 /// A wrapper for containers of underlier types that dereferences as packed field slices.

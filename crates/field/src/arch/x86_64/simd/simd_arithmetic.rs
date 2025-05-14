@@ -3,13 +3,14 @@
 use std::{any::TypeId, arch::x86_64::*};
 
 use crate::{
+	BinaryField, BinaryField8b, PackedField, TowerField,
 	aes_field::AESTowerField8b,
 	arch::{
+		SimdStrategy,
 		portable::{
 			packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField,
 			reuse_multiply_arithmetic::Alpha,
 		},
-		SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
@@ -18,7 +19,6 @@ use crate::{
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
-	BinaryField, BinaryField8b, PackedField, TowerField,
 };
 
 pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {

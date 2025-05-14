@@ -3,10 +3,10 @@
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
 use binius_field::TowerField;
-use binius_hash::{multi_digest::ParallelDigest, PseudoCompressionFunction};
+use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
-use digest::{crypto_common::BlockSizeUser, FixedOutputReset, Output};
+use digest::{FixedOutputReset, Output, crypto_common::BlockSizeUser};
 use tracing::instrument;
 
 use super::errors::Error;

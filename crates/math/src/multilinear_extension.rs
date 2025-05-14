@@ -3,17 +3,17 @@
 use std::{fmt::Debug, ops::Deref};
 
 use binius_field::{
+	ExtensionField, Field, PackedField,
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	underlier::UnderlierType,
 	util::inner_product_par,
-	ExtensionField, Field, PackedField,
 };
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::instrument;
 
 use crate::{
-	fold::fold_left, fold_middle, fold_right, zero_pad, Error, MultilinearQueryRef, PackingDeref,
+	Error, MultilinearQueryRef, PackingDeref, fold::fold_left, fold_middle, fold_right, zero_pad,
 };
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
@@ -387,16 +387,16 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField1b,
-		BinaryField32b, BinaryField8b, PackedBinaryField16x1b, PackedBinaryField16x8b,
-		PackedBinaryField32x1b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
-		PackedBinaryField8x1b,
+		BinaryField1b, BinaryField8b, BinaryField16b as F, BinaryField32b, BinaryField128b,
+		PackedBinaryField4x32b, PackedBinaryField8x1b, PackedBinaryField8x16b as P,
+		PackedBinaryField16x1b, PackedBinaryField16x8b, PackedBinaryField32x1b,
+		arch::OptimalUnderlier256b,
 	};
 	use itertools::Itertools;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use crate::{MultilinearQuery, tensor_prod_eq_ind};
 
 	/// Expand the tensor product of the query values.
 	///

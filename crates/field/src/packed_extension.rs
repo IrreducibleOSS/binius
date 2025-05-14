@@ -1,9 +1,9 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use crate::{
+	ExtensionField, Field, PackedField,
 	as_packed_field::PackScalar,
 	underlier::{Divisible, WithUnderlier},
-	ExtensionField, Field, PackedField,
 };
 
 /// A [`PackedField`] that can be safely cast to indexable slices of scalars.

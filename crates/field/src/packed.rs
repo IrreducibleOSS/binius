@@ -18,13 +18,13 @@ use bytemuck::Zeroable;
 use rand::RngCore;
 
 use super::{
+	Error,
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
-	Error,
 };
 use crate::{
-	arithmetic_traits::InvertOrZero, is_packed_field_indexable, underlier::WithUnderlier,
-	unpack_if_possible_mut, BinaryField, Field, PackedExtension,
+	BinaryField, Field, PackedExtension, arithmetic_traits::InvertOrZero,
+	is_packed_field_indexable, underlier::WithUnderlier, unpack_if_possible_mut,
 };
 
 /// A packed field represents a vector of underlying field elements.
@@ -635,23 +635,23 @@ impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 mod tests {
 	use itertools::Itertools;
 	use rand::{
+		SeedableRng,
 		distributions::{Distribution, Uniform},
 		rngs::StdRng,
-		SeedableRng,
 	};
 
 	use super::*;
 	use crate::{
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+		BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+		BinaryField64b, BinaryField128b, BinaryField128bPolyval, PackedField,
 		arch::{
-			byte_sliced::*, packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_256::*,
-			packed_32::*, packed_4::*, packed_512::*, packed_64::*, packed_8::*, packed_aes_128::*,
-			packed_aes_16::*, packed_aes_256::*, packed_aes_32::*, packed_aes_512::*,
-			packed_aes_64::*, packed_aes_8::*, packed_polyval_128::*, packed_polyval_256::*,
-			packed_polyval_512::*,
+			byte_sliced::*, packed_1::*, packed_2::*, packed_4::*, packed_8::*, packed_16::*,
+			packed_32::*, packed_64::*, packed_128::*, packed_256::*, packed_512::*,
+			packed_aes_8::*, packed_aes_16::*, packed_aes_32::*, packed_aes_64::*,
+			packed_aes_128::*, packed_aes_256::*, packed_aes_512::*, packed_polyval_128::*,
+			packed_polyval_256::*, packed_polyval_512::*,
 		},
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-		BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField2b,
-		BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, PackedField,
 	};
 
 	trait PackedFieldTest {

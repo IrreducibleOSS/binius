@@ -3,8 +3,8 @@
 use std::{iter, sync::Arc};
 
 use binius_field::{
-	tower::{PackedTop, TowerFamily},
 	Field, TowerField,
+	tower::{PackedTop, TowerFamily},
 };
 use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -17,8 +17,8 @@ use crate::{
 	piop::PIOPSumcheckClaim,
 	polynomial::MultivariatePoly,
 	ring_switch::{
-		eq_ind::RingSwitchEqInd, tower_tensor_algebra::TowerTensorAlgebra, Error,
-		EvalClaimSuffixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc, VerificationError,
+		Error, EvalClaimSuffixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc, VerificationError,
+		eq_ind::RingSwitchEqInd, tower_tensor_algebra::TowerTensorAlgebra,
 	},
 	transcript::{TranscriptReader, VerifierTranscript},
 };
@@ -235,7 +235,7 @@ where
 		_ => {
 			return Err(Error::PackingDegreeNotSupported {
 				kappa: suffix_desc.kappa,
-			})
+			});
 		}
 	};
 	Ok(eq_ind)

@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 
-use crate::{eq_ind_partial_eval, tensor_prod_eq_ind, Error};
+use crate::{Error, eq_ind_partial_eval, tensor_prod_eq_ind};
 
 /// Tensor product expansion of sumcheck round challenges.
 ///

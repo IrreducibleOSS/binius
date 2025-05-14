@@ -169,7 +169,7 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
 mod tests {
 	use std::fmt::Debug;
 
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 

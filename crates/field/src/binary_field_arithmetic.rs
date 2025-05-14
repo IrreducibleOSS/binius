@@ -1,7 +1,7 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use super::{arithmetic_traits::InvertOrZero, binary_field::*};
-use crate::{arithmetic_traits::MulAlpha, PackedField};
+use crate::{PackedField, arithmetic_traits::MulAlpha};
 
 pub(crate) trait TowerFieldArithmetic: TowerField {
 	fn multiply(self, rhs: Self) -> Self;

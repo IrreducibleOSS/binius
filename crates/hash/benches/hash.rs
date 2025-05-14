@@ -3,12 +3,12 @@
 use std::{array, mem::MaybeUninit};
 
 use binius_hash::{
-	groestl::Groestl256, multi_digest::MultiDigest, VisionHasherDigest,
-	VisionHasherDigestByteSliced,
+	VisionHasherDigest, VisionHasherDigestByteSliced, groestl::Groestl256,
+	multi_digest::MultiDigest,
 };
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use digest::Digest;
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 
 fn bench_groestl(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Grøstl");

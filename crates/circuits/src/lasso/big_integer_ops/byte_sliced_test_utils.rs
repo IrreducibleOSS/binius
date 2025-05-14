@@ -5,9 +5,9 @@ use std::{array, fmt::Debug};
 use alloy_primitives::U512;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	tower_levels::TowerLevel, BinaryField1b, BinaryField32b, BinaryField8b, Field, TowerField,
+	BinaryField1b, BinaryField8b, BinaryField32b, Field, TowerField, tower_levels::TowerLevel,
 };
-use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng, thread_rng};
 
 use super::{
 	byte_sliced_add, byte_sliced_add_carryfree, byte_sliced_double_conditional_increment,

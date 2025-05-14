@@ -4,12 +4,12 @@ use std::{array, marker::PhantomData};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	Field, PackedExtension, PackedField, PackedFieldIndexable, packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128},
+	builder::{B128, TableBuilder, column::Col, types::B1, witness::TableWitnessSegment},
 	gadgets::add::UnsignedAddPrimitives,
 };
 
@@ -282,7 +282,7 @@ mod tests {
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
 	use bumpalo::Bump;
-	use rand::{prelude::StdRng, Rng as _, SeedableRng};
+	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
