@@ -711,165 +711,165 @@ impl UnderlierWithBitOps for M512 {
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let bit = get_block_values::<_, U1, 1>(self, block_idx)[0];
 					Self::fill_with_bit(bit.val())
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bits = get_block_values::<_, U1, 2>(self, block_idx);
 					let values = bits.map(|b| u128::fill_with_bit(b.val()));
 
 					Self::from_fn::<u128>(|i| values[i / 2])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bits = get_block_values::<_, U1, 4>(self, block_idx);
 					let values = bits.map(|b| u128::fill_with_bit(b.val()));
 
 					Self::from_fn::<u128>(|i| values[i])
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bits = get_block_values::<_, U1, 8>(self, block_idx);
 					let values = bits.map(|b| u64::fill_with_bit(b.val()));
 
 					Self::from_fn::<u64>(|i| values[i])
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bits = get_block_values::<_, U1, 16>(self, block_idx);
 					let values = bits.map(|b| u32::fill_with_bit(b.val()));
 
 					Self::from_fn::<u32>(|i| values[i])
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bits = get_block_values::<_, U1, 32>(self, block_idx);
 					let values = bits.map(|b| u16::fill_with_bit(b.val()));
 
 					Self::from_fn::<u16>(|i| values[i])
-				}
-				6 => {
+				},
+				6 => unsafe {
 					let bits = get_block_values::<_, U1, 64>(self, block_idx);
 					let values = bits.map(|b| u8::fill_with_bit(b.val()));
 
 					Self::from_fn::<u8>(|i| values[i])
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			1 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 1>(self, block_idx)[0];
 
 					_mm512_set1_epi8(bytes as _).into()
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 2>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 32])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 4>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 16])
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 8>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 8])
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 16>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 4])
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 32>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 2])
-				}
-				6 => {
+				},
+				6 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 64>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i])
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			2 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 1>(self, block_idx)[0];
 
 					_mm512_set1_epi8(bytes as _).into()
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 2>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 32])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 4>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 16])
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 8>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 8])
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 16>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 4])
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 32>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 2])
-				}
-				6 => {
+				},
+				6 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 64>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i])
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			3 => match log_block_len {
-				0 => _mm512_permutexvar_epi8(LOG_B8_0[block_idx], self.0).into(),
-				1 => _mm512_permutexvar_epi8(LOG_B8_1[block_idx], self.0).into(),
-				2 => _mm512_permutexvar_epi8(LOG_B8_2[block_idx], self.0).into(),
-				3 => _mm512_permutexvar_epi8(LOG_B8_3[block_idx], self.0).into(),
-				4 => _mm512_permutexvar_epi8(LOG_B8_4[block_idx], self.0).into(),
-				5 => _mm512_permutexvar_epi8(LOG_B8_5[block_idx], self.0).into(),
+				0 => unsafe { _mm512_permutexvar_epi8(LOG_B8_0[block_idx], self.0).into() },
+				1 => unsafe { _mm512_permutexvar_epi8(LOG_B8_1[block_idx], self.0).into() },
+				2 => unsafe { _mm512_permutexvar_epi8(LOG_B8_2[block_idx], self.0).into() },
+				3 => unsafe { _mm512_permutexvar_epi8(LOG_B8_3[block_idx], self.0).into() },
+				4 => unsafe { _mm512_permutexvar_epi8(LOG_B8_4[block_idx], self.0).into() },
+				5 => unsafe { _mm512_permutexvar_epi8(LOG_B8_5[block_idx], self.0).into() },
 				6 => self,
 				_ => panic!("unsupported block length"),
 			},
 			4 => match log_block_len {
-				0 => _mm512_permutexvar_epi8(LOG_B16_0[block_idx], self.0).into(),
-				1 => _mm512_permutexvar_epi8(LOG_B16_1[block_idx], self.0).into(),
-				2 => _mm512_permutexvar_epi8(LOG_B16_2[block_idx], self.0).into(),
-				3 => _mm512_permutexvar_epi8(LOG_B16_3[block_idx], self.0).into(),
-				4 => _mm512_permutexvar_epi8(LOG_B16_4[block_idx], self.0).into(),
+				0 => unsafe { _mm512_permutexvar_epi8(LOG_B16_0[block_idx], self.0).into() },
+				1 => unsafe { _mm512_permutexvar_epi8(LOG_B16_1[block_idx], self.0).into() },
+				2 => unsafe { _mm512_permutexvar_epi8(LOG_B16_2[block_idx], self.0).into() },
+				3 => unsafe { _mm512_permutexvar_epi8(LOG_B16_3[block_idx], self.0).into() },
+				4 => unsafe { _mm512_permutexvar_epi8(LOG_B16_4[block_idx], self.0).into() },
 				5 => self,
 				_ => panic!("unsupported block length"),
 			},
 			5 => match log_block_len {
-				0 => _mm512_permutexvar_epi8(LOG_B32_0[block_idx], self.0).into(),
-				1 => _mm512_permutexvar_epi8(LOG_B32_1[block_idx], self.0).into(),
-				2 => _mm512_permutexvar_epi8(LOG_B32_2[block_idx], self.0).into(),
-				3 => _mm512_permutexvar_epi8(LOG_B32_3[block_idx], self.0).into(),
+				0 => unsafe { _mm512_permutexvar_epi8(LOG_B32_0[block_idx], self.0).into() },
+				1 => unsafe { _mm512_permutexvar_epi8(LOG_B32_1[block_idx], self.0).into() },
+				2 => unsafe { _mm512_permutexvar_epi8(LOG_B32_2[block_idx], self.0).into() },
+				3 => unsafe { _mm512_permutexvar_epi8(LOG_B32_3[block_idx], self.0).into() },
 				4 => self,
 				_ => panic!("unsupported block length"),
 			},
 			6 => match log_block_len {
-				0 => _mm512_permutexvar_epi8(LOG_B64_0[block_idx], self.0).into(),
-				1 => _mm512_permutexvar_epi8(LOG_B64_1[block_idx], self.0).into(),
-				2 => _mm512_permutexvar_epi8(LOG_B64_2[block_idx], self.0).into(),
+				0 => unsafe { _mm512_permutexvar_epi8(LOG_B64_0[block_idx], self.0).into() },
+				1 => unsafe { _mm512_permutexvar_epi8(LOG_B64_1[block_idx], self.0).into() },
+				2 => unsafe { _mm512_permutexvar_epi8(LOG_B64_2[block_idx], self.0).into() },
 				3 => self,
 				_ => panic!("unsupported block length"),
 			},
 			7 => match log_block_len {
-				0 => _mm512_permutexvar_epi8(LOG_B128_0[block_idx], self.0).into(),
-				1 => _mm512_permutexvar_epi8(LOG_B128_1[block_idx], self.0).into(),
+				0 => unsafe { _mm512_permutexvar_epi8(LOG_B128_0[block_idx], self.0).into() },
+				1 => unsafe { _mm512_permutexvar_epi8(LOG_B128_1[block_idx], self.0).into() },
 				2 => self,
 				_ => panic!("unsupported block length"),
 			},
-			_ => spread_fallback(self, log_block_len, block_idx),
+			_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 		}
 	}
 

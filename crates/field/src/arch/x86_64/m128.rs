@@ -492,7 +492,7 @@ impl UnderlierWithBitOps for M128 {
 		match T::LOG_BITS {
 			0 => match log_block_len {
 				0 => Self::fill_with_bit(((u128::from(self) >> block_idx) & 1) as _),
-				1 => {
+				1 => unsafe {
 					let bits: [u8; 2] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 2 + i)) & 1) as _);
 
@@ -501,8 +501,8 @@ impl UnderlierWithBitOps for M128 {
 						u64::fill_with_bit(bits[0]) as i64,
 					)
 					.into()
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bits: [u8; 4] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 4 + i)) & 1) as _);
 
@@ -513,8 +513,8 @@ impl UnderlierWithBitOps for M128 {
 						u32::fill_with_bit(bits[0]) as i32,
 					)
 					.into()
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bits: [u8; 8] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 8 + i)) & 1) as _);
 
@@ -529,8 +529,8 @@ impl UnderlierWithBitOps for M128 {
 						u16::fill_with_bit(bits[0]) as i16,
 					)
 					.into()
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bits: [u8; 16] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 16 + i)) & 1) as _);
 
@@ -553,16 +553,16 @@ impl UnderlierWithBitOps for M128 {
 						u8::fill_with_bit(bits[0]) as i8,
 					)
 					.into()
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			1 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value =
 						U2::new((u128::from(self) >> (block_idx * 2)) as _).spread_to_byte();
 
 					_mm_set1_epi8(value as i8).into()
-				}
+				},
 				1 => {
 					let bytes: [u8; 2] = array::from_fn(|i| {
 						U2::new((u128::from(self) >> (block_idx * 4 + i * 2)) as _).spread_to_byte()
@@ -593,14 +593,14 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| bytes[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			2 => match log_block_len {
 				0 => {
 					let value =
 						U4::new((u128::from(self) >> (block_idx * 4)) as _).spread_to_byte();
 
-					_mm_set1_epi8(value as i8).into()
+					unsafe { _mm_set1_epi8(value as i8).into() }
 				}
 				1 => {
 					let values: [u8; 2] = array::from_fn(|i| {
@@ -633,13 +633,13 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| values[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			3 => match log_block_len {
-				0 => _mm_shuffle_epi8(self.0, LOG_B8_0[block_idx].0).into(),
-				1 => _mm_shuffle_epi8(self.0, LOG_B8_1[block_idx].0).into(),
-				2 => _mm_shuffle_epi8(self.0, LOG_B8_2[block_idx].0).into(),
-				3 => _mm_shuffle_epi8(self.0, LOG_B8_3[block_idx].0).into(),
+				0 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_0[block_idx].0).into() },
+				1 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_1[block_idx].0).into() },
+				2 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_2[block_idx].0).into() },
+				3 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_3[block_idx].0).into() },
 				4 => self,
 				_ => panic!("unsupported block length"),
 			},
@@ -647,7 +647,7 @@ impl UnderlierWithBitOps for M128 {
 				0 => {
 					let value = (u128::from(self) >> (block_idx * 16)) as u16;
 
-					_mm_set1_epi16(value as i16).into()
+					unsafe { _mm_set1_epi16(value as i16).into() }
 				}
 				1 => {
 					let values: [u16; 2] =
@@ -665,11 +665,11 @@ impl UnderlierWithBitOps for M128 {
 				_ => panic!("unsupported block length"),
 			},
 			5 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = (u128::from(self) >> (block_idx * 32)) as u32;
 
 					_mm_set1_epi32(value as i32).into()
-				}
+				},
 				1 => {
 					let values: [u32; 2] =
 						array::from_fn(|i| (u128::from(self) >> (block_idx * 64 + i * 32)) as u32);
@@ -680,11 +680,11 @@ impl UnderlierWithBitOps for M128 {
 				_ => panic!("unsupported block length"),
 			},
 			6 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = (u128::from(self) >> (block_idx * 64)) as u64;
 
 					_mm_set1_epi64x(value as i64).into()
-				}
+				},
 				1 => self,
 				_ => panic!("unsupported block length"),
 			},
