@@ -99,12 +99,13 @@ where
 			.map(|eval| *eval + F::ONE)
 			.product();
 
-		let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
+		// let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
+		let mut factor_as_packed_arr = vec![P::zero(); F::DEGREE];
 
 		factor_as_packed_arr[0].set(0, extra_queries_factor);
 
 		let row_batching_query_expansion =
-			MultilinearQuery::with_expansion(0, &mut factor_as_packed_arr[0..])?;
+			MultilinearQuery::with_expansion(0, &mut factor_as_packed_arr[..])?;
 
 		let row_batching_query_expansion = MultilinearQuery::update(
 			row_batching_query_expansion,
