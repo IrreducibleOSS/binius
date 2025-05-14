@@ -869,9 +869,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 		// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
 		#[allow(clippy::mut_from_ref)]
 		unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
-			unsafe {
-				slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
-			}
+			unsafe { slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len()) }
 		}
 
 		// Convert cols with mutable references into cols with const refs so that they can be
