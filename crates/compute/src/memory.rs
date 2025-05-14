@@ -2,6 +2,8 @@
 
 use std::ops::RangeBounds;
 
+use binius_field::TowerField;
+
 pub trait SizedSlice {
 	#[inline(always)]
 	fn is_empty(&self) -> bool {
@@ -107,6 +109,13 @@ impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
 	}
+
+	pub fn subfield_len(&self) -> usize
+	where
+		F: TowerField,
+	{
+		self.slice.len() << (F::TOWER_LEVEL - self.tower_level)
+	}
 }
 
 /// `SubfieldSliceMut` represents a mutable slice of field elements with identical semantics to
@@ -119,5 +128,12 @@ pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
 impl<'a, F, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
 	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
+	}
+
+	pub fn subfield_len(&self) -> usize
+	where
+		F: TowerField,
+	{
+		self.slice.len() << (F::TOWER_LEVEL - self.tower_level)
 	}
 }

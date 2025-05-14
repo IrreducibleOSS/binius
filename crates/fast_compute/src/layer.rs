@@ -1,14 +1,21 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, marker::PhantomData};
+use core::slice;
+use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit};
 
 use binius_compute::{
-	layer::{ComputeLayer, Error, FSlice, FSliceMut},
-	memory::SizedSlice,
+	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
+	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
 };
-use binius_field::{tower::TowerFamily, unpack_if_possible, unpack_if_possible_mut, PackedField};
-use binius_math::ArithExpr;
+use binius_field::{
+	tower::{PackedTop, TowerFamily},
+	unpack_if_possible, unpack_if_possible_mut,
+	util::inner_product_par,
+	ExtensionField, PackedExtension, PackedField,
+};
+use binius_math::{fold_left, fold_right, tensor_prod_eq_ind, ArithExpr};
 use binius_ntt::AdditiveNTT;
+use binius_utils::checked_arithmetics::strict_log_2;
 use bytemuck::zeroed_vec;
 
 use crate::{arith_circuit::ArithCircuitPoly, memory::PackedMemory};
@@ -17,9 +24,9 @@ use crate::{arith_circuit::ArithCircuitPoly, memory::PackedMemory};
 pub struct FastCpuExecutor;
 
 #[derive(Debug, Default)]
-pub struct CpuLayer<T: TowerFamily, P: PackedField<Scalar = T::B128>>(PhantomData<(T, P)>);
+pub struct CpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
 
-impl<T: TowerFamily, P: PackedField<Scalar = T::B128>> ComputeLayer<T::B128> for CpuLayer<T, P> {
+impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for CpuLayer<T, P> {
 	type Exec = FastCpuExecutor;
 	type KernelExec = FastCpuExecutor;
 	type DevMem = PackedMemory<P>;
@@ -108,34 +115,58 @@ impl<T: TowerFamily, P: PackedField<Scalar = T::B128>> ComputeLayer<T::B128> for
 
 	fn inner_product(
 		&self,
-		exec: &mut Self::Exec,
+		_exec: &mut Self::Exec,
 		a_edeg: usize,
 		a_in: FSlice<'_, T::B128, Self>,
 		b_in: FSlice<'_, T::B128, Self>,
 	) -> Result<Self::OpValue, Error> {
-		todo!()
+		debug_assert_eq!(
+			a_in.len() << (<T::B128 as ExtensionField<T::B1>>::LOG_DEGREE - a_edeg),
+			b_in.len(),
+			"precondition: a_in and b_in must have the same length"
+		);
+
+		let result = match a_edeg {
+			0 => inner_product_par(b_in.data, PackedExtension::<T::B1>::cast_bases(a_in.data)),
+			3 => inner_product_par(b_in.data, PackedExtension::<T::B8>::cast_bases(a_in.data)),
+			4 => inner_product_par(b_in.data, PackedExtension::<T::B16>::cast_bases(a_in.data)),
+			5 => inner_product_par(b_in.data, PackedExtension::<T::B32>::cast_bases(a_in.data)),
+			6 => inner_product_par(b_in.data, PackedExtension::<T::B64>::cast_bases(a_in.data)),
+			7 => inner_product_par(b_in.data, PackedExtension::<T::B128>::cast_bases(a_in.data)),
+			_ => {
+				return Err(Error::InputValidation(format!(
+					"unsupported value of a_edeg: {}",
+					a_edeg
+				)))
+			}
+		};
+
+		Ok(result)
 	}
 
 	fn tensor_expand(
 		&self,
-		exec: &mut Self::Exec,
+		_exec: &mut Self::Exec,
 		log_n: usize,
 		coordinates: &[T::B128],
-		data: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
+		data: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		todo!()
+		tensor_prod_eq_ind(log_n, data.data, coordinates)
+			.map_err(|_| Error::InputValidation("tensor dimensions are invalid".to_string()))
 	}
 
+	#[inline(always)]
 	fn kernel_decl_value(
 		&self,
-		exec: &mut Self::KernelExec,
+		_exec: &mut Self::KernelExec,
 		init: T::B128,
 	) -> Result<Self::KernelValue, Error> {
-		todo!()
+		Ok(init)
 	}
 
 	fn compile_expr(&self, expr: &ArithExpr<T::B128>) -> Result<Self::ExprEval, Error> {
-		todo!()
+		let expr = ArithCircuitPoly::new(expr.into());
+		Ok(expr)
 	}
 
 	fn accumulate_kernels(
@@ -144,31 +175,156 @@ impl<T: TowerFamily, P: PackedField<Scalar = T::B128>> ComputeLayer<T::B128> for
 		map: impl for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<binius_compute::layer::KernelBuffer<'a, T::B128, Self::DevMem>>,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
 		) -> Result<Vec<Self::KernelValue>, Error>,
-		mem_maps: Vec<binius_compute::layer::KernelMemMap<'_, T::B128, Self::DevMem>>,
+		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		todo!()
 	}
 
 	fn fold_left<'a>(
 		&'a self,
-		exec: &'a mut Self::Exec,
-		mat: binius_compute::memory::SubfieldSlice<'_, T::B128, Self::DevMem>,
-		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
-		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
+		_exec: &'a mut Self::Exec,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		todo!()
+		let log_evals_size = strict_log_2(mat.subfield_len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		// Safety: `P` must not implement `Drop` to safely use `MaybeUninit` for uninitialized
+		// memory.
+		assert!(!std::mem::needs_drop::<P>(), "`P` must not implement Drop");
+		let out = unsafe {
+			slice::from_raw_parts_mut(out.data.as_ptr() as *mut MaybeUninit<P>, out.data.len())
+		};
+
+		let result = match mat.tower_level {
+			0 => fold_left(
+				PackedExtension::<T::B1>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			3 => fold_left(
+				PackedExtension::<T::B8>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			4 => fold_left(
+				PackedExtension::<T::B16>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			5 => fold_left(
+				PackedExtension::<T::B32>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			6 => fold_left(
+				PackedExtension::<T::B64>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			7 => fold_left(
+				PackedExtension::<T::B128>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out,
+			),
+			_ => {
+				return Err(Error::InputValidation(format!(
+					"unsupported value of mat.tower_level: {}",
+					mat.tower_level
+				)))
+			}
+		};
+
+		result
+			.map_err(|_| Error::InputValidation("the input data dimensions are wrong".to_string()))
 	}
 
 	fn fold_right<'a>(
 		&'a self,
 		exec: &'a mut Self::Exec,
-		mat: binius_compute::memory::SubfieldSlice<'_, T::B128, Self::DevMem>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
 		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		todo!()
+		let log_evals_size = strict_log_2(mat.subfield_len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		let result = match mat.tower_level {
+			0 => fold_right(
+				PackedExtension::<T::B1>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			3 => fold_right(
+				PackedExtension::<T::B8>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			4 => fold_right(
+				PackedExtension::<T::B16>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			5 => fold_right(
+				PackedExtension::<T::B32>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			6 => fold_right(
+				PackedExtension::<T::B64>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			7 => fold_right(
+				PackedExtension::<T::B128>::cast_bases(mat.slice.data),
+				log_evals_size,
+				vec.data,
+				log_query_size,
+				out.data,
+			),
+			_ => {
+				return Err(Error::InputValidation(format!(
+					"unsupported value of mat.tower_level: {}",
+					mat.tower_level
+				)))
+			}
+		};
+
+		result
+			.map_err(|_| Error::InputValidation("the input data dimensions are wrong".to_string()))
 	}
 
 	fn sum_composition_evals(
