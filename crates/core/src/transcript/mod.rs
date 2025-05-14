@@ -86,10 +86,12 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 
 		// NOTE: This is the unsafe part, you are reading the next cnt bytes on the assumption that
 		// caller has ensured us the next cnt bytes are initialized.
-		let written: &[u8] = slice::from_raw_parts(written.as_mut_ptr(), cnt);
+		let written: &[u8] = unsafe { slice::from_raw_parts(written.as_mut_ptr(), cnt) };
 
 		self.challenger.observer().put_slice(written);
-		self.buffer.advance_mut(cnt);
+		unsafe {
+			self.buffer.advance_mut(cnt);
+		}
 	}
 
 	fn chunk_mut(&mut self) -> &mut UninitSlice {

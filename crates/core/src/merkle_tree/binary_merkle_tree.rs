@@ -223,5 +223,5 @@ where
 ///
 /// [`assume_init_mut`]: MaybeUninit::assume_init_mut
 pub const unsafe fn slice_assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
-	std::mem::transmute(slice)
+	unsafe { std::mem::transmute(slice) }
 }

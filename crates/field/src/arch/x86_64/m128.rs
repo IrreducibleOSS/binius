@@ -903,47 +903,47 @@ where
 #[inline]
 unsafe fn interleave_bits(a: __m128i, b: __m128i, log_block_len: usize) -> (__m128i, __m128i) {
 	match log_block_len {
-		0 => {
+		0 => unsafe {
 			let mask = _mm_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
-		}
-		1 => {
+		},
+		1 => unsafe {
 			let mask = _mm_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
-		}
-		2 => {
+		},
+		2 => unsafe {
 			let mask = _mm_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
-		}
-		3 => {
+		},
+		3 => unsafe {
 			let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi8(a, b);
 			let b_prime = _mm_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi16(a, b);
 			let b_prime = _mm_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm_set_epi8(15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi32(a, b);
 			let b_prime = _mm_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let a_prime = _mm_unpacklo_epi64(a, b);
 			let b_prime = _mm_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
-		}
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -954,10 +954,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	b: __m128i,
 	mask: __m128i,
 ) -> (__m128i, __m128i) {
-	let t = _mm_and_si128(_mm_xor_si128(_mm_srli_epi64::<BLOCK_LEN>(a), b), mask);
-	let a_prime = _mm_xor_si128(a, _mm_slli_epi64::<BLOCK_LEN>(t));
-	let b_prime = _mm_xor_si128(b, t);
-	(a_prime, b_prime)
+	unsafe {
+		let t = _mm_and_si128(_mm_xor_si128(_mm_srli_epi64::<BLOCK_LEN>(a), b), mask);
+		let a_prime = _mm_xor_si128(a, _mm_slli_epi64::<BLOCK_LEN>(t));
+		let b_prime = _mm_xor_si128(b, t);
+		(a_prime, b_prime)
+	}
 }
 
 impl_iteration!(M128,

@@ -293,12 +293,14 @@ where
 
 	#[inline]
 	unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-		Scalar::from_underlier(self.0.get_subvalue(i))
+		Scalar::from_underlier(unsafe { self.0.get_subvalue(i) })
 	}
 
 	#[inline]
 	unsafe fn set_unchecked(&mut self, i: usize, scalar: Scalar) {
-		self.0.set_subvalue(i, scalar.to_underlier());
+		unsafe {
+			self.0.set_subvalue(i, scalar.to_underlier());
+		}
 	}
 
 	#[inline]
@@ -354,9 +356,11 @@ where
 			1 << (Self::LOG_WIDTH - log_block_len)
 		);
 
-		self.0
-			.spread::<<Self::Scalar as WithUnderlier>::Underlier>(log_block_len, block_idx)
-			.into()
+		unsafe {
+			self.0
+				.spread::<<Self::Scalar as WithUnderlier>::Underlier>(log_block_len, block_idx)
+				.into()
+		}
 	}
 
 	#[inline]

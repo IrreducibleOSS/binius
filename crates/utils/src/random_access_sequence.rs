@@ -52,7 +52,7 @@ impl<T: Copy> RandomAccessSequence<T> for &[T] {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		*<[T]>::get_unchecked(self, index)
+		unsafe { *<[T]>::get_unchecked(self, index) }
 	}
 }
 
@@ -69,7 +69,7 @@ impl<T: Copy> RandomAccessSequence<T> for &mut [T] {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		*<[T]>::get_unchecked(self, index)
+		unsafe { *<[T]>::get_unchecked(self, index) }
 	}
 }
 
@@ -81,7 +81,9 @@ impl<T: Copy> RandomAccessSequenceMut<T> for &mut [T] {
 
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: T) {
-		*<[T]>::get_unchecked_mut(self, index) = value;
+		unsafe {
+			*<[T]>::get_unchecked_mut(self, index) = value;
+		}
 	}
 }
 
@@ -118,7 +120,7 @@ impl<T: Copy, Inner: RandomAccessSequence<T>> RandomAccessSequence<T>
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		self.inner.get_unchecked(index + self.offset)
+		unsafe { self.inner.get_unchecked(index + self.offset) }
 	}
 }
 
@@ -153,7 +155,7 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequence<T>
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		self.inner.get_unchecked(index + self.offset)
+		unsafe { self.inner.get_unchecked(index + self.offset) }
 	}
 }
 impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
@@ -161,7 +163,9 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
 {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: T) {
-		self.inner.set_unchecked(index + self.offset, value);
+		unsafe {
+			self.inner.set_unchecked(index + self.offset, value);
+		}
 	}
 }
 

@@ -35,9 +35,11 @@ pub unsafe fn get_packed_subfields_at_pe_idx<PE: PackedExtension<F>, F: Field>(
 		bottom_most_scalar_idx % PE::PackedSubfield::WIDTH;
 	let block_idx = bottom_most_scalar_idx_within_packed_subfield / PE::WIDTH;
 
-	packed_subfields
-		.get_unchecked(bottom_most_scalar_idx_in_subfield_arr)
-		.spread_unchecked(PE::LOG_WIDTH, block_idx)
+	unsafe {
+		packed_subfields
+			.get_unchecked(bottom_most_scalar_idx_in_subfield_arr)
+			.spread_unchecked(PE::LOG_WIDTH, block_idx)
+	}
 }
 
 /// Refer to the functions above for examples of closures to pass

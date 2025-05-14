@@ -1207,19 +1207,19 @@ impl UnderlierWithBitConstants for M512 {
 #[inline]
 unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m512i, __m512i) {
 	match log_block_len {
-		0 => {
+		0 => unsafe {
 			let mask = _mm512_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
-		}
-		1 => {
+		},
+		1 => unsafe {
 			let mask = _mm512_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
-		}
-		2 => {
+		},
+		2 => unsafe {
 			let mask = _mm512_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
-		}
-		3 => {
+		},
+		3 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
@@ -1230,8 +1230,8 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 			let a_prime = _mm512_unpacklo_epi8(a, b);
 			let b_prime = _mm512_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15,
@@ -1242,8 +1242,8 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 			let a_prime = _mm512_unpacklo_epi16(a, b);
 			let b_prime = _mm512_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15,
@@ -1254,13 +1254,13 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 			let a_prime = _mm512_unpacklo_epi32(a, b);
 			let b_prime = _mm512_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let a_prime = _mm512_unpacklo_epi64(a, b);
 			let b_prime = _mm512_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
-		}
-		7 => {
+		},
+		7 => unsafe {
 			let a_prime = _mm512_permutex2var_epi64(
 				a,
 				_mm512_set_epi64(0b1101, 0b1100, 0b0101, 0b0100, 0b1001, 0b1000, 0b0001, 0b0000),
@@ -1272,8 +1272,8 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 				b,
 			);
 			(a_prime, b_prime)
-		}
-		8 => {
+		},
+		8 => unsafe {
 			let a_prime = _mm512_permutex2var_epi64(
 				a,
 				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
@@ -1285,7 +1285,7 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 				b,
 			);
 			(a_prime, b_prime)
-		}
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -1311,10 +1311,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: u32>(
 	b: __m512i,
 	mask: __m512i,
 ) -> (__m512i, __m512i) {
-	let t = _mm512_and_si512(_mm512_xor_si512(_mm512_srli_epi64::<BLOCK_LEN>(a), b), mask);
-	let a_prime = _mm512_xor_si512(a, _mm512_slli_epi64::<BLOCK_LEN>(t));
-	let b_prime = _mm512_xor_si512(b, t);
-	(a_prime, b_prime)
+	unsafe {
+		let t = _mm512_and_si512(_mm512_xor_si512(_mm512_srli_epi64::<BLOCK_LEN>(a), b), mask);
+		let a_prime = _mm512_xor_si512(a, _mm512_slli_epi64::<BLOCK_LEN>(t));
+		let b_prime = _mm512_xor_si512(b, t);
+		(a_prime, b_prime)
+	}
 }
 
 static LOG_B8_0: [__m512i; 64] = precompute_spread_mask::<64>(0, 3);
@@ -1391,7 +1393,7 @@ const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
 #[inline(always)]
 unsafe fn transpose_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m512i, __m512i) {
 	match log_block_len {
-		0..=3 => {
+		0..=3 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
@@ -1403,24 +1405,86 @@ unsafe fn transpose_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m51
 			}
 
 			(a, b)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15,
 				14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0,
 			);
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm512_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15,
 				14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0,
 			);
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		6 => (
+		},
+		6 => unsafe {
+			(
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000,
+					),
+					b,
+				),
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001,
+					),
+					b,
+				),
+			)
+		},
+		7 => unsafe {
+			(
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1101, 0b1100, 0b1001, 0b1000, 0b0101, 0b0100, 0b0001, 0b0000,
+					),
+					b,
+				),
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1111, 0b1110, 0b1011, 0b1010, 0b0111, 0b0110, 0b0011, 0b0010,
+					),
+					b,
+				),
+			)
+		},
+		8 => unsafe {
+			(
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000,
+					),
+					b,
+				),
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100,
+					),
+					b,
+				),
+			)
+		},
+		_ => panic!("unsupported block length"),
+	}
+}
+
+unsafe fn transpose_with_shuffle(a: __m512i, b: __m512i, shuffle: __m512i) -> (__m512i, __m512i) {
+	unsafe {
+		let (a, b) = (_mm512_shuffle_epi8(a, shuffle), _mm512_shuffle_epi8(b, shuffle));
+
+		(
 			_mm512_permutex2var_epi64(
 				a,
 				_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
@@ -1431,50 +1495,8 @@ unsafe fn transpose_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m51
 				_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
 				b,
 			),
-		),
-		7 => (
-			_mm512_permutex2var_epi64(
-				a,
-				_mm512_set_epi64(0b1101, 0b1100, 0b1001, 0b1000, 0b0101, 0b0100, 0b0001, 0b0000),
-				b,
-			),
-			_mm512_permutex2var_epi64(
-				a,
-				_mm512_set_epi64(0b1111, 0b1110, 0b1011, 0b1010, 0b0111, 0b0110, 0b0011, 0b0010),
-				b,
-			),
-		),
-		8 => (
-			_mm512_permutex2var_epi64(
-				a,
-				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
-				b,
-			),
-			_mm512_permutex2var_epi64(
-				a,
-				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
-				b,
-			),
-		),
-		_ => panic!("unsupported block length"),
+		)
 	}
-}
-
-unsafe fn transpose_with_shuffle(a: __m512i, b: __m512i, shuffle: __m512i) -> (__m512i, __m512i) {
-	let (a, b) = (_mm512_shuffle_epi8(a, shuffle), _mm512_shuffle_epi8(b, shuffle));
-
-	(
-		_mm512_permutex2var_epi64(
-			a,
-			_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
-			b,
-		),
-		_mm512_permutex2var_epi64(
-			a,
-			_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
-			b,
-		),
-	)
 }
 
 impl_iteration!(M512,

@@ -505,7 +505,7 @@ impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSlice<'_, P> {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.slice, index)
+		unsafe { get_packed_slice_unchecked(self.slice, index) }
 	}
 }
 
@@ -538,13 +538,13 @@ impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSliceMut<'_, P> {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.slice, index)
+		unsafe { get_packed_slice_unchecked(self.slice, index) }
 	}
 }
 impl<P: PackedField> RandomAccessSequenceMut<P::Scalar> for PackedSliceMut<'_, P> {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(self.slice, index, value);
+		unsafe { set_packed_slice_unchecked(self.slice, index, value) }
 	}
 }
 

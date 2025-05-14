@@ -1115,19 +1115,19 @@ fn unpack_128b_lo_hi(data: &mut (impl AsMut<[M256]> + AsRef<[M256]>), i: usize, 
 #[inline]
 unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
 	match log_block_len {
-		0 => {
+		0 => unsafe {
 			let mask = _mm256_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
-		}
-		1 => {
+		},
+		1 => unsafe {
 			let mask = _mm256_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
-		}
-		2 => {
+		},
+		2 => unsafe {
 			let mask = _mm256_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
-		}
-		3 => {
+		},
+		3 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0,
@@ -1137,8 +1137,8 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi8(a, b);
 			let b_prime = _mm256_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0,
@@ -1148,8 +1148,8 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi16(a, b);
 			let b_prime = _mm256_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0,
@@ -1159,17 +1159,17 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi32(a, b);
 			let b_prime = _mm256_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let a_prime = _mm256_unpacklo_epi64(a, b);
 			let b_prime = _mm256_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
-		}
-		7 => {
+		},
+		7 => unsafe {
 			let a_prime = _mm256_permute2x128_si256(a, b, 0x20);
 			let b_prime = _mm256_permute2x128_si256(a, b, 0x31);
 			(a_prime, b_prime)
-		}
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -1177,7 +1177,7 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 #[inline]
 unsafe fn transpose_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
 	match log_block_len {
-		0..=3 => {
+		0..=3 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0,
@@ -1188,41 +1188,45 @@ unsafe fn transpose_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m25
 			}
 
 			(a, b)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0,
 			);
 
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0,
 			);
 
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
 
 			(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
-		}
-		7 => (_mm256_permute2x128_si256(a, b, 0x20), _mm256_permute2x128_si256(a, b, 0x31)),
+		},
+		7 => unsafe {
+			(_mm256_permute2x128_si256(a, b, 0x20), _mm256_permute2x128_si256(a, b, 0x31))
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
 
 #[inline(always)]
 unsafe fn transpose_with_shuffle(a: __m256i, b: __m256i, shuffle: __m256i) -> (__m256i, __m256i) {
-	let a = _mm256_shuffle_epi8(a, shuffle);
-	let b = _mm256_shuffle_epi8(b, shuffle);
+	unsafe {
+		let a = _mm256_shuffle_epi8(a, shuffle);
+		let b = _mm256_shuffle_epi8(b, shuffle);
 
-	let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
+		let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
 
-	(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
+		(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
+	}
 }
 
 #[inline]
@@ -1231,10 +1235,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	b: __m256i,
 	mask: __m256i,
 ) -> (__m256i, __m256i) {
-	let t = _mm256_and_si256(_mm256_xor_si256(_mm256_srli_epi64::<BLOCK_LEN>(a), b), mask);
-	let a_prime = _mm256_xor_si256(a, _mm256_slli_epi64::<BLOCK_LEN>(t));
-	let b_prime = _mm256_xor_si256(b, t);
-	(a_prime, b_prime)
+	unsafe {
+		let t = _mm256_and_si256(_mm256_xor_si256(_mm256_srli_epi64::<BLOCK_LEN>(a), b), mask);
+		let a_prime = _mm256_xor_si256(a, _mm256_slli_epi64::<BLOCK_LEN>(t));
+		let b_prime = _mm256_xor_si256(b, t);
+		(a_prime, b_prime)
+	}
 }
 
 cfg_if! {
