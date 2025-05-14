@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{any::TypeId, iter, marker::PhantomData, sync::Arc};
+use std::{iter, marker::PhantomData, sync::Arc};
 
 use binius_field::{
 	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
@@ -24,25 +24,12 @@ use crate::{
 #[derive(Debug)]
 pub struct RowBatchCoeffs<F> {
 	coeffs: Vec<F>,
-	/// This is a lookup table for the partial sums of the coefficients
-	/// that is used to efficiently fold with 1-bit coefficients.
-	partial_sums_lookup_table: Vec<F>,
 	query: Vec<F>,
 }
 
 impl<F: Field> RowBatchCoeffs<F> {
 	pub fn new(coeffs: Vec<F>, query: Vec<F>) -> Self {
-		let partial_sums_lookup_table = if coeffs.len() >= 8 {
-			create_partial_sums_lookup_tables(coeffs.as_slice())
-		} else {
-			Vec::new()
-		};
-
-		Self {
-			coeffs,
-			partial_sums_lookup_table,
-			query,
-		}
+		Self { coeffs, query }
 	}
 
 	pub fn coeffs(&self) -> &[F] {
@@ -128,43 +115,6 @@ where
 			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
 
 		Ok(partial_low_eval)
-	}
-}
-
-#[inline(always)]
-fn inner_product_subfield<FSub, F>(value: F, row_batch_coeffs: &RowBatchCoeffs<F>) -> F
-where
-	FSub: Field,
-	F: ExtensionField<FSub>,
-{
-	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>() && can_iterate_bytes::<F>() {
-		// Special case when we are folding with 1-bit coefficients.
-		// Use partial sums lookup table to speed up the computation.
-
-		struct Callback<'a, F> {
-			partial_sums_lookup: &'a [F],
-			result: F,
-		}
-
-		impl<F: Field> ByteIteratorCallback for Callback<'_, F> {
-			#[inline(always)]
-			fn call(&mut self, iter: impl Iterator<Item = u8>) {
-				for (byte_index, byte) in iter.enumerate() {
-					self.result += self.partial_sums_lookup[(byte_index << 8) + byte as usize];
-				}
-			}
-		}
-
-		let mut callback = Callback {
-			partial_sums_lookup: &row_batch_coeffs.partial_sums_lookup_table,
-			result: F::ZERO,
-		};
-		iterate_bytes(std::slice::from_ref(&value), &mut callback);
-
-		callback.result
-	} else {
-		// fall back to the general case
-		inner_product_unchecked(row_batch_coeffs.coeffs.iter().copied(), F::iter_bases(&value))
 	}
 }
 
