@@ -1051,7 +1051,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	pub fn eval_expr<FSub: TowerField, const V: usize>(
 		&self,
 		expr: &Expr<FSub, V>,
-	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>>, Error>
+	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>> + use<FSub, V, F, P>, Error>
 	where
 		P: PackedExtension<FSub>,
 	{
