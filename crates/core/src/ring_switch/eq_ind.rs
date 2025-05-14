@@ -181,8 +181,6 @@ mod tests {
 			.take(n_vars)
 			.collect::<Arc<[_]>>();
 
-		// Changed to a query being expanded
-
 		let row_batch_challenges = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(kappa)
 			.collect::<Vec<_>>();

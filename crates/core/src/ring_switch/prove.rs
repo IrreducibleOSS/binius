@@ -304,13 +304,7 @@ fn make_ring_switch_eq_ind<P, Tower>(
 	mixing_coeff: FExt<Tower>,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where
-	P: PackedFieldIndexable<Scalar = FExt<Tower>>
-		+ PackedExtension<Tower::B1>
-		+ PackedExtension<Tower::B8>
-		+ PackedExtension<Tower::B16>
-		+ PackedExtension<Tower::B32>
-		+ PackedExtension<Tower::B64>
-		+ PackedExtension<Tower::B128>,
+	P: PackedFieldIndexable<Scalar = FExt<Tower>> + PackedTop<Tower>,
 	Tower: TowerFamily,
 {
 	let eq_ind = match suffix_desc.kappa {
