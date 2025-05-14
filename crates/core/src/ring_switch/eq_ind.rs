@@ -90,17 +90,17 @@ where
 
 		let subfield_vector = <P as PackedExtension<FSub>>::cast_bases(&evals);
 
-		let subfield_vector_mle = MLEEmbeddingAdapter::<_, P, _>::from(
-			MultilinearExtension::from_values_slice(subfield_vector)?,
-		);
+		let subfield_vector_mle = MLEEmbeddingAdapter::<_, P, _>::from(MultilinearExtension::new(
+			self.z_vals.len() + F::LOG_DEGREE,
+			subfield_vector,
+		)?);
 
 		let extra_queries_factor: F = self.row_batch_coeffs.query[F::LOG_DEGREE..]
 			.iter()
 			.map(|eval| *eval + F::ONE)
 			.product();
 
-		// let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
-		let mut factor_as_packed_arr = vec![P::zero(); F::DEGREE];
+		let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
 
 		factor_as_packed_arr[0].set(0, extra_queries_factor);
 
