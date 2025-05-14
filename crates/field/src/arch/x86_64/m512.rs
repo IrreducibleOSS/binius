@@ -341,7 +341,7 @@ impl ConditionallySelectable for M512 {
 
 impl Random for M512 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: [u128; 4] = rng.gen();
+		let val: [u128; 4] = rng.r#gen();
 		val.into()
 	}
 }

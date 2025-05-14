@@ -384,8 +384,8 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
 				let (z, carry) = x.overflowing_add(y);
 				// (x, y, carry_in, zout, final_carry)
 				(x, y, 0x00000000, z, carry)
@@ -408,9 +408,9 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
-				let carry_in = rng.gen::<bool>() as u32;
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
+				let carry_in = rng.r#gen::<bool>() as u32;
 				let (x_plus_y, carry1) = x.overflowing_add(y);
 				let (z, carry2) = x_plus_y.overflowing_add(carry_in);
 				let final_carry = carry1 | carry2;
@@ -537,7 +537,7 @@ mod tests {
 
 		let table_id = table.id();
 		let mut rng = StdRng::seed_from_u64(0);
-		let test_values = repeat_with(|| B32::new(rng.gen::<u32>()))
+		let test_values = repeat_with(|| B32::new(rng.r#gen::<u32>()))
 			.take(TABLE_SIZE)
 			.collect::<Vec<_>>();
 

@@ -594,13 +594,13 @@ mod tests {
 			let mut expected = vec![];
 			let states = (0..compressions)
 				.map(|_| {
-					let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
-					let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
-					let counter = rng.gen::<u64>();
+					let cv: [u32; 8] = array::from_fn(|_| rng.r#gen::<u32>());
+					let block: [u32; 16] = array::from_fn(|_| rng.r#gen::<u32>());
+					let counter = rng.r#gen::<u64>();
 					let counter_low = counter as u32;
 					let counter_high = (counter >> 32) as u32;
-					let block_len = rng.gen::<u32>();
-					let flags = rng.gen::<u32>();
+					let block_len = rng.r#gen::<u32>();
+					let flags = rng.r#gen::<u32>();
 
 					// save expected value to use later in test
 					expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());

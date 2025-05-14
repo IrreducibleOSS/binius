@@ -290,7 +290,7 @@ impl ConditionallySelectable for M256 {
 
 impl Random for M256 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: [u128; 2] = rng.gen();
+		let val: [u128; 2] = rng.r#gen();
 		val.into()
 	}
 }

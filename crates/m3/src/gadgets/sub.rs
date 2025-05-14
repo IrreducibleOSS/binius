@@ -294,8 +294,8 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
 				let z: u32 = x.wrapping_sub(y);
 				// (x, y, borrow_in, zout, final_borrow)
 				(x, y, 0x00000000, z, false)
@@ -318,9 +318,9 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
-				let borrow_in = rng.gen::<bool>() as u32;
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
+				let borrow_in = rng.r#gen::<bool>() as u32;
 				let (x_minus_y, borrow1) = x.overflowing_sub(y);
 				let (z, borrow2) = x_minus_y.overflowing_sub(borrow_in);
 				let final_borrow = borrow1 | borrow2;

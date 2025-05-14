@@ -30,10 +30,10 @@ pub fn u32fib(
 
 		let mut rng = thread_rng();
 		let current = current.as_mut_slice::<u32>();
-		current[0] = rng.gen();
-		current[1] = rng.gen();
+		current[0] = rng.r#gen();
+		current[1] = rng.r#gen();
 		for i in 2..current.len() {
-			current[i] = rng.gen();
+			current[i] = rng.r#gen();
 			(current[i], _) = current[i - 1].overflowing_add(current[i - 2]);
 		}
 		(next.as_mut_slice::<u32>(), &current[1..])

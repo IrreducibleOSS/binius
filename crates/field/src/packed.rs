@@ -913,10 +913,10 @@ mod tests {
 
 	fn check_collection_get_set<F: Field>(
 		collection: &mut impl RandomAccessSequenceMut<F>,
-		gen: &mut impl FnMut() -> F,
+		r#gen: &mut impl FnMut() -> F,
 	) {
 		for i in 0..collection.len() {
-			let value = gen();
+			let value = r#gen();
 			collection.set(i, value);
 			assert_eq!(collection.get(i), value);
 			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
@@ -946,7 +946,7 @@ mod tests {
 	#[test]
 	fn check_packed_slice_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut gen = || <BinaryField8b as Field>::random(&mut rng);
+		let mut r#gen = || <BinaryField8b as Field>::random(&mut rng);
 
 		let slice: &mut [PackedBinaryField16x8b] = &mut [];
 		let packed_slice = PackedSliceMut::new(slice);
@@ -962,11 +962,11 @@ mod tests {
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new(slice);
 		check_collection(&packed_slice, &values);
-		check_collection_get_set(&mut packed_slice, &mut gen);
+		check_collection_get_set(&mut packed_slice, &mut r#gen);
 
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new_with_len(slice, 3);
 		check_collection(&packed_slice, &values[..3]);
-		check_collection_get_set(&mut packed_slice, &mut gen);
+		check_collection_get_set(&mut packed_slice, &mut r#gen);
 	}
 }

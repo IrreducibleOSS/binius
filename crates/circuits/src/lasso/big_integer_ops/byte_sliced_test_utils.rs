@@ -27,7 +27,7 @@ type B8 = BinaryField8b;
 type B32 = BinaryField32b;
 
 pub fn random_u512(rng: &mut impl Rng) -> U512 {
-	let limbs = array::from_fn(|_| rng.gen());
+	let limbs = array::from_fn(|_| rng.r#gen());
 	U512::from_limbs(limbs)
 }
 
@@ -88,14 +88,14 @@ where
 				let mut y = random_u512(&mut rng);
 				y &= input_bitmask;
 
-				let mut c: bool = rng.gen();
+				let mut c: bool = rng.r#gen();
 
 				while (x + y + U512::from(c)) > input_bitmask {
 					x = random_u512(&mut rng);
 					x &= input_bitmask;
 					y = random_u512(&mut rng);
 					y &= input_bitmask;
-					c = rng.gen();
+					c = rng.r#gen();
 				}
 
 				for byte_idx in 0..WIDTH {

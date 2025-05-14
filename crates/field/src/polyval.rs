@@ -263,7 +263,7 @@ impl Field for BinaryField128bPolyval {
 	const CHARACTERISTIC: usize = 2;
 
 	fn random(mut rng: impl RngCore) -> Self {
-		Self(rng.gen())
+		Self(rng.r#gen())
 	}
 
 	fn double(&self) -> Self {

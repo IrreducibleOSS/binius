@@ -163,7 +163,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})
@@ -180,7 +180,7 @@ mod tests {
 			.unwrap();
 
 		let inputs_2 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})

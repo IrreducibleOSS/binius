@@ -28,7 +28,7 @@ where
 			.as_mut_slice::<u8>()
 			.into_par_iter()
 			.for_each_init(thread_rng, |rng, data| {
-				*data = rng.gen();
+				*data = rng.r#gen();
 			});
 	}
 

@@ -520,7 +520,7 @@ mod tests {
 		test_circuit(|builder| {
 			let log_size = 5;
 			let mut rng = StdRng::seed_from_u64(0);
-			let input_states = vec![KeccakfState(rng.gen())];
+			let input_states = vec![KeccakfState(rng.r#gen())];
 			let _state_out = keccakf(builder, &Some(input_states), log_size)?;
 			Ok(vec![])
 		})

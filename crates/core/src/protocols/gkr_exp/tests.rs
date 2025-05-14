@@ -103,10 +103,10 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 	let mut rng = thread_rng();
 
 	let a: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.gen::<u64>() % (1 << exponent_bit_width))
+		.map(|_| rng.r#gen::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let b: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.gen::<u64>() % (1 << exponent_bit_width))
+		.map(|_| rng.r#gen::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 

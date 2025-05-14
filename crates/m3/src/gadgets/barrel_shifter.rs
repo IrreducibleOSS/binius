@@ -178,7 +178,7 @@ mod tests {
 		let mut segment = table_witness.full_segment();
 
 		let mut rng = StdRng::seed_from_u64(0x1234);
-		let test_inputs = repeat_with(|| rng.gen()).take(1 << 8).collect::<Vec<u32>>();
+		let test_inputs = repeat_with(|| rng.r#gen()).take(1 << 8).collect::<Vec<u32>>();
 
 		for (i, (input, shift_amount)) in (*segment.get_mut_as(input).unwrap())
 			.iter_mut()

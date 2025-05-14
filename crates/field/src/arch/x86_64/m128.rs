@@ -288,7 +288,7 @@ impl ConditionallySelectable for M128 {
 
 impl Random for M128 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: u128 = rng.gen();
+		let val: u128 = rng.r#gen();
 		val.into()
 	}
 }
