@@ -1,5 +1,5 @@
 # Code owners for the entire repository
-* @jimpo @onesk
+* @jimpo @onesk @GraDKh
 
 # Code owners for specific crates
 /crates/m3 @jimpo @bergkvist
