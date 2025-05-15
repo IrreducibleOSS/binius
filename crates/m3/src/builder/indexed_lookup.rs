@@ -374,7 +374,7 @@ mod tests {
 	struct IncrLookup {
 		table_id: TableId,
 		entries_ordered: Col<B32>,
-		merged: Col<B32>,
+		entries_sorted: Col<B32>,
 		lookup_producer: LookupProducer,
 	}
 
@@ -387,18 +387,19 @@ mod tests {
 		) -> Self {
 			table.require_fixed_size(IncrIndexedLookup.log_size());
 			// TODO: Create the arithmetic circuit for this and define it as a fixed column.
-			let entries_ordered = table.add_committed::<B32, 1>("entries");
-			let merged = table.add_committed::<B32, 1>("entries_sorted");
+			let entries_ordered = table.add_committed::<B32, 1>("entries_ordered");
+			let entries_sorted = table.add_committed::<B32, 1>("entries_sorted");
 
-			// Use flush to check that merged is a permutation of entries.
+			// Use flush to check that entries_sorted is a permutation of entries_ordered.
 			table.push(permutation_chan, [entries_ordered]);
-			table.pull(permutation_chan, [merged]);
+			table.pull(permutation_chan, [entries_sorted]);
 
-			let lookup_producer = LookupProducer::new(table, chan, &[merged], n_multiplicity_bits);
+			let lookup_producer =
+				LookupProducer::new(table, chan, &[entries_sorted], n_multiplicity_bits);
 			Self {
 				table_id: table.id(),
 				entries_ordered,
-				merged,
+				entries_sorted,
 				lookup_producer,
 			}
 		}
@@ -431,10 +432,10 @@ mod tests {
 				}
 			}
 
-			// Fill the merged column
+			// Fill the entries_sorted column
 			{
-				let mut merged = witness.get_scalars_mut(self.merged)?;
-				for (merged_i, &(index, _)) in iter::zip(&mut *merged, rows.clone()) {
+				let mut entries_sorted = witness.get_scalars_mut(self.entries_sorted)?;
+				for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.clone()) {
 					let mut entry_128b = B128::default();
 					IncrIndexedLookup.index_to_entry(index, slice::from_mut(&mut entry_128b));
 					*merged_i = B32::try_from(entry_128b).expect("guaranteed by IncrIndexedLookup");
