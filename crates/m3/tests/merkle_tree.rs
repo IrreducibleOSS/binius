@@ -2,16 +2,16 @@
 /// compression function.
 
 mod model {
-	use binius_core::constraint_system::channel::ChannelId;
 	use binius_hash::{
-		groestl::{Groestl256, Groestl256ByteCompression},
+		groestl::{Groestl256, Groestl256ByteCompression, GroestlShortImpl, GroestlShortInternal},
 		PseudoCompressionFunction,
 	};
-	use binius_m3::{
-		builder::{Col, ConstraintSystem, B1, B32, B8},
-		emulate::Channel,
+	use binius_m3::emulate::Channel;
+	use digest::{
+		generic_array::{ArrayLength, GenericArray},
+		typenum::Gr,
+		Output,
 	};
-	use digest::{generic_array::GenericArray, typenum::Gr};
 
 	// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
 	type NodeFlush = (u8, [u8; 32], u32, u32);
@@ -82,6 +82,112 @@ mod model {
 		}
 	}
 
+	// Uses the Groestl256 compression function to compress two 32-byte inputs into a single 32-byte
+	fn compress(left: &[u8], right: &[u8], output: &mut [u8]) {
+		let mut state_bytes = [0u8; 64];
+		let (half0, half1) = state_bytes.split_at_mut(32);
+		half0.copy_from_slice(left);
+		half1.copy_from_slice(right);
+		let input = GroestlShortImpl::state_from_bytes(&state_bytes);
+		let mut state = input;
+		GroestlShortImpl::p_perm(&mut state);
+		GroestlShortImpl::xor_state(&mut state, &input);
+		state_bytes = GroestlShortImpl::state_to_bytes(&state);
+		output.copy_from_slice(&state_bytes[32..]);
+	}
+
+	// Merkle tree implementation for the model, assumes the leaf layer consists of [u8;32] blobs.
+	pub struct MerkleTree {
+		depth: usize,
+		nodes: Vec<[u8; 32]>,
+		root: [u8; 32],
+	}
+
+	impl MerkleTree {
+		/// Constructs a Merkle tree from the given leaf nodes that uses the Groestl output
+		/// transformation (Groestl-P permutation + XOR) as a digest compression function.
+		pub fn new(leafs: &[[u8; 32]]) -> Self {
+			assert!(leafs.len().is_power_of_two(), "Length of leafs needs to be a power of 2.");
+			let depth = leafs.len().ilog2() as usize;
+			let mut nodes = vec![[0u8; 32]; 2 * leafs.len() - 1];
+
+			// Fill the leaves in the flattened tree.
+			nodes[0..leafs.len()]
+				.iter_mut()
+				.zip(leafs.iter())
+				.for_each(|(node, leaf)| *node = *leaf);
+
+			// Marks the beginning of the layer in the flattened tree.
+			let mut current_depth_marker = leafs.len();
+			let mut parent_depth_marker = leafs.len();
+			// Build the tree from the leaves up to the root.
+			for i in (1..depth).rev() {
+				let level_size = 1 << i;
+				let next_level_size = 1 << (i - 1);
+				parent_depth_marker += level_size;
+
+				let (current_layer, parent_layer) = nodes
+					[current_depth_marker..parent_depth_marker + next_level_size]
+					.split_at_mut(parent_depth_marker);
+
+				for j in 0..level_size {
+					let left = &current_layer[2 * j];
+					let right = &current_layer[2 * j + 1];
+					compress(left, right, &mut parent_layer[j])
+				}
+				// Move the marker to the next level.
+				current_depth_marker = parent_depth_marker;
+			}
+			// The root of the tree is the last node in the flattened tree.
+			let root = nodes
+				.last()
+				.expect("Merkle tree should not be empty")
+				.clone();
+			Self { depth, nodes, root }
+		}
+
+		/// Returns a layer of the tree at the specified depth.
+		/// The depth is 0-indexed, meaning the root is at depth 0.
+		pub fn layer(&self, layer_depth: usize) -> &[[u8; 32]] {
+			assert!(layer_depth <= self.depth, "Layer depth exceeds tree depth.");
+			// The range start is calculated based on the number of nodes in the tree and the layer.
+			let range_start = self.nodes.len() + 1 - (1 << (layer_depth + 1));
+			&self.nodes[range_start..range_start + (1 << layer_depth)]
+		}
+
+		/// Returns a merkle path for the given index.
+		pub fn merkle_path(&self, index: usize) -> Vec<[u8; 32]> {
+			assert!(index > 1 << self.depth, "Index out of range.");
+			let path = (0..self.depth)
+				.map(|j| {
+					let node_index = (((1 << j) - 1) << (self.depth + 1 - j)) | (index >> j) ^ 1;
+					self.nodes[node_index].clone()
+				})
+				.collect();
+			path
+		}
+
+		/// Verifies a merkle path for inclusion in the tree.
+		pub fn verify_path(
+			path: &[[u8; 32]],
+			root: [u8; 32],
+			leaf: [u8; 32],
+			index: usize,
+		) -> bool {
+			assert!(index < 1 << path.len(), "Index out of range.");
+			let mut current_hash = leaf;
+			let mut next_hash = [0u8; 32];
+			for i in 0..path.len() {
+				if (index >> i) & 1 == 0 {
+					compress(&current_hash, &path[i], &mut next_hash);
+				} else {
+					compress(&path[i], &current_hash, &mut next_hash);
+				}
+				current_hash = next_hash;
+			}
+			current_hash == path[path.len() - 1] && current_hash == root
+		}
+	}
 	pub struct MerkleTreeTrace {
 		pub nodes: Vec<MerklePathToken>,
 		pub root: Vec<MerkleRootToken>,
@@ -124,15 +230,43 @@ mod model {
 			node_channel: &mut Channel<NodeFlush>,
 			root_channel: &mut Channel<RootFlush>,
 		) {
-			//Pull the root node value presumed to have been pushed to the nodes channel from the
+			// Pull the root node value presumed to have been pushed to the nodes channel from the
 			// merkle path table.
 			node_channel.pull((self.root_id, self.digest, 0, 0));
-			//Pull the root node from the roots channel, presumed to have been pushed as a boundary
+			// Pull the root node from the roots channel, presumed to have been pushed as a boundary
 			// value.
 			root_channel.pull((self.root_id, self.digest));
 		}
 	}
 
+	impl MerkleTreeTrace {
+		/// Method to generate the trace given the witness values. The function assumes that the
+		/// root_id is the index of the root in the roots vector and that the paths and leaves are
+		/// passed in with their assigned root_id.
+		fn generate(
+			roots: Vec<[u8; 32]>,
+			paths: Vec<(usize, &[[u8; 32]])>,
+			leaves: Vec<(usize, usize, [u8; 32])>,
+		) {
+			let mut path_vec: Vec<MerklePathToken> = Vec::new();
+			let mut root_vec: Vec<MerkleRootToken> = Vec::new();
+		}
+
+		fn validate(&self) {}
+	}
+
+	// Tests for the merkle tree implementation.
+	#[test]
+	fn test_merkle_tree() {
+		let leaves = vec![
+			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
+		];
+		let tree = MerkleTree::new(&leaves);
+		assert_eq!(tree.depth, 3);
+		assert_eq!(tree.root, [0u8; 32]);
+	}
+
+	// Tests for the Merkle tree trace generation
 	#[test]
 	fn test_high_level_model_inclusion() {}
 }
