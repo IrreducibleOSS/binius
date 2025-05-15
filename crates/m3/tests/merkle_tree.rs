@@ -4,7 +4,7 @@
 mod model {
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use binius_m3::emulate::Channel;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
 	type NodeFlush = (u8, [u8; 32], u32, u32);
@@ -311,7 +311,7 @@ mod model {
 		let path_index = rng.gen_range(0..1 << 10);
 		let leaves = (0..1 << 10)
 			.into_iter()
-			.map(|_| rng.gen::<[u8; 32]>())
+			.map(|_| rng.r#gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
@@ -340,7 +340,7 @@ mod model {
 
 		let leaves = (0..1 << 10)
 			.into_iter()
-			.map(|_| rng.gen::<[u8; 32]>())
+			.map(|_| rng.r#gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
@@ -371,7 +371,7 @@ mod model {
 			.map(|_| {
 				(0..1 << 10)
 					.into_iter()
-					.map(|_| rng.gen::<[u8; 32]>())
+					.map(|_| rng.r#gen::<[u8; 32]>())
 					.collect::<Vec<_>>()
 			})
 			.collect::<Vec<_>>();
