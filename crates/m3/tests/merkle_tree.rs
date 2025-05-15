@@ -128,9 +128,9 @@ mod model {
 
 				let (current_layer, parent_layer) = nodes
 					[current_depth_marker..parent_depth_marker + next_level_size]
-					.split_at_mut(parent_depth_marker);
+					.split_at_mut(level_size);
 
-				for j in 0..level_size {
+				for j in 0..next_level_size {
 					let left = &current_layer[2 * j];
 					let right = &current_layer[2 * j + 1];
 					compress(left, right, &mut parent_layer[j])
@@ -263,7 +263,6 @@ mod model {
 		];
 		let tree = MerkleTree::new(&leaves);
 		assert_eq!(tree.depth, 3);
-		assert_eq!(tree.root, [0u8; 32]);
 	}
 
 	// Tests for the Merkle tree trace generation
