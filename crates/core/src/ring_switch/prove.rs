@@ -3,7 +3,7 @@
 use std::{iter, sync::Arc};
 
 use binius_field::{
-	PackedField, PackedFieldIndexable, TowerField,
+	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	tower::{PackedTop, TowerFamily},
 };
 use binius_hal::ComputationBackend;

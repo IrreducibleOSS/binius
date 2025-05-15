@@ -3,14 +3,11 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
-	byte_iteration::{
-		ByteIteratorCallback, can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes,
-	},
-	util::inner_product_unchecked,
+	ExtensionField, Field, PackedExtension, PackedField, TowerField, packed::pack_slice,
 };
-use binius_math::{MultilinearExtension, tensor_prod_eq_ind};
-use binius_maybe_rayon::prelude::*;
+use binius_math::{
+	MultilinearExtension, MultilinearQuery, MultilinearQueryRef, tensor_prod_eq_ind,
+};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 
