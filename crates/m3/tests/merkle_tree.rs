@@ -25,7 +25,7 @@ mod model {
 		/// and the index.
 		nodes: Channel<NodeFlush>,
 
-		///	This channel contains flushes that validate that the "final" digest obtained in a
+		/// This channel contains flushes that validate that the "final" digest obtained in a
 		/// merkle path is matches that of one of the claimed roots, pushed as boundary values.
 		roots: Channel<RootFlush>,
 	}
@@ -309,7 +309,6 @@ mod model {
 		let mut rng = StdRng::from_seed([0; 32]);
 		let path_index = rng.gen_range(0..1 << 10);
 		let leaves = (0..1 << 10)
-			.into_iter()
 			.map(|_| rng.r#gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
@@ -328,7 +327,7 @@ mod model {
 		channels.roots.push((path_root_id, root));
 		let merkle_path = MerkleTreeTrace::generate(
 			vec![root],
-			&vec![(path_root_id, path_index as u32, leaves[path_index], path)],
+			&[(path_root_id, path_index as u32, leaves[path_index], path)],
 		);
 		merkle_path.validate(&mut channels);
 	}
@@ -354,7 +353,7 @@ mod model {
 		for (root_id, path_index, leaf, path) in &paths {
 			channels
 				.nodes
-				.push((*root_id, *leaf, path.len() as u32, *path_index as u32));
+				.push((*root_id, *leaf, path.len() as u32, *path_index));
 			channels.roots.push((*root_id, root));
 		}
 		let merkle_path = MerkleTreeTrace::generate(vec![root], &paths);
