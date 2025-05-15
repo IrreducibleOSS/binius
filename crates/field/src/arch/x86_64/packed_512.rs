@@ -1,29 +1,23 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_utils::{
-	bytes::{Buf, BufMut},
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
-};
-
 use super::m512::M512;
 use crate::{
+	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+	BinaryField64b, BinaryField128b,
 	arch::{
+		PackedStrategy, SimdStrategy,
 		portable::{
-			packed::{
-				impl_ops_for_zero_height, impl_serialize_deserialize_for_packed_binary_field,
-				PackedPrimitiveType,
-			},
+			packed::{PackedPrimitiveType, impl_ops_for_zero_height},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PackedStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b,
 };
+
+use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
 
 // Define 128 bit packed field types
 pub type PackedBinaryField512x1b = PackedPrimitiveType<M512, BinaryField1b>;
@@ -35,6 +29,7 @@ pub type PackedBinaryField16x32b = PackedPrimitiveType<M512, BinaryField32b>;
 pub type PackedBinaryField8x64b = PackedPrimitiveType<M512, BinaryField64b>;
 pub type PackedBinaryField4x128b = PackedPrimitiveType<M512, BinaryField128b>;
 
+// Define (de)serialize
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField512x1b);
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField256x2b);
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x4b);

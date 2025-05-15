@@ -461,32 +461,32 @@ macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 		macro_rules! assert_scalar_matches_canonical {
 			() => {
 				use std::any::TypeId;
-				type FieldScalar = <$bin_type as crate::PackedField>::Scalar;
+				type PackedFieldScalar = <$bin_type as crate::PackedField>::Scalar;
 				debug_assert_eq!(
-					TypeId::of::<FieldScalar>(),
-					TypeId::of::<<FieldScalar as crate::TowerField>::Canonical>()
+					TypeId::of::<PackedFieldScalar>(),
+					TypeId::of::<<PackedFieldScalar as crate::TowerField>::Canonical>()
 				);
 			};
 		}
 
-		impl SerializeBytes for $bin_type {
+		impl binius_utils::SerializeBytes for $bin_type {
 			fn serialize(
 				&self,
-				write_buf: impl BufMut,
-				mode: SerializationMode,
-			) -> Result<(), SerializationError> {
+				write_buf: impl binius_utils::bytes::BufMut,
+				mode: binius_utils::SerializationMode,
+			) -> Result<(), binius_utils::SerializationError> {
 				assert_scalar_matches_canonical!();
 				self.0.serialize(write_buf, mode)
 			}
 		}
 
-		impl DeserializeBytes for $bin_type {
+		impl binius_utils::DeserializeBytes for $bin_type {
 			fn deserialize(
-				read_buf: impl Buf,
-				mode: SerializationMode,
-			) -> Result<Self, SerializationError> {
+				read_buf: impl binius_utils::bytes::Buf,
+				mode: binius_utils::SerializationMode,
+			) -> Result<Self, binius_utils::SerializationError> {
 				assert_scalar_matches_canonical!();
-				Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?, PhantomData))
+				Ok(Self(binius_utils::DeserializeBytes::deserialize(read_buf, mode)?, std::marker::PhantomData))
 			}
 		}
 	};

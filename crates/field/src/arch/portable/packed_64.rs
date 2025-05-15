@@ -1,29 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::marker::PhantomData;
-
-use binius_utils::{
-	bytes::{Buf, BufMut},
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
-};
 use cfg_if::cfg_if;
 
 use super::{
-	packed::{
-		impl_broadcast, impl_ops_for_zero_height,
-		impl_serialize_deserialize_for_packed_binary_field, PackedPrimitiveType,
-	},
+	packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
+	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b,
-	BinaryField8b,
 };
+
+use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
+
 
 // Define 64 bit packed field types
 pub type PackedBinaryField64x1b = PackedPrimitiveType<u64, BinaryField1b>;
@@ -34,6 +27,7 @@ pub type PackedBinaryField4x16b = PackedPrimitiveType<u64, BinaryField16b>;
 pub type PackedBinaryField2x32b = PackedPrimitiveType<u64, BinaryField32b>;
 pub type PackedBinaryField1x64b = PackedPrimitiveType<u64, BinaryField64b>;
 
+// Define (de)serialize
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x1b);
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x2b);
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x4b);
