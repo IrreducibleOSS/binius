@@ -3,7 +3,7 @@
 use std::{iter, sync::Arc};
 
 use binius_field::{
-	PackedField, PackedFieldIndexable, TowerField,
+	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	tower::{PackedTop, TowerFamily},
 };
 use binius_hal::ComputationBackend;
@@ -47,7 +47,13 @@ pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 ) -> Result<ReducedWitness<P>, Error>
 where
 	F: TowerField + PackedTop<Tower>,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<Tower::B1>
+		+ PackedExtension<Tower::B8>
+		+ PackedExtension<Tower::B16>
+		+ PackedExtension<Tower::B32>
+		+ PackedExtension<Tower::B64>
+		+ PackedExtension<Tower::B128>,
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
 	Challenger_: Challenger,
@@ -272,7 +278,13 @@ fn make_ring_switch_eq_inds<F, P, Tower>(
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
 	F: TowerField + PackedTop<Tower>,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<Tower::B1>
+		+ PackedExtension<Tower::B8>
+		+ PackedExtension<Tower::B16>
+		+ PackedExtension<Tower::B32>
+		+ PackedExtension<Tower::B64>
+		+ PackedExtension<Tower::B128>,
 	Tower: TowerFamily<B128 = F>,
 {
 	sumcheck_claim_descs
@@ -291,7 +303,7 @@ fn make_ring_switch_eq_ind<P, Tower>(
 	mixing_coeff: FExt<Tower>,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where
-	P: PackedFieldIndexable<Scalar = FExt<Tower>>,
+	P: PackedFieldIndexable<Scalar = FExt<Tower>> + PackedTop<Tower>,
 	Tower: TowerFamily,
 {
 	let eq_ind = match suffix_desc.kappa {
