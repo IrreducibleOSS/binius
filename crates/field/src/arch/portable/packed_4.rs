@@ -7,15 +7,16 @@ use super::{
 };
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
 	underlier::{U4, UnderlierType},
 };
-
-use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
 
 // Define 4 bit packed field types
 pub type PackedBinaryField4x1b = PackedPrimitiveType<U4, BinaryField1b>;

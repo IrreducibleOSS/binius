@@ -7,9 +7,9 @@ use std::{
 };
 
 use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 	bytes::{Buf, BufMut},
 	checked_arithmetics::checked_log_2,
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 };
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
@@ -593,8 +593,8 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use binius_utils::{SerializationMode, SerializeBytes, bytes::BytesMut};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::ScaledPackedField;
 	use crate::{PackedBinaryField2x4b, PackedBinaryField4x4b};

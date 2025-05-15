@@ -1543,7 +1543,7 @@ impl_iteration!(M512,
 mod tests {
 	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;

@@ -6,9 +6,9 @@ use std::{
 };
 
 use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 	bytes::{Buf, BufMut},
 	serialization::{assert_enough_data_for, assert_enough_space_for},
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 };
 use bytemuck::{Pod, Zeroable};
 use derive_more::Not;
@@ -599,7 +599,7 @@ impl_iteration!(M128,
 #[cfg(test)]
 mod tests {
 	use binius_utils::bytes::BytesMut;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 

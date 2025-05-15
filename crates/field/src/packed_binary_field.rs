@@ -871,7 +871,7 @@ pub mod test_utils {
 mod tests {
 	use std::{iter::repeat_with, ops::Mul, slice};
 
-	use binius_utils::{bytes::BytesMut, DeserializeBytes, SerializationMode, SerializeBytes};
+	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::prelude::*;
 	use rand::{SeedableRng, rngs::StdRng, thread_rng};
 	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
@@ -1045,10 +1045,12 @@ mod tests {
 		let mut read_buffer = buffer.freeze();
 		let packed01 = PackedBinaryField2x128b::deserialize(&mut read_buffer, mode).unwrap();
 
-		assert!(packed01
-			.iter()
-			.zip([packed0, packed1])
-			.all(|(x, y)| x == y.get(0)));
+		assert!(
+			packed01
+				.iter()
+				.zip([packed0, packed1])
+				.all(|(x, y)| x == y.get(0))
+		);
 	}
 
 	// TODO: Generate lots more proptests using macros

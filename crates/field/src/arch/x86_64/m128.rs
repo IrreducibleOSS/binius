@@ -7,9 +7,9 @@ use std::{
 };
 
 use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 	bytes::{Buf, BufMut},
 	serialization::{assert_enough_data_for, assert_enough_space_for},
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 };
 use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
@@ -120,7 +120,7 @@ impl SerializeBytes for M128 {
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
 
-		let raw_value: u128 = self.into();
+		let raw_value: u128 = (*self).into();
 
 		write_buf.put_u128_le(raw_value);
 		Ok(())
@@ -1008,7 +1008,7 @@ impl_iteration!(M128,
 mod tests {
 	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;

@@ -7,7 +7,10 @@ use crate::{
 	arch::{
 		PackedStrategy, SimdStrategy,
 		portable::{
-			packed::{PackedPrimitiveType, impl_ops_for_zero_height},
+			packed::{
+				PackedPrimitiveType, impl_ops_for_zero_height,
+				impl_serialize_deserialize_for_packed_binary_field,
+			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 	},
@@ -16,8 +19,6 @@ use crate::{
 		impl_transformation_with_strategy,
 	},
 };
-
-use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
 
 // Define 128 bit packed field types
 pub type PackedBinaryField512x1b = PackedPrimitiveType<M512, BinaryField1b>;

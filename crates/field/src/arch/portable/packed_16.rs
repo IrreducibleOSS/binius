@@ -6,14 +6,15 @@ use super::{
 };
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
 };
-
-use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
 
 // Define 16 bit packed field types
 pub type PackedBinaryField16x1b = PackedPrimitiveType<u16, BinaryField1b>;

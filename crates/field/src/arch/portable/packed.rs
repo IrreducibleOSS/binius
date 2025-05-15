@@ -490,7 +490,10 @@ macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 				mode: binius_utils::SerializationMode,
 			) -> Result<Self, binius_utils::SerializationError> {
 				assert_scalar_matches_canonical!();
-				Ok(Self(binius_utils::DeserializeBytes::deserialize(read_buf, mode)?, std::marker::PhantomData))
+				Ok(Self(
+					binius_utils::DeserializeBytes::deserialize(read_buf, mode)?,
+					std::marker::PhantomData,
+				))
 			}
 		}
 	};

@@ -2,11 +2,13 @@
 
 use super::packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height};
 use crate::{
-	BinaryField1b, arch::PairwiseStrategy, arithmetic_traits::impl_transformation_with_strategy,
+	BinaryField1b,
+	arch::{
+		PairwiseStrategy, portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
+	arithmetic_traits::impl_transformation_with_strategy,
 	underlier::U1,
 };
-
-use crate::arch::portable::packed::impl_serialize_deserialize_for_packed_binary_field;
 
 // Define 1 bit packed field types
 pub type PackedBinaryField1x1b = PackedPrimitiveType<U1, BinaryField1b>;
