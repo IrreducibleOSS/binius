@@ -3,6 +3,7 @@
 use std::ops::RangeBounds;
 
 use binius_field::TowerField;
+use binius_math::RowsBatchRef;
 
 pub trait SizedSlice {
 	#[inline(always)]
@@ -22,6 +23,38 @@ impl<T> SizedSlice for &[T] {
 impl<T> SizedSlice for &mut [T] {
 	fn len(&self) -> usize {
 		(**self).len()
+	}
+}
+
+/// A batch of slices of the same length.
+pub struct SlicesBatch<'a, Slice: SizedSlice> {
+	rows: &'a [Slice],
+	row_len: usize,
+}
+
+impl<'a, Slice: SizedSlice> SlicesBatch<'a, Slice> {
+	pub fn new(rows: &'a [Slice], row_len: usize) -> Self {
+		for row in rows {
+			assert_eq!(row.len(), row_len);
+		}
+
+		Self { rows, row_len }
+	}
+
+	pub fn n_rows(&self) -> usize {
+		self.rows.len()
+	}
+
+	pub fn row_len(&self) -> usize {
+		self.row_len
+	}
+
+	pub fn row(&self, index: usize) -> &Slice {
+		&self.rows[index]
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = &Slice> {
+		self.rows.iter()
 	}
 }
 

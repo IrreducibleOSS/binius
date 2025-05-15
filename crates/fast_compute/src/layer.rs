@@ -1,11 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use core::slice;
-use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit};
+use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
 	tower::{PackedTop, TowerFamily},
@@ -13,12 +12,14 @@ use binius_field::{
 	util::inner_product_par,
 	ExtensionField, PackedExtension, PackedField,
 };
-use binius_math::{fold_left, fold_right, tensor_prod_eq_ind, ArithExpr};
+use binius_math::{
+	fold_left, fold_right, tensor_prod_eq_ind, ArithExpr, CompositionPoly, RowsBatchRef,
+};
 use binius_ntt::AdditiveNTT;
-use binius_utils::checked_arithmetics::strict_log_2;
+use binius_utils::checked_arithmetics::{checked_int_div, strict_log_2};
 use bytemuck::zeroed_vec;
 
-use crate::{arith_circuit::ArithCircuitPoly, memory::PackedMemory};
+use crate::{arith_circuit::ArithCircuitPoly, fri::fold_interleaved, memory::PackedMemory};
 
 #[derive(Debug)]
 pub struct FastCpuExecutor;
@@ -329,19 +330,52 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for CpuLayer<T, P> {
 
 	fn sum_composition_evals(
 		&self,
-		exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, T::B128, Self>],
+		_exec: &mut Self::KernelExec,
+		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
 		composition: &Self::ExprEval,
 		batch_coeff: T::B128,
 		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error> {
-		todo!()
+		const BATCH_SIZE: usize = 64;
+
+		let rows = inputs.iter().map(|slice| slice.data).collect::<Vec<_>>();
+		if inputs.row_len() >= P::WIDTH {
+			let packed_row_len = checked_int_div(inputs.row_len(), P::WIDTH);
+
+			// Safety: `rows` is guaranteed to be valid as all slices have the same length
+			// (this is guaranteed by the `SlicesBatch` struct).
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, packed_row_len) };
+			let mut result = P::zero();
+			let mut output = [P::zero(); BATCH_SIZE];
+			for offset in (0..packed_row_len).step_by(BATCH_SIZE) {
+				let batch_size = packed_row_len.saturating_sub(offset).min(BATCH_SIZE);
+				let rows = rows_batch.columns_subrange(offset..offset + batch_size);
+				composition
+					.batch_evaluate(&rows, &mut output[..batch_size])
+					.expect("dimensions are correct");
+
+				result += output[..batch_size].iter().copied().sum::<P>();
+			}
+
+			*accumulator += batch_coeff * result.into_iter().sum::<T::B128>();
+		} else {
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, 1) };
+
+			let mut output = P::zero();
+			composition
+				.batch_evaluate(&rows_batch, slice::from_mut(&mut output))
+				.expect("dimensions are correct");
+
+			*accumulator +=
+				batch_coeff * output.into_iter().take(inputs.row_len()).sum::<T::B128>();
+		}
+
+		Ok(())
 	}
 
 	fn fri_fold<FSub>(
 		&self,
-		exec: &mut Self::Exec,
+		_exec: &mut Self::Exec,
 		ntt: &impl AdditiveNTT<FSub>,
 		log_len: usize,
 		log_batch_size: usize,
@@ -353,6 +387,30 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for CpuLayer<T, P> {
 		FSub: binius_field::BinaryField,
 		T::B128: binius_field::ExtensionField<FSub>,
 	{
-		todo!()
+		unpack_if_possible_mut(
+			data_out.data,
+			|out| {
+				fold_interleaved(ntt, data_in.data, challenges, log_len, log_batch_size, out);
+			},
+			|packed| {
+				let mut out_scalars =
+					zeroed_vec(1 << (log_len - (challenges.len() - log_batch_size)));
+				fold_interleaved(
+					ntt,
+					packed,
+					challenges,
+					log_len,
+					log_batch_size,
+					&mut out_scalars,
+				);
+
+				let mut iter = out_scalars.iter().copied();
+				for p in packed {
+					*p = PackedField::from_scalars(&mut iter);
+				}
+			},
+		);
+
+		Ok(())
 	}
 }

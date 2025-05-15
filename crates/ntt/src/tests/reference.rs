@@ -153,7 +153,7 @@ pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	_marker: PhantomData<F>,
 }
 
-impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<F, TA> {
+impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> AdditiveNTT<F> for SimpleAdditiveNTT<F, TA> {
 	fn log_domain_size(&self) -> usize {
 		self.s_evals[0].log_n() + 1
 	}

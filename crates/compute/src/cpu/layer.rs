@@ -15,7 +15,7 @@ use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 
 #[derive(Debug)]
@@ -234,19 +234,15 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn sum_composition_evals(
 		&self,
 		_exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, T::B128, Self>],
+		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
 		composition: &ArithCircuit<T::B128>,
 		batch_coeff: T::B128,
 		accumulator: &mut T::B128,
 	) -> Result<(), Error> {
-		for input in inputs {
-			assert_eq!(input.len(), 1 << log_len);
-		}
-		let ret = (0..1 << log_len)
+		let ret = (0..inputs.row_len())
 			.map(|i| {
 				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
-				composition.evaluate(&row).expect("Evalutation to succeed")
+				composition.evaluate(&row).expect("Evaluation to succeed")
 			})
 			.sum::<T::B128>();
 		*accumulator += ret * batch_coeff;
@@ -792,13 +788,13 @@ mod tests {
 							.iter()
 							.map(|buf| buf.to_ref())
 							.collect::<Vec<_>>();
+						let slice_batch = SlicesBatch::new(&kernel_data, kernel_data[0].len());
 						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 						let log_len = checked_log_2(kernel_data[0].len());
 						compute
 							.sum_composition_evals(
 								kernel_exec,
-								log_len,
-								&kernel_data,
+								&slice_batch,
 								&eval,
 								F::ONE,
 								&mut res,

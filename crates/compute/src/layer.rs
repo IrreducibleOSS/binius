@@ -11,7 +11,7 @@ use super::{
 	alloc::Error as AllocError,
 	memory::{ComputeMemory, SubfieldSlice},
 };
-use crate::memory::SizedSlice;
+use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F: Field> {
@@ -293,8 +293,7 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
-	/// * `inputs` - the input buffers.
+	/// * `inputs` - the input buffers, each buffer is of the the same length.
 	/// * `composition` - the compiled composition polynomial expression. This is an output of
 	///   [`Self::compile_expr`].
 	/// * `batch_coeff` - the scaling coefficient.
@@ -302,8 +301,7 @@ pub trait ComputeLayer<F: Field> {
 	fn sum_composition_evals(
 		&self,
 		exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, F, Self>],
+		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
