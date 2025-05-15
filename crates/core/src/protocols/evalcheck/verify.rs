@@ -247,14 +247,17 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				.copied()
 				.collect::<Vec<_>>();
 
-				let zs =
-					&eval_point[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
-				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
-				let select_row_term = select_row
-					.evaluate(zs)
-					.expect("select_row is constructor with zs.len() variables");
-
-				let inner_eval = eval * select_row_term.invert_or_zero();
+				let inner_eval = if subclaim_eval_point.is_empty() && eval.is_zero() {
+					transcript.message().read_scalar()?
+				} else {
+					let zs = &eval_point
+						[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
+					let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
+					let select_row_term = select_row
+						.evaluate(zs)
+						.expect("select_row is constructor with zs.len() variables");
+					eval * select_row_term.invert_or_zero()
+				};
 
 				self.verify_multilinear(
 					EvalcheckMultilinearClaim {
