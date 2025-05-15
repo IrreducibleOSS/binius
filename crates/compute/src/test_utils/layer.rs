@@ -1,5 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Generic compute layer test suite.
+
 use std::{iter::repeat_with, mem::MaybeUninit};
 
 use binius_core::protocols::fri::fold_interleaved;
