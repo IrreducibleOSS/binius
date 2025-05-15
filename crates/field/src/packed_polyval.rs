@@ -142,6 +142,8 @@ mod tests {
 		define_transformation_tests,
 	};
 	use crate::{
+		BinaryField128bPolyval, PackedBinaryField1x128b, PackedBinaryField2x128b,
+		PackedBinaryField4x128b, PackedField,
 		arch::{
 			packed_polyval_128::PackedBinaryPolyval1x128b,
 			packed_polyval_256::PackedBinaryPolyval2x128b,
@@ -150,8 +152,6 @@ mod tests {
 		linear_transformation::PackedTransformationFactory,
 		test_utils::implements_transformation_factory,
 		underlier::WithUnderlier,
-		BinaryField128bPolyval, PackedBinaryField1x128b, PackedBinaryField2x128b,
-		PackedBinaryField4x128b, PackedField,
 	};
 
 	fn check_get_set<const WIDTH: usize, PT>(a: [u128; WIDTH], b: [u128; WIDTH])

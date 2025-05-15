@@ -5,22 +5,22 @@
 use anyhow::Result;
 use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
 use binius_field::{
+	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
 	underlier::UnderlierType,
-	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
 
 use super::{
+	B1, B8, B16, B32, B64,
 	constraint_system::ConstraintSystem,
 	table::TableId,
 	witness::{TableFiller, TableWitnessSegment},
-	B1, B16, B32, B64, B8,
 };
-use crate::builder::{Statement, WitnessIndex, B128};
+use crate::builder::{B128, Statement, WitnessIndex};
 
 /// An easy-to-use implementation of [`TableFiller`] that is constructed with a closure.
 ///

@@ -10,16 +10,15 @@ use anyhow::Result;
 use array_util::ArrayExt;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	ext_basis,
+	AESTowerField8b, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
+	PackedSubfield, TowerField, ext_basis,
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
-	AESTowerField8b, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
-	PackedSubfield, TowerField,
 };
 
-use crate::builder::{upcast_col, Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B8};
+use crate::builder::{B1, B8, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_col};
 
 /// The first row of the circulant matrix defining the MixBytes step in Grøstl.
 const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
@@ -405,7 +404,7 @@ mod tests {
 	};
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use bumpalo::Bump;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};

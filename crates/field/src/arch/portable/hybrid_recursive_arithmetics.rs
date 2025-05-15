@@ -2,10 +2,10 @@
 
 use super::packed_arithmetic::PackedTowerField;
 use crate::{
+	TowerExtensionField,
 	arch::HybridRecursiveStrategy,
 	arithmetic_traits::{MulAlpha, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	packed::PackedField,
-	TowerExtensionField,
 };
 
 impl<P> TaggedMul<HybridRecursiveStrategy> for P

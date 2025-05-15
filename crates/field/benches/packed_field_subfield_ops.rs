@@ -3,15 +3,15 @@
 use std::{array, time::Duration};
 
 use binius_field::{
+	BinaryField1b, BinaryField4b, BinaryField8b, BinaryField32b, BinaryField64b, Field,
+	PackedBinaryField1x128b, PackedBinaryField2x128b, PackedBinaryField4x32b,
+	PackedBinaryField4x128b, PackedBinaryField8x32b, PackedBinaryField8x64b,
+	PackedBinaryField16x8b, PackedBinaryField32x8b, PackedBinaryField64x8b, PackedExtension,
 	packed::mul_by_subfield_scalar,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, Field,
-	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x128b,
-	PackedBinaryField32x8b, PackedBinaryField4x128b, PackedBinaryField4x32b,
-	PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b, PackedExtension,
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Throughput,
+	BenchmarkGroup, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
 use rand::thread_rng;
 

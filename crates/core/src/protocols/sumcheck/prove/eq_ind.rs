@@ -2,10 +2,10 @@
 
 use std::{cmp::Reverse, marker::PhantomData, ops::Range};
 
-use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField, util::eq};
 use binius_hal::{
-	make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator,
-	SumcheckMultilinear,
+	ComputationBackend, Error as HalError, SumcheckEvaluator, SumcheckMultilinear,
+	make_portable_backend,
 };
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
@@ -21,12 +21,12 @@ use tracing::instrument;
 use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultivariatePoly},
 	protocols::sumcheck::{
-		common::{
-			equal_n_vars_check, get_nontrivial_evaluation_points,
-			interpolation_domains_for_composition_degrees, RoundCoeffs,
-		},
-		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
 		CompositeSumClaim, Error,
+		common::{
+			RoundCoeffs, equal_n_vars_check, get_nontrivial_evaluation_points,
+			interpolation_domains_for_composition_degrees,
+		},
+		prove::{ProverState, SumcheckInterpolator, SumcheckProver, common::fold_partial_eq_ind},
 	},
 	transparent::{eq_ind::EqIndPartialEval, step_up::StepUp},
 };

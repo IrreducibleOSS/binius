@@ -8,7 +8,7 @@ use binius_utils::checked_arithmetics::log2_ceil_usize;
 
 use crate::{
 	arithmetic::u32::LOG_U32_BITS,
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 };
 
 const STATE_SIZE: usize = 32;
@@ -503,10 +503,10 @@ pub fn blake3_compress(
 mod tests {
 	use std::array;
 
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use crate::{
-		blake3::{blake3_compress, Blake3CompressState, F32, IV, MSG_PERMUTATION},
+		blake3::{Blake3CompressState, F32, IV, MSG_PERMUTATION, blake3_compress},
 		builder::test_utils::test_circuit,
 	};
 
@@ -594,13 +594,13 @@ mod tests {
 			let mut expected = vec![];
 			let states = (0..compressions)
 				.map(|_| {
-					let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
-					let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
-					let counter = rng.gen::<u64>();
+					let cv: [u32; 8] = array::from_fn(|_| rng.r#gen::<u32>());
+					let block: [u32; 16] = array::from_fn(|_| rng.r#gen::<u32>());
+					let counter = rng.r#gen::<u64>();
 					let counter_low = counter as u32;
 					let counter_high = (counter >> 32) as u32;
-					let block_len = rng.gen::<u32>();
-					let flags = rng.gen::<u32>();
+					let block_len = rng.r#gen::<u32>();
+					let flags = rng.r#gen::<u32>();
 
 					// save expected value to use later in test
 					expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());

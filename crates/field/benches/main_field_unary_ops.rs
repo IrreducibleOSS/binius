@@ -3,11 +3,11 @@
 mod packed_field_utils;
 
 use binius_field::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+	BinaryField128bPolyval, PackedField,
 	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
 	as_packed_field::PackedType,
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField64b, BinaryField8b, PackedField,
 };
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;

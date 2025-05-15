@@ -3,13 +3,13 @@
 use std::{any::TypeId, iter, marker::PhantomData, sync::Arc};
 
 use binius_field::{
+	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
 	byte_iteration::{
-		can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes, ByteIteratorCallback,
+		ByteIteratorCallback, can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes,
 	},
 	util::inner_product_unchecked,
-	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
-use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
+use binius_math::{MultilinearExtension, tensor_prod_eq_ind};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -184,10 +184,10 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField128b, BinaryField8b};
+	use binius_field::{BinaryField8b, BinaryField128b};
 	use binius_math::MultilinearQuery;
 	use iter::repeat_with;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 

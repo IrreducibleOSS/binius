@@ -1,11 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use binius_core::constraint_system::channel::ChannelId;
 use binius_field::{ExtensionField, PackedExtension, PackedField, PackedSubfield, TowerField};
 use itertools::Itertools;
 
-use crate::builder::{Col, FlushOpts, TableBuilder, TableWitnessSegment, B1, B128};
+use crate::builder::{B1, B128, Col, FlushOpts, TableBuilder, TableWitnessSegment};
 
 /// A lookup producer gadget is used to create a lookup table.
 ///
@@ -92,12 +92,12 @@ mod tests {
 
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		test_utils::{validate_system_witness, ClosureFiller},
 		ConstraintSystem, WitnessIndex,
+		test_utils::{ClosureFiller, validate_system_witness},
 	};
 
 	fn with_lookup_test_instance(

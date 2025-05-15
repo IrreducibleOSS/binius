@@ -33,7 +33,9 @@ pub enum Error {
 	MissingWitness { id: OracleId },
 	#[error("witness for oracle id {id} does not have an explicit backing multilinear")]
 	NoExplicitBackingMultilinearExtension { id: OracleId },
-	#[error("log degree mismatch for oracle id {oracle_id}. field_log_extension_degree = {field_log_extension_degree} entry_log_extension_degree = {entry_log_extension_degree}")]
+	#[error(
+		"log degree mismatch for oracle id {oracle_id}. field_log_extension_degree = {field_log_extension_degree} entry_log_extension_degree = {entry_log_extension_degree}"
+	)]
 	OracleExtensionDegreeMismatch {
 		oracle_id: OracleId,
 		field_log_extension_degree: usize,

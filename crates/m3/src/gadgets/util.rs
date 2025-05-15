@@ -2,9 +2,9 @@
 
 use std::array;
 
-use binius_field::{ext_basis, TowerField};
+use binius_field::{TowerField, ext_basis};
 
-use crate::builder::{upcast_col, Col, Expr, B1};
+use crate::builder::{B1, Col, Expr, upcast_col};
 
 /// Used to pack an array of `Col<B1>` into `Col<FP>` assuming `BIT_LENGTH` is the bit length of
 /// field `FP`

@@ -5,7 +5,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use super::{error::Error, Field};
+use super::{Field, error::Error};
 
 pub trait ExtensionField<F: Field>:
 	Field

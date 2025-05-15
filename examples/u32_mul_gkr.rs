@@ -6,21 +6,21 @@ use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily, Field,
-	PackedExtension, PackedFieldIndexable,
+	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier,
+	as_packed_field::PackedType, tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B32,
+		B1, B32, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex,
 	},
 	gadgets::mul::MulUU32,
 };
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use rand::thread_rng;
 use tracing_profile::init_tracing;
 

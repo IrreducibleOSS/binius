@@ -2,13 +2,13 @@
 
 use binius_core::{oracle::OracleId, transparent};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	BinaryField1b, ExtensionField, PackedField, TowerField,
+	as_packed_field::{PackScalar, PackedType},
 };
 
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 
 pub fn step_down(

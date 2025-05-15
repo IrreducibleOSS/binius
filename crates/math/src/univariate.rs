@@ -3,11 +3,11 @@
 
 use auto_impl::auto_impl;
 use binius_field::{
-	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField,
+	packed::mul_by_subfield_scalar,
 };
 use binius_utils::bail;
-use itertools::{izip, Either};
+use itertools::{Either, izip};
 
 use super::{binary_subspace::BinarySubspace, error::Error};
 use crate::Matrix;
@@ -308,11 +308,11 @@ mod tests {
 
 	use assert_matches::assert_matches;
 	use binius_field::{
-		util::inner_product_unchecked, AESTowerField32b, BinaryField32b, BinaryField8b,
+		AESTowerField32b, BinaryField8b, BinaryField32b, util::inner_product_unchecked,
 	};
 	use itertools::assert_equal;
 	use proptest::{collection::vec, proptest};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

@@ -13,10 +13,10 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 	arch::OptimalUnderlier,
 	as_packed_field::PackedType,
 	packed::{get_packed_slice, set_packed_slice},
-	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_math::{
 	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
@@ -24,17 +24,17 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
+use bytemuck::{Pod, must_cast_slice, must_cast_slice_mut, zeroed_vec};
 use either::Either;
 use getset::CopyGetters;
 use itertools::Itertools;
 
 use super::{
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 	column::{Col, ColumnShape},
 	error::Error,
 	table::{self, Table, TableId},
-	types::{B1, B128, B16, B32, B64, B8},
-	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
+	types::{B1, B8, B16, B32, B64, B128},
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -869,7 +869,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 		// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
 		#[allow(clippy::mut_from_ref)]
 		unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
-			slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
+			unsafe { slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len()) }
 		}
 
 		// Convert cols with mutable references into cols with const refs so that they can be
@@ -1049,7 +1049,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	pub fn eval_expr<FSub: TowerField, const V: usize>(
 		&self,
 		expr: &Expr<FSub, V>,
-	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>>, Error>
+	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>> + use<FSub, V, F, P>, Error>
 	where
 		P: PackedExtension<FSub>,
 	{
@@ -1288,12 +1288,12 @@ mod tests {
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
 	};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		types::{B1, B32, B8},
 		ConstraintSystem, Statement, TableBuilder,
+		types::{B1, B8, B32},
 	};
 
 	#[test]
@@ -1560,7 +1560,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 
@@ -1604,7 +1604,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 

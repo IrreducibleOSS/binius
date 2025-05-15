@@ -8,7 +8,7 @@ use binius_utils::rayon::get_log_max_threads;
 use super::{
 	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
-	single_threaded::{self, check_batch_transform_inputs_and_params, SingleThreadedNTT},
+	single_threaded::{self, SingleThreadedNTT, check_batch_transform_inputs_and_params},
 	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
 };

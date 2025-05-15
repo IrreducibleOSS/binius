@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use criterion::{measurement::WallTime, BenchmarkGroup};
+use criterion::{BenchmarkGroup, measurement::WallTime};
 
 pub fn run_benchmark<R>(
 	group: &mut BenchmarkGroup<WallTime>,

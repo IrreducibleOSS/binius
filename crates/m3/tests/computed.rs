@@ -1,12 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
-	arch::OptimalUnderlier128b, as_packed_field::PackedType, Field, PackedExtension,
-	PackedFieldIndexable,
+	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier128b,
+	as_packed_field::PackedType,
 };
 use binius_m3::builder::{
-	test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
-	TableWitnessSegment, WitnessIndex, B128,
+	B128, Col, ConstraintSystem, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
+	test_utils::validate_system_witness,
 };
 use bumpalo::Bump;
 

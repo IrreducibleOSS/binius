@@ -5,9 +5,9 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{
+		ConstraintSystem as CompiledConstraintSystem,
 		channel::{ChannelId, OracleOrConst},
 		exp::Exp,
-		ConstraintSystem as CompiledConstraintSystem,
 	},
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	transparent::step_down::StepDown,
@@ -19,6 +19,7 @@ use bumpalo::Bump;
 use itertools::chain;
 
 use super::{
+	Table, TableBuilder, TableSizeSpec, ZeroConstraint,
 	channel::{Channel, Flush},
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
@@ -26,7 +27,6 @@ use super::{
 	table::{self, TablePartition},
 	types::B128,
 	witness::WitnessIndex,
-	Table, TableBuilder, TableSizeSpec, ZeroConstraint,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -192,10 +192,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 					}
 					if count != 1 << table::log_capacity(count) {
 						panic!(
-						    "Tables with required power-of-two size currently cannot have capacity \
+							"Tables with required power-of-two size currently cannot have capacity \
 						exceeding their count. This is because the flushes do not have automatic \
 						selectors applied, and so the table would flush invalid events"
-					    );
+						);
 					}
 				}
 				TableSizeSpec::Fixed { log_size } => {

@@ -9,10 +9,10 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		subclaims::{
-			prove_bivariate_sumchecks_with_switchover, prove_mlecheck_with_switchover, MemoizedData,
-		},
 		ConstraintSetEqIndPoint, EvalcheckMultilinearClaim, EvalcheckProver,
+		subclaims::{
+			MemoizedData, prove_bivariate_sumchecks_with_switchover, prove_mlecheck_with_switchover,
+		},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,

@@ -8,10 +8,10 @@ use binius_core::{
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
+	ExtensionField, TowerField,
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	packed::pack_slice,
-	ExtensionField, TowerField,
 };
 use binius_math::ArithCircuit;
 use binius_utils::{
@@ -20,13 +20,14 @@ use binius_utils::{
 };
 
 use super::{
+	B1, ColumnIndex, FlushOpts,
 	channel::Flush,
 	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	stat::TableStat,
 	structured::StructuredDynSize,
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts, B1,
+	upcast_col,
 };
 
 pub type TableId = usize;
@@ -185,7 +186,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.vars_usage()
 			.iter()
 			.enumerate()
-			.filter(|(_, &used)| used)
+			.filter(|(_, used)| **used)
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>();
 		let cols = partition_indexes

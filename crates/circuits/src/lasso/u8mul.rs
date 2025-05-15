@@ -1,12 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use binius_core::oracle::OracleId;
-use binius_field::{BinaryField16b, BinaryField32b, BinaryField8b, TowerField};
+use binius_field::{BinaryField8b, BinaryField16b, BinaryField32b, TowerField};
 use itertools::izip;
 
 use super::batch::LookupBatch;
-use crate::builder::{types::F, ConstraintSystemBuilder};
+use crate::builder::{ConstraintSystemBuilder, types::F};
 
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;

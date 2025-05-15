@@ -7,21 +7,21 @@
 use std::iter;
 
 use binius_field::{
-	packed::get_packed_slice_checked, Field, PackedExtension, PackedField, PackedSubfield,
+	Field, PackedExtension, PackedField, PackedSubfield, packed::get_packed_slice_checked,
 };
 use binius_math::{
-	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
-	MultilinearQueryRef, RowsBatchRef,
+	CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	RowsBatchRef, extrapolate_lines,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use itertools::{izip, Either, Itertools};
+use itertools::{Either, Itertools, izip};
 use stackalloc::stackalloc_with_iter;
 
 use crate::{
-	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
 	Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+	common::{MAX_SRC_SUBCUBE_LOG_BITS, subcube_vars_for_bits},
 };
 
 trait SumcheckMultilinearAccess<P: PackedField> {

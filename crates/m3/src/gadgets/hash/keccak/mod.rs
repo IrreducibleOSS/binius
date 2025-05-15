@@ -8,13 +8,13 @@ use anyhow::Result;
 use array_util::ArrayExt as _;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	linear_transformation::PackedTransformationFactory, Field, PackedExtension,
-	PackedFieldIndexable, PackedSubfield, TowerField,
+	Field, PackedExtension, PackedFieldIndexable, PackedSubfield, TowerField,
+	linear_transformation::PackedTransformationFactory,
 };
 pub use state::{StateMatrix, StateRow};
 use trace::PermutationTrace;
 
-use crate::builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B64, B8};
+use crate::builder::{B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment};
 
 mod state;
 mod test_vector;

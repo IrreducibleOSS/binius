@@ -33,23 +33,27 @@ pub enum Error {
 	ExpectedProjection,
 	#[error("the number of variables for the prover multilinears must all be equal")]
 	NumberOfVariablesMismatch,
-	#[error(
-		"ProverState::execute called with incorrect number of evaluators, expected {expected}"
-	)]
+	#[error("ProverState::execute called with incorrect number of evaluators, expected {expected}")]
 	IncorrectNumberOfEvaluators { expected: usize },
 	#[error("sumcheck naive witness validation failed: composition index {composition_index}")]
 	SumcheckNaiveValidationFailure { composition_index: usize },
-	#[error("zerocheck naive witness validation failed: {composition_name}, vertex index {vertex_index}")]
+	#[error(
+		"zerocheck naive witness validation failed: {composition_name}, vertex index {vertex_index}"
+	)]
 	ZerocheckNaiveValidationFailure {
 		composition_name: String,
 		vertex_index: usize,
 	},
-	#[error("nonzerocheck naive witness validation failed: oracle {oracle}, hypercube index {hypercube_index}")]
+	#[error(
+		"nonzerocheck naive witness validation failed: oracle {oracle}, hypercube index {hypercube_index}"
+	)]
 	NonzerocheckNaiveValidationFailure {
 		oracle: String,
 		hypercube_index: usize,
 	},
-	#[error("evaluation domain should start with zero and one, and contain Karatsuba infinity for degrees above 1")]
+	#[error(
+		"evaluation domain should start with zero and one, and contain Karatsuba infinity for degrees above 1"
+	)]
 	IncorrectSumcheckEvaluationDomain,
 	#[error("evaluation domains are not proper prefixes of each other")]
 	NonProperPrefixEvaluationDomain,
@@ -65,7 +69,9 @@ pub enum Error {
 	IncorrectEqIndChallengesLength,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
-	#[error("suffixes count not equal to multilinear count, const suffix longer than multilinear, or not const")]
+	#[error(
+		"suffixes count not equal to multilinear count, const suffix longer than multilinear, or not const"
+	)]
 	IncorrectConstSuffixes,
 	#[error("incorrect size of the equality indicator expansion in eq_ind sumcheck")]
 	IncorrectEqIndPartialEvalsSize,
@@ -87,9 +93,7 @@ pub enum Error {
 	IncorrectNumberOfBatchCoeffs,
 	#[error("cannot skip more rounds than the total number of variables")]
 	TooManySkippedRounds,
-	#[error(
-		"univariatizing reduction claim count does not match sumcheck, or n_vars is incorrect"
-	)]
+	#[error("univariatizing reduction claim count does not match sumcheck, or n_vars is incorrect")]
 	IncorrectUnivariatizingReductionClaims,
 	#[error("univariatizing reduction sumcheck of incorrect length")]
 	IncorrectUnivariatizingReductionSumcheck,
@@ -139,7 +143,9 @@ pub enum VerificationError {
 	IncorrectLagrangeMultilinearEvaluation,
 	#[error("skipped rounds count is more than the number of variables in a univariate claim")]
 	IncorrectSkippedRoundsCount,
-	#[error("zero eval prefix does not match the skipped variables of the smaller univariate multinears")]
+	#[error(
+		"zero eval prefix does not match the skipped variables of the smaller univariate multinears"
+	)]
 	IncorrectZerosPrefixLen,
 	#[error("non-zero Lagrange evals count does not match expected univariate domain size")]
 	IncorrectLagrangeRoundEvalsLen,

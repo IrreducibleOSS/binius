@@ -4,7 +4,7 @@ use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithCircuit, ArithCircuitStep, CompositionPoly, Error, RowsBatchRef};
-use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
@@ -539,7 +539,7 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
+		BinaryField8b, BinaryField16b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
 	use binius_math::{ArithExpr, CompositionPoly, RowsBatch};
 	use binius_utils::felts;

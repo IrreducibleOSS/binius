@@ -2,17 +2,17 @@
 use std::iter::repeat_with;
 
 use binius_field::{
+	BinaryField1b, BinaryField32b, BinaryField128b, ExtensionField, Field, PackedBinaryField1x128b,
+	PackedBinaryField128x1b, PackedExtension, PackedField, RepackedExtension, TowerField,
 	packed::{get_packed_slice, len_packed_slice, pack_slice, set_packed_slice},
-	BinaryField128b, BinaryField1b, BinaryField32b, ExtensionField, Field, PackedBinaryField128x1b,
-	PackedBinaryField1x128b, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{DefaultEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::Pod;
 use either::Either;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use crate::{
 	fiat_shamir::HasherChallenger,

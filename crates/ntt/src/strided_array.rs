@@ -45,8 +45,10 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 	pub unsafe fn get_unchecked_ref(&self, i: usize, j: usize) -> &T {
 		debug_assert!(i < self.height);
 		debug_assert!(j < self.width());
-		self.data
-			.get_unchecked(i * self.data_width + j + self.cols.start)
+		unsafe {
+			self.data
+				.get_unchecked(i * self.data_width + j + self.cols.start)
+		}
 	}
 
 	/// Returns a mutable reference to the data at the given indices without bounds checking.
@@ -55,8 +57,10 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 	pub unsafe fn get_unchecked_mut(&mut self, i: usize, j: usize) -> &mut T {
 		debug_assert!(i < self.height);
 		debug_assert!(j < self.width());
-		self.data
-			.get_unchecked_mut(i * self.data_width + j + self.cols.start)
+		unsafe {
+			self.data
+				.get_unchecked_mut(i * self.data_width + j + self.cols.start)
+		}
 	}
 
 	pub const fn height(&self) -> usize {

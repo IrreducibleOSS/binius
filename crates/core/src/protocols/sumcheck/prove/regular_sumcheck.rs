@@ -18,8 +18,8 @@ use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
 		common::{
-			equal_n_vars_check, get_nontrivial_evaluation_points,
-			interpolation_domains_for_composition_degrees, CompositeSumClaim, RoundCoeffs,
+			CompositeSumClaim, RoundCoeffs, equal_n_vars_check, get_nontrivial_evaluation_points,
+			interpolation_domains_for_composition_degrees,
 		},
 		error::Error,
 		prove::{ProverState, SumcheckInterpolator, SumcheckProver},

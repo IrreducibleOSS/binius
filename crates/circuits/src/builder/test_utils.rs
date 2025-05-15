@@ -2,7 +2,7 @@
 
 use binius_core::constraint_system::{channel::Boundary, validate::validate_witness};
 
-use super::{types::F, ConstraintSystemBuilder};
+use super::{ConstraintSystemBuilder, types::F};
 
 pub fn test_circuit(
 	build_circuit: fn(&mut ConstraintSystemBuilder) -> Result<Vec<Boundary<F>>, anyhow::Error>,

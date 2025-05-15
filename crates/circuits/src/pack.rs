@@ -2,11 +2,11 @@
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{as_packed_field::PackScalar, ExtensionField, TowerField};
+use binius_field::{ExtensionField, TowerField, as_packed_field::PackScalar};
 
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 
 pub fn pack<FInput, FOutput>(

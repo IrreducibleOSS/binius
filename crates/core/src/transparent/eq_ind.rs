@@ -84,8 +84,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::EqIndPartialEval;
 	use crate::polynomial::MultivariatePoly;

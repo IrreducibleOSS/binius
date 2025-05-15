@@ -7,10 +7,10 @@ use binius_field::{Field, PackedField, TowerField};
 use binius_math::{
 	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::{bail, SerializationError, SerializationMode};
+use binius_utils::{SerializationError, SerializationMode, bail};
 use bytes::BufMut;
 use itertools::Itertools;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::error::Error;
 

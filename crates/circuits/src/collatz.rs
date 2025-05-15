@@ -5,7 +5,7 @@ use binius_core::{
 	oracle::OracleId,
 };
 use binius_field::{
-	as_packed_field::PackScalar, BinaryField1b, BinaryField32b, ExtensionField, TowerField,
+	BinaryField1b, BinaryField32b, ExtensionField, TowerField, as_packed_field::PackScalar,
 };
 use binius_macros::arith_expr;
 use bytemuck::Pod;
@@ -13,8 +13,8 @@ use bytemuck::Pod;
 use crate::{
 	arithmetic,
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	transparent,
 };

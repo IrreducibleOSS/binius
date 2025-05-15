@@ -16,7 +16,7 @@ pub use byte_sliced_mul::byte_sliced_mul;
 #[cfg(test)]
 mod tests {
 	use binius_field::tower_levels::{
-		TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8,
+		TowerLevel1, TowerLevel2, TowerLevel4, TowerLevel8, TowerLevel16,
 	};
 
 	use super::byte_sliced_test_utils::{

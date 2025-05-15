@@ -5,9 +5,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
+		ConstraintSystem,
 		channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
 		exp::Exp,
-		ConstraintSystem,
 	},
 	oracle::{
 		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId, ShiftVariant,
@@ -17,8 +17,8 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	BinaryField1b,
+	as_packed_field::{PackScalar, PackedType},
 };
 use binius_math::ArithCircuit;
 use binius_utils::bail;
@@ -86,7 +86,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	) -> Result<MultilinearExtensionIndex<'arena, PackedType<U, F>>, anyhow::Error> {
 		Option::take(&mut self.witness)
 			.ok_or_else(|| {
-				anyhow!("Witness is missing. Are you in verifier mode, or have you already extraced the witness?")
+				anyhow!(
+					"Witness is missing. Are you in verifier mode, or have you already extraced the witness?"
+				)
 			})?
 			.build()
 	}

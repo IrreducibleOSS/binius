@@ -3,8 +3,8 @@
 use std::{iter, sync::Arc};
 
 use binius_field::{
-	tower::{PackedTop, TowerFamily},
 	PackedField, PackedFieldIndexable, TowerField,
+	tower::{PackedTop, TowerFamily},
 };
 use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};

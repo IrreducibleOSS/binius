@@ -2,14 +2,14 @@
 
 use anyhow::Ok;
 use binius_core::oracle::OracleId;
-use binius_field::{BinaryField128b, BinaryField16b, BinaryField64b, PackedField, TowerField};
+use binius_field::{BinaryField16b, BinaryField64b, BinaryField128b, PackedField, TowerField};
 use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
 
 use crate::{
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 	plain_lookup,
 };
 

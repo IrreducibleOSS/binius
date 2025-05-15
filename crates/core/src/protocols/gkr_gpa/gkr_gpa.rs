@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::get_packed_slice, Field, PackedField};
+use binius_field::{Field, PackedField, packed::get_packed_slice};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;

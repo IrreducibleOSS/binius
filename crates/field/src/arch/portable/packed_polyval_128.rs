@@ -13,12 +13,12 @@ use std::{
 	ops::{BitXor, Mul},
 };
 
-use super::packed::{impl_broadcast, PackedPrimitiveType};
+use super::packed::{PackedPrimitiveType, impl_broadcast};
 use crate::{
-	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
-	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
-	packed::PackedField,
 	BinaryField128bPolyval,
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{InvertOrZero, impl_square_with, impl_transformation_with_strategy},
+	packed::PackedField,
 };
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<u128, BinaryField128bPolyval>;

@@ -2,20 +2,19 @@
 
 use std::mem;
 
-use binius_field::{util::inner_product_unchecked, Field, TowerField};
+use binius_field::{Field, TowerField, util::inner_product_unchecked};
 use getset::{Getters, MutGetters};
 use itertools::chain;
 use tracing::instrument;
 
 use super::{
-	deserialize_evalcheck_proof,
+	EvalPoint, deserialize_evalcheck_proof,
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckHint, EvalcheckMultilinearClaim},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
 		packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
-	EvalPoint,
 };
 use crate::{
 	fiat_shamir::Challenger,

@@ -4,13 +4,13 @@ use std::{array, marker::PhantomData};
 
 use anyhow::Result;
 use binius_field::{
-	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedSubfield, TowerField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
+	packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	builder::{B1, B32, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment},
 	gadgets::{
 		add::{Incr, UnsignedAddPrimitives},
 		sub::{U32SubFlags, WideU32Sub},
@@ -108,11 +108,11 @@ struct Mul<UX: UnsignedMulPrimitives, const BIT_LENGTH: usize> {
 }
 
 impl<
-		FExpBase: TowerField,
-		FP: TowerField,
-		UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
-		const BIT_LENGTH: usize,
-	> Mul<UX, BIT_LENGTH>
+	FExpBase: TowerField,
+	FP: TowerField,
+	UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
+	const BIT_LENGTH: usize,
+> Mul<UX, BIT_LENGTH>
 where
 	FExpBase: ExtensionField<FP> + ExtensionField<B1>,
 	B128: ExtensionField<FExpBase> + ExtensionField<FP> + ExtensionField<B1>,

@@ -3,13 +3,13 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 };
 use binius_math::BinarySubspace;
 use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
+use crate::{AdditiveNTT, Error, NTTShape, SingleThreadedNTT, twiddle::TwiddleAccess};
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
@@ -36,7 +36,12 @@ where
 	P: PackedField,
 {
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
+		unsafe {
+			get_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+			)
+		}
 	}
 
 	fn len(&self) -> usize {
@@ -49,11 +54,13 @@ where
 	P: PackedField,
 {
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(
-			self.data,
-			self.batch_index + (index << self.log_batch_count),
-			value,
-		);
+		unsafe {
+			set_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+				value,
+			);
+		}
 	}
 }
 

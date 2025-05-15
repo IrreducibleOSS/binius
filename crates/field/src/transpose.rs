@@ -71,7 +71,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{PackedBinaryField128x1b, PackedBinaryField64x2b};
+	use crate::{PackedBinaryField64x2b, PackedBinaryField128x1b};
 
 	#[test]
 	fn test_square_transpose_128x1b() {

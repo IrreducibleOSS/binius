@@ -3,7 +3,7 @@
 use std::{
 	array,
 	fmt::Debug,
-	iter::{zip, Product, Sum},
+	iter::{Product, Sum, zip},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
@@ -12,6 +12,10 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
+	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
+	PackedField,
 	arch::{
 		byte_sliced::underlier::ByteSlicedUnderlier, portable::packed_scaled::ScaledPackedField,
 	},
@@ -21,12 +25,8 @@ use crate::{
 		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed_aes_field::PackedAESBinaryField32x8b,
-	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
+	tower_levels::{TowerLevel, TowerLevel1, TowerLevel2, TowerLevel4, TowerLevel8, TowerLevel16},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField1b, ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension,
-	PackedField,
 };
 
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
@@ -67,11 +67,13 @@ macro_rules! define_byte_sliced_3d {
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
 				let row = byte_index % Self::HEIGHT_BYTES;
-				self.data
-					.get_unchecked(row / Self::SCALAR_BYTES)
-					.get_unchecked(row % Self::SCALAR_BYTES)
-					.get_unchecked(byte_index / Self::HEIGHT_BYTES)
-					.to_underlier()
+				unsafe {
+					self.data
+						.get_unchecked(row / Self::SCALAR_BYTES)
+						.get_unchecked(row % Self::SCALAR_BYTES)
+						.get_unchecked(byte_index / Self::HEIGHT_BYTES)
+						.to_underlier()
+				}
 			}
 
 			/// Convert the byte-sliced field to an array of "ordinary" packed fields preserving the order of scalars.
@@ -126,8 +128,8 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-				let element_rows = self.data.get_unchecked(i % Self::HEIGHT);
-				Self::Scalar::from_bases((0..Self::SCALAR_BYTES).map(|byte_index| {
+				let element_rows = unsafe { self.data.get_unchecked(i % Self::HEIGHT) };
+				Self::Scalar::from_bases((0..Self::SCALAR_BYTES).map(|byte_index| unsafe {
 					element_rows
 						.get_unchecked(byte_index)
 						.get_unchecked(i / Self::HEIGHT)
@@ -138,14 +140,16 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
-				let element_rows = self.data.get_unchecked_mut(i % Self::HEIGHT);
+				let element_rows = unsafe { self.data.get_unchecked_mut(i % Self::HEIGHT) };
 				for byte_index in 0..Self::SCALAR_BYTES {
-					element_rows
-						.get_unchecked_mut(byte_index)
-						.set_unchecked(
-							i / Self::HEIGHT,
-							scalar.get_base_unchecked(byte_index),
-						);
+					unsafe {
+						element_rows
+							.get_unchecked_mut(byte_index)
+							.set_unchecked(
+								i / Self::HEIGHT,
+								scalar.get_base_unchecked(byte_index),
+							);
+					}
 				}
 			}
 
@@ -430,7 +434,7 @@ macro_rules! impl_spread {
 			let scaled_data: ScaledPackedField<PackedSequentialField, { Self::HEIGHT_BYTES }> =
 				bytemuck::must_cast(self);
 
-			let mut result = scaled_data.spread_unchecked(log_block_len, block_idx);
+			let mut result = unsafe { scaled_data.spread_unchecked(log_block_len, block_idx) };
 			let data: &mut [$packed_storage; Self::HEIGHT_BYTES] =
 				bytemuck::must_cast_mut(&mut result);
 			let underliers = WithUnderlier::to_underliers_arr_ref_mut(data);
@@ -639,9 +643,11 @@ macro_rules! define_byte_sliced_3d_1b {
 				type Packed8b =
 					PackedType<<$packed_storage as WithUnderlier>::Underlier, AESTowerField8b>;
 
-				Packed8b::cast_ext_ref(self.data.get_unchecked(byte_index % Self::HEIGHT_BYTES))
-					.get_unchecked(byte_index / Self::HEIGHT_BYTES)
-					.to_underlier()
+				unsafe {
+					Packed8b::cast_ext_ref(self.data.get_unchecked(byte_index % Self::HEIGHT_BYTES))
+						.get_unchecked(byte_index / Self::HEIGHT_BYTES)
+						.to_underlier()
+				}
 			}
 
 			/// Convert the byte-sliced field to an array of "ordinary" packed fields preserving the
@@ -707,17 +713,21 @@ macro_rules! define_byte_sliced_3d_1b {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-				self.data
-					.get_unchecked((i / 8) % Self::HEIGHT_BYTES)
-					.get_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8)
+				unsafe {
+					self.data
+						.get_unchecked((i / 8) % Self::HEIGHT_BYTES)
+						.get_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8)
+				}
 			}
 
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
-				self.data
-					.get_unchecked_mut((i / 8) % Self::HEIGHT_BYTES)
-					.set_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8, scalar);
+				unsafe {
+					self.data
+						.get_unchecked_mut((i / 8) % Self::HEIGHT_BYTES)
+						.set_unchecked(8 * (i / (Self::HEIGHT_BYTES * 8)) + i % 8, scalar);
+				}
 			}
 
 			fn random(mut rng: impl rand::RngCore) -> Self {

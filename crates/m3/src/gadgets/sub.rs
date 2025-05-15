@@ -4,12 +4,12 @@ use std::{array, marker::PhantomData};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	Field, PackedExtension, PackedField, PackedFieldIndexable, packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128},
+	builder::{B128, TableBuilder, column::Col, types::B1, witness::TableWitnessSegment},
 	gadgets::add::UnsignedAddPrimitives,
 };
 
@@ -282,7 +282,7 @@ mod tests {
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
 	use bumpalo::Bump;
-	use rand::{prelude::StdRng, Rng as _, SeedableRng};
+	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
@@ -294,8 +294,8 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
 				let z: u32 = x.wrapping_sub(y);
 				// (x, y, borrow_in, zout, final_borrow)
 				(x, y, 0x00000000, z, false)
@@ -318,9 +318,9 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
-				let borrow_in = rng.gen::<bool>() as u32;
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
+				let borrow_in = rng.r#gen::<bool>() as u32;
 				let (x_minus_y, borrow1) = x.overflowing_sub(y);
 				let (z, borrow2) = x_minus_y.overflowing_sub(borrow_in);
 				let final_borrow = borrow1 | borrow2;

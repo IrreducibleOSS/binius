@@ -6,8 +6,8 @@ use binius_core::constraint_system::channel::{Boundary, ChannelId, FlushDirectio
 use binius_field::{Field, PackedExtension, PackedField, TowerField};
 
 use super::{
-	constraint_system::ConstraintSystem, error::Error, witness::WitnessIndex, B1, B128, B16, B32,
-	B64, B8,
+	B1, B8, B16, B32, B64, B128, constraint_system::ConstraintSystem, error::Error,
+	witness::WitnessIndex,
 };
 
 /// Indexed lookup tables are fixed-size tables where every entry is easily determined by its
@@ -117,10 +117,10 @@ mod tests {
 	use std::{cmp::Reverse, iter::repeat_with};
 
 	use binius_field::{
+		PackedFieldIndexable,
 		arch::OptimalUnderlier,
 		ext_basis,
 		packed::{get_packed_slice, set_packed_slice},
-		PackedFieldIndexable,
 	};
 	use bumpalo::Bump;
 	use itertools::Itertools;
@@ -129,8 +129,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		builder::{
-			test_utils::{validate_system_witness, ClosureFiller},
-			upcast_col, Col, TableBuilder, TableFiller, TableId, TableWitnessSegment,
+			Col, TableBuilder, TableFiller, TableId, TableWitnessSegment,
+			test_utils::{ClosureFiller, validate_system_witness},
+			upcast_col,
 		},
 		gadgets::lookup::LookupProducer,
 	};
@@ -163,7 +164,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})
@@ -180,7 +181,7 @@ mod tests {
 			.unwrap();
 
 		let inputs_2 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})

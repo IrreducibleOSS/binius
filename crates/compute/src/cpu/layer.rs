@@ -3,10 +3,10 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	tower::TowerFamily, util::inner_product_unchecked, BinaryField, ExtensionField, Field,
-	TowerField,
+	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
+	util::inner_product_unchecked,
 };
-use binius_math::{extrapolate_line_scalar, ArithCircuit, ArithExpr};
+use binius_math::{ArithCircuit, ArithExpr, extrapolate_line_scalar};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
@@ -543,11 +543,11 @@ mod tests {
 
 	use binius_core::protocols::fri::fold_interleaved;
 	use binius_field::{
-		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
-		ExtensionField, Field, PackedExtension, PackedField, TowerField,
+		BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField, Field, PackedExtension,
+		PackedField, TowerField, tower::CanonicalTowerFamily,
 	};
-	use binius_math::{tensor_prod_eq_ind, MultilinearExtension, MultilinearQuery};
-	use rand::{prelude::StdRng, SeedableRng};
+	use binius_math::{MultilinearExtension, MultilinearQuery, tensor_prod_eq_ind};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{
