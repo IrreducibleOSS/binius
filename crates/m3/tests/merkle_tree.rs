@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 /// High-level model for binary Merkle trees using the Grøstl-256 output transformation as a 2-to-1
 /// compression function.
 
