@@ -11,29 +11,29 @@ use binius_utils::{
 	serialization::{assert_enough_data_for, assert_enough_space_for},
 	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 };
-use bytemuck::{must_cast, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
+	BinaryField,
 	arch::{
 		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
-			packed::{impl_pack_scalar, PackedPrimitiveType},
+			packed::{PackedPrimitiveType, impl_pack_scalar},
 			packed_arithmetic::{
-				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
 			},
 		},
 	},
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
-		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		NumCast, Random, SmallU, SpreadToByte, U1, U2, U4, UnderlierType, UnderlierWithBitOps,
+		WithUnderlier, impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback,
 	},
-	BinaryField,
 };
 
 /// 128-bit value that is used for 128-bit SIMD operations
@@ -120,7 +120,7 @@ impl SerializeBytes for M128 {
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
 
-		let raw_value: u128 = self.clone().into();
+		let raw_value: u128 = self.into();
 
 		write_buf.put_u128_le(raw_value);
 		Ok(())
