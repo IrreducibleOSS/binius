@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField};
+use binius_ntt::AdditiveNTT;
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use getset::{CopyGetters, Getters};
 
@@ -65,6 +66,7 @@ where
 	/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
 	/// * `arity` - the folding arity.
 	pub fn choose_with_constant_fold_arity(
+		ntt: &impl AdditiveNTT<FA>,
 		log_msg_len: usize,
 		security_bits: usize,
 		log_inv_rate: usize,
@@ -74,7 +76,7 @@ where
 
 		let log_dim = log_msg_len.saturating_sub(arity);
 		let log_batch_size = log_msg_len.min(arity);
-		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
+		let rs_code = ReedSolomonCode::with_ntt_subspace(ntt, log_dim, log_inv_rate)?;
 		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
 
 		let cap_height = log2_ceil_usize(n_test_queries);

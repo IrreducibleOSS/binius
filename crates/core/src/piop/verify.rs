@@ -4,7 +4,8 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
-use binius_utils::{bail, DeserializeBytes};
+use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
+use binius_utils::{DeserializeBytes, bail};
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -16,9 +17,9 @@ use crate::{
 	piop::util::ResizeableIndex,
 	polynomial::MultivariatePoly,
 	protocols::{
-		fri::{estimate_optimal_arity, FRIParams, FRIVerifier},
+		fri::{FRIParams, FRIVerifier, estimate_optimal_arity},
 		sumcheck::{
-			front_loaded::BatchVerifier as SumcheckBatchVerifier, CompositeSumClaim, SumcheckClaim,
+			CompositeSumClaim, SumcheckClaim, front_loaded::BatchVerifier as SumcheckBatchVerifier,
 		},
 	},
 	transcript::VerifierTranscript,
@@ -114,6 +115,7 @@ pub struct PIOPSumcheckClaim<F: Field> {
 }
 
 fn make_commit_params_with_constant_arity<F, FEncode>(
+	ntt: &impl AdditiveNTT<FEncode>,
 	commit_meta: &CommitMeta,
 	security_bits: usize,
 	log_inv_rate: usize,
@@ -124,6 +126,7 @@ where
 	FEncode: BinaryField,
 {
 	let params = FRIParams::choose_with_constant_fold_arity(
+		ntt,
 		commit_meta.total_vars(),
 		security_bits,
 		log_inv_rate,
@@ -151,12 +154,17 @@ where
 	FEncode: BinaryField,
 	MTScheme: MerkleTreeScheme<F>,
 {
+	// Choose the NTT with the maximum domain size, to be independent of the commit parameters. We
+	// then choose FRI parameters based on a compatible subspace of the NTT, and then create
+	// another NTT object for encoding, using the appropriate subspace.
+	let ntt = SingleThreadedNTT::<FEncode>::new(FEncode::N_BITS)?;
+
 	let arity = estimate_optimal_arity(
 		commit_meta.total_vars + log_inv_rate,
 		size_of::<MTScheme::Digest>(),
 		size_of::<F>(),
 	);
-	make_commit_params_with_constant_arity(commit_meta, security_bits, log_inv_rate, arity)
+	make_commit_params_with_constant_arity(&ntt, commit_meta, security_bits, log_inv_rate, arity)
 }
 
 /// A description of a sumcheck claim arising from a FRI PCS sumcheck.

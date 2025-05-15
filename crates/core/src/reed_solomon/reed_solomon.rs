@@ -6,7 +6,7 @@
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
 use binius_math::BinarySubspace;
-use binius_ntt::{AdditiveNTT, NTTShape};
+use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 
@@ -32,11 +32,20 @@ pub struct ReedSolomonCode<F: BinaryField> {
 
 impl<F: BinaryField> ReedSolomonCode<F> {
 	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
-		Self::with_subspace(
-			BinarySubspace::with_dim(log_dimension + log_inv_rate)?,
-			log_dimension,
-			log_inv_rate,
-		)
+		let ntt = SingleThreadedNTT::new(log_dimension + log_inv_rate)?;
+		Self::with_ntt_subspace(&ntt, log_dimension, log_inv_rate)
+	}
+
+	pub fn with_ntt_subspace(
+		ntt: &impl AdditiveNTT<F>,
+		log_dimension: usize,
+		log_inv_rate: usize,
+	) -> Result<Self, Error> {
+		if log_dimension + log_inv_rate > ntt.log_domain_size() {
+			return Err(Error::SubspaceDimensionMismatch);
+		}
+		let subspace_idx = ntt.log_domain_size() - (log_dimension + log_inv_rate);
+		Self::with_subspace(ntt.subspace(subspace_idx), log_dimension, log_inv_rate)
 	}
 
 	pub fn with_subspace(

@@ -150,7 +150,7 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())?
+	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace())?
 		.precompute_twiddles()
 		.multithreaded();
 
