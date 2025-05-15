@@ -24,12 +24,11 @@ use crate::{
 #[derive(Debug)]
 pub struct RowBatchCoeffs<F> {
 	coeffs: Vec<F>,
-	query: Vec<F>,
 }
 
 impl<F: Field> RowBatchCoeffs<F> {
-	pub fn new(coeffs: Vec<F>, query: Vec<F>) -> Self {
-		Self { coeffs, query }
+	pub fn new(coeffs: Vec<F>) -> Self {
+		Self { coeffs }
 	}
 
 	pub fn coeffs(&self) -> &[F] {
@@ -80,37 +79,19 @@ where
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F> + PackedExtension<FSub>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error>
-	where
-		F: ExtensionField<FSub>,
-	{
+	) -> Result<MultilinearExtension<P>, Error> {
 		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
 		evals[0].set(0, self.mixing_coeff);
 		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
 
 		let subfield_vector = <P as PackedExtension<FSub>>::cast_bases(&evals);
 
-		let subfield_vector_mle = MLEEmbeddingAdapter::<_, P, _>::from(MultilinearExtension::new(
-			self.z_vals.len() + F::LOG_DEGREE,
-			subfield_vector,
-		)?);
+		let subfield_vector_mle =
+			MultilinearExtension::new(self.z_vals.len() + F::LOG_DEGREE, subfield_vector)?;
 
-		let extra_queries_factor: F = self.row_batch_coeffs.query[F::LOG_DEGREE..]
-			.iter()
-			.map(|eval| *eval + F::ONE)
-			.product();
-
-		let mut factor_as_packed_arr = vec![P::zero(); std::cmp::max(F::DEGREE / P::WIDTH, 1)];
-
-		factor_as_packed_arr[0].set(0, extra_queries_factor);
-
+		let row_batch_coeffs = pack_slice(&self.row_batch_coeffs.coeffs()[0..F::DEGREE]);
 		let row_batching_query_expansion =
-			MultilinearQuery::with_expansion(0, &mut factor_as_packed_arr[..])?;
-
-		let row_batching_query_expansion = MultilinearQuery::update(
-			row_batching_query_expansion,
-			&self.row_batch_coeffs.query[0..F::LOG_DEGREE],
-		)?;
+			MultilinearQuery::with_expansion(F::LOG_DEGREE, row_batch_coeffs)?;
 
 		let partial_low_eval = subfield_vector_mle
 			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
@@ -187,7 +168,6 @@ mod tests {
 
 		let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
 			MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
-			row_batch_challenges,
 		));
 
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))

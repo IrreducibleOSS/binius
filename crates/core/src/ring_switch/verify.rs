@@ -55,7 +55,6 @@ where
 	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
 	let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
 		MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
-		row_batch_challenges,
 	));
 
 	// For each original evaluation claim, receive the row-batched evaluation claim.
