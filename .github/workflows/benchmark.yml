@@ -1,21 +1,40 @@
 name: Benchmark
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' &&
+      format('Benchmark: (on-demand) "{0}" (by @{1})', inputs.benchmark, github.actor) ||
+      format('Benchmark: (commit) "{0}"', github.event.head_commit.message)
+  }}
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:  # Manual trigger
-permissions:
-  contents: write
-  checks: write
-  pull-requests: write
-
+    inputs:
+      benchmark:
+        description: "Benchmark to run (choose a specific benchmark or 'all')"
+        type: choice
+        options: [all, keccakf, groestl, vision32b, sha256, b32_mul, u32_add, u32_mul, xor, and, or]   # Example options; replace with actual benchmark names
+        default: all
+      publish_results:
+        description: "Publish results to Bencher and GH Pages (Warning: run only if needed for main branch)"
+        type: boolean
+        default: false
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      publish_results: ${{ steps.set.outputs.publish_results }}
+    steps:
+      - id: set
+        run: |
+          echo "publish_results=${{ 
+            (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_results == 'true') ||
+            (github.event_name == 'push' && github.ref_name == 'main')
+          }}" >> $GITHUB_OUTPUT
   benchmark:
-    name: Benchmark for ${{ matrix.os }}
+    name: Run benchmarks (${{ matrix.os }})
+    needs: prepare
     container: rustlang/rust:nightly
-    permissions:
-      checks: write
-      actions: write
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     strategy:
@@ -26,55 +45,81 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Setup Bencher
-        uses: bencherdev/bencher@v0.4.37 # Fix to specific version to avoid breaking changes
-      - name: Create Output Directory
-        run: mkdir output
-      - name: Execute Benchmark Tests
-        run: ./scripts/nightly_benchmarks.py --export-file output/result.json
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.os == 'c7a-2xlarge' }}
-        with:
-          name: gh-pages
-          path: output/
-      - name: Upload Perfetto Trace
-        uses: actions/upload-artifact@v4
-        with:
-          name: perfetto-trace-${{ matrix.os }}
-          path: examples/*.perfetto-trace
-      - name: Track base branch benchmarks with Bencher
+      - name: Execute Benchmarks
         run: |
-          bencher run \
-          --project binius \
-          --token '${{ secrets.BENCHER_API_TOKEN }}' \
-          --branch ${{ github.ref_name }} \
-          --testbed ${{ matrix.os }} \
-          --threshold-measure latency \
-          --threshold-test t_test \
-          --threshold-max-sample-size 64 \
-          --threshold-upper-boundary 0.99 \
-          --thresholds-reset \
-          --err \
-          --adapter json \
-          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
-          --file output/result.json
-  publish_results:
-    name: Publish Results to Github Page
-    needs: [ benchmark ]
-    if: success() || failure()
+          ./scripts/run_benchmark.py \
+            --clean \
+            --output-dir benchmark_results \
+            --benchmark "${{ github.event.inputs.benchmark || 'all' }}"
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}
+          path: benchmark_results
+      - name: Prepare raw results for Bencher
+        if: ${{ needs.prepare.outputs.publish_results == 'true' }}
+        run: cp benchmark_results/all-results.json raw-results-${{ matrix.os }}.json
+      - name: Upload raw results for Bencher
+        if: ${{ needs.prepare.outputs.publish_results == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-raw-results-${{ matrix.os }}
+          path: raw-results-${{ matrix.os }}.json
+  publish_to_bencher:
+    if: ${{ needs.prepare.outputs.publish_results == 'true' }}
+    needs: [ benchmark, prepare ]
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
+      - name: Setup Bencher
+        uses: bencherdev/bencher@v0.4.37  # Pin to specific version to avoid breaking changes
+      - name: Download raw results for Bencher
         uses: actions/download-artifact@v4
         with:
-          name: gh-pages
-      - name: Deploy to GitHub Pages
-        uses: crazy-max/ghaction-github-pages@v4
-        with:
-          repo: irreducibleoss/binius-benchmark
-          fqdn: benchmark.binius.xyz
-          target_branch: main
-          build_dir: ./
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          pattern: bench-raw-results-*
+          path: raw_results  # directory for artifacts
+          merge-multiple: true  # Merge multiple artifacts into a single directory
+      - name: List results
+        run: ls -lah raw_results/*
+
+      # - name: Upload artifact
+      #   uses: actions/upload-artifact@v4
+      #   if: ${{ matrix.os == 'c7a-2xlarge' }}
+      #   with:
+      #     name: gh-pages
+      #     path: output/
+
+      # - name: Track base branch benchmarks with Bencher
+      #   run: |
+      #     bencher run \
+      #     --project binius \
+      #     --token '${{ secrets.BENCHER_API_TOKEN }}' \
+      #     --branch ${{ github.ref_name }} \
+      #     --testbed ${{ matrix.os }} \
+      #     --threshold-measure latency \
+      #     --threshold-test t_test \
+      #     --threshold-max-sample-size 64 \
+      #     --threshold-upper-boundary 0.99 \
+      #     --thresholds-reset \
+      #     --err \
+      #     --adapter json \
+      #     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+      #     --file output/result.json
+  # publish_to_gh_pages:
+  #   name: Publish Results to Github Page
+  #   needs: [ benchmark ]
+  #   if: success() || failure()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Download artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: gh-pages
+  #     - name: Deploy to GitHub Pages
+  #       uses: crazy-max/ghaction-github-pages@v4
+  #       with:
+  #         repo: irreducibleoss/binius-benchmark
+  #         fqdn: benchmark.binius.xyz
+  #         target_branch: main
+  #         build_dir: ./
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
