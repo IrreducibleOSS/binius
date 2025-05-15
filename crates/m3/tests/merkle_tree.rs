@@ -2,16 +2,8 @@
 /// compression function.
 
 mod model {
-	use binius_hash::{
-		groestl::{Groestl256, Groestl256ByteCompression, GroestlShortImpl, GroestlShortInternal},
-		PseudoCompressionFunction,
-	};
+	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use binius_m3::emulate::Channel;
-	use digest::{
-		generic_array::{ArrayLength, GenericArray},
-		typenum::Gr,
-		Output,
-	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
 	// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
@@ -150,15 +142,6 @@ mod model {
 			Self { depth, nodes, root }
 		}
 
-		/// Returns a layer of the tree at the specified depth.
-		/// The depth is 0-indexed, meaning the root is at depth 0.
-		pub fn layer(&self, layer_depth: usize) -> &[[u8; 32]] {
-			assert!(layer_depth <= self.depth, "Layer depth exceeds tree depth.");
-			// The range start is calculated based on the number of nodes in the tree and the layer.
-			let range_start = self.nodes.len() + 1 - (1 << (layer_depth + 1));
-			&self.nodes[range_start..range_start + (1 << layer_depth)]
-		}
-
 		/// Returns a merkle path for the given index.
 		pub fn merkle_path(&self, index: usize) -> Vec<[u8; 32]> {
 			assert!(index < 1 << self.depth, "Index out of range.");
@@ -237,9 +220,14 @@ mod model {
 		fn generate(roots: Vec<[u8; 32]>, paths: &Vec<(u8, u32, [u8; 32], Vec<[u8; 32]>)>) -> Self {
 			let mut path_vec: Vec<MerklePathToken> = Vec::new();
 			let mut root_vec: Vec<MerkleRootToken> = Vec::new();
+			// Number of times each root is referenced in the paths.
+			let mut root_multiplicities = vec![0; roots.len()];
 
 			for i in 0..paths.len() {
 				let (root_id, index, leaf, path) = &paths[i];
+
+				root_multiplicities[*root_id as usize] += 1;
+
 				let mut leaf = *leaf;
 				for (i, node) in path.iter().enumerate() {
 					let mut parent = [0u8; 32];
@@ -271,8 +259,11 @@ mod model {
 					leaf = parent;
 				}
 			}
+
 			for (i, root) in roots.iter().enumerate() {
-				root_vec.push(MerkleRootToken::new(i as u8, *root));
+				for _ in 0..root_multiplicities[i] {
+					root_vec.push(MerkleRootToken::new(i as u8, *root));
+				}
 			}
 
 			Self {
@@ -308,7 +299,7 @@ mod model {
 		let path = tree.merkle_path(0);
 		let root = tree.root;
 		let leaf = leaves[0];
-		let is_valid = MerkleTree::verify_path(&path, root, leaf, 0);
+		MerkleTree::verify_path(&path, root, leaf, 0);
 
 		assert_eq!(tree.depth, 3);
 	}
@@ -317,14 +308,14 @@ mod model {
 	#[test]
 	fn test_high_level_model_inclusion() {
 		let mut rng = StdRng::from_seed([0; 32]);
-		let leaves = (0..1 << 5)
+		let path_index = rng.gen_range(0..1 << 10);
+		let leaves = (0..1 << 10)
 			.into_iter()
 			.map(|_| rng.gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
 		let root = tree.root;
-		let path_index = 1;
 		let path = tree.merkle_path(path_index);
 		let path_root_id = 0;
 		let mut channels = MerkleTreeChannels::new();
@@ -346,38 +337,39 @@ mod model {
 	#[test]
 	fn test_high_level_model_inclusion_multiple_paths() {
 		let mut rng = StdRng::from_seed([0; 32]);
-		let leaves = (0..1 << 5)
+
+		let leaves = (0..1 << 10)
 			.into_iter()
 			.map(|_| rng.gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
 		let root = tree.root;
-		let path_index = 1;
-		let path = tree.merkle_path(path_index);
-		let path_root_id = 0;
+		let paths = (0..5)
+			.map(|_| {
+				let path_index = rng.gen_range(0..1 << 10);
+				(0u8, path_index as u32, leaves[path_index], tree.merkle_path(path_index))
+			})
+			.collect::<Vec<_>>();
 		let mut channels = MerkleTreeChannels::new();
 		// Boundary values: The leaf and the root.
-		channels.nodes.push((
-			path_root_id.into(),
-			leaves[path_index],
-			path.len() as u32,
-			path_index as u32,
-		));
-		channels.roots.push((path_root_id.into(), root));
-		let merkle_path = MerkleTreeTrace::generate(
-			vec![root],
-			&vec![(path_root_id, path_index as u32, leaves[path_index], path)],
-		);
+		for (root_id, path_index, leaf, path) in &paths {
+			channels
+				.nodes
+				.push((*root_id, *leaf, path.len() as u32, *path_index as u32));
+			channels.roots.push((*root_id, root));
+		}
+		let merkle_path = MerkleTreeTrace::generate(vec![root], &paths);
 		merkle_path.validate(&mut channels);
 	}
 
 	#[test]
 	fn test_high_level_model_inclusion_multiple_roots() {
 		let mut rng = StdRng::from_seed([0; 32]);
+		let path_index = rng.gen_range(0..1 << 10);
 		let leaves = (0..3)
 			.map(|_| {
-				(0..1 << 5)
+				(0..1 << 10)
 					.into_iter()
 					.map(|_| rng.gen::<[u8; 32]>())
 					.collect::<Vec<_>>()
@@ -391,24 +383,22 @@ mod model {
 		let paths = trees
 			.iter()
 			.enumerate()
-			.map(|(i, tree)| (i as u8, 0u32, leaves[i][0], tree.merkle_path(0)))
+			.map(|(i, tree)| {
+				(i as u8, path_index as u32, leaves[i][path_index], tree.merkle_path(path_index))
+			})
 			.collect::<Vec<_>>();
-		let path_index = 0;
 
 		let mut channels = MerkleTreeChannels::new();
+
 		for i in 0..3 {
-			let (root_id, index, leaf, path) = &paths[i];
-			let root = roots[i];
-			let leaves = &leaves[i];
+			let (root_id, path_index, leaf, path) = &paths[i];
 			// Boundary values: The leaf and the root.
-			channels.nodes.push((
-				*root_id as u8,
-				leaves[*index as usize],
-				path.len() as u32,
-				path_index as u32,
-			));
-			channels.roots.push((i as u8, root));
+			channels
+				.nodes
+				.push((*root_id as u8, *leaf, path.len() as u32, *path_index as u32));
+			channels.roots.push((*root_id, roots[i]));
 		}
+
 		let merkle_path = MerkleTreeTrace::generate(roots, &paths);
 		merkle_path.validate(&mut channels);
 	}
