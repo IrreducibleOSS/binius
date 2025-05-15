@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::RangeBounds;
+use std::ops::{Deref, RangeBounds};
 
 use binius_field::TowerField;
-use binius_math::RowsBatchRef;
+use binius_utils::checked_arithmetics::checked_int_div;
 
 pub trait SizedSlice {
 	#[inline(always)]
@@ -27,14 +27,14 @@ impl<T> SizedSlice for &mut [T] {
 }
 
 /// A batch of slices of the same length.
-pub struct SlicesBatch<'a, Slice: SizedSlice> {
-	rows: &'a [Slice],
+pub struct SlicesBatch<Slice: SizedSlice> {
+	rows: Vec<Slice>,
 	row_len: usize,
 }
 
-impl<'a, Slice: SizedSlice> SlicesBatch<'a, Slice> {
-	pub fn new(rows: &'a [Slice], row_len: usize) -> Self {
-		for row in rows {
+impl<Slice: SizedSlice> SlicesBatch<Slice> {
+	pub fn new(rows: Vec<Slice>, row_len: usize) -> Self {
+		for row in &rows {
 			assert_eq!(row.len(), row_len);
 		}
 
@@ -81,7 +81,21 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
-	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
+	fn slice<'a>(data: Self::FSlice<'a>, range: impl RangeBounds<usize>) -> Self::FSlice<'a>;
+
+	/// Splits slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks<'a>(
+		data: Self::FSlice<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSlice<'a>> {
+		let n_chunks = checked_int_div(data.len(), chunk_len);
+		(0..n_chunks).map(move |i| Self::slice(data, i * chunk_len..(i + 1) * chunk_len))
+	}
 
 	/// Borrows a subslice of a mutable memory slice.
 	///
@@ -92,6 +106,17 @@ pub trait ComputeMemory<F> {
 		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
 	) -> Self::FSliceMut<'a>;
+
+	/// Splits a mutable slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>>;
 
 	/// Splits a mutable slice into two disjoint subslices.
 	///

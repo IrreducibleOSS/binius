@@ -1,12 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit, slice};
+use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
-	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
+	alloc::{BumpAllocator, ComputeAllocator},
+	cpu::{layer::count_total_local_buffer_sizes, CpuLayer},
+	layer::{
+		ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap, KernelMemMapChunk,
+	},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
+	packed::PackedSlice,
 	tower::{PackedTop, TowerFamily},
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
@@ -15,19 +20,30 @@ use binius_field::{
 use binius_math::{
 	fold_left, fold_right, tensor_prod_eq_ind, ArithExpr, CompositionPoly, RowsBatchRef,
 };
+use binius_maybe_rayon::{
+	iter::{IntoParallelIterator, ParallelIterator},
+	slice::{ParallelSlice, ParallelSliceMut},
+};
 use binius_ntt::AdditiveNTT;
-use binius_utils::checked_arithmetics::{checked_int_div, strict_log_2};
+use binius_utils::{
+	checked_arithmetics::{checked_int_div, strict_log_2},
+	rayon::get_log_max_threads,
+};
 use bytemuck::zeroed_vec;
 
-use crate::{arith_circuit::ArithCircuitPoly, fri::fold_interleaved, memory::PackedMemory};
+use crate::{
+	arith_circuit::ArithCircuitPoly,
+	fri::fold_interleaved,
+	memory::{PackedMemory, PackedMemorySliceMut},
+};
 
 #[derive(Debug)]
 pub struct FastCpuExecutor;
 
 #[derive(Debug, Default)]
-pub struct CpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
+pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
 
-impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for CpuLayer<T, P> {
+impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, P> {
 	type Exec = FastCpuExecutor;
 	type KernelExec = FastCpuExecutor;
 	type DevMem = PackedMemory<P>;
@@ -173,14 +189,64 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for CpuLayer<T, P> {
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
-		map: impl for<'a> Fn(
-			&'a mut Self::KernelExec,
-			usize,
-			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		map: impl Sync
+			+ for<'a> Fn(
+				&'a mut Self::KernelExec,
+				usize,
+				Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+			) -> Result<Vec<Self::KernelValue>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
-		todo!()
+		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
+			.expect("Many variant must have at least one entry");
+
+		// For the reference implementation, use the smallest chunk size.
+		let log_chunks = (get_log_max_threads() + 1)
+			.min(log_chunks_range.end)
+			.max(log_chunks_range.start);
+		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
+		let chunk_alloc = (total_alloc >> log_chunks).max(1);
+
+		let mut memory_chunks = repeat_with(KernelMemMapChunk::default)
+			.take(mem_maps.len() << log_chunks)
+			.collect::<Vec<_>>();
+		for (i, mem_map) in mem_maps.into_iter().enumerate() {
+			for (j, chunk) in mem_map.chunks(1 << log_chunks).enumerate() {
+				memory_chunks[i + (j << log_chunks)] = chunk;
+			}
+		}
+
+		memory_chunks
+			.par_chunks_exact_mut(1 << log_chunks)
+			.map_with(zeroed_vec::<P>(chunk_alloc), |buffer, chunk| {
+				let buffer = PackedMemorySliceMut::new(buffer);
+				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
+
+				let kernel_data = chunk
+					.iter_mut()
+					.map(|mem_map| match std::mem::take(mem_map) {
+						KernelMemMapChunk::Slice(data) => KernelBuffer::Ref(data),
+						KernelMemMapChunk::SliceMut(data) => KernelBuffer::Mut(data),
+						KernelMemMapChunk::Local(len) => {
+							let data = allocator.alloc(len).expect("buffer must be large enough");
+
+							KernelBuffer::Mut(data)
+						}
+					})
+					.collect::<Vec<_>>();
+
+				map(&mut FastCpuExecutor, log_chunks, kernel_data)
+			})
+			.reduce_with(|out1, out2| {
+				let mut out1 = out1?;
+				let mut out2_iter = out2?.into_iter();
+				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
+					*out1_i += out2_i;
+				}
+				out1.extend(out2_iter);
+				Ok(out1)
+			})
+			.expect("range is not empty")
 	}
 
 	fn fold_left<'a>(

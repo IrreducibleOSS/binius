@@ -92,11 +92,12 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn accumulate_kernels(
 		&self,
 		_exec: &mut Self::Exec,
-		map: impl for<'a> Fn(
-			&'a mut Self::KernelExec,
-			usize,
-			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		map: impl Sync
+			+ for<'a> Fn(
+				&'a mut Self::KernelExec,
+				usize,
+				Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+			) -> Result<Vec<Self::KernelValue>, Error>,
 		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
@@ -104,7 +105,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 		// For the reference implementation, use the smallest chunk size.
 		let log_chunks = log_chunks_range.end;
-		let total_alloc = Self::count_total_local_buffer_sizes(&inputs, log_chunks);
+		let total_alloc = count_total_local_buffer_sizes(&inputs, log_chunks);
 		let mut local_buffer = zeroed_vec(total_alloc);
 		let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
 		(0..1 << log_chunks)
@@ -352,19 +353,6 @@ type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
 type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
 
 impl<T: TowerFamily> CpuLayer<T> {
-	fn count_total_local_buffer_sizes(
-		mappings: &[MemMap<'_, Self, T::B128>],
-		log_chunk_size: usize,
-	) -> usize {
-		mappings
-			.iter()
-			.map(|mapping| match mapping {
-				KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
-				KernelMemMap::Local { .. } => 1 << log_chunk_size,
-			})
-			.sum()
-	}
-
 	fn map_kernel_mem<'a>(
 		mappings: &'a mut [MemMap<'_, Self, T::B128>],
 		local_buffer_alloc: &'a BumpAllocator<T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
@@ -400,6 +388,19 @@ impl<T: TowerFamily> CpuLayer<T> {
 			})
 			.collect()
 	}
+}
+
+pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
+	mappings: &[KernelMemMap<F, Mem>],
+	log_chunk_size: usize,
+) -> usize {
+	mappings
+		.iter()
+		.map(|mapping| match mapping {
+			KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
+			KernelMemMap::Local { .. } => 1 << log_chunk_size,
+		})
+		.sum()
 }
 
 /// Compute the left fold operation.
