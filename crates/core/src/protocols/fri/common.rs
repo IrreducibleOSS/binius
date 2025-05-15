@@ -1,11 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
-use binius_field::{
-	packed::len_packed_slice, util::inner_product_unchecked, BinaryField, ExtensionField,
-	PackedField,
-};
+use binius_field::{BinaryField, ExtensionField, PackedField};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
@@ -38,66 +35,69 @@ where
 
 /// Calculate FRI fold of `values` at a `chunk_index` with random folding challenges.
 ///
-/// REQUIRES:
-/// - `folding_challenges` is not empty.
-/// - `values.len() == 1 << folding_challenges.len()`.
-/// - `scratch_buffer.len() == values.len()`.
-/// - `start_round + folding_challenges.len() - 1 < rs_code.log_dim()`.
+/// Folds a coset of a Reed–Solomon codeword into a single value using the FRI folding algorithm.
+/// The coset has size $2^n$, where $n$ is the number of challenges.
+///
+/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
 ///
 /// NB: This method is on a hot path and does not perform any allocations or
 /// precondition checks.
 ///
-/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
+/// ## Arguments
+///
+/// * `ntt` - the NTT instance, used to look up the twiddle values.
+/// * `log_len` - the binary logarithm of the code length.
+/// * `chunk_index` - the index of the chunk, of size $2^n$, in the full codeword.
+/// * `values` - mutable slice of values to fold, modified in place.
+/// * `challenges` - the sequence of folding challenges, with length $n$.
+///
+/// ## Pre-conditions
+///
+/// - `challenges.len() <= log_len`.
+/// - `log_len <= ntt.log_domain_size()`, so that the NTT domain is large enough.
+/// - `values.len() == 1 << challenges.len()`.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
 pub fn fold_chunk<F, FS, NTT>(
 	ntt: &NTT,
-	start_round: usize,
+	mut log_len: usize,
 	chunk_index: usize,
-	values: &[F],
-	folding_challenges: &[F],
-	scratch_buffer: &mut [F],
+	values: &mut [F],
+	challenges: &[F],
 ) -> F
 where
 	F: BinaryField + ExtensionField<FS>,
 	FS: BinaryField,
 	NTT: AdditiveNTT<FS>,
 {
+	let mut log_size = challenges.len();
+
 	// Preconditions
-	debug_assert!(!folding_challenges.is_empty());
-	debug_assert!(start_round + folding_challenges.len() <= ntt.log_domain_size());
-	debug_assert_eq!(values.len(), 1 << folding_challenges.len());
-	debug_assert!(scratch_buffer.len() >= values.len());
+	debug_assert!(log_size <= log_len);
+	debug_assert!(log_len <= ntt.log_domain_size());
+	debug_assert_eq!(values.len(), 1 << log_size);
 
-	// Fold the chunk with the folding challenges one by one
-	for n_challenges_processed in 0..folding_challenges.len() {
-		let n_remaining_challenges = folding_challenges.len() - n_challenges_processed;
-		let scratch_buffer_len = values.len() >> n_challenges_processed;
-		let new_scratch_buffer_len = scratch_buffer_len >> 1;
-		let round = start_round + n_challenges_processed;
-		let r = folding_challenges[n_challenges_processed];
-		let index_start = chunk_index << (n_remaining_challenges - 1);
-
+	// FRI-fold the values in place.
+	for &challenge in challenges {
 		// Fold the (2i) and (2i+1)th cells of the scratch buffer in-place into the i-th cell
-		if n_challenges_processed > 0 {
-			(0..new_scratch_buffer_len).for_each(|index_offset| {
-				let values =
-					(scratch_buffer[index_offset << 1], scratch_buffer[(index_offset << 1) + 1]);
-				scratch_buffer[index_offset] =
-					fold_pair(ntt, round, index_start + index_offset, values, r)
-			});
-		} else {
-			// For the first round, we read values directly from the `values` slice.
-			(0..new_scratch_buffer_len).for_each(|index_offset| {
-				let values = (values[index_offset << 1], values[(index_offset << 1) + 1]);
-				scratch_buffer[index_offset] =
-					fold_pair(ntt, round, index_start + index_offset, values, r)
-			});
+		let ntt_round = ntt.log_domain_size() - log_len;
+		for index_offset in 0..1 << (log_size - 1) {
+			let pair = (values[index_offset << 1], values[(index_offset << 1) | 1]);
+			values[index_offset] = fold_pair(
+				ntt,
+				ntt_round,
+				(chunk_index << (log_size - 1)) | index_offset,
+				pair,
+				challenge,
+			)
 		}
+
+		log_len -= 1;
+		log_size -= 1;
 	}
 
-	scratch_buffer[0]
+	values[0]
 }
 
 /// Calculate the fold of an interleaved chunk of values with random folding challenges.
@@ -123,12 +123,14 @@ where
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub fn fold_interleaved_chunk<F, FS, P, NTT>(
 	ntt: &NTT,
+	log_len: usize,
 	log_batch_size: usize,
 	chunk_index: usize,
 	values: &[P],
-	tensor: &[F],
+	tensor: &[P],
 	fold_challenges: &[F],
 	scratch_buffer: &mut [F],
 ) -> F
@@ -139,36 +141,34 @@ where
 	P: PackedField<Scalar = F>,
 {
 	// Preconditions
-	debug_assert!(fold_challenges.len() <= ntt.log_domain_size() + log_batch_size);
-	debug_assert_eq!(len_packed_slice(values), 1 << (log_batch_size + fold_challenges.len()));
-	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
-	debug_assert!(scratch_buffer.len() >= 2 * (values.len() >> log_batch_size));
+	debug_assert!(fold_challenges.len() <= log_len);
+	debug_assert!(log_len <= ntt.log_domain_size());
+	debug_assert_eq!(
+		values.len(),
+		1 << (fold_challenges.len() + log_batch_size).saturating_sub(P::LOG_WIDTH)
+	);
+	debug_assert_eq!(tensor.len(), 1 << log_batch_size.saturating_sub(P::LOG_WIDTH));
+	debug_assert!(scratch_buffer.len() >= 1 << fold_challenges.len());
 
-	// TODO: handle the case when log_batch_size is not a multiple of P::LOG_WIDTH
-	assert!(log_batch_size >= P::LOG_WIDTH);
+	let scratch_buffer = &mut scratch_buffer[..1 << fold_challenges.len()];
 
-	// There are two types of mixing we do in this loop. Buffer 1 is populated with the
-	// folding of symbols from the interleaved codewords into a single codeword. These
-	// values are mixed as a regular tensor product combination. Buffer 2 is then
-	// populated with `fold_chunk`, which folds a coset of a codeword using the FRI
-	// folding algorithm.
-	let (buffer1, buffer2) = scratch_buffer.split_at_mut(1 << fold_challenges.len());
-
-	for (interleave_chunk, val) in values
-		.chunks(1 << (log_batch_size - P::LOG_WIDTH))
-		.zip(buffer1.iter_mut())
-	{
-		*val = inner_product_unchecked(
-			PackedField::iter_slice(interleave_chunk),
-			tensor.iter().copied(),
-		);
-	}
-
-	if fold_challenges.is_empty() {
-		buffer1[0]
+	if log_batch_size == 0 {
+		iter::zip(&mut *scratch_buffer, P::iter_slice(values)).for_each(|(dst, val)| *dst = val);
 	} else {
-		fold_chunk(ntt, 0, chunk_index, buffer1, fold_challenges, buffer2)
-	}
+		let folded_values = values
+			.chunks(1 << (log_batch_size - P::LOG_WIDTH))
+			.map(|chunk| {
+				iter::zip(chunk, tensor)
+					.map(|(&a_i, &b_i)| a_i * b_i)
+					.sum::<P>()
+					.into_iter()
+					.take(1 << log_batch_size)
+					.sum()
+			});
+		iter::zip(&mut *scratch_buffer, folded_values).for_each(|(dst, val)| *dst = val);
+	};
+
+	fold_chunk(ntt, log_len, chunk_index, scratch_buffer, fold_challenges)
 }
 
 /// Parameters for an FRI interleaved code proximity protocol.
@@ -310,8 +310,10 @@ pub fn estimate_optimal_arity(
 		.map(|arity| {
 			(
 				// for given arity, return a tuple (arity, estimate of query_proof_size).
-				// this estimate is basd on the following approximation of a single query_proof_size, where $\vartheta$ is the arity:
-				// $\big((n-\vartheta) + (n-2\vartheta) + \ldots\big)\text{digest_size} + \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
+				// this estimate is basd on the following approximation of a single
+				// query_proof_size, where $\vartheta$ is the arity: $\big((n-\vartheta) +
+				// (n-2\vartheta) + \ldots\big)\text{digest_size} +
+				// \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
 				arity,
 				((log_block_length) / 2 * digest_size + (1 << arity) * field_size)
 					* (log_block_length - arity)
@@ -332,7 +334,7 @@ pub fn estimate_optimal_arity(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, BinaryField32b};
+	use binius_field::{BinaryField32b, BinaryField128b};
 
 	use super::*;
 

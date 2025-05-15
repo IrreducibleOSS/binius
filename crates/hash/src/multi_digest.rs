@@ -15,8 +15,9 @@ use digest::{Digest, Output};
 /// in parallel.
 ///
 /// This trait is useful when there is a more efficient way of calculating multiple digests at once,
-/// e.g. using SIMD instructions. It is supposed that this trait is implemented directly for some digest and
-/// some fixed `N` and passed as an implementation of the `ParallelDigest` trait which hides the `N` value.
+/// e.g. using SIMD instructions. It is supposed that this trait is implemented directly for some
+/// digest and some fixed `N` and passed as an implementation of the `ParallelDigest` trait which
+/// hides the `N` value.
 pub trait MultiDigest<const N: usize>: Clone {
 	/// The corresponding non-parallelized hash function.
 	type Digest: Digest;
@@ -176,9 +177,9 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{consts::U32, Digest, FixedOutput, HashMarker, OutputSizeUser, Update};
+	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Update, consts::U32};
 	use itertools::izip;
-	use rand::{rngs::StdRng, RngCore, SeedableRng};
+	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 	use super::*;
 

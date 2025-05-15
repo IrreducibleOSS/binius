@@ -4,10 +4,10 @@ use std::vec;
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{BinaryField1b, BinaryField32b, BinaryField8b, TowerField};
+use binius_field::{BinaryField1b, BinaryField8b, BinaryField32b, TowerField};
 
 use super::batch::LookupBatch;
-use crate::builder::{types::F, ConstraintSystemBuilder};
+use crate::builder::{ConstraintSystemBuilder, types::F};
 
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;

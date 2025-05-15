@@ -220,17 +220,13 @@ impl Not for M128 {
 
 /// `std::cmp::max` isn't const, so we need our own implementation
 pub(crate) const fn max_i32(left: i32, right: i32) -> i32 {
-	if left > right {
-		left
-	} else {
-		right
-	}
+	if left > right { left } else { right }
 }
 
 /// This solution shows 4X better performance.
-/// We have to use macro because parameter `count` in _mm_slli_epi64/_mm_srli_epi64 should be passed as constant
-/// and Rust currently doesn't allow passing expressions (`count - 64`) where variable is a generic constant parameter.
-/// Source: https://stackoverflow.com/questions/34478328/the-best-way-to-shift-a-m128i/34482688#34482688
+/// We have to use macro because parameter `count` in _mm_slli_epi64/_mm_srli_epi64 should be passed
+/// as constant and Rust currently doesn't allow passing expressions (`count - 64`) where variable
+/// is a generic constant parameter. Source: https://stackoverflow.com/questions/34478328/the-best-way-to-shift-a-m128i/34482688#34482688
 macro_rules! bitshift_128b {
 	($val:expr, $shift:ident, $byte_shift:ident, $bit_shift_64:ident, $bit_shift_64_opposite:ident, $or:ident) => {
 		unsafe {
@@ -324,7 +320,7 @@ impl ConditionallySelectable for M128 {
 
 impl Random for M128 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: u128 = rng.gen();
+		let val: u128 = rng.r#gen();
 		val.into()
 	}
 }
@@ -532,7 +528,7 @@ impl UnderlierWithBitOps for M128 {
 		match T::LOG_BITS {
 			0 => match log_block_len {
 				0 => Self::fill_with_bit(((u128::from(self) >> block_idx) & 1) as _),
-				1 => {
+				1 => unsafe {
 					let bits: [u8; 2] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 2 + i)) & 1) as _);
 
@@ -541,8 +537,8 @@ impl UnderlierWithBitOps for M128 {
 						u64::fill_with_bit(bits[0]) as i64,
 					)
 					.into()
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bits: [u8; 4] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 4 + i)) & 1) as _);
 
@@ -553,8 +549,8 @@ impl UnderlierWithBitOps for M128 {
 						u32::fill_with_bit(bits[0]) as i32,
 					)
 					.into()
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bits: [u8; 8] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 8 + i)) & 1) as _);
 
@@ -569,8 +565,8 @@ impl UnderlierWithBitOps for M128 {
 						u16::fill_with_bit(bits[0]) as i16,
 					)
 					.into()
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bits: [u8; 16] =
 						array::from_fn(|i| ((u128::from(self) >> (block_idx * 16 + i)) & 1) as _);
 
@@ -593,16 +589,16 @@ impl UnderlierWithBitOps for M128 {
 						u8::fill_with_bit(bits[0]) as i8,
 					)
 					.into()
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			1 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value =
 						U2::new((u128::from(self) >> (block_idx * 2)) as _).spread_to_byte();
 
 					_mm_set1_epi8(value as i8).into()
-				}
+				},
 				1 => {
 					let bytes: [u8; 2] = array::from_fn(|i| {
 						U2::new((u128::from(self) >> (block_idx * 4 + i * 2)) as _).spread_to_byte()
@@ -633,14 +629,14 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| bytes[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			2 => match log_block_len {
 				0 => {
 					let value =
 						U4::new((u128::from(self) >> (block_idx * 4)) as _).spread_to_byte();
 
-					_mm_set1_epi8(value as i8).into()
+					unsafe { _mm_set1_epi8(value as i8).into() }
 				}
 				1 => {
 					let values: [u8; 2] = array::from_fn(|i| {
@@ -673,13 +669,13 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| values[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			3 => match log_block_len {
-				0 => _mm_shuffle_epi8(self.0, LOG_B8_0[block_idx].0).into(),
-				1 => _mm_shuffle_epi8(self.0, LOG_B8_1[block_idx].0).into(),
-				2 => _mm_shuffle_epi8(self.0, LOG_B8_2[block_idx].0).into(),
-				3 => _mm_shuffle_epi8(self.0, LOG_B8_3[block_idx].0).into(),
+				0 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_0[block_idx].0).into() },
+				1 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_1[block_idx].0).into() },
+				2 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_2[block_idx].0).into() },
+				3 => unsafe { _mm_shuffle_epi8(self.0, LOG_B8_3[block_idx].0).into() },
 				4 => self,
 				_ => panic!("unsupported block length"),
 			},
@@ -687,7 +683,7 @@ impl UnderlierWithBitOps for M128 {
 				0 => {
 					let value = (u128::from(self) >> (block_idx * 16)) as u16;
 
-					_mm_set1_epi16(value as i16).into()
+					unsafe { _mm_set1_epi16(value as i16).into() }
 				}
 				1 => {
 					let values: [u16; 2] =
@@ -705,11 +701,11 @@ impl UnderlierWithBitOps for M128 {
 				_ => panic!("unsupported block length"),
 			},
 			5 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = (u128::from(self) >> (block_idx * 32)) as u32;
 
 					_mm_set1_epi32(value as i32).into()
-				}
+				},
 				1 => {
 					let values: [u32; 2] =
 						array::from_fn(|i| (u128::from(self) >> (block_idx * 64 + i * 32)) as u32);
@@ -720,11 +716,11 @@ impl UnderlierWithBitOps for M128 {
 				_ => panic!("unsupported block length"),
 			},
 			6 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = (u128::from(self) >> (block_idx * 64)) as u64;
 
 					_mm_set1_epi64x(value as i64).into()
-				}
+				},
 				1 => self,
 				_ => panic!("unsupported block length"),
 			},
@@ -943,47 +939,47 @@ where
 #[inline]
 unsafe fn interleave_bits(a: __m128i, b: __m128i, log_block_len: usize) -> (__m128i, __m128i) {
 	match log_block_len {
-		0 => {
+		0 => unsafe {
 			let mask = _mm_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
-		}
-		1 => {
+		},
+		1 => unsafe {
 			let mask = _mm_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
-		}
-		2 => {
+		},
+		2 => unsafe {
 			let mask = _mm_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
-		}
-		3 => {
+		},
+		3 => unsafe {
 			let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi8(a, b);
 			let b_prime = _mm_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi16(a, b);
 			let b_prime = _mm_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm_set_epi8(15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
 			let a_prime = _mm_unpacklo_epi32(a, b);
 			let b_prime = _mm_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let a_prime = _mm_unpacklo_epi64(a, b);
 			let b_prime = _mm_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
-		}
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -994,10 +990,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	b: __m128i,
 	mask: __m128i,
 ) -> (__m128i, __m128i) {
-	let t = _mm_and_si128(_mm_xor_si128(_mm_srli_epi64::<BLOCK_LEN>(a), b), mask);
-	let a_prime = _mm_xor_si128(a, _mm_slli_epi64::<BLOCK_LEN>(t));
-	let b_prime = _mm_xor_si128(b, t);
-	(a_prime, b_prime)
+	unsafe {
+		let t = _mm_and_si128(_mm_xor_si128(_mm_srli_epi64::<BLOCK_LEN>(a), b), mask);
+		let a_prime = _mm_xor_si128(a, _mm_slli_epi64::<BLOCK_LEN>(t));
+		let b_prime = _mm_xor_si128(b, t);
+		(a_prime, b_prime)
+	}
 }
 
 impl_iteration!(M128,

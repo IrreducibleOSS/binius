@@ -3,17 +3,17 @@
 use std::{fmt::Debug, ops::Deref};
 
 use binius_field::{
+	ExtensionField, Field, PackedField,
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	underlier::UnderlierType,
 	util::inner_product_par,
-	ExtensionField, Field, PackedField,
 };
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::instrument;
 
 use crate::{
-	fold::fold_left, fold_middle, fold_right, zero_pad, Error, MultilinearQueryRef, PackingDeref,
+	Error, MultilinearQueryRef, PackingDeref, fold::fold_left, fold_middle, fold_right, zero_pad,
 };
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
@@ -91,7 +91,8 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 
 impl<U, F, Data> MultilinearExtension<PackedType<U, F>, PackingDeref<U, F, Data>>
 where
-	// TODO: Add U: Divisible<u8>.
+	// TODO: Add U:
+	// Divisible<u8>.
 	U: UnderlierType + PackScalar<F>,
 	F: Field,
 	Data: Deref<Target = [U]>,
@@ -231,9 +232,9 @@ where
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	///
-	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1})$. Given a query
-	/// vector of length $k$ representing $(z_{\mu - k + 1}, ..., z_{\mu - 1})$, this returns the
-	/// multilinear polynomial with $\mu - k$ variables,
+	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1})$. Given a
+	/// query vector of length $k$ representing $(z_{\mu - k + 1}, ..., z_{\mu - 1})$, this returns
+	/// the multilinear polynomial with $\mu - k$ variables,
 	/// $p(X_0, ..., X_{\mu - k}, z_{\mu - k + 1}, ..., z_{\mu - 1})$.
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
@@ -341,8 +342,8 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let init_n_vars = self.mu;
-		if start_index >= init_n_vars {
-			bail!(Error::IncorrectStartIndex { expected: self.mu })
+		if start_index > init_n_vars {
+			bail!(Error::IncorrectStartIndexZeroPad { expected: self.mu })
 		}
 		let new_n_vars = init_n_vars + n_pad_vars;
 		if nonzero_index >= 1 << n_pad_vars {
@@ -359,7 +360,8 @@ where
 }
 
 impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<F, Data> {
-	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field with single element.
+	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field
+	/// with single element.
 	pub fn to_single_packed(self) -> MultilinearExtension<F::Packed> {
 		let packed_evals = self
 			.evals
@@ -385,16 +387,16 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField1b,
-		BinaryField32b, BinaryField8b, PackedBinaryField16x1b, PackedBinaryField16x8b,
-		PackedBinaryField32x1b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
-		PackedBinaryField8x1b,
+		BinaryField1b, BinaryField8b, BinaryField16b as F, BinaryField32b, BinaryField128b,
+		PackedBinaryField4x32b, PackedBinaryField8x1b, PackedBinaryField8x16b as P,
+		PackedBinaryField16x1b, PackedBinaryField16x8b, PackedBinaryField32x1b,
+		arch::OptimalUnderlier256b,
 	};
 	use itertools::Itertools;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use crate::{MultilinearQuery, tensor_prod_eq_ind};
 
 	/// Expand the tensor product of the query values.
 	///
@@ -511,16 +513,14 @@ mod tests {
 		P: PackedField,
 		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 	{
-		let new_vals = values
+		values
 			.iter()
 			.flat_map(|v| {
 				(P::WIDTH * start_index..P::WIDTH * (start_index + 1))
 					.map(|i| v.get(i))
 					.collect::<Vec<_>>()
 			})
-			.collect::<Vec<_>>();
-
-		new_vals
+			.collect::<Vec<_>>()
 	}
 
 	#[test]

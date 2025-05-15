@@ -28,16 +28,16 @@ mod tests {
 	use binius_core::{
 		constraint_system::{
 			self,
-			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
+			channel::{Boundary, FlushDirection, OracleOrConst, validate_witness},
 		},
 		fiat_shamir::HasherChallenger,
-		oracle::ShiftVariant,
+		oracle::{OracleId, ShiftVariant},
 		polynomial::ArithCircuitPoly,
 	};
 	use binius_field::{
+		BinaryField1b, BinaryField8b, BinaryField64b, BinaryField128b, Field, TowerField,
 		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
-		underlier::WithUnderlier, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b,
-		Field, TowerField,
+		underlier::WithUnderlier,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -50,9 +50,9 @@ mod tests {
 
 	use crate::{
 		builder::{
+			ConstraintSystemBuilder,
 			test_utils::test_circuit,
 			types::{F, U},
-			ConstraintSystemBuilder,
 		},
 		unconstrained::unconstrained,
 	};
@@ -284,7 +284,7 @@ mod tests {
 			.map(|i| B128::from(i * i))
 			.collect::<Vec<_>>();
 
-		let arith_poly_1 = ArithCircuitPoly::new(&comp_1);
+		let arith_poly_1 = ArithCircuitPoly::new(comp_1);
 		let values_comp_1 = (0..(1 << n_vars))
 			.map(|i| arith_poly_1.evaluate(&[values_x[i], values_y[i]]).unwrap())
 			.collect::<Vec<_>>();
@@ -293,7 +293,7 @@ mod tests {
 		let first = values_shift.remove(0);
 		values_shift.push(first);
 
-		let arith_poly_2 = ArithCircuitPoly::new(&comp_2);
+		let arith_poly_2 = ArithCircuitPoly::new(comp_2);
 		let values_comp_2 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_2
@@ -313,7 +313,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let arith_poly_3 = ArithCircuitPoly::new(&comp_3);
+		let arith_poly_3 = ArithCircuitPoly::new(comp_3);
 		let values_comp_3 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_3
@@ -329,7 +329,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let arith_poly_4 = ArithCircuitPoly::new(&comp_4);
+		let arith_poly_4 = ArithCircuitPoly::new(comp_4);
 		let values_comp_4 = (0..(1 << n_vars))
 			.map(|i| {
 				arith_poly_4
@@ -338,7 +338,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		let mut add_witness_col_b128 = |oracle_id: usize, values: &[B128]| {
+		let mut add_witness_col_b128 = |oracle_id: OracleId, values: &[B128]| {
 			builder
 				.witness()
 				.unwrap()
@@ -426,7 +426,8 @@ mod tests {
 		.unwrap()
 	}
 
-	//Testing with larger oracles, and random constants, in a random order. To see if given appropriate flushes with constants the channel balances.
+	//Testing with larger oracles, and random constants, in a random order. To see if given
+	// appropriate flushes with constants the channel balances.
 	#[test]
 	fn test_flush_with_const_large() {
 		test_circuit(|builder| {

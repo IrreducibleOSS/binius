@@ -1,22 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter;
-
 use binius_field::{
-	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	BinaryField, PackedField, TowerField,
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
 };
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
-use digest::{core_api::BlockSizeUser, Digest, Output};
-use itertools::{chain, Itertools};
+use digest::{Digest, Output, core_api::BlockSizeUser};
+use itertools::{Itertools, chain};
 use tracing::instrument;
 
 use super::{
+	ConstraintSystem, Proof,
 	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
-	exp, ConstraintSystem, Proof,
+	exp::{self, reorder_exponents},
 };
 use crate::{
 	constraint_system::{
@@ -31,7 +30,7 @@ use crate::{
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
-		sumcheck::{self, constraint_set_zerocheck_claim, ZerocheckClaim},
+		sumcheck::{self, ZerocheckClaim, constraint_set_zerocheck_claim},
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
@@ -86,7 +85,7 @@ where
 	let commitment = reader.read::<Output<Hash>>()?;
 
 	// GKR exp multiplication
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents, &oracles);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
@@ -144,7 +143,7 @@ where
 
 	// Verify grand products
 	let final_layer_claims = gkr_gpa::batch_verify(
-		EvaluationOrder::LowToHigh,
+		EvaluationOrder::HighToLow,
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&mut transcript,
 	)?;
@@ -323,7 +322,8 @@ fn verify_channels_balance<F: TowerField>(
 }
 
 /// For each flush,
-/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)$
+/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r
+///   + F_0 + F_1 s + F_2 s^1 + …)$
 /// - otherwise the product is over the linear combination $r + F_0 + F_1 s + F_2 s^1 + …$
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -351,7 +351,7 @@ pub fn make_flush_oracles<F: TowerField>(
 					let first_oracle = non_const_oracles.next().ok_or(Error::EmptyFlushOracles)?;
 					let n_vars = oracles.n_vars(first_oracle);
 
-					if let Some(selector_id) = &flush.selector {
+					for selector_id in &flush.selectors {
 						let got_tower_level = oracles.oracle(*selector_id).tower_level;
 						if got_tower_level != 0 {
 							return Err(Error::FlushSelectorTowerLevel {
@@ -392,42 +392,8 @@ pub fn make_flush_oracles<F: TowerField>(
 						})
 						.sum::<F>();
 
-					let poly = match flush.selector {
-						Some(selector_id) => {
-							let offset = *permutation_challenge + const_linear_combination + F::ONE;
-							let arith_expr_linear = ArithExpr::Const(offset);
-							let var_offset = 1; // Var(0) represents the selector column.
-							let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
-								.oracles
-								.iter()
-								.zip(mixing_powers.iter().copied())
-								.filter_map(|(id, coeff)| match id {
-									OracleOrConst::Oracle(id) => Some((*id, coeff)),
-									_ => None,
-								})
-								.unzip();
-
-							// Build the linear combination of the non-constant oracles.
-							let arith_expr_linear = coeffs.into_iter().enumerate().fold(
-								arith_expr_linear,
-								|linear, (offset, coeff)| {
-									linear
-										+ ArithExpr::Var(offset + var_offset)
-											* ArithExpr::Const(coeff)
-								},
-							);
-
-							// The ArithExpr is of the form 1 + S * linear_factors
-							oracles
-								.add_named(format!("flush channel_id={channel_id} composite"))
-								.composite_mle(
-									n_vars,
-									iter::once(selector_id).chain(non_const_oracles),
-									ArithExpr::Const(F::ONE)
-										+ ArithExpr::Var(0) * arith_expr_linear,
-								)?
-						}
-						None => oracles
+					let poly = if flush.selectors.is_empty() {
+						oracles
 							.add_named(format!("flush channel_id={channel_id} linear combination"))
 							.linear_combination_with_offset(
 								n_vars,
@@ -442,7 +408,42 @@ pub fn make_flush_oracles<F: TowerField>(
 										}
 										_ => None,
 									}),
-							)?,
+							)?
+					} else {
+						let offset = *permutation_challenge + const_linear_combination + F::ONE;
+						let arith_expr_linear = ArithExpr::Const(offset);
+						let var_offset = flush.selectors.len(); // Var's represents the selector columns.
+						let (non_const_oracles, coeffs): (Vec<_>, Vec<_>) = flush
+							.oracles
+							.iter()
+							.zip(mixing_powers.iter().copied())
+							.filter_map(|(id, coeff)| match id {
+								OracleOrConst::Oracle(id) => Some((*id, coeff)),
+								_ => None,
+							})
+							.unzip();
+
+						// Build the linear combination of the non-constant oracles.
+						let arith_expr_linear = coeffs.into_iter().enumerate().fold(
+							arith_expr_linear,
+							|linear, (offset, coeff)| {
+								linear
+									+ ArithExpr::Var(offset + var_offset) * ArithExpr::Const(coeff)
+							},
+						);
+
+						let selector = (0..var_offset)
+							.map(ArithExpr::Var)
+							.product::<ArithExpr<F>>();
+
+						// The ArithExpr is of the form 1 + S * linear_factors
+						oracles
+							.add_named(format!("flush channel_id={channel_id} composite"))
+							.composite_mle(
+								n_vars,
+								flush.selectors.iter().copied().chain(non_const_oracles),
+								(ArithExpr::Const(F::ONE) + selector * arith_expr_linear).into(),
+							)?
 					};
 					Ok(poly)
 				})

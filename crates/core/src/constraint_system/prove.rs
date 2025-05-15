@@ -3,12 +3,12 @@
 use std::{env, marker::PhantomData};
 
 use binius_field::{
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 	as_packed_field::PackedType,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
@@ -17,22 +17,22 @@ use binius_math::{
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{DynamicDispatchNTT, NTTOptions, ThreadingSettings};
+use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
-use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
+use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
 use super::{
+	ConstraintSystem, Proof,
 	channel::Boundary,
 	error::Error,
 	verify::{make_flush_oracles, max_n_vars_and_skip_rounds},
-	ConstraintSystem, Proof,
 };
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
-		exp,
+		exp::{self, reorder_exponents},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -103,7 +103,7 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents, &oracles);
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
@@ -130,13 +130,9 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let ntt = DynamicDispatchNTT::new(
-		fri_params.rs_code().log_len(),
-		&NTTOptions {
-			thread_settings: ThreadingSettings::MultithreadedDefault,
-			precompute_twiddles: true,
-		},
-	)?;
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())?
+		.precompute_twiddles()
+		.multithreaded();
 
 	let commit_span =
 		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
@@ -247,7 +243,7 @@ where
 
 	let GrandProductBatchProveOutput { final_layer_claims } =
 		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
-			EvaluationOrder::LowToHigh,
+			EvaluationOrder::HighToLow,
 			all_gpa_witnesses,
 			&all_gpa_claims,
 			&fast_domain_factory,
@@ -271,7 +267,7 @@ where
 	let zerocheck_span = tracing::info_span!(
 		"[phase] Zerocheck",
 		phase = "zerocheck",
-		perfetto_category = "phase.main"
+		perfetto_category = "phase.main",
 	)
 	.entered();
 
@@ -491,7 +487,7 @@ where
 	// The function is on the critical path, parallelize.
 	let indices_to_update: Vec<(OracleId, MultilinearWitness<'a, _>)> = flush_oracle_ids
 		.par_iter()
-		.map(|&flush_oracle| match oracles.oracle(flush_oracle).variant {
+		.map(|&flush_oracle| match &oracles[flush_oracle].variant {
 			MultilinearPolyVariant::Composite(composite) => {
 				let inner_polys = composite.inner();
 

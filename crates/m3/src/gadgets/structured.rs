@@ -2,7 +2,7 @@
 
 use binius_field::{PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield};
 
-use crate::builder::{column::Col, error::Error, witness::TableWitnessSegment, B128, B32};
+use crate::builder::{B32, B128, column::Col, error::Error, witness::TableWitnessSegment};
 
 /// Fills a structured [`crate::builder::structured::StructuredDynSize::Incrementing`] B32 column
 /// with values.

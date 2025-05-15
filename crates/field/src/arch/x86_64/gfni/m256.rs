@@ -3,16 +3,16 @@
 use core::arch::x86_64::*;
 use std::array;
 
-use gfni_arithmetics::{get_8x8_matrix, GfniType};
+use gfni_arithmetics::{GfniType, get_8x8_matrix};
 use seq_macro::seq;
 
 use super::*;
 use crate::{
-	arch::{x86_64::m256::M256, GfniSpecializedStrategy256b},
+	BinaryField, PackedField,
+	arch::{GfniSpecializedStrategy256b, x86_64::m256::M256},
 	arithmetic_traits::TaggedPackedTransformationFactory,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::WithUnderlier,
-	BinaryField, PackedField,
 };
 
 impl GfniType for M256 {
@@ -34,7 +34,8 @@ impl GfniType for M256 {
 
 /// Specialized GFNI transformation for AVX2-packed 128-bit binary fields.
 /// Get advantage of the fact that we can multiply 4 8x8 matrices by some elements at once.
-/// Theoretically we can have similar implementation for different scalar sizes, but it is not implemented yet.
+/// Theoretically we can have similar implementation for different scalar sizes, but it is not
+/// implemented yet.
 pub struct GfniTransformation256b {
 	// Each element contains 4 8x8 matrices
 	bases_8x8: [[__m256i; 4]; 16],

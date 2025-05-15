@@ -2,8 +2,9 @@
 
 use std::{
 	cmp::Ordering,
-	collections::{HashMap, HashSet},
+	collections::{HashMap, hash_map::Entry},
 	fmt::{self, Display},
+	hash::{Hash, Hasher},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 	sync::Arc,
@@ -14,14 +15,11 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;
 
-/// Arithmetic expressions that can be evaluated symbolically.
+/// A builder for arithmetic expressions.
 ///
-/// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
-/// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
-/// specific representations of multivariate polynomials.
-///
-/// The `Arc`'s are not guaranteed to be unique, so the expression tree may contain duplicate nodes.
-/// Use `deduplicate_nodes` to remove duplicate nodes from the expression tree.
+/// This is a simple representation of multivariate polynomials. The user can explicitly
+/// specify which subexpressions are shared by using `Arc` to wrap them. The same subexpressions
+/// are guaranteed to be converted to the same steps `ArithCircuit` after the conversion.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
@@ -44,60 +42,6 @@ impl<F: Field + Display> Display for ArithExpr<F> {
 }
 
 impl<F: Field> ArithExpr<F> {
-	/// The number of variables the expression contains.
-	pub fn n_vars(&self) -> usize {
-		match self {
-			Self::Const(_) => 0,
-			Self::Var(index) => *index + 1,
-			Self::Add(left, right) | Self::Mul(left, right) => left.n_vars().max(right.n_vars()),
-			Self::Pow(id, _) => id.n_vars(),
-		}
-	}
-
-	/// The total degree of the polynomial the expression represents.
-	pub fn degree(&self) -> usize {
-		match self {
-			Self::Const(_) => 0,
-			Self::Var(_) => 1,
-			Self::Add(left, right) => left.degree().max(right.degree()),
-			Self::Mul(left, right) => left.degree() + right.degree(),
-			Self::Pow(base, exp) => base.degree() * *exp as usize,
-		}
-	}
-
-	/// Return a new arithmetic expression that contains only the terms of highest degree
-	/// (useful for interpolation at Karatsuba infinity point).
-	pub fn leading_term(&self) -> Self {
-		let (_, expr) = self.leading_term_with_degree();
-		expr
-	}
-
-	/// Same as `leading_term`, but returns the total degree as the first tuple element as well.
-	pub fn leading_term_with_degree(&self) -> (usize, Self) {
-		match self {
-			expr @ Self::Const(_) => (0, expr.clone()),
-			expr @ Self::Var(_) => (1, expr.clone()),
-			Self::Add(left, right) => {
-				let (lhs_degree, lhs) = left.leading_term_with_degree();
-				let (rhs_degree, rhs) = right.leading_term_with_degree();
-				match lhs_degree.cmp(&rhs_degree) {
-					Ordering::Less => (rhs_degree, rhs),
-					Ordering::Equal => (lhs_degree, Self::Add(Arc::new(lhs), Arc::new(rhs))),
-					Ordering::Greater => (lhs_degree, lhs),
-				}
-			}
-			Self::Mul(left, right) => {
-				let (lhs_degree, lhs) = left.leading_term_with_degree();
-				let (rhs_degree, rhs) = right.leading_term_with_degree();
-				(lhs_degree + rhs_degree, Self::Mul(Arc::new(lhs), Arc::new(rhs)))
-			}
-			Self::Pow(base, exp) => {
-				let (base_degree, base) = base.leading_term_with_degree();
-				(base_degree * *exp as usize, Self::Pow(Arc::new(base), *exp))
-			}
-		}
-	}
-
 	pub fn pow(self, exp: u64) -> Self {
 		Self::Pow(Arc::new(self), exp)
 	}
@@ -108,343 +52,6 @@ impl<F: Field> ArithExpr<F> {
 
 	pub const fn one() -> Self {
 		Self::Const(F::ONE)
-	}
-
-	/// Creates a new expression with the variable indices remapped.
-	///
-	/// This recursively replaces the variable sub-expressions with an index `i` with the variable
-	/// `indices[i]`.
-	///
-	/// ## Throws
-	///
-	/// * [`Error::IncorrectArgumentLength`] if indices has length less than the current number of
-	///   variables
-	pub fn remap_vars(self, indices: &[usize]) -> Result<Self, Error> {
-		fn map_var(var: usize, indices: &[usize]) -> Result<usize, Error> {
-			indices
-				.get(var)
-				.copied()
-				.ok_or_else(|| Error::IncorrectArgumentLength {
-					arg: "indices".to_string(),
-					expected: var,
-				})
-		}
-
-		fn remap_vars_inner<F: Field>(
-			expr: &Arc<ArithExpr<F>>,
-			indices: &[usize],
-		) -> Result<Arc<ArithExpr<F>>, Error> {
-			match &**expr {
-				ArithExpr::Const(_) => Ok(expr.clone()),
-				ArithExpr::Var(index) => Ok(Arc::new(ArithExpr::Var(map_var(*index, indices)?))),
-				ArithExpr::Add(left, right) => {
-					let new_left = remap_vars_inner(left, indices)?;
-					let new_right = remap_vars_inner(right, indices)?;
-					Ok(Arc::new(ArithExpr::Add(new_left, new_right)))
-				}
-				ArithExpr::Mul(left, right) => {
-					let new_left = remap_vars_inner(left, indices)?;
-					let new_right = remap_vars_inner(right, indices)?;
-					Ok(Arc::new(ArithExpr::Mul(new_left, new_right)))
-				}
-				ArithExpr::Pow(base, exp) => {
-					let new_base = remap_vars_inner(base, indices)?;
-					Ok(Arc::new(ArithExpr::Pow(new_base, *exp)))
-				}
-			}
-		}
-
-		let expr = match self {
-			Self::Const(_) => self,
-			Self::Var(index) => Self::Var(map_var(index, indices)?),
-			Self::Add(left, right) => {
-				let new_left = remap_vars_inner(&left, indices)?;
-				let new_right = remap_vars_inner(&right, indices)?;
-				Self::Add(new_left, new_right)
-			}
-			Self::Mul(left, right) => {
-				let new_left = remap_vars_inner(&left, indices)?;
-				let new_right = remap_vars_inner(&right, indices)?;
-				Self::Mul(new_left, new_right)
-			}
-			Self::Pow(base, exp) => {
-				let new_base = remap_vars_inner(&base, indices)?;
-				Self::Pow(new_base, exp)
-			}
-		};
-		Ok(expr)
-	}
-
-	/// Substitute variable with index `var` with a constant `value`
-	pub fn const_subst(self, var: usize, value: F) -> Self {
-		fn subst_var<F: Field>(index: usize, var: usize, value: F) -> ArithExpr<F> {
-			if index == var {
-				ArithExpr::Const(value)
-			} else {
-				ArithExpr::Var(index)
-			}
-		}
-
-		fn const_subst_inner<F: Field>(
-			expr: &Arc<ArithExpr<F>>,
-			var: usize,
-			value: F,
-		) -> Arc<ArithExpr<F>> {
-			match &**expr {
-				ArithExpr::Const(_) => expr.clone(),
-				ArithExpr::Var(index) => subst_var(*index, var, value).into(),
-				ArithExpr::Add(left, right) => {
-					let new_left = const_subst_inner(left, var, value);
-					let new_right = const_subst_inner(right, var, value);
-					Arc::new(ArithExpr::Add(new_left, new_right))
-				}
-				ArithExpr::Mul(left, right) => {
-					let new_left = const_subst_inner(left, var, value);
-					let new_right = const_subst_inner(right, var, value);
-					Arc::new(ArithExpr::Mul(new_left, new_right))
-				}
-				ArithExpr::Pow(base, exp) => {
-					let new_base = const_subst_inner(base, var, value);
-					Arc::new(ArithExpr::Pow(new_base, *exp))
-				}
-			}
-		}
-
-		match self {
-			Self::Const(_) => self,
-			Self::Var(index) => subst_var(index, var, value),
-			Self::Add(left, right) => {
-				let new_left = const_subst_inner(&left, var, value);
-				let new_right = const_subst_inner(&right, var, value);
-				Self::Add(new_left, new_right)
-			}
-			Self::Mul(left, right) => {
-				let new_left = const_subst_inner(&left, var, value);
-				let new_right = const_subst_inner(&right, var, value);
-				Self::Mul(new_left, new_right)
-			}
-			Self::Pow(base, exp) => {
-				let new_base = const_subst_inner(&base, var, value);
-				Self::Pow(new_base, exp)
-			}
-		}
-	}
-
-	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithExpr<FTgt> {
-		match self {
-			Self::Const(val) => ArithExpr::Const((*val).into()),
-			Self::Var(index) => ArithExpr::Var(*index),
-			Self::Add(left, right) => {
-				let new_left = left.convert_field();
-				let new_right = right.convert_field();
-				ArithExpr::Add(Arc::new(new_left), Arc::new(new_right))
-			}
-			Self::Mul(left, right) => {
-				let new_left = left.convert_field();
-				let new_right = right.convert_field();
-				ArithExpr::Mul(Arc::new(new_left), Arc::new(new_right))
-			}
-			Self::Pow(base, exp) => {
-				let new_base = base.convert_field();
-				ArithExpr::Pow(Arc::new(new_base), *exp)
-			}
-		}
-	}
-
-	pub fn try_convert_field<FTgt: Field + TryFrom<F>>(
-		&self,
-	) -> Result<ArithExpr<FTgt>, <FTgt as TryFrom<F>>::Error> {
-		Ok(match self {
-			Self::Const(val) => ArithExpr::Const(FTgt::try_from(*val)?),
-			Self::Var(index) => ArithExpr::Var(*index),
-			Self::Add(left, right) => {
-				let new_left = left.try_convert_field()?;
-				let new_right = right.try_convert_field()?;
-				ArithExpr::Add(Arc::new(new_left), Arc::new(new_right))
-			}
-			Self::Mul(left, right) => {
-				let new_left = left.try_convert_field()?;
-				let new_right = right.try_convert_field()?;
-				ArithExpr::Mul(Arc::new(new_left), Arc::new(new_right))
-			}
-			Self::Pow(base, exp) => {
-				let new_base = base.try_convert_field()?;
-				ArithExpr::Pow(Arc::new(new_base), *exp)
-			}
-		})
-	}
-
-	/// Returns `Some(F)` if the expression is a constant.
-	pub const fn constant(&self) -> Option<F> {
-		match self {
-			Self::Const(value) => Some(*value),
-			_ => None,
-		}
-	}
-
-	/// Creates a new optimized expression.
-	///
-	/// Recursively rewrites the expression for better evaluation performance. Performs constant folding,
-	/// as well as leverages simple rewriting rules around additive/multiplicative identities and addition
-	/// in characteristic 2.
-	pub fn optimize(&self) -> Self {
-		match self {
-			Self::Const(_) | Self::Var(_) => self.clone(),
-			Self::Add(left, right) => {
-				let left = left.optimize();
-				let right = right.optimize();
-				match (left, right) {
-					// constant folding
-					(Self::Const(left), Self::Const(right)) => Self::Const(left + right),
-					// 0 + a = a + 0 = a
-					(Self::Const(left), right) if left == F::ZERO => right,
-					(left, Self::Const(right)) if right == F::ZERO => left,
-					// a + a = 0 in char 2
-					// REVIEW: relies on precise structural equality, find a better way
-					(left, right) if left == right && F::CHARACTERISTIC == 2 => {
-						Self::Const(F::ZERO)
-					}
-					// fallback
-					(left, right) => Self::Add(Arc::new(left), Arc::new(right)),
-				}
-			}
-			Self::Mul(left, right) => {
-				let left = left.optimize();
-				let right = right.optimize();
-				match (left, right) {
-					// constant folding
-					(Self::Const(left), Self::Const(right)) => Self::Const(left * right),
-					// 0 * a = a * 0 = 0
-					(left, right)
-						if left == Self::Const(F::ZERO) || right == Self::Const(F::ZERO) =>
-					{
-						Self::Const(F::ZERO)
-					}
-					// 1 * a = a * 1 = a
-					(Self::Const(left), right) if left == F::ONE => right,
-					(left, Self::Const(right)) if right == F::ONE => left,
-					// fallback
-					(left, right) => Self::Mul(Arc::new(left), Arc::new(right)),
-				}
-			}
-			Self::Pow(id, exp) => {
-				let id = id.optimize();
-				match id {
-					Self::Const(value) => Self::Const(PackedField::pow(value, *exp)),
-					Self::Pow(id_inner, exp_inner) => Self::Pow(id_inner, *exp * exp_inner),
-					id => Self::Pow(Arc::new(id), *exp),
-				}
-			}
-		}
-	}
-
-	/// Returns the normal form of an expression if it is linear.
-	///
-	/// ## Throws
-	///
-	/// - [`Error::NonLinearExpression`] if the expression is not linear.
-	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
-		self.sparse_linear_normal_form().map(Into::into)
-	}
-
-	fn sparse_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
-		match self {
-			Self::Const(val) => Ok((*val).into()),
-			Self::Var(index) => Ok(SparseLinearNormalForm {
-				constant: F::ZERO,
-				dense_linear_form_len: *index + 1,
-				var_coeffs: [(*index, F::ONE)].into(),
-			}),
-			Self::Add(left, right) => {
-				Ok(left.sparse_linear_normal_form()? + right.sparse_linear_normal_form()?)
-			}
-			Self::Mul(left, right) => {
-				left.sparse_linear_normal_form()? * right.sparse_linear_normal_form()?
-			}
-			Self::Pow(_, 0) => Ok(F::ONE.into()),
-			Self::Pow(expr, 1) => expr.sparse_linear_normal_form(),
-			Self::Pow(expr, pow) => expr.sparse_linear_normal_form().and_then(|linear_form| {
-				if linear_form.dense_linear_form_len != 0 {
-					return Err(Error::NonLinearExpression);
-				}
-				Ok(linear_form.constant.pow(*pow).into())
-			}),
-		}
-	}
-
-	/// Returns a vector of booleans indicating which variables are used in the expression.
-	///
-	/// The vector is indexed by variable index, and the value at index `i` is `true` if and only
-	/// if the variable is used in the expression.
-	pub fn vars_usage(&self) -> Vec<bool> {
-		let mut usage = vec![false; self.n_vars()];
-		self.mark_vars_usage(&mut usage);
-		usage
-	}
-
-	fn mark_vars_usage(&self, usage: &mut [bool]) {
-		match self {
-			Self::Const(_) => (),
-			Self::Var(index) => usage[*index] = true,
-			Self::Add(left, right) | Self::Mul(left, right) => {
-				left.mark_vars_usage(usage);
-				right.mark_vars_usage(usage);
-			}
-			Self::Pow(base, _) => base.mark_vars_usage(usage),
-		}
-	}
-
-	/// Find duplicate nodes in the expression tree and replace them with a single `Arc` instance.
-	pub fn deduplicate_nodes(self) -> Self {
-		let mut node_set = HashSet::new();
-
-		fn deduplicate_nodes_inner<F: Field>(
-			node: Arc<ArithExpr<F>>,
-			node_set: &mut HashSet<Arc<ArithExpr<F>>>,
-		) -> Arc<ArithExpr<F>> {
-			if let Some(node) = node_set.get(&node) {
-				return Arc::clone(node);
-			}
-
-			let node = match &*node {
-				ArithExpr::Const(_) | ArithExpr::Var(_) => node,
-				ArithExpr::Add(left, right) => {
-					let left = deduplicate_nodes_inner(Arc::clone(left), node_set);
-					let right = deduplicate_nodes_inner(Arc::clone(right), node_set);
-					Arc::new(ArithExpr::Add(left, right))
-				}
-				ArithExpr::Mul(left, right) => {
-					let left = deduplicate_nodes_inner(Arc::clone(left), node_set);
-					let right = deduplicate_nodes_inner(Arc::clone(right), node_set);
-					Arc::new(ArithExpr::Mul(left, right))
-				}
-				ArithExpr::Pow(base, exp) => {
-					let base = deduplicate_nodes_inner(Arc::clone(base), node_set);
-					Arc::new(ArithExpr::Pow(base, *exp))
-				}
-			};
-
-			node_set.insert(Arc::clone(&node));
-			node
-		}
-
-		match self {
-			Self::Const(_) | Self::Var(_) => self,
-			Self::Add(left, right) => {
-				let left = deduplicate_nodes_inner(left, &mut node_set);
-				let right = deduplicate_nodes_inner(right, &mut node_set);
-				Self::Add(left, right)
-			}
-			Self::Mul(left, right) => {
-				let left = deduplicate_nodes_inner(left, &mut node_set);
-				let right = deduplicate_nodes_inner(right, &mut node_set);
-				Self::Mul(left, right)
-			}
-			Self::Pow(base, exp) => {
-				let base = deduplicate_nodes_inner(base, &mut node_set);
-				Self::Pow(base, exp)
-			}
-		}
 	}
 }
 
@@ -604,21 +211,54 @@ impl<F: Field> Default for ArithCircuitStep<F> {
 	}
 }
 
-/// A simple circuit representation of an arithmetic expression.
+/// Arithmetic expressions that can be evaluated symbolically.
 ///
+/// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
+/// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
+/// specific representations of multivariate polynomials.
+///
+/// We store a tree in a form of a simple circuit.
 /// This implementation isn't optimized for performance, but rather for simplicity
-/// to allow easy conversion and preservation of the
-#[derive(Clone, Debug, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
+/// to allow easy conversion and preservation of the common subexpressions
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes, Eq)]
 pub struct ArithCircuit<F: Field> {
 	steps: Vec<ArithCircuitStep<F>>,
 }
 
 impl<F: Field> ArithCircuit<F> {
+	pub fn var(index: usize) -> Self {
+		Self {
+			steps: vec![ArithCircuitStep::Var(index)],
+		}
+	}
+
+	pub fn constant(value: F) -> Self {
+		Self {
+			steps: vec![ArithCircuitStep::Const(value)],
+		}
+	}
+
+	pub fn zero() -> Self {
+		Self::constant(F::ZERO)
+	}
+
+	pub fn one() -> Self {
+		Self::constant(F::ONE)
+	}
+
+	pub fn pow(mut self, exp: u64) -> Self {
+		self.steps
+			.push(ArithCircuitStep::Pow(self.steps.len() - 1, exp));
+
+		self
+	}
+
 	/// Steps of the circuit.
 	pub fn steps(&self) -> &[ArithCircuitStep<F>] {
 		&self.steps
 	}
 
+	/// The total degree of the polynomial the expression represents.
 	pub fn degree(&self) -> usize {
 		fn step_degree<F: Field>(step: usize, steps: &[ArithCircuitStep<F>]) -> usize {
 			match steps[step] {
@@ -637,6 +277,7 @@ impl<F: Field> ArithCircuit<F> {
 		step_degree(self.steps.len() - 1, &self.steps)
 	}
 
+	/// The number of variables the expression contains.
 	pub fn n_vars(&self) -> usize {
 		self.steps
 			.iter()
@@ -651,6 +292,7 @@ impl<F: Field> ArithCircuit<F> {
 			.unwrap_or(0)
 	}
 
+	/// The maximum tower level of the constant terms in the circuit.
 	pub fn binary_tower_level(&self) -> usize
 	where
 		F: TowerField,
@@ -668,8 +310,62 @@ impl<F: Field> ArithCircuit<F> {
 			.unwrap_or(0)
 	}
 
+	/// Returns the evaluation cost of the circuit.
+	pub fn eval_cost(&self) -> EvalCost {
+		self.steps
+			.iter()
+			.fold(EvalCost::default(), |acc, step| match *step {
+				ArithCircuitStep::Const(_) | ArithCircuitStep::Var(_) => acc,
+				ArithCircuitStep::Add(_, _) => acc + EvalCost::add(1),
+				ArithCircuitStep::Mul(_, _) => acc + EvalCost::mul(1),
+				// To exponentiate b^e the square-and-multiply method is used.
+				//
+				// That takes:
+				// 1. log2(e) squarings.
+				// 1. popcount(e) - 1 multiplications.
+				ArithCircuitStep::Pow(_, exp) => {
+					let n_squares = exp.ilog2() as usize;
+					let n_muls = exp.count_ones().saturating_sub(1) as usize;
+					acc + EvalCost::mul(n_muls) + EvalCost::square(n_squares)
+				}
+			})
+	}
+
+	/// Return a new arithmetic expression that contains only the terms of highest degree
+	/// (useful for interpolation at Karatsuba infinity point).
+	pub fn leading_term(&self) -> Self {
+		let (_, expr) = self.leading_term_with_degree(self.steps.len() - 1);
+		expr
+	}
+
+	/// Same as `leading_term`, but returns the total degree as the first tuple element as well.
+	fn leading_term_with_degree(&self, step: usize) -> (usize, Self) {
+		match &self.steps[step] {
+			ArithCircuitStep::Const(value) => (0, Self::constant(*value)),
+			ArithCircuitStep::Var(index) => (1, Self::var(*index)),
+			ArithCircuitStep::Add(left, right) => {
+				let (lhs_degree, lhs) = self.leading_term_with_degree(*left);
+				let (rhs_degree, rhs) = self.leading_term_with_degree(*right);
+				match lhs_degree.cmp(&rhs_degree) {
+					Ordering::Less => (rhs_degree, rhs),
+					Ordering::Equal => (lhs_degree, lhs + rhs),
+					Ordering::Greater => (lhs_degree, lhs),
+				}
+			}
+			ArithCircuitStep::Mul(left, right) => {
+				let (lhs_degree, lhs) = self.leading_term_with_degree(*left);
+				let (rhs_degree, rhs) = self.leading_term_with_degree(*right);
+				(lhs_degree + rhs_degree, lhs * rhs)
+			}
+			ArithCircuitStep::Pow(base, exp) => {
+				let (base_degree, base) = self.leading_term_with_degree(*base);
+				(base_degree * (*exp as usize), base.pow(*exp))
+			}
+		}
+	}
+
 	pub fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let mut step_evals = Vec::with_capacity(self.steps.len());
+		let mut step_evals = Vec::<F>::with_capacity(self.steps.len());
 		for step in &self.steps {
 			match step {
 				ArithCircuitStep::Add(left, right) => {
@@ -678,7 +374,7 @@ impl<F: Field> ArithCircuit<F> {
 				ArithCircuitStep::Mul(left, right) => {
 					step_evals.push(step_evals[*left] * step_evals[*right])
 				}
-				ArithCircuitStep::Pow(base, exp) => step_evals.push(query[*base].pow(*exp)),
+				ArithCircuitStep::Pow(base, exp) => step_evals.push(step_evals[*base].pow(*exp)),
 				ArithCircuitStep::Const(value) => step_evals.push(*value),
 				ArithCircuitStep::Var(index) => step_evals.push(query[*index]),
 			}
@@ -725,6 +421,15 @@ impl<F: Field> ArithCircuit<F> {
 		Ok(ArithCircuit { steps })
 	}
 
+	/// Creates a new expression with the variable indices remapped.
+	///
+	/// This recursively replaces the variable sub-expressions with an index `i` with the variable
+	/// `indices[i]`.
+	///
+	/// ## Throws
+	///
+	/// * [`Error::IncorrectArgumentLength`] if indices has length less than the current number of
+	///   variables
 	pub fn remap_vars(&self, indices: &[usize]) -> Result<Self, Error> {
 		let steps = self
 			.steps
@@ -744,6 +449,245 @@ impl<F: Field> ArithCircuit<F> {
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(Self { steps })
+	}
+
+	/// Substitute variable with index `var` with a constant `value`
+	pub fn const_subst(self, var: usize, value: F) -> Self {
+		let steps = self
+			.steps
+			.iter()
+			.map(|step| match step {
+				ArithCircuitStep::Var(index) if *index == var => ArithCircuitStep::Const(value),
+				_ => *step,
+			})
+			.collect();
+		Self { steps }
+	}
+
+	/// Returns `Some(F)` if the expression is a constant.
+	pub fn get_constant(&self) -> Option<F> {
+		if let ArithCircuitStep::Const(value) =
+			self.steps.last().expect("steps should not be empty")
+		{
+			Some(*value)
+		} else {
+			None
+		}
+	}
+
+	/// Returns the normal form of an expression if it is linear.
+	///
+	/// ## Throws
+	///
+	/// - [`Error::NonLinearExpression`] if the expression is not linear.
+	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
+		self.sparse_linear_normal_form().map(Into::into)
+	}
+
+	fn sparse_linear_normal_form(&self) -> Result<SparseLinearNormalForm<F>, Error> {
+		fn sparse_linear_normal_form<F: Field>(
+			step: usize,
+			steps: &[ArithCircuitStep<F>],
+		) -> Result<SparseLinearNormalForm<F>, Error> {
+			match &steps[step] {
+				ArithCircuitStep::Const(val) => Ok((*val).into()),
+				ArithCircuitStep::Var(index) => Ok(SparseLinearNormalForm {
+					constant: F::ZERO,
+					dense_linear_form_len: index + 1,
+					var_coeffs: [(*index, F::ONE)].into(),
+				}),
+				ArithCircuitStep::Add(left, right) => {
+					let left = sparse_linear_normal_form(*left, steps)?;
+					let right = sparse_linear_normal_form(*right, steps)?;
+					Ok(left + right)
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					let left = sparse_linear_normal_form(*left, steps)?;
+					let right = sparse_linear_normal_form(*right, steps)?;
+					left * right
+				}
+				ArithCircuitStep::Pow(_, 0) => Ok(F::ONE.into()),
+				ArithCircuitStep::Pow(expr, 1) => sparse_linear_normal_form(*expr, steps),
+				ArithCircuitStep::Pow(expr, pow) => {
+					let linear_form = sparse_linear_normal_form(*expr, steps)?;
+					if linear_form.dense_linear_form_len != 0 {
+						return Err(Error::NonLinearExpression);
+					}
+					Ok(linear_form.constant.pow(*pow).into())
+				}
+			}
+		}
+
+		sparse_linear_normal_form(self.steps.len() - 1, &self.steps)
+	}
+
+	/// Returns a vector of booleans indicating which variables are used in the expression.
+	///
+	/// The vector is indexed by variable index, and the value at index `i` is `true` if and only
+	/// if the variable is used in the expression.
+	pub fn vars_usage(&self) -> Vec<bool> {
+		let mut usage = vec![false; self.n_vars()];
+
+		for step in &self.steps {
+			if let ArithCircuitStep::Var(index) = step {
+				usage[*index] = true;
+			}
+		}
+
+		usage
+	}
+
+	/// Fold constants in the circuit.
+	fn optimize_constants(&mut self) {
+		for step_index in 0..self.steps.len() {
+			let (prev_steps, curr_steps) = self.steps.split_at_mut(step_index);
+			let curr_step = &mut curr_steps[0];
+			match curr_step {
+				ArithCircuitStep::Const(_) | ArithCircuitStep::Var(_) => {}
+				ArithCircuitStep::Add(left, right) => {
+					match (&prev_steps[*left], &prev_steps[*right]) {
+						(ArithCircuitStep::Const(left), ArithCircuitStep::Const(right)) => {
+							*curr_step = ArithCircuitStep::Const(*left + *right);
+						}
+						(ArithCircuitStep::Const(left), right) if *left == F::ZERO => {
+							*curr_step = *right;
+						}
+						(left, ArithCircuitStep::Const(right)) if *right == F::ZERO => {
+							*curr_step = *left;
+						}
+						(left, right) if left == right && F::CHARACTERISTIC == 2 => {
+							*curr_step = ArithCircuitStep::Const(F::ZERO);
+						}
+						_ => {}
+					}
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					match (&prev_steps[*left], &prev_steps[*right]) {
+						(ArithCircuitStep::Const(left), ArithCircuitStep::Const(right)) => {
+							*curr_step = ArithCircuitStep::Const(*left * *right);
+						}
+						(ArithCircuitStep::Const(left), _) if *left == F::ZERO => {
+							*curr_step = ArithCircuitStep::Const(F::ZERO);
+						}
+						(_, ArithCircuitStep::Const(right)) if *right == F::ZERO => {
+							*curr_step = ArithCircuitStep::Const(F::ZERO);
+						}
+						(ArithCircuitStep::Const(left), right) if *left == F::ONE => {
+							*curr_step = *right;
+						}
+						(left, ArithCircuitStep::Const(right)) if *right == F::ONE => {
+							*curr_step = *left;
+						}
+						_ => {}
+					}
+				}
+				ArithCircuitStep::Pow(base, exp) => match prev_steps[*base] {
+					ArithCircuitStep::Const(value) => {
+						*curr_step = ArithCircuitStep::Const(PackedField::pow(value, *exp));
+					}
+					ArithCircuitStep::Pow(base_inner, exp_inner) => {
+						*curr_step = ArithCircuitStep::Pow(base_inner, *exp * exp_inner);
+					}
+					_ => {}
+				},
+			}
+		}
+	}
+
+	/// Deduplicate steps in the circuit by using a single instance of each step.
+	fn deduplicate_steps(&mut self) {
+		let mut step_map = HashMap::new();
+		let mut step_indices = Vec::with_capacity(self.steps.len());
+		for step in 0..self.steps.len() {
+			let node = StepNode {
+				index: step,
+				steps: &self.steps,
+			};
+			match step_map.entry(node) {
+				Entry::Occupied(entry) => {
+					step_indices.push(*entry.get());
+				}
+				Entry::Vacant(entry) => {
+					entry.insert(step);
+					step_indices.push(step);
+				}
+			}
+		}
+
+		for step in &mut self.steps {
+			match step {
+				ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
+					*left = step_indices[*left];
+					*right = step_indices[*right];
+				}
+				ArithCircuitStep::Pow(base, _) => *base = step_indices[*base],
+				_ => (),
+			}
+		}
+	}
+
+	/// Remove the unused steps from the circuit.
+	fn compress_unused_steps(&mut self) {
+		fn mark_used<F: Field>(step: usize, steps: &[ArithCircuitStep<F>], used: &mut [bool]) {
+			if used[step] {
+				return;
+			}
+			used[step] = true;
+			match steps[step] {
+				ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
+					mark_used(left, steps, used);
+					mark_used(right, steps, used);
+				}
+				ArithCircuitStep::Pow(base, _) => mark_used(base, steps, used),
+				_ => (),
+			}
+		}
+
+		let mut used = vec![false; self.steps.len()];
+		mark_used(self.steps.len() - 1, &self.steps, &mut used);
+
+		let mut steps_map = (0..self.steps.len()).collect::<Vec<_>>();
+		let mut target_index = 0;
+		for source_index in 0..self.steps.len() {
+			if used[source_index] {
+				if target_index != source_index {
+					match &mut self.steps[source_index] {
+						ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
+							*left = steps_map[*left];
+							*right = steps_map[*right];
+						}
+						ArithCircuitStep::Pow(base, _) => *base = steps_map[*base],
+						_ => (),
+					}
+
+					steps_map[source_index] = target_index;
+					self.steps[target_index] = self.steps[source_index];
+				}
+
+				target_index += 1;
+			}
+		}
+
+		self.steps.truncate(target_index);
+	}
+
+	/// Optimize the current instance of the circuit:
+	/// - Fold constants
+	/// - Extract common steps
+	/// - Remove unused steps
+	pub fn optimize_in_place(&mut self) {
+		self.optimize_constants();
+		self.deduplicate_steps();
+		self.compress_unused_steps();
+	}
+
+	/// Same as `optimize_in_place`, but returns a new instance of the circuit.
+	pub fn optimize(mut self) -> Self {
+		self.optimize_constants();
+		self.deduplicate_steps();
+		self.compress_unused_steps();
+
+		self
 	}
 }
 
@@ -811,50 +755,182 @@ impl<F: Field> From<&ArithExpr<F>> for ArithCircuit<F> {
 	}
 }
 
-impl<F: Field, FTgt: Field + From<F>> From<&ArithCircuit<F>> for ArithExpr<FTgt> {
-	fn from(circuit: &ArithCircuit<F>) -> Self {
-		fn visit_step<F: Field, FTgt: Field + From<F>>(
-			step: usize,
-			cached_exrs: &mut [Option<Arc<ArithExpr<FTgt>>>],
-			steps: &[ArithCircuitStep<F>],
-		) -> Arc<ArithExpr<FTgt>> {
-			if let Some(node) = cached_exrs[step].as_ref() {
-				return Arc::clone(node);
-			}
-
-			let node = match &steps[step] {
-				ArithCircuitStep::Const(value) => Arc::new(ArithExpr::Const((*value).into())),
-				ArithCircuitStep::Var(index) => Arc::new(ArithExpr::Var(*index)),
-				ArithCircuitStep::Add(left, right) => {
-					let left = visit_step(*left, cached_exrs, steps);
-					let right = visit_step(*right, cached_exrs, steps);
-					Arc::new(ArithExpr::Add(left, right))
-				}
-				ArithCircuitStep::Mul(left, right) => {
-					let left = visit_step(*left, cached_exrs, steps);
-					let right = visit_step(*right, cached_exrs, steps);
-					Arc::new(ArithExpr::Mul(left, right))
-				}
-				ArithCircuitStep::Pow(base, exp) => {
-					let base = visit_step(*base, cached_exrs, steps);
-					Arc::new(ArithExpr::Pow(base, *exp))
-				}
-			};
-
-			cached_exrs[step] = Some(Arc::clone(&node));
-			node
-		}
-
-		let mut cached_exprs = vec![None; circuit.steps.len()];
-		let root = visit_step(circuit.steps.len() - 1, &mut cached_exprs, &circuit.steps);
-
-		// to remove the extra copy of the root node
-		drop(cached_exprs);
-
-		Arc::into_inner(root).expect("root must have only one reference")
+impl<F: Field> From<ArithExpr<F>> for ArithCircuit<F> {
+	fn from(expr: ArithExpr<F>) -> Self {
+		Self::from(&expr)
 	}
 }
 
+impl<F: Field> From<&ArithCircuit<F>> for ArithExpr<F> {
+	fn from(circuit: &ArithCircuit<F>) -> Self {
+		let mut step_to_node = vec![Option::<Arc<Self>>::None; circuit.steps.len()];
+
+		for step in 0..circuit.steps.len() {
+			let node = match &circuit.steps[step] {
+				ArithCircuitStep::Const(value) => Self::Const(*value),
+				ArithCircuitStep::Var(index) => Self::Var(*index),
+				ArithCircuitStep::Add(left, right) => {
+					let left = step_to_node[*left].clone().expect("step must be present");
+					let right = step_to_node[*right].clone().expect("step must be present");
+					Self::Add(left, right)
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					let left = step_to_node[*left].clone().expect("step must be present");
+					let right = step_to_node[*right].clone().expect("step must be present");
+					Self::Mul(left, right)
+				}
+				ArithCircuitStep::Pow(base, exp) => {
+					let base = step_to_node[*base].clone().expect("step must be present");
+					Self::Pow(base, *exp)
+				}
+			};
+			step_to_node[step] = Some(Arc::new(node));
+		}
+
+		Arc::into_inner(
+			step_to_node
+				.pop()
+				.expect("steps should not be empty")
+				.expect("last step should be initialized"),
+		)
+		.expect("last step must have a single instance")
+	}
+}
+
+impl<F: Field> From<ArithCircuit<F>> for ArithExpr<F> {
+	fn from(circuit: ArithCircuit<F>) -> Self {
+		Self::from(&circuit)
+	}
+}
+
+impl<F: Field> Display for ArithCircuit<F> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+		fn display_step<F: Field>(
+			step: usize,
+			steps: &[ArithCircuitStep<F>],
+			f: &mut fmt::Formatter<'_>,
+		) -> Result<(), fmt::Error> {
+			match &steps[step] {
+				ArithCircuitStep::Const(value) => write!(f, "{value}"),
+				ArithCircuitStep::Var(index) => write!(f, "x{index}"),
+				ArithCircuitStep::Add(left, right) => {
+					write!(f, "(")?;
+					display_step(*left, steps, f)?;
+					write!(f, " + ")?;
+					display_step(*right, steps, f)?;
+					write!(f, ")")
+				}
+				ArithCircuitStep::Mul(left, right) => {
+					write!(f, "(")?;
+					display_step(*left, steps, f)?;
+					write!(f, " * ")?;
+					display_step(*right, steps, f)?;
+					write!(f, ")")
+				}
+				ArithCircuitStep::Pow(base, exp) => {
+					write!(f, "(")?;
+					display_step(*base, steps, f)?;
+					write!(f, ")^{exp}")
+				}
+			}
+		}
+
+		display_step(self.steps.len() - 1, &self.steps, f)
+	}
+}
+
+impl<F: Field> PartialEq for ArithCircuit<F> {
+	fn eq(&self, other: &Self) -> bool {
+		StepNode {
+			index: self.steps.len() - 1,
+			steps: &self.steps,
+		} == StepNode {
+			index: other.steps.len() - 1,
+			steps: &other.steps,
+		}
+	}
+}
+
+impl<F: Field> Add for ArithCircuit<F> {
+	type Output = Self;
+
+	fn add(mut self, rhs: Self) -> Self {
+		self += rhs;
+		self
+	}
+}
+
+impl<F: Field> AddAssign for ArithCircuit<F> {
+	fn add_assign(&mut self, mut rhs: Self) {
+		let old_len = self.steps.len();
+		add_offset(&mut rhs.steps, old_len);
+		self.steps.extend(rhs.steps);
+		self.steps
+			.push(ArithCircuitStep::Add(old_len - 1, self.steps.len() - 1));
+	}
+}
+
+impl<F: Field> Sub for ArithCircuit<F> {
+	type Output = Self;
+
+	fn sub(mut self, rhs: Self) -> Self {
+		self -= rhs;
+		self
+	}
+}
+
+impl<F: Field> SubAssign for ArithCircuit<F> {
+	#[allow(clippy::suspicious_op_assign_impl)]
+	fn sub_assign(&mut self, rhs: Self) {
+		*self += rhs;
+	}
+}
+
+impl<F: Field> Mul for ArithCircuit<F> {
+	type Output = Self;
+
+	fn mul(mut self, rhs: Self) -> Self {
+		self *= rhs;
+		self
+	}
+}
+
+impl<F: Field> MulAssign for ArithCircuit<F> {
+	fn mul_assign(&mut self, mut rhs: Self) {
+		let old_len = self.steps.len();
+		add_offset(&mut rhs.steps, old_len);
+		self.steps.extend(rhs.steps);
+		self.steps
+			.push(ArithCircuitStep::Mul(old_len - 1, self.steps.len() - 1));
+	}
+}
+
+impl<F: Field> Sum for ArithCircuit<F> {
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.fold(Self::zero(), |sum, item| sum + item)
+	}
+}
+
+impl<F: Field> Product for ArithCircuit<F> {
+	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.fold(Self::one(), |product, item| product * item)
+	}
+}
+
+fn add_offset<F: Field>(steps: &mut [ArithCircuitStep<F>], offset: usize) {
+	for step in steps.iter_mut() {
+		match step {
+			ArithCircuitStep::Add(left, right) | ArithCircuitStep::Mul(left, right) => {
+				*left += offset;
+				*right += offset;
+			}
+			ArithCircuitStep::Pow(base, _) => {
+				*base += offset;
+			}
+			_ => (),
+		}
+	}
+}
 /// A normal form for a linear expression.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct LinearNormalForm<F: Field> {
@@ -942,85 +1018,233 @@ impl<F: Field> From<SparseLinearNormalForm<F>> for LinearNormalForm<F> {
 	}
 }
 
+/// A helper structure to be used for by-value comparison and hashing of the subexpressions
+/// regardless if they are in the same ArithCircuit or not.
+#[derive(Eq)]
+struct StepNode<'a, F: Field> {
+	index: usize,
+	steps: &'a [ArithCircuitStep<F>],
+}
+
+impl<F: Field> StepNode<'_, F> {
+	fn prev_step(&self, step: usize) -> Self {
+		StepNode {
+			index: step,
+			steps: self.steps,
+		}
+	}
+}
+
+impl<F: Field> PartialEq for StepNode<'_, F> {
+	#[allow(clippy::suspicious_operation_groupings)] // false positive
+	fn eq(&self, other: &Self) -> bool {
+		match (&self.steps[self.index], &other.steps[other.index]) {
+			(ArithCircuitStep::Const(left), ArithCircuitStep::Const(right)) => left == right,
+			(ArithCircuitStep::Var(left), ArithCircuitStep::Var(right)) => left == right,
+			(
+				ArithCircuitStep::Add(left, right),
+				ArithCircuitStep::Add(other_left, other_right),
+			)
+			| (
+				ArithCircuitStep::Mul(left, right),
+				ArithCircuitStep::Mul(other_left, other_right),
+			) => {
+				self.prev_step(*left) == other.prev_step(*other_left)
+					&& self.prev_step(*right) == other.prev_step(*other_right)
+			}
+			(ArithCircuitStep::Pow(base, exp), ArithCircuitStep::Pow(other_base, other_exp)) => {
+				self.prev_step(*base) == other.prev_step(*other_base) && exp == other_exp
+			}
+			_ => false,
+		}
+	}
+}
+
+impl<F: Field> Hash for StepNode<'_, F> {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		match self.steps[self.index] {
+			ArithCircuitStep::Const(value) => {
+				0u8.hash(state);
+				value.hash(state);
+			}
+			ArithCircuitStep::Var(index) => {
+				1u8.hash(state);
+				index.hash(state);
+			}
+			ArithCircuitStep::Add(left, right) => {
+				2u8.hash(state);
+				self.prev_step(left).hash(state);
+				self.prev_step(right).hash(state);
+			}
+			ArithCircuitStep::Mul(left, right) => {
+				3u8.hash(state);
+				self.prev_step(left).hash(state);
+				self.prev_step(right).hash(state);
+			}
+			ArithCircuitStep::Pow(base, exp) => {
+				4u8.hash(state);
+				self.prev_step(base).hash(state);
+				exp.hash(state);
+			}
+		}
+	}
+}
+
+/// The breakdown of the number of operations it takes to evaluate this circuit.
+#[derive(Default)]
+pub struct EvalCost {
+	/// Number of additions.
+	///
+	/// Addition is a relatively cheap operation.
+	pub n_adds: usize,
+	/// Number of multiplications.
+	///
+	/// Multiplications are a dominating factor in the evaluation cost.
+	pub n_muls: usize,
+	/// Number of squares.
+	///
+	/// Squares are a relatively cheap operation. Generally we assume that squaring takes the 1/5th
+	/// of a single multiplication.
+	pub n_squares: usize,
+}
+
+impl EvalCost {
+	pub fn add(n_adds: usize) -> Self {
+		Self {
+			n_adds,
+			..Self::default()
+		}
+	}
+
+	pub fn mul(n_muls: usize) -> Self {
+		Self {
+			n_muls,
+			..Self::default()
+		}
+	}
+
+	pub fn square(n_squares: usize) -> Self {
+		Self {
+			n_squares,
+			..Self::default()
+		}
+	}
+
+	/// Returns an approximate cost to evaluate an expression as a single number.
+	///
+	/// Since the evaluation time is dominated by the number of multiplications we can roughly
+	/// gauge the cost by the number of the multiplications. We count the number of squares
+	/// as 1/5th of a single multiplication.
+	pub fn mult_cost_approx(&self) -> usize {
+		self.n_muls + self.n_squares.div_ceil(5)
+	}
+}
+
+impl Add for EvalCost {
+	type Output = Self;
+	fn add(self, other: Self) -> Self {
+		Self {
+			n_adds: self.n_adds + other.n_adds,
+			n_muls: self.n_muls + other.n_muls,
+			n_squares: self.n_squares + other.n_squares,
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
+	use std::collections::HashSet;
+
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField, BinaryField128b, BinaryField1b, BinaryField8b};
+	use binius_field::{BinaryField, BinaryField1b, BinaryField8b, BinaryField128b};
 	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
 
 	use super::*;
 
 	#[test]
 	fn test_degree_with_pow() {
-		let expr = ArithExpr::Const(BinaryField8b::new(6)).pow(7);
+		let expr = ArithCircuit::constant(BinaryField8b::new(6)).pow(7);
 		assert_eq!(expr.degree(), 0);
 
-		let expr: ArithExpr<BinaryField8b> = ArithExpr::Var(0).pow(7);
+		let expr: ArithCircuit<BinaryField8b> = ArithCircuit::var(0).pow(7);
 		assert_eq!(expr.degree(), 7);
 
-		let expr: ArithExpr<BinaryField8b> = (ArithExpr::Var(0) * ArithExpr::Var(1)).pow(7);
+		let expr: ArithCircuit<BinaryField8b> =
+			(ArithCircuit::var(0) * ArithCircuit::var(1)).pow(7);
 		assert_eq!(expr.degree(), 14);
 	}
 
 	#[test]
+	fn test_n_vars() {
+		type F = BinaryField8b;
+		let expr = ArithCircuit::<F>::var(0) * ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR)
+			+ ArithCircuit::var(2).pow(2);
+		assert_eq!(expr.n_vars(), 3);
+	}
+
+	#[test]
 	fn test_leading_term_with_degree() {
-		let expr = ArithExpr::Var(0)
-			* (ArithExpr::Var(1)
-				* ArithExpr::Var(2)
-				* ArithExpr::Const(BinaryField8b::MULTIPLICATIVE_GENERATOR)
-				+ ArithExpr::Var(4))
-			+ ArithExpr::Var(5).pow(3)
-			+ ArithExpr::Const(BinaryField8b::ONE);
+		let expr = ArithCircuit::var(0)
+			* (ArithCircuit::var(1)
+				* ArithCircuit::var(2)
+				* ArithCircuit::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR)
+				+ ArithCircuit::var(4))
+			+ ArithCircuit::var(5).pow(3)
+			+ ArithCircuit::constant(BinaryField8b::ONE);
 
-		let expected_expr = ArithExpr::Var(0)
-			* ((ArithExpr::Var(1) * ArithExpr::Var(2))
-				* ArithExpr::Const(BinaryField8b::MULTIPLICATIVE_GENERATOR))
-			+ ArithExpr::Var(5).pow(3);
+		let expected_expr = ArithCircuit::var(0)
+			* ((ArithCircuit::var(1) * ArithCircuit::var(2))
+				* ArithCircuit::constant(BinaryField8b::MULTIPLICATIVE_GENERATOR))
+			+ ArithCircuit::var(5).pow(3);
 
-		assert_eq!(expr.leading_term_with_degree(), (3, expected_expr));
+		assert_eq!(expr.leading_term_with_degree(expr.steps().len() - 1), (3, expected_expr));
 	}
 
 	#[test]
 	fn test_remap_vars_with_too_few_vars() {
 		type F = BinaryField8b;
-		let expr = ((ArithExpr::Var(0) + ArithExpr::Const(F::ONE)) * ArithExpr::Var(1)).pow(3);
+		let expr =
+			((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		assert_matches!(expr.remap_vars(&[5]), Err(Error::IncorrectArgumentLength { .. }));
 	}
 
 	#[test]
 	fn test_remap_vars_works() {
 		type F = BinaryField8b;
-		let expr = ((ArithExpr::Var(0) + ArithExpr::Const(F::ONE)) * ArithExpr::Var(1)).pow(3);
+		let expr =
+			((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(1)).pow(3);
 		let new_expr = expr.remap_vars(&[5, 3]);
 
-		let expected = ((ArithExpr::Var(5) + ArithExpr::Const(F::ONE)) * ArithExpr::Var(3)).pow(3);
+		let expected =
+			((ArithCircuit::var(5) + ArithCircuit::constant(F::ONE)) * ArithCircuit::var(3)).pow(3);
 		assert_eq!(new_expr.unwrap(), expected);
 	}
 
 	#[test]
 	fn test_optimize_identity_handling() {
 		type F = BinaryField8b;
-		let zero = ArithExpr::<F>::zero();
-		let one = ArithExpr::<F>::one();
+		let zero = ArithCircuit::<F>::zero();
+		let one = ArithCircuit::<F>::one();
 
-		assert_eq!((zero.clone() * ArithExpr::<F>::Var(0)).optimize(), zero);
-		assert_eq!((ArithExpr::<F>::Var(0) * zero.clone()).optimize(), zero);
+		assert_eq!((zero.clone() * ArithCircuit::<F>::var(0)).optimize(), zero);
+		assert_eq!((ArithCircuit::<F>::var(0) * zero.clone()).optimize(), zero);
 
-		assert_eq!((ArithExpr::<F>::Var(0) * one.clone()).optimize(), ArithExpr::Var(0));
-		assert_eq!((one * ArithExpr::<F>::Var(0)).optimize(), ArithExpr::Var(0));
+		assert_eq!((ArithCircuit::<F>::var(0) * one.clone()).optimize(), ArithCircuit::var(0));
+		assert_eq!((one * ArithCircuit::<F>::var(0)).optimize(), ArithCircuit::var(0));
 
-		assert_eq!((ArithExpr::<F>::Var(0) + zero.clone()).optimize(), ArithExpr::Var(0));
-		assert_eq!((zero.clone() + ArithExpr::<F>::Var(0)).optimize(), ArithExpr::Var(0));
+		assert_eq!((ArithCircuit::<F>::var(0) + zero.clone()).optimize(), ArithCircuit::var(0));
+		assert_eq!((zero.clone() + ArithCircuit::<F>::var(0)).optimize(), ArithCircuit::var(0));
 
-		assert_eq!((ArithExpr::<F>::Var(0) + ArithExpr::Var(0)).optimize(), zero);
+		assert_eq!((ArithCircuit::<F>::var(0) + ArithCircuit::var(0)).optimize(), zero);
 	}
 
 	#[test]
 	fn test_const_subst_and_optimize() {
 		// NB: this is FlushSumcheckComposition from the constraint_system
 		type F = BinaryField8b;
-		let expr = ArithExpr::Var(0) * ArithExpr::Var(1) + ArithExpr::one() - ArithExpr::Var(1);
-		assert_eq!(expr.const_subst(1, F::ZERO).optimize().constant(), Some(F::ONE));
+		let expr = ArithCircuit::var(0) * ArithCircuit::var(1) + ArithCircuit::one()
+			- ArithCircuit::var(1);
+		assert_eq!(expr.const_subst(1, F::ZERO).optimize().get_constant(), Some(F::ONE));
 	}
 
 	#[test]
@@ -1028,12 +1252,13 @@ mod tests {
 		type F8 = BinaryField8b;
 		type F = BinaryField128b;
 
-		let expr = ((ArithExpr::Var(0) + ArithExpr::Const(F8::ONE))
-			* ArithExpr::Const(F8::new(222)))
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F8::ONE))
+			* ArithCircuit::constant(F8::new(222)))
 		.pow(3);
 
-		let expected =
-			((ArithExpr::Var(0) + ArithExpr::Const(F::ONE)) * ArithExpr::Const(F::new(222))).pow(3);
+		let expected = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* ArithCircuit::constant(F::new(222)))
+		.pow(3);
 		assert_eq!(expr.convert_field::<F>(), expected);
 	}
 
@@ -1042,13 +1267,14 @@ mod tests {
 		type F8 = BinaryField8b;
 		type F = BinaryField128b;
 
-		let expr =
-			((ArithExpr::Var(0) + ArithExpr::Const(F::ONE)) * ArithExpr::Const(F::new(222))).pow(3);
+		let expr = ((ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* ArithCircuit::constant(F::new(222)))
+		.pow(3);
 
 		assert!(expr.try_convert_field::<BinaryField1b>().is_err());
 
-		let expected = ((ArithExpr::Var(0) + ArithExpr::Const(F8::ONE))
-			* ArithExpr::Const(F8::new(222)))
+		let expected = ((ArithCircuit::var(0) + ArithCircuit::constant(F8::ONE))
+			* ArithCircuit::constant(F8::new(222)))
 		.pow(3);
 		assert_eq!(expr.try_convert_field::<BinaryField8b>().unwrap(), expected);
 	}
@@ -1056,31 +1282,34 @@ mod tests {
 	#[test]
 	fn test_linear_normal_form() {
 		type F = BinaryField128b;
-		use ArithExpr::{Const, Var};
 		struct Case {
-			expr: ArithExpr<F>,
+			expr: ArithCircuit<F>,
 			expected: LinearNormalForm<F>,
 		}
 		let cases = vec![
 			Case {
-				expr: Const(F::ONE),
+				expr: ArithCircuit::constant(F::ONE),
 				expected: LinearNormalForm {
 					constant: F::ONE,
 					var_coeffs: vec![],
 				},
 			},
 			Case {
-				expr: (Const(F::new(2)) * Const(F::new(3))).pow(2)
-					+ Const(F::new(3)) * (Const(F::new(4)) + Var(0)),
+				expr: (ArithCircuit::constant(F::new(2)) * ArithCircuit::constant(F::new(3)))
+					.pow(2) + ArithCircuit::constant(F::new(3))
+					* (ArithCircuit::constant(F::new(4)) + ArithCircuit::var(0)),
 				expected: LinearNormalForm {
 					constant: (F::new(2) * F::new(3)).pow(2) + F::new(3) * F::new(4),
 					var_coeffs: vec![F::new(3)],
 				},
 			},
 			Case {
-				expr: Const(F::new(133))
-					+ Const(F::new(42)) * Var(0)
-					+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3),
+				expr: ArithCircuit::constant(F::new(133))
+					+ ArithCircuit::constant(F::new(42)) * ArithCircuit::var(0)
+					+ ArithCircuit::var(2)
+					+ ArithCircuit::constant(F::new(11))
+						* ArithCircuit::constant(F::new(37))
+						* ArithCircuit::var(3),
 				expected: LinearNormalForm {
 					constant: F::new(133),
 					var_coeffs: vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)],
@@ -1094,48 +1323,26 @@ mod tests {
 		}
 	}
 
-	fn unique_nodes_count<F: Field>(expr: &ArithExpr<F>) -> usize {
+	fn unique_nodes_count<F: Field>(expr: &ArithCircuit<F>) -> usize {
 		let mut unique_nodes = HashSet::new();
 
-		fn visit_node<F: Field>(
-			node: &Arc<ArithExpr<F>>,
-			unique_nodes: &mut HashSet<*const ArithExpr<F>>,
-		) {
-			if unique_nodes.insert(Arc::as_ptr(node)) {
-				match &**node {
-					ArithExpr::Const(_) | ArithExpr::Var(_) => (),
-					ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
-						visit_node(left, unique_nodes);
-						visit_node(right, unique_nodes);
-					}
-					ArithExpr::Pow(base, _) => visit_node(base, unique_nodes),
-				}
-			}
+		for step in 0..expr.steps.len() {
+			unique_nodes.insert(StepNode {
+				index: step,
+				steps: &expr.steps,
+			});
 		}
 
-		match expr {
-			ArithExpr::Const(_) | ArithExpr::Var(_) => 1,
-			ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
-				visit_node(left, &mut unique_nodes);
-				visit_node(right, &mut unique_nodes);
-				unique_nodes.len() + 1
-			}
-			ArithExpr::Pow(base, _) => {
-				visit_node(base, &mut unique_nodes);
-				unique_nodes.len() + 1
-			}
-		}
+		unique_nodes.len()
 	}
 
-	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithExpr<F>) {
+	fn check_serialize_bytes_roundtrip<F: Field>(expr: ArithCircuit<F>) {
 		let mut buf = Vec::new();
-		let circut = ArithCircuit::from(&expr);
-		circut
-			.serialize(&mut buf, SerializationMode::CanonicalTower)
+
+		expr.serialize(&mut buf, SerializationMode::CanonicalTower)
 			.unwrap();
 		let deserialized =
 			ArithCircuit::<F>::deserialize(&buf[..], SerializationMode::CanonicalTower).unwrap();
-		let deserialized = ArithExpr::from(&deserialized);
 		assert_eq!(expr, deserialized);
 		assert_eq!(unique_nodes_count(&expr), unique_nodes_count(&deserialized));
 	}
@@ -1143,13 +1350,13 @@ mod tests {
 	#[test]
 	fn test_serialize_bytes_roundtrip() {
 		type F = BinaryField128b;
-		let expr = ArithExpr::Var(0)
-			* (ArithExpr::Var(1)
-				* ArithExpr::Var(2)
-				* ArithExpr::Const(F::MULTIPLICATIVE_GENERATOR)
-				+ ArithExpr::Var(4))
-			+ ArithExpr::Var(5).pow(3)
-			+ ArithExpr::Const(F::ONE);
+		let expr = ArithCircuit::var(0)
+			* (ArithCircuit::var(1)
+				* ArithCircuit::var(2)
+				* ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR)
+				+ ArithCircuit::var(4))
+			+ ArithCircuit::var(5).pow(3)
+			+ ArithCircuit::constant(F::ONE);
 
 		check_serialize_bytes_roundtrip(expr);
 	}
@@ -1157,110 +1364,166 @@ mod tests {
 	#[test]
 	fn test_serialize_bytes_rountrip_with_duplicates() {
 		type F = BinaryField128b;
-		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
-			* (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
-			+ (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
-			+ ArithExpr::Var(1);
+		let expr = (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			* (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			+ (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
+			+ ArithCircuit::var(1);
 
 		check_serialize_bytes_roundtrip(expr);
 	}
 
 	#[test]
-	fn test_deduplication() {
+	fn test_binary_tower_level() {
 		type F = BinaryField128b;
-		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
-			* (ArithExpr::Var(1) + ArithExpr::Const(F::ONE))
-			+ (ArithExpr::Var(0) + ArithExpr::Const(F::ONE))
-				* (ArithExpr::Var(1) + ArithExpr::Const(F::ONE))
-			+ ArithExpr::Var(1);
-
-		let expr = expr.deduplicate_nodes();
-		assert_eq!(unique_nodes_count(&expr), 8);
-	}
-
-	#[test]
-	fn test_arith_circuit_degree() {
-		type F = BinaryField8b;
-		let expr = ((ArithExpr::<F>::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(2)).pow(3);
-		let circuit = ArithCircuit::from(&expr);
-		assert_eq!(circuit.degree(), expr.degree());
-	}
-
-	#[test]
-	fn test_arith_circuit_n_vars() {
-		type F = BinaryField8b;
-		let expr = ArithExpr::<F>::Var(0) + ArithExpr::Var(1) + ArithExpr::Var(2);
-		let circuit = ArithCircuit::from(&expr);
-		assert_eq!(circuit.n_vars(), expr.n_vars());
-	}
-
-	#[test]
-	fn test_arith_circuit_remap_vars() {
-		type F = BinaryField8b;
-		let expr = ArithExpr::<F>::Var(0) + ArithExpr::Var(1) * ArithExpr::Var(2);
-		let circuit = ArithCircuit::from(&expr);
-		let remapped_circuit = circuit.remap_vars(&[2, 0, 1]).unwrap();
-		let expected_expr = ArithExpr::Var(2) + ArithExpr::Var(0) * ArithExpr::Var(1);
-		let expected_circuit = ArithCircuit::from(&expected_expr);
-		assert_eq!(remapped_circuit, expected_circuit);
-	}
-
-	#[test]
-	fn test_arith_circuit_convert_field() {
-		type F8 = BinaryField8b;
-		type F128 = BinaryField128b;
-
-		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F8::new(5))) * ArithExpr::Var(1);
-		let circuit = ArithCircuit::from(&expr);
-		let converted_circuit = circuit.convert_field::<F128>();
-
-		let expected_expr =
-			(ArithExpr::Var(0) + ArithExpr::Const(F128::new(5))) * ArithExpr::Var(1);
-		let expected_circuit = ArithCircuit::from(&expected_expr);
-
-		assert_eq!(converted_circuit, expected_circuit);
-	}
-
-	#[test]
-	fn test_arith_circuit_try_convert_field() {
-		type F8 = BinaryField8b;
-		type F128 = BinaryField128b;
-
-		let expr = (ArithExpr::Var(0) + ArithExpr::Const(F128::new(5))) * ArithExpr::Var(1);
-		let circuit = ArithCircuit::from(&expr);
-
-		// Successful conversion
-		let converted_circuit = circuit.try_convert_field::<F8>().unwrap();
-		let expected_expr = (ArithExpr::Var(0) + ArithExpr::Const(F8::new(5))) * ArithExpr::Var(1);
-		let expected_circuit = ArithCircuit::from(&expected_expr);
-		assert_eq!(converted_circuit, expected_circuit);
-
-		// Failing conversion
-		let invalid_expr =
-			(ArithExpr::Var(0) + ArithExpr::Const(F128::new(256))) * ArithExpr::Var(1);
-		let invalid_circuit = ArithCircuit::from(&invalid_expr);
-		assert!(invalid_circuit.try_convert_field::<F8>().is_err());
-	}
-
-	#[test]
-	fn test_arith_circuit_binary_tower_level() {
-		type F = BinaryField128b;
-		let expr = ArithExpr::Const(F::ONE) + ArithExpr::Const(F::MULTIPLICATIVE_GENERATOR);
-		let circuit = ArithCircuit::from(&expr);
-		assert_eq!(circuit.binary_tower_level(), F::MULTIPLICATIVE_GENERATOR.min_tower_level());
+		let expr =
+			ArithCircuit::constant(F::ONE) + ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR);
+		assert_eq!(expr.binary_tower_level(), F::MULTIPLICATIVE_GENERATOR.min_tower_level());
 	}
 
 	#[test]
 	fn test_arith_circuit_steps() {
 		type F = BinaryField8b;
-		let expr = (ArithExpr::<F>::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(2);
-		let circuit = ArithCircuit::from(&expr);
-		let steps = circuit.steps();
+		let expr = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1)) * ArithCircuit::var(2);
+		let steps = expr.steps();
 		assert_eq!(steps.len(), 5); // 3 variables, 1 addition, 1 multiplication
 		assert!(matches!(steps[0], ArithCircuitStep::Var(0)));
 		assert!(matches!(steps[1], ArithCircuitStep::Var(1)));
 		assert!(matches!(steps[2], ArithCircuitStep::Add(_, _)));
 		assert!(matches!(steps[3], ArithCircuitStep::Var(2)));
 		assert!(matches!(steps[4], ArithCircuitStep::Mul(_, _)));
+	}
+
+	#[test]
+	fn test_optimize_constants() {
+		type F = BinaryField8b;
+		let mut circuit = (ArithCircuit::<F>::var(0) + ArithCircuit::constant(F::ZERO))
+			* ArithCircuit::var(1)
+			+ ArithCircuit::constant(F::ONE) * ArithCircuit::var(2)
+			+ ArithCircuit::constant(F::ONE).pow(4).pow(5)
+			+ (ArithCircuit::var(5) + ArithCircuit::var(5));
+		circuit.optimize_constants();
+
+		let expected_ciruit = ArithCircuit::var(0) * ArithCircuit::var(1)
+			+ ArithCircuit::var(2)
+			+ ArithCircuit::constant(F::ONE);
+
+		assert_eq!(circuit, expected_ciruit);
+	}
+
+	#[test]
+	fn test_deduplicate_steps() {
+		type F = BinaryField8b;
+		let mut circuit = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1))
+			* (ArithCircuit::var(0) + ArithCircuit::var(1))
+			+ (ArithCircuit::var(0) + ArithCircuit::var(1));
+		circuit.deduplicate_steps();
+
+		let expected_circuit = ArithCircuit::<F> {
+			steps: vec![
+				ArithCircuitStep::Var(0),
+				ArithCircuitStep::Var(1),
+				ArithCircuitStep::Add(0, 1),
+				ArithCircuitStep::Mul(2, 2),
+				ArithCircuitStep::Add(3, 2),
+			],
+		};
+		assert_eq!(circuit, expected_circuit);
+	}
+
+	#[test]
+	fn test_compress_unused_steps() {
+		type F = BinaryField8b;
+		let mut circuit = ArithCircuit::<F> {
+			steps: vec![
+				ArithCircuitStep::Var(0),
+				ArithCircuitStep::Var(1),
+				ArithCircuitStep::Var(2),
+				ArithCircuitStep::Add(0, 1),
+				ArithCircuitStep::Var(3),
+				ArithCircuitStep::Const(F::ZERO),
+				ArithCircuitStep::Var(2),
+				ArithCircuitStep::Mul(3, 3),
+			],
+		};
+		circuit.compress_unused_steps();
+
+		let expected_circuit = ArithCircuit::<F> {
+			steps: vec![
+				ArithCircuitStep::Var(0),
+				ArithCircuitStep::Var(1),
+				ArithCircuitStep::Add(0, 1),
+				ArithCircuitStep::Mul(2, 2),
+			],
+		};
+		assert_eq!(circuit.steps, expected_circuit.steps);
+	}
+
+	#[test]
+	fn test_conversion_from_expr_node_doesnt_create_duplicated_steps() {
+		type F = BinaryField8b;
+		let sub_expr = Arc::new(ArithExpr::<F>::Var(0) + ArithExpr::<F>::Var(1));
+		let expr = ArithExpr::Mul(sub_expr.clone(), sub_expr.clone()) + sub_expr;
+		let circuit = ArithCircuit::<F>::from(&expr);
+		assert_eq!(circuit.steps.len(), 5);
+		assert_eq!(unique_nodes_count(&circuit), 5);
+	}
+
+	fn unique_nodes_count_expr<F: Field>(expr: &ArithExpr<F>) -> usize {
+		fn add_nodes<F: Field>(
+			expr: &Arc<ArithExpr<F>>,
+			unique_nodes: &mut HashSet<*const ArithExpr<F>>,
+		) {
+			if !unique_nodes.insert(Arc::as_ptr(expr)) {
+				return;
+			}
+
+			match expr.as_ref() {
+				ArithExpr::Const(_) | ArithExpr::Var(_) => {}
+				ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
+					add_nodes(left, unique_nodes);
+					add_nodes(right, unique_nodes);
+				}
+				ArithExpr::Pow(base, _) => {
+					add_nodes(base, unique_nodes);
+				}
+			}
+		}
+
+		let mut unique_nodes = HashSet::new();
+		add_nodes(&Arc::new(expr.clone()), &mut unique_nodes);
+
+		unique_nodes.len()
+	}
+
+	#[test]
+	fn test_conversion_from_circuit_to_expr_node() {
+		type F = BinaryField8b;
+
+		let arith_circuit = ArithCircuit::<F> {
+			steps: vec![
+				ArithCircuitStep::Var(0),
+				ArithCircuitStep::Var(1),
+				ArithCircuitStep::Add(0, 1),
+				ArithCircuitStep::Mul(2, 2),
+				ArithCircuitStep::Add(3, 2),
+			],
+		};
+		let expr = ArithExpr::from(&arith_circuit);
+		let expected_expr = (ArithExpr::Var(0) + ArithExpr::Var(1))
+			* (ArithExpr::Var(0) + ArithExpr::Var(1))
+			+ (ArithExpr::Var(0) + ArithExpr::Var(1));
+		assert_eq!(expr, expected_expr);
+		assert_eq!(unique_nodes_count_expr(&expr), 5);
+	}
+
+	#[test]
+	fn test_evaluate() {
+		type F = BinaryField8b;
+		let expr = (ArithCircuit::<F>::var(0) + ArithCircuit::var(1))
+			* (ArithCircuit::var(2) + ArithCircuit::var(3)).pow(5);
+		let result = expr
+			.evaluate(&[F::new(2), F::new(3), F::new(4), F::new(5)])
+			.unwrap();
+		assert_eq!(result, F::new(2) + F::new(3) * (F::new(4) + F::new(5)).pow(5));
 	}
 }

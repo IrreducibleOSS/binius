@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, TowerField};
-use binius_math::ArithExpr;
+use binius_math::{ArithCircuit, ArithCircuitStep, ArithExpr};
 use getset::{CopyGetters, Getters};
 
 use super::{column::Col, table::TableId};
@@ -10,7 +10,8 @@ use super::{column::Col, table::TableId};
 #[derive(Debug)]
 pub struct ZeroConstraint<F: Field> {
 	pub name: String,
-	pub expr: ArithExpr<F>,
+	pub expr: ArithCircuit<F>,
+	pub tower_level: usize,
 }
 
 /// A type representing an arithmetic expression composed over some table columns.
@@ -27,7 +28,7 @@ pub struct Expr<F: TowerField, const V: usize> {
 impl<F: TowerField, const V: usize> Expr<F, V> {
 	/// Polynomial degree of the arithmetic expression.
 	pub fn degree(&self) -> usize {
-		self.expr.degree()
+		ArithCircuit::from(&self.expr).degree()
 	}
 
 	/// Exponentiate the expression by a constant power.
@@ -243,34 +244,44 @@ where
 	let Expr { table_id, expr } = expr;
 	Expr {
 		table_id,
-		expr: expr.convert_field(),
+		expr: ArithCircuit::from(&expr).convert_field().into(),
 	}
 }
 
 /// This exists only to implement Display for ArithExpr with named variables.
-pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithExpr<F>, pub &'a [String]);
+pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithCircuit<F>, pub &'a [String]);
 
 impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let Self(expr, names) = self;
-		match expr {
-			ArithExpr::Const(v) => write!(f, "{v}"),
-			ArithExpr::Var(i) => write!(f, "{}", names[*i]),
-			ArithExpr::Add(x, y) => {
-				write!(f, "{} + {}", self.expr(x), self.expr(y))
-			}
-			ArithExpr::Mul(x, y) => {
-				write!(f, "({}) * ({})", self.expr(x), self.expr(y))
-			}
-			ArithExpr::Pow(x, p) => {
-				write!(f, "({})^{p}", self.expr(x))
+		fn write_step<F: TowerField>(
+			f: &mut std::fmt::Formatter<'_>,
+			step: usize,
+			steps: &[ArithCircuitStep<F>],
+			names: &[String],
+		) -> std::fmt::Result {
+			match &steps[step] {
+				ArithCircuitStep::Const(v) => write!(f, "{v}"),
+				ArithCircuitStep::Var(i) => write!(f, "{}", names[*i]),
+				ArithCircuitStep::Add(x, y) => {
+					write_step(f, *x, steps, names)?;
+					write!(f, " + ")?;
+					write_step(f, *y, steps, names)
+				}
+				ArithCircuitStep::Mul(x, y) => {
+					write!(f, "(")?;
+					write_step(f, *x, steps, names)?;
+					write!(f, ") * (")?;
+					write_step(f, *y, steps, names)?;
+					write!(f, ")")
+				}
+				ArithCircuitStep::Pow(x, p) => {
+					write!(f, "(")?;
+					write_step(f, *x, steps, names)?;
+					write!(f, ")^{p}")
+				}
 			}
 		}
-	}
-}
 
-impl<'a, F: TowerField> ArithExprNamedVars<'a, F> {
-	fn expr(&self, expr: &'a ArithExpr<F>) -> Self {
-		Self(expr, self.1)
+		write_step(f, 0, self.0.steps(), self.1)
 	}
 }

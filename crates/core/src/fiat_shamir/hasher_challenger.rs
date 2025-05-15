@@ -2,10 +2,10 @@
 
 use std::{cmp::min, mem};
 
-use bytes::{buf::UninitSlice, Buf, BufMut};
+use bytes::{Buf, BufMut, buf::UninitSlice};
 use digest::{
-	core_api::{Block, BlockSizeUser},
 	Digest, FixedOutputReset, Output,
+	core_api::{Block, BlockSizeUser},
 };
 
 use super::Challenger;
@@ -202,7 +202,7 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_hash::groestl::Groestl256;
-	use rand::{thread_rng, RngCore};
+	use rand::{RngCore, thread_rng};
 
 	use super::*;
 

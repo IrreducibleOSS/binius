@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
-use binius_hal::{make_portable_backend, CpuBackend};
+use binius_hal::{CpuBackend, make_portable_backend};
 use binius_math::{
 	BinarySubspace, EvaluationDomain, EvaluationOrder, IsomorphicEvaluationDomainFactory,
 	MLEDirectAdapter, MultilinearPoly,
@@ -13,13 +13,14 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		immediate_switchover_heuristic,
-		prove::{batch_sumcheck, front_loaded::BatchProver, RegularSumcheckProver, SumcheckProver},
-		zerocheck::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
-			BatchZerocheckOutput, ZerocheckRoundEvals,
+		BatchSumcheckOutput, Error, immediate_switchover_heuristic,
+		prove::{
+			RegularSumcheckProver, SumcheckProver, front_loaded, logging::FoldLowDimensionsData,
 		},
-		BatchSumcheckOutput, Error,
+		zerocheck::{
+			BatchZerocheckOutput, ZerocheckRoundEvals, lagrange_evals_multilinear_extension,
+			univariatizing_reduction_claim,
+		},
 	},
 	transcript::ProverTranscript,
 };
@@ -27,15 +28,15 @@ use crate::{
 /// A zerocheck prover interface.
 ///
 /// The primary reason for providing this logic via a trait is the ability to type erase univariate
-/// round small fields, which may differ between the provers, and to decouple the batch prover implementation
-/// from the relatively complex type signatures of the individual provers.
+/// round small fields, which may differ between the provers, and to decouple the batch prover
+/// implementation from the relatively complex type signatures of the individual provers.
 ///
 /// The batch prover must obey a specific sequence of calls: [`Self::execute_univariate_round`]
-/// should be followed by [`Self::fold_univariate_round`], and then [`Self::project_to_skipped_variables`].
-/// Getters [`Self::n_vars`] and [`Self::domain_size`] are used for alignment and maximal domain size calculation
-/// required by the Lagrange representation of the univariate round polynomial.
-/// Folding univariate round results in a [`SumcheckProver`] instance that can be driven to completion to prove the
-/// remaining multilinear rounds.
+/// should be followed by [`Self::fold_univariate_round`], and then
+/// [`Self::project_to_skipped_variables`]. Getters [`Self::n_vars`] and [`Self::domain_size`] are
+/// used for alignment and maximal domain size calculation required by the Lagrange representation
+/// of the univariate round polynomial. Folding univariate round results in a [`SumcheckProver`]
+/// instance that can be driven to completion to prove the remaining multilinear rounds.
 ///
 /// This trait is object-safe.
 pub trait ZerocheckProver<'a, P: PackedField> {
@@ -43,7 +44,10 @@ pub trait ZerocheckProver<'a, P: PackedField> {
 	fn n_vars(&self) -> usize;
 
 	/// Maximal required Lagrange domain size among compositions in this prover.
-	fn domain_size(&self, skip_rounds: usize) -> usize;
+	///
+	/// Returns `None` if the current prover state doesn't contain information about the domain
+	/// size.
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize>;
 
 	/// Computes the prover message for the univariate round as a univariate polynomial.
 	///
@@ -80,7 +84,7 @@ impl<'a, P: PackedField, Prover: ZerocheckProver<'a, P> + ?Sized> ZerocheckProve
 		(**self).n_vars()
 	}
 
-	fn domain_size(&self, skip_rounds: usize) -> usize {
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize> {
 		(**self).domain_size(skip_rounds)
 	}
 
@@ -135,8 +139,8 @@ where
 		.upcast_arc_dyn(),
 	);
 
-	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but this sumcheck
-	//         is very small anyway.
+	// REVIEW: all multilins are large field, we could benefit from "no switchover" constructor, but
+	// this sumcheck         is very small anyway.
 	let prover = RegularSumcheckProver::<FDomain, P, _, _, _>::new(
 		EvaluationOrder::HighToLow,
 		projected_multilinears,
@@ -176,11 +180,13 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let max_n_vars = provers.last().map(|prover| prover.n_vars()).unwrap_or(0);
-
 	let max_domain_size = provers
 		.iter()
-		.map(|prover| prover.domain_size(skip_rounds))
+		.map(|prover| {
+			prover
+				.domain_size(skip_rounds)
+				.expect("domain size must be known")
+		})
 		.max()
 		.unwrap_or(0);
 
@@ -204,26 +210,21 @@ where
 	let univariate_challenge = transcript.sample();
 
 	// Prove reduced multilinear eq-ind sumchecks, high-to-low, with front-loaded batching
-	let mut tail_sumcheck_provers = Vec::with_capacity(provers.len());
+	let mut sumcheck_provers = Vec::with_capacity(provers.len());
 	for prover in &mut provers {
-		let tail_sumcheck_prover = prover.fold_univariate_round(univariate_challenge)?;
-		tail_sumcheck_provers.push(tail_sumcheck_prover);
+		let sumcheck_prover = prover.fold_univariate_round(univariate_challenge)?;
+		sumcheck_provers.push(sumcheck_prover);
 	}
 
-	let tail_rounds = max_n_vars.saturating_sub(skip_rounds);
-	let mut tail_sumchecks = BatchProver::new_prebatched(batch_coeffs, tail_sumcheck_provers)?;
+	let regular_sumcheck_prover =
+		front_loaded::BatchProver::new_prebatched(batch_coeffs, sumcheck_provers)?;
 
-	let mut unskipped_challenges = Vec::with_capacity(tail_rounds);
-	for _round_no in 0..tail_rounds {
-		tail_sumchecks.send_round_proof(&mut transcript.message())?;
+	let BatchSumcheckOutput {
+		challenges: mut unskipped_challenges,
+		multilinear_evals: mut univariatized_multilinear_evals,
+	} = regular_sumcheck_prover.run(transcript)?;
 
-		let challenge = transcript.sample();
-		unskipped_challenges.push(challenge);
-
-		tail_sumchecks.receive_challenge(challenge)?;
-	}
-	let mut univariatized_multilinear_evals = tail_sumchecks.finish(&mut transcript.message())?;
-
+	// Reverse challenges since folding high-to-low
 	unskipped_challenges.reverse();
 
 	// Drop equality indicator evals prior to univariatizing reduction
@@ -235,11 +236,12 @@ where
 
 	// Project witness multilinears to "skipped" variables
 	let mut projected_multilinears = Vec::new();
-
+	let dimensions_data = FoldLowDimensionsData::new(skip_rounds, &provers);
 	let mle_fold_low_span = tracing::debug_span!(
 		"[task] Initial MLE Fold Low",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		?dimensions_data,
 	)
 	.entered();
 	for prover in provers {
@@ -261,10 +263,16 @@ where
 		&backend,
 	)?;
 
+	let batch_reduction_prover =
+		front_loaded::BatchProver::new(vec![reduction_prover], transcript)?;
+
 	let BatchSumcheckOutput {
-		challenges: skipped_challenges,
+		challenges: mut skipped_challenges,
 		multilinear_evals: mut concat_multilinear_evals,
-	} = batch_sumcheck::batch_prove(vec![reduction_prover], transcript)?;
+	} = batch_reduction_prover.run(transcript)?;
+
+	// Reverse challenges since folding high-to-low
+	skipped_challenges.reverse();
 
 	let mut concat_multilinear_evals = concat_multilinear_evals
 		.pop()

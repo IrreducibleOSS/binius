@@ -3,10 +3,10 @@
 use std::{borrow::Borrow, cmp::min};
 
 use binius_utils::{SerializationMode, SerializeBytes};
-use bytes::{buf::UninitSlice, BufMut};
+use bytes::{BufMut, buf::UninitSlice};
 use digest::{
-	core_api::{Block, BlockSizeUser},
 	Digest, Output,
+	core_api::{Block, BlockSizeUser},
 };
 
 /// Adapter that wraps a [`Digest`] references and exposes the [`BufMut`] interface.

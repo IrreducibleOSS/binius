@@ -2,10 +2,10 @@
 
 use std::iter::repeat_with;
 
-use binius_field::{ExtensionField, PackedBinaryField128x1b, PackedBinaryField1x128b, PackedField};
+use binius_field::{ExtensionField, PackedBinaryField1x128b, PackedBinaryField128x1b, PackedField};
 use binius_math::fold_right;
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 
 const fn packed_size<P: PackedField>(log_size: usize) -> usize {

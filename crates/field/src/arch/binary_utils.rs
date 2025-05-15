@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use bytemuck::{must_cast_mut, must_cast_ref, AnyBitPattern, NoUninit};
+use bytemuck::{AnyBitPattern, NoUninit, must_cast_mut, must_cast_ref};
 
 use crate::underlier::{NumCast, UnderlierType};
 
@@ -26,7 +26,8 @@ where
 	f(array);
 }
 
-/// Helper function to convert `f` closure that returns a value 1-4 bits wide to a function that returns i8.
+/// Helper function to convert `f` closure that returns a value 1-4 bits wide to a function that
+/// returns i8.
 #[allow(dead_code)]
 #[inline]
 pub(super) fn make_func_to_i8<T, U>(mut f: impl FnMut(usize) -> T) -> impl FnMut(usize) -> i8

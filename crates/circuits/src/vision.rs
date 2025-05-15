@@ -12,16 +12,17 @@ use std::array;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
+	BinaryField1b, BinaryField32b, ExtensionField, Field, PackedAESBinaryField8x32b,
+	PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
-	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
+	packed::get_packed_slice,
 };
-use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
+use binius_hash::{INV_PACKED_TRANS_AES, Vision32MDSTransform};
 use binius_macros::arith_expr;
-use binius_math::ArithExpr;
+use binius_math::{ArithCircuit, ArithExpr};
 use bytemuck::must_cast_slice;
 
-use crate::builder::{types::F, ConstraintSystemBuilder};
+use crate::builder::{ConstraintSystemBuilder, types::F};
 
 pub fn vision_permutation(
 	builder: &mut ConstraintSystemBuilder,
@@ -68,7 +69,7 @@ pub fn vision_permutation(
 
 	#[cfg(debug_assertions)]
 	if let Some(witness) = builder.witness() {
-		use binius_hash::{permutation::Permutation, Vision32bPermutation};
+		use binius_hash::{Vision32bPermutation, permutation::Permutation};
 
 		let vision_perm = Vision32bPermutation::default();
 		let p_in_data: [_; STATE_SIZE] =
@@ -195,12 +196,12 @@ const MDS_TRANS: [[u8; STATE_SIZE]; STATE_SIZE] = [
 	[0xe2, 0x4c, 0x10, 0x2b, 0x2c, 0x78, 0x0f, 0xaf, 0xfc, 0x2a, 0xf3, 0x66, 0xc7, 0x63, 0xdc, 0x59, 0xf9, 0x06, 0x4e, 0xd6, 0xf4, 0x85, 0x8d, 0x99],
 ];
 
-fn vision_round_begin_expr(state_idx: usize) -> ArithExpr<BinaryField32b> {
+fn vision_round_begin_expr(state_idx: usize) -> ArithCircuit<BinaryField32b> {
 	assert!(state_idx < STATE_SIZE);
 	arith_expr!(BinaryField32b[x, y] = x + y + ArithExpr::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])))
 }
 
-fn s_box_linearized_eval_expr() -> ArithExpr<BinaryField32b> {
+fn s_box_linearized_eval_expr() -> ArithCircuit<BinaryField32b> {
 	let input = ArithExpr::Var(0);
 	let output = ArithExpr::Var(1);
 	// TODO: Square for ArithExpr
@@ -212,10 +213,10 @@ fn s_box_linearized_eval_expr() -> ArithExpr<BinaryField32b> {
 		+ input_pow2 * ArithExpr::Const(SBOX_FWD_TRANS[1])
 		+ input_pow4 * ArithExpr::Const(SBOX_FWD_TRANS[2]);
 
-	result - output
+	(result - output).into()
 }
 
-fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
+fn inv_constraint_expr<F: TowerField>() -> Result<ArithCircuit<F>> {
 	let x = ArithExpr::Var(0);
 	let inv = ArithExpr::Var(1);
 
@@ -228,7 +229,7 @@ fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
 	let zero_case = x + inv * ArithExpr::Const(beta);
 
 	// (x * inv == 1) OR (x == 0 AND inv == 0)
-	Ok(non_zero_case * zero_case)
+	Ok((non_zero_case * zero_case).into())
 }
 
 fn vision_round(

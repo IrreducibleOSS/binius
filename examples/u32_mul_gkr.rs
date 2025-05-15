@@ -6,28 +6,28 @@ use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily, Field,
-	PackedExtension, PackedFieldIndexable,
+	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier,
+	as_packed_field::PackedType, tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B32,
+		B1, B32, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex,
 	},
 	gadgets::mul::MulUU32,
 };
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use rand::thread_rng;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of multiplication to do.
-	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(512..))]
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(1..))]
 	n_muls: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
-	witness.fill_table_sequential(&table, &events)?;
+	witness.fill_table_parallel(&table, &events)?;
 
 	drop(trace_gen_scope);
 

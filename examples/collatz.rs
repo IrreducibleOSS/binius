@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 	collatz::{Advice, Collatz},
 };
 use binius_core::{
@@ -13,7 +13,7 @@ use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

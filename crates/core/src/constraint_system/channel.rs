@@ -54,6 +54,7 @@ use std::collections::HashMap;
 use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearPoly;
+use itertools::izip;
 
 use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
@@ -62,7 +63,7 @@ pub type ChannelId = usize;
 
 #[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub enum OracleOrConst<F: Field> {
-	Oracle(usize),
+	Oracle(OracleId),
 	Const { base: F, tower_level: usize },
 }
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
@@ -70,7 +71,7 @@ pub struct Flush<F: TowerField> {
 	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
-	pub selector: Option<OracleId>,
+	pub selectors: Vec<OracleId>,
 	pub multiplicity: u64,
 }
 
@@ -121,7 +122,7 @@ where
 			ref oracles,
 			channel_id,
 			direction,
-			selector,
+			ref selectors,
 			multiplicity,
 		} = flush;
 
@@ -143,9 +144,10 @@ where
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		let selector_poly = selector
-			.map(|selector| witness.get_multilin_poly(selector))
-			.transpose()?;
+		let selector_polys = selectors
+			.iter()
+			.map(|selector| witness.get_multilin_poly(*selector))
+			.collect::<Result<Vec<_>, _>>()?;
 
 		let n_vars = non_const_polys
 			.first()
@@ -163,7 +165,7 @@ where
 		}
 
 		// Check selector polynomials are compatible
-		if let (Some(selector), Some(selector_poly)) = (selector, &selector_poly) {
+		for (&selector, selector_poly) in izip!(selectors, &selector_polys) {
 			if selector_poly.n_vars() != n_vars {
 				let id = oracles
 					.iter()
@@ -179,18 +181,16 @@ where
 		}
 
 		for i in 0..1 << n_vars {
-			let selector_off = selector_poly
-				.as_ref()
-				.map(|selector_poly| {
-					selector_poly
-						.evaluate_on_hypercube(i)
-						.expect(
-							"i in range 0..1 << n_vars; \
+			let selector_off = selector_polys.iter().any(|selector_poly| {
+				selector_poly
+					.evaluate_on_hypercube(i)
+					.expect(
+						"i in range 0..1 << n_vars; \
 							selector_poly checked above to have n_vars variables",
-						)
-						.is_zero()
-				})
-				.unwrap_or(false);
+					)
+					.is_zero()
+			});
+
 			if selector_off {
 				continue;
 			}
@@ -215,7 +215,7 @@ where
 			let unbalanced_flushes: Vec<_> = channel
 				.multiplicities
 				.iter()
-				.filter(|(_, &c)| c != 0i64)
+				.filter(|(_, c)| **c != 0i64)
 				.collect();
 
 			tracing::debug!("Channel {:?} unbalanced: {:?}", id, unbalanced_flushes);

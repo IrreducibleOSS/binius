@@ -3,11 +3,11 @@
 use std::time::Duration;
 
 use binius_field::{
-	arch::{byte_sliced::*, packed_128::*, packed_256::*, packed_512::*},
 	PackedField,
+	arch::{byte_sliced::*, packed_128::*, packed_256::*, packed_512::*},
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
+	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
 use rand::thread_rng;
 

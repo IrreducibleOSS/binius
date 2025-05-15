@@ -5,17 +5,17 @@ use std::array;
 use binius_utils::checked_arithmetics::checked_int_div;
 
 use crate::{
+	BinaryField, PackedField, TowerField,
 	arch::{
+		GfniStrategy,
 		portable::packed::PackedPrimitiveType,
 		x86_64::{m128::m128_from_u128, simd::simd_arithmetic::TowerSimdType},
-		GfniStrategy,
 	},
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedPackedTransformationFactory},
 	is_aes_tower, is_canonical_tower,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{Divisible, UnderlierType, WithUnderlier},
-	BinaryField, PackedField, TowerField,
 };
 
 #[rustfmt::skip]
@@ -89,7 +89,8 @@ impl<U: GfniType + UnderlierType, Scalar: TowerField> TaggedInvertOrZero<GfniStr
 			self.to_underlier()
 		};
 
-		// Calculate inversion and linear transformation to the original field with a single instruction
+		// Calculate inversion and linear transformation to the original field with a single
+		// instruction
 		let transform_after = if is_canonical_tower::<Scalar>() {
 			U::set_epi_64(AES_TO_TOWER_MAP)
 		} else {
@@ -101,8 +102,9 @@ impl<U: GfniType + UnderlierType, Scalar: TowerField> TaggedInvertOrZero<GfniStr
 	}
 }
 
-/// Transformation that uses `gf2p8affine_epi64_epi8` transformation to apply linear transformation to a
-/// 8-bit packed field. It appeared that this dedicated implementation is more efficient than `GfniTransformationNxN<_, 1>`.
+/// Transformation that uses `gf2p8affine_epi64_epi8` transformation to apply linear transformation
+/// to a 8-bit packed field. It appeared that this dedicated implementation is more efficient than
+/// `GfniTransformationNxN<_, 1>`.
 #[allow(private_bounds)]
 pub struct GfniTransformation<OP>
 where
@@ -195,9 +197,10 @@ where
 }
 
 /// Linear transformation for packed scalars of size `BLOCKS*8`.
-/// Splits elements itself and transformation matrix to 8-bit size blocks and uses `gf2p8affine_epi64_epi8`
-/// to perform multiplications of those.
-/// Transformation complexity is `BLOCKS^2/2` since two 8x8 matrices multiplications are done with a single instruction.
+/// Splits elements itself and transformation matrix to 8-bit size blocks and uses
+/// `gf2p8affine_epi64_epi8` to perform multiplications of those.
+/// Transformation complexity is `BLOCKS^2/2` since two 8x8 matrices multiplications are done with a
+/// single instruction.
 ///
 /// All operations scale by lane count, so this transformation works for any register size.
 /// `MATRICES` is actually a half of `BLOCKS`, since two 8x8 matrices are processed at once.

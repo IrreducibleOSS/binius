@@ -1,20 +1,20 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
-use binius_math::{extrapolate_line_scalar, EvaluationOrder};
+use binius_math::{EvaluationOrder, extrapolate_line_scalar};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
 use tracing::instrument;
 
-use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim};
+use super::{Error, GrandProductClaim, gkr_gpa::LayerClaim};
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck::{
-		self, eq_ind::ClaimsSortingOrder, CompositeSumClaim, EqIndSumcheckClaim,
+		self, CompositeSumClaim, EqIndSumcheckClaim, eq_ind::ClaimsSortingOrder, front_loaded,
 	},
 	transcript::VerifierTranscript,
 };
@@ -100,7 +100,8 @@ fn process_finished_claims<F: Field>(
 ///
 /// Arguments
 /// * `claims` - The kth layer LayerClaims
-/// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
+/// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to
+///   the (k+1)th
 /// * `transcript` - The verifier transcript
 fn reduce_layer_claim_batch<F, Challenger_>(
 	evaluation_order: EvaluationOrder,
@@ -150,8 +151,13 @@ where
 	let regular_sumcheck_claims =
 		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
-	let batch_sumcheck_output =
-		sumcheck::batch_verify(evaluation_order, &regular_sumcheck_claims, transcript)?;
+	let batch_sumcheck_verifier =
+		front_loaded::BatchVerifier::new(&regular_sumcheck_claims, transcript)?;
+	let mut batch_sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
+
+	if evaluation_order == EvaluationOrder::HighToLow {
+		batch_sumcheck_output.challenges.reverse();
+	}
 
 	let batch_sumcheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
 		ClaimsSortingOrder::DescendingVars,

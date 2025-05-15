@@ -5,8 +5,8 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, N
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
 use super::{
-	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
+	underlier_type::{NumCast, UnderlierType},
 };
 use crate::tower_levels::TowerLevel;
 
@@ -117,7 +117,7 @@ pub trait UnderlierWithBitOps:
 		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
 	{
-		spread_fallback(self, log_block_len, block_idx)
+		unsafe { spread_fallback(self, log_block_len, block_idx) }
 	}
 
 	/// Left shift within 128-bit lanes.
@@ -128,7 +128,8 @@ pub trait UnderlierWithBitOps:
 	/// This can be more efficient than the full `Shr` implementation.
 	fn shr_128b_lanes(self, shift: usize) -> Self;
 
-	/// Unpacks `1 << log_block_len`-bit values from low parts of `self` and `other` within 128-bit lanes.
+	/// Unpacks `1 << log_block_len`-bit values from low parts of `self` and `other` within 128-bit
+	/// lanes.
 	///
 	/// Example:
 	///    self:  [a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_7]
@@ -140,7 +141,8 @@ pub trait UnderlierWithBitOps:
 		unpack_lo_128b_fallback(self, other, log_block_len)
 	}
 
-	/// Unpacks `1 << log_block_len`-bit values from high parts of `self` and `other` within 128-bit lanes.
+	/// Unpacks `1 << log_block_len`-bit values from high parts of `self` and `other` within 128-bit
+	/// lanes.
 	///
 	/// Example:
 	///    self:  [a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_7]
@@ -237,8 +239,8 @@ pub(crate) fn pair_unpack_lo_hi_128b_lanes<U: UnderlierWithBitOps>(
 	);
 }
 
-/// A helper function used as a building block for efficient SIMD types transposition implementation.
-/// This function actually may reorder the elements.
+/// A helper function used as a building block for efficient SIMD types transposition
+/// implementation. This function actually may reorder the elements.
 #[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn transpose_128b_blocks_low_to_high<U: UnderlierWithBitOps, TL: TowerLevel>(
@@ -445,7 +447,7 @@ where
 	U: UnderlierWithBitOps + From<T>,
 	T: UnderlierType + NumCast<U>,
 {
-	std::array::from_fn(|i| value.get_subvalue::<T>(block_idx * BLOCK_LEN + i))
+	std::array::from_fn(|i| unsafe { value.get_subvalue::<T>(block_idx * BLOCK_LEN + i) })
 }
 
 /// A helper functions for implementing `UnderlierWithBitOps::spread_unchecked` for SIMD types.
@@ -462,7 +464,8 @@ where
 	U: UnderlierWithBitOps + From<T>,
 	T: UnderlierType + SpreadToByte + NumCast<U>,
 {
-	get_block_values::<U, T, BLOCK_LEN>(value, block_idx).map(SpreadToByte::spread_to_byte)
+	unsafe { get_block_values::<U, T, BLOCK_LEN>(value, block_idx) }
+		.map(SpreadToByte::spread_to_byte)
 }
 
 #[cfg(test)]

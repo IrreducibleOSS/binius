@@ -3,14 +3,14 @@
 use std::array;
 
 use binius_field::{
+	BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+	BinaryField128bPolyval, Field,
 	aes_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
 	},
-	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
-	BinaryField8b, Field,
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::Measurement, BenchmarkGroup, Criterion,
+	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::Measurement,
 };
 use rand::thread_rng;
 

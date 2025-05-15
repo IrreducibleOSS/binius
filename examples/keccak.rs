@@ -6,22 +6,22 @@ use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType,
-	linear_transformation::PackedTransformationFactory, tower::CanonicalTowerFamily,
-	PackedExtension, PackedFieldIndexable, PackedSubfield,
+	PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
+	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
+	tower::CanonicalTowerFamily,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_m3::{
 	builder::{
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1,
-		B128, B8,
+		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex,
 	},
 	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
-use rand::{thread_rng, RngCore};
+use clap::{Parser, value_parser};
+use rand::{RngCore, thread_rng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -43,8 +43,7 @@ impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
 		let mut table = cs.add_table("Keccak permutation");
 
-		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let keccakf = keccak::Keccakf::new(&mut table, state_in);
+		let keccakf = keccak::Keccakf::new(&mut table);
 
 		Self {
 			table_id: table.id(),
@@ -55,7 +54,10 @@ impl PermutationTable {
 
 impl<P> TableFiller<P> for PermutationTable
 where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+	P: PackedFieldIndexable<Scalar = B128>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
 	type Event = StateMatrix<u64>;

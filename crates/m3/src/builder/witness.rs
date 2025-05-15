@@ -2,7 +2,9 @@
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
-	iter, slice,
+	iter,
+	ops::{Deref, DerefMut},
+	slice,
 	sync::Arc,
 };
 
@@ -11,24 +13,28 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	arch::OptimalUnderlier,
+	as_packed_field::PackedType,
+	packed::{get_packed_slice, set_packed_slice},
 };
-use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef};
+use binius_math::{
+	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearPoly, RowsBatchRef,
+};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bumpalo::Bump;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
+use bytemuck::{Pod, must_cast_slice, must_cast_slice_mut, zeroed_vec};
 use either::Either;
 use getset::CopyGetters;
 use itertools::Itertools;
 
 use super::{
+	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
 	column::{Col, ColumnShape},
 	error::Error,
-	table::{Table, TableId},
-	types::{B1, B128, B16, B32, B64, B8},
-	ColumnDef, ColumnId, ColumnIndex, ConstraintSystem, Expr,
+	table::{self, Table, TableId},
+	types::{B1, B8, B16, B32, B64, B128},
 };
 use crate::builder::multi_iter::MultiIterator;
 
@@ -175,7 +181,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			// Append oracles for constant columns that are repeated.
 			let mut count = 0;
 			for (oracle_id_offset, col) in cols.into_iter().enumerate() {
-				let oracle_id = first_oracle_id_in_table + oracle_id_offset;
+				let oracle_id = OracleId::from_index(first_oracle_id_in_table + oracle_id_offset);
 				let log_capacity = if col.is_single_row {
 					0
 				} else {
@@ -194,11 +200,11 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 				count += 1;
 			}
 
-			if !table.power_of_two_sized {
+			if !table.requires_any_po2_size() {
 				// Every table partition has a step_down appended to the end of the table to support
 				// non-power of two height tables.
 				for log_values_per_row in table.partitions.keys() {
-					let oracle_id = first_oracle_id_in_table + count;
+					let oracle_id = OracleId::from_index(first_oracle_id_in_table + count);
 					let size = table_witness.size << log_values_per_row;
 					let log_size = table_witness.log_capacity + log_values_per_row;
 					let witness = StepDown::new(log_size, size)
@@ -214,6 +220,42 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			first_oracle_id_in_table += count;
 		}
 		index
+	}
+}
+
+impl<'cs, 'alloc, P> WitnessIndex<'cs, 'alloc, P>
+where
+	P: PackedField<Scalar: TowerField>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B16>
+		+ PackedExtension<B32>
+		+ PackedExtension<B64>
+		+ PackedExtension<B128>,
+{
+	/// Automatically populate the witness data for all the constant columns in all the tables with
+	/// a [`TableWitnessIndex<P>`].
+	pub fn fill_constant_cols(&mut self) -> Result<(), Error> {
+		for table in self.tables.iter_mut() {
+			match table.as_mut() {
+				Either::Left(_) => (),
+				// If we have witness index data, populate the witness
+				Either::Right(table_witness_index) => {
+					let table = table_witness_index.table();
+					let segment = table_witness_index.full_segment();
+					for col in table.columns.iter() {
+						if let ColumnDef::Constant { data, .. } = &col.col {
+							let mut witness_data = segment.get_dyn_mut(col.id.table_index)?;
+							let len = witness_data.size();
+							for (i, scalar) in data.iter().cycle().take(len).enumerate() {
+								witness_data.set(i, *scalar)?
+							}
+						}
+					}
+				}
+			}
+		}
+		Ok(())
 	}
 }
 
@@ -289,7 +331,7 @@ pub struct WitnessIndexColumn<'a, P: PackedField> {
 #[derive(Debug, Clone)]
 enum WitnessColumnInfo<T> {
 	Owned(T),
-	SameAsOracleIndex(usize),
+	SameAsOracleId(OracleId),
 }
 
 type WitnessDataMut<'a, P> = WitnessColumnInfo<&'a mut [P]>;
@@ -320,7 +362,7 @@ fn immutable_witness_index_columns<P: PackedField>(
 			shape: col.shape,
 			data: match col.data {
 				WitnessDataMut::Owned(data) => data,
-				WitnessDataMut::SameAsOracleIndex(index) => result[index].data,
+				WitnessDataMut::SameAsOracleId(id) => result[id.index()].data,
 			},
 			is_single_row: col.is_single_row,
 		});
@@ -340,7 +382,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			});
 		}
 
-		let log_capacity = table.log_capacity(size);
+		let log_capacity = table::log_capacity(size);
 		let packed_elem_log_bits = P::LOG_WIDTH + F::TOWER_LEVEL;
 
 		let mut cols = Vec::new();
@@ -349,7 +391,8 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 
 		for col in &table.columns {
 			if matches!(col.col, ColumnDef::Constant { .. }) {
-				transparent_single_backing[col.id.table_index] = Some(oracle_offset);
+				transparent_single_backing[col.id.table_index] =
+					Some(OracleId::from_index(oracle_offset));
 				cols.push(WitnessIndexColumn {
 					shape: col.shape,
 					data: WitnessDataMut::new_owned(
@@ -367,9 +410,10 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			shape: col.shape,
 			data: match col.col {
 				ColumnDef::Packed { col: inner_col, .. } => {
-					WitnessDataMut::SameAsOracleIndex(oracle_offset + inner_col.table_index)
+					let oracle_id = OracleId::from_index(oracle_offset + inner_col.table_index);
+					WitnessDataMut::SameAsOracleId(oracle_id)
 				}
-				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleIndex(
+				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleId(
 					transparent_single_backing[col.id.table_index].unwrap(),
 				),
 				_ => WitnessDataMut::new_owned(
@@ -418,7 +462,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.cols
 			.iter_mut()
 			.map(|col| match &mut col.data {
-				WitnessDataMut::SameAsOracleIndex(index) => RefCellData::SameAsOracleIndex(*index),
+				WitnessDataMut::SameAsOracleId(id) => RefCellData::SameAsOracleId(*id),
 				WitnessDataMut::Owned(data) => RefCellData::Owned(RefCell::new(data)),
 			})
 			.collect();
@@ -548,7 +592,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.iter_mut()
 			.map(|col| match col {
 				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
-				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+				RefCellData::SameAsOracleId(idx) => WitnessColumnInfo::SameAsOracleId(*idx),
 			})
 			.collect::<Vec<_>>();
 
@@ -648,7 +692,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.iter_mut()
 			.map(|col| match col {
 				RefCellData::Owned(data) => WitnessColumnInfo::Owned(data.get_mut()),
-				RefCellData::SameAsOracleIndex(idx) => WitnessColumnInfo::SameAsOracleIndex(*idx),
+				RefCellData::SameAsOracleId(idx) => WitnessColumnInfo::SameAsOracleId(*idx),
 			})
 			.collect::<Vec<_>>();
 
@@ -696,6 +740,7 @@ where
 	oracle_offset: usize,
 	cols: Vec<WitnessColumnInfo<(&'a mut [P], usize)>>,
 	log_segment_size: usize,
+	start_index: usize,
 	n_segments: usize,
 }
 
@@ -715,9 +760,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 						.saturating_sub(P::LOG_WIDTH + F::TOWER_LEVEL);
 					WitnessColumnInfo::Owned((&mut **data, 1 << chunk_size))
 				}
-				WitnessColumnInfo::SameAsOracleIndex(idx) => {
-					WitnessColumnInfo::SameAsOracleIndex(*idx)
-				}
+				WitnessColumnInfo::SameAsOracleId(id) => WitnessColumnInfo::SameAsOracleId(*id),
 			})
 			.collect::<Vec<_>>();
 		Self {
@@ -725,6 +768,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset: witness.oracle_offset,
 			cols,
 			log_segment_size,
+			start_index: 0,
 			n_segments: 1 << (witness.log_capacity - log_segment_size),
 		}
 	}
@@ -745,10 +789,9 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 						WitnessColumnInfo::Owned((data_1, *chunk_size)),
 					)
 				}
-				WitnessColumnInfo::SameAsOracleIndex(idx) => (
-					WitnessColumnInfo::SameAsOracleIndex(*idx),
-					WitnessColumnInfo::SameAsOracleIndex(*idx),
-				),
+				WitnessColumnInfo::SameAsOracleId(id) => {
+					(WitnessColumnInfo::SameAsOracleId(*id), WitnessColumnInfo::SameAsOracleId(*id))
+				}
 			})
 			.unzip();
 		(
@@ -757,6 +800,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				oracle_offset: self.oracle_offset,
 				cols: cols_0,
 				log_segment_size: self.log_segment_size,
+				start_index: self.start_index,
 				n_segments: index,
 			},
 			TableWitnessSegmentedView {
@@ -764,6 +808,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				oracle_offset: self.oracle_offset,
 				cols: cols_1,
 				log_segment_size: self.log_segment_size,
+				start_index: self.start_index + index,
 				n_segments: self.n_segments - index,
 			},
 		)
@@ -775,6 +820,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset,
 			cols,
 			log_segment_size,
+			start_index,
 			n_segments,
 		} = self;
 
@@ -788,8 +834,8 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 							data.chunks_mut(chunk_size)
 								.map(|chunk| RefCellData::Owned(RefCell::new(chunk))),
 						),
-						WitnessColumnInfo::SameAsOracleIndex(index) => itertools::Either::Right(
-							iter::repeat_n(index, n_segments).map(RefCellData::SameAsOracleIndex),
+						WitnessColumnInfo::SameAsOracleId(id) => itertools::Either::Right(
+							iter::repeat_n(id, n_segments).map(RefCellData::SameAsOracleId),
 						),
 					})
 					.collect(),
@@ -799,7 +845,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				table,
 				cols,
 				log_size: log_segment_size,
-				index,
+				index: start_index + index,
 				oracle_offset,
 			});
 			itertools::Either::Right(iter)
@@ -812,7 +858,8 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 			oracle_offset,
 			cols,
 			log_segment_size,
-			n_segments: _,
+			start_index,
+			n_segments,
 		} = self;
 
 		// This implementation uses unsafe code to iterate the segments of the view. A fully safe
@@ -822,7 +869,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 		// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
 		#[allow(clippy::mut_from_ref)]
 		unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
-			slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
+			unsafe { slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len()) }
 		}
 
 		// Convert cols with mutable references into cols with const refs so that they can be
@@ -834,20 +881,16 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 					WitnessColumnInfo::Owned((data, chunk_size)) => {
 						WitnessColumnInfo::Owned((data, chunk_size))
 					}
-					WitnessColumnInfo::SameAsOracleIndex(index) => {
-						WitnessColumnInfo::SameAsOracleIndex(index)
-					}
+					WitnessColumnInfo::SameAsOracleId(id) => WitnessColumnInfo::SameAsOracleId(id),
 				}
 			})
 			.collect::<Vec<_>>();
 
-		(0..self.n_segments).into_par_iter().map(move |i| {
+		(0..n_segments).into_par_iter().map(move |i| {
 			let col_strides = cols
 				.iter()
 				.map(|col| match col {
-					WitnessColumnInfo::SameAsOracleIndex(index) => {
-						RefCellData::SameAsOracleIndex(*index)
-					}
+					WitnessColumnInfo::SameAsOracleId(id) => RefCellData::SameAsOracleId(*id),
 					WitnessColumnInfo::Owned((data, chunk_size)) => {
 						RefCellData::Owned(RefCell::new(unsafe {
 							// Safety: The function borrows self mutably, so we have mutable access
@@ -863,7 +906,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 				table,
 				cols: col_strides,
 				log_size: log_segment_size,
-				index: i,
+				index: start_index + i,
 				oracle_offset,
 			}
 		})
@@ -1006,7 +1049,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	pub fn eval_expr<FSub: TowerField, const V: usize>(
 		&self,
 		expr: &Expr<FSub, V>,
-	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>>, Error>
+	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>> + use<FSub, V, F, P>, Error>
 	where
 		P: PackedExtension<FSub>,
 	{
@@ -1020,18 +1063,21 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 					table_id: self.table.id(),
 					log_vals_per_row,
 				})?;
+		let expr_circuit = ArithCircuit::from(expr.expr());
+
 		let col_refs = partition
 			.columns
 			.iter()
-			.zip(expr.expr().vars_usage())
-			.map(|(col_index, used)| {
+			.zip(expr_circuit.vars_usage())
+			.enumerate()
+			.map(|(i, (col_index, used))| {
 				used.then(|| {
 					self.get(Col::<FSub, V>::new(
 						ColumnId {
 							table_id: self.table.id(),
-							table_index: partition.columns[*col_index],
+							table_index: *col_index,
 						},
-						*col_index,
+						i,
 					))
 				})
 				.transpose()
@@ -1055,7 +1101,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
 		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
-		ArithCircuitPoly::new(expr.expr()).batch_evaluate(&cols, &mut evals)?;
+		ArithCircuitPoly::new(expr_circuit).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
 
@@ -1064,15 +1110,147 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	}
 
 	fn get_col_data(&self, table_index: ColumnIndex) -> Option<&RefCell<&'a mut [P]>> {
-		self.get_col_data_by_oracle_offset(self.oracle_offset + table_index)
+		let oracle_id = OracleId::from_index(self.oracle_offset + table_index);
+		self.get_col_data_by_oracle_offset(oracle_id)
 	}
 
 	fn get_col_data_by_oracle_offset(&self, oracle_id: OracleId) -> Option<&RefCell<&'a mut [P]>> {
-		match self.cols.get(oracle_id) {
+		match self.cols.get(oracle_id.index()) {
 			Some(RefCellData::Owned(data)) => Some(data),
-			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
+			Some(RefCellData::SameAsOracleId(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
+	}
+}
+
+impl<'a, P> TableWitnessSegment<'a, P>
+where
+	P: PackedField<Scalar: TowerField>
+		+ PackedExtension<B1>
+		+ PackedExtension<B8>
+		+ PackedExtension<B16>
+		+ PackedExtension<B32>
+		+ PackedExtension<B64>
+		+ PackedExtension<B128>,
+{
+	/// For a given column index within a table, return the immutable upcasted witness data
+	pub fn get_dyn(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColView<P::Scalar> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColView<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases(packed)
+			}))),
+			_ => panic!("tower_level must be in the range [0, 7]"),
+		};
+		Ok(ret)
+	}
+
+	/// For a given column index within a table, return the mutable witness data.
+	pub fn get_dyn_mut(
+		&self,
+		col_index: ColumnIndex,
+	) -> Result<Box<dyn WitnessColViewMut<P::Scalar> + '_>, Error> {
+		let col = self.get_col_data(col_index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: self.table.id(),
+				table_index: col_index,
+			})
+		})?;
+		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let tower_level = self.table.columns[col_index].shape.tower_height;
+		let ret: Box<dyn WitnessColViewMut<_>> = match tower_level {
+			0 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B1>::cast_bases_mut(packed)
+			}))),
+			3 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B8>::cast_bases_mut(packed)
+			}))),
+			4 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B16>::cast_bases_mut(packed)
+			}))),
+			5 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B32>::cast_bases_mut(packed)
+			}))),
+			6 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B64>::cast_bases_mut(packed)
+			}))),
+			7 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
+				PackedExtension::<B128>::cast_bases_mut(packed)
+			}))),
+			_ => panic!("tower_level must be in the range [0, 7]"),
+		};
+		Ok(ret)
+	}
+}
+
+/// Type erased interface for viewing witness columns. Note that `F` will be an extension field of
+/// the underlying column's field.
+pub trait WitnessColView<F> {
+	/// Returns the scalar at a given index
+	fn get(&self, index: usize) -> F;
+
+	/// The size of the scalar elements in this column.
+	fn size(&self) -> usize;
+}
+
+/// Similar to [`WitnessColView`], for mutating witness columns.
+pub trait WitnessColViewMut<F>: WitnessColView<F> {
+	/// Modifies the upcasted scalar at a given index.
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error>;
+}
+
+struct WitnessColViewImpl<Data>(Data);
+
+impl<F, P, Data> WitnessColView<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: Deref<Target = [P]>,
+{
+	fn get(&self, index: usize) -> F {
+		get_packed_slice(&self.0, index).into()
+	}
+
+	fn size(&self) -> usize {
+		self.0.len() << P::LOG_WIDTH
+	}
+}
+
+impl<F, P, Data> WitnessColViewMut<F> for WitnessColViewImpl<Data>
+where
+	F: ExtensionField<P::Scalar>,
+	P: PackedField,
+	Data: DerefMut<Target = [P]>,
+{
+	fn set(&mut self, index: usize, val: F) -> Result<(), Error> {
+		let subfield_val = val.try_into().map_err(|_| Error::FieldElementTooBig)?;
+		set_packed_slice(&mut self.0, index, subfield_val);
+		Ok(())
 	}
 }
 
@@ -1102,19 +1280,20 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::iter::repeat_with;
+	use std::{array, iter::repeat_with};
 
 	use assert_matches::assert_matches;
+	use binius_core::oracle::MultilinearOracleSet;
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
 	};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		types::{B1, B32, B8},
-		ConstraintSystem, TableBuilder,
+		ConstraintSystem, Statement, TableBuilder,
+		types::{B1, B8, B32},
 	};
 
 	#[test]
@@ -1244,6 +1423,54 @@ mod tests {
 	}
 
 	#[test]
+	fn test_eval_expr_different_cols() {
+		let table_id = 0;
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
+		let col0 = table.add_committed::<B32, 1>("col1");
+		let col1 = table.add_committed::<B8, 8>("col2");
+		let col2 = table.add_committed::<B16, 4>("col3");
+		let col3 = table.add_committed::<B8, 8>("col4");
+
+		let allocator = bumpalo::Bump::new();
+		let table_size = 4;
+		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
+			&allocator,
+			&inner_table,
+			table_size,
+		)
+		.unwrap();
+
+		let segment = index.full_segment();
+
+		// Fill the columns with a deterministic pattern.
+		{
+			let mut col0: RefMut<'_, [u32]> = segment.get_mut_as(col0).unwrap();
+			let mut col1: RefMut<'_, [[u8; 8]]> = segment.get_mut_as(col1).unwrap();
+			let mut col2: RefMut<'_, [[u16; 4]]> = segment.get_mut_as(col2).unwrap();
+			let mut col3: RefMut<'_, [[u8; 8]]> = segment.get_mut_as(col3).unwrap();
+
+			col0[0] = 0x40;
+			col1[0] = [0x45, 0, 0, 0, 0, 0, 0, 0];
+			col2[0] = [0, 0, 0, 0x80];
+			col3[0] = [0x85, 0, 0, 0, 0, 0, 0, 00];
+		}
+
+		let evals = segment.eval_expr(&(col1 + col3)).unwrap();
+		for (i, eval_i) in evals
+			.into_iter()
+			.flat_map(PackedField::into_iter)
+			.enumerate()
+		{
+			if i == 0 {
+				assert_eq!(eval_i, B8::new(0x45) + B8::new(0x85));
+			} else {
+				assert_eq!(eval_i, B8::new(0x00));
+			}
+		}
+	}
+
+	#[test]
 	fn test_small_tables() {
 		let table_id = 0;
 		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
@@ -1333,7 +1560,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 
@@ -1377,7 +1604,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 
@@ -1425,5 +1652,93 @@ mod tests {
 			index.fill_table_sequential(&test_table, &[]),
 			Err(Error::IncorrectNumberOfTableEvents { .. })
 		);
+	}
+
+	#[test]
+	fn test_dyn_witness() {
+		let mut cs = ConstraintSystem::new();
+		let mut test_table = cs.add_table("test");
+		let test_col: Col<B32, 4> = test_table.add_committed("col");
+		let table_id = test_table.id();
+
+		let allocator = Bump::new();
+
+		let table_size = 11;
+		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+		let table_index = index.init_table(table_id, table_size).unwrap();
+		let segment = table_index.full_segment();
+		let mut rng = StdRng::seed_from_u64(0);
+		let row = repeat_with(|| B32::random(&mut rng))
+			.take(table_size * 4)
+			.collect::<Vec<_>>();
+		{
+			let mut data: Box<dyn WitnessColViewMut<_>> =
+				segment.get_dyn_mut(test_col.table_index).unwrap();
+			row.iter().enumerate().for_each(|(i, val)| {
+				data.set(i, (*val).into()).unwrap();
+			})
+		}
+		let data = segment.get_dyn(test_col.table_index).unwrap();
+		row.iter().enumerate().for_each(|(i, val)| {
+			let down_cast: B32 = data.get(i).try_into().unwrap();
+			assert_eq!(down_cast, *val)
+		})
+	}
+
+	fn find_oracle_id_with_name(
+		oracles: &MultilinearOracleSet<B128>,
+		name: &str,
+	) -> Option<OracleId> {
+		oracles
+			.iter()
+			.find(|(_, oracle)| oracle.name() == Some(name))
+			.map(|(id, _)| id)
+	}
+
+	#[test]
+	fn test_constant_filling() {
+		let mut cs = ConstraintSystem::new();
+
+		let mut test_table = cs.add_table("test");
+		let mut rng = StdRng::seed_from_u64(0);
+		let unpack_value = B16::random(&mut rng);
+		let pack_const_arr: [B32; 4] = array::from_fn(|_| B32::random(&mut rng));
+
+		let _ = test_table.add_constant("unpacked_col", [unpack_value]);
+		let _ = test_table.add_constant("packed_col", pack_const_arr);
+		let table_id = test_table.id();
+
+		let allocator = Bump::new();
+
+		let table_size = 123;
+		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+		{
+			let _ = index.init_table(table_id, table_size).unwrap();
+			index.fill_constant_cols().unwrap();
+		}
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: vec![table_size],
+		};
+		let witness = index.into_multilinear_extension_index();
+		let ccs = cs.compile(&statement).unwrap();
+		let non_packed_col_id = find_oracle_id_with_name(&ccs.oracles, "unpacked_col").unwrap();
+
+		// Query MultilinearExtensionIndex to see if the constants are correct.
+		let non_pack_witness = witness.get_multilin_poly(non_packed_col_id).unwrap();
+		for index in 0..non_pack_witness.size() {
+			let got = non_pack_witness.evaluate_on_hypercube(index).unwrap();
+			assert_eq!(got, unpack_value.into());
+		}
+		let packed_col_id = find_oracle_id_with_name(&ccs.oracles, "packed_col").unwrap();
+
+		let pack_witness = witness.get_multilin_poly(packed_col_id).unwrap();
+		for index in 0..pack_witness.size() {
+			let got = pack_witness.evaluate_on_hypercube(index).unwrap();
+
+			assert_eq!(got, pack_const_arr[index % 4].into());
+		}
 	}
 }

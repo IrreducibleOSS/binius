@@ -7,8 +7,8 @@ use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
-	BatchSumcheckOutput, BatchZerocheckOutput, CompositeSumClaim, Error, SumcheckClaim,
-	ZerocheckClaim,
+	BatchSumcheckOutput, BatchZerocheckOutput, CompositeSumClaim, EqIndSumcheckClaim, Error,
+	SumcheckClaim, ZerocheckClaim,
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
@@ -27,8 +27,8 @@ pub struct OracleClaimMeta {
 	pub oracle_ids: Vec<OracleId>,
 }
 
-/// Create a sumcheck claim out of constraint set. Fails when the constraint set contains zerochecks.
-/// Returns claim and metadata used for evalcheck claim construction.
+/// Create a sumcheck claim out of constraint set. Fails when the constraint set contains
+/// zerochecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	constraint_set: ConstraintSet<F>,
@@ -45,7 +45,7 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?,
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),
@@ -56,8 +56,8 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	Ok((claim, meta))
 }
 
-/// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular sumchecks.
-/// Returns claim and metadata used for evalcheck claim construction.
+/// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular
+/// sumchecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	constraint_set: ConstraintSet<F>,
@@ -74,13 +74,40 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	{
 		match predicate {
 			ConstraintPredicate::Zero => {
-				zeros.push(ArithCircuitPoly::with_n_vars_circuit(n_multilinears, composition)?)
+				zeros.push(ArithCircuitPoly::with_n_vars(n_multilinears, composition)?)
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
 
 	let claim = ZerocheckClaim::new(meta.n_vars, n_multilinears, zeros)?;
+	Ok((claim, meta))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn constraint_set_mlecheck_claim<F: TowerField>(
+	constraint_set: ConstraintSet<F>,
+) -> Result<(EqIndSumcheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
+	let (constraints, meta) = split_constraint_set(constraint_set);
+	let n_multilinears = meta.oracle_ids.len();
+
+	let mut sums = Vec::new();
+	for Constraint {
+		composition,
+		predicate,
+		..
+	} in constraints
+	{
+		match predicate {
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
+				sum,
+			}),
+			_ => bail!(Error::MixedBatchingNotSupported),
+		}
+	}
+
+	let claim = EqIndSumcheckClaim::new(meta.n_vars, n_multilinears, sums)?;
 	Ok((claim, meta))
 }
 
@@ -104,11 +131,11 @@ pub fn make_eval_claims<F: TowerField>(
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let metas = metas.into_iter().collect::<Vec<_>>();
 
-	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars).rev()) {
+	if !is_sorted_ascending(metas.iter().map(|meta| meta.n_vars)) {
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let max_n_vars = metas.first().map_or(0, |meta| meta.n_vars);
+	let max_n_vars = metas.last().map_or(0, |meta| meta.n_vars);
 
 	if metas.len() != batch_sumcheck_output.multilinear_evals.len() {
 		bail!(Error::ClaimProofMismatch);
@@ -126,8 +153,8 @@ pub fn make_eval_claims<F: TowerField>(
 
 		for (oracle_id, eval) in iter::zip(meta.oracle_ids, prover_evals) {
 			let eval_points_range = match evaluation_order {
-				EvaluationOrder::LowToHigh => max_n_vars - meta.n_vars..max_n_vars,
-				EvaluationOrder::HighToLow => 0..meta.n_vars,
+				EvaluationOrder::LowToHigh => 0..meta.n_vars,
+				EvaluationOrder::HighToLow => max_n_vars - meta.n_vars..max_n_vars,
 			};
 			let eval_point = batch_sumcheck_output.challenges[eval_points_range].to_vec();
 
@@ -183,8 +210,8 @@ pub fn make_zerocheck_eval_claims<F: Field>(
 
 	let mut evalcheck_claims = Vec::new();
 	for ((oracle_id, n_vars), eval) in iter::zip(ids_with_n_vars, concat_multilinear_evals) {
-		// NB. Two stages of zerocheck reduction (univariate skip and front-loaded high-to-low sumchecks)
-		//     may result in a "gap" between challenges prefix and suffix.
+		// NB. Two stages of zerocheck reduction (univariate skip and front-loaded high-to-low
+		// sumchecks)     may result in a "gap" between challenges prefix and suffix.
 		let eval_point = [
 			&skipped_challenges[..n_vars.min(skipped_challenges.len())],
 			&unskipped_challenges[(max_n_vars - n_vars).min(unskipped_challenges.len())..],
@@ -222,4 +249,24 @@ pub fn constraint_set_sumcheck_claims<F: TowerField>(
 		claims.push(claim);
 	}
 	Ok(SumcheckClaimsWithMeta { claims, metas })
+}
+
+pub struct MLEcheckClaimsWithMeta<F: TowerField, C> {
+	pub claims: Vec<EqIndSumcheckClaim<F, C>>,
+	pub metas: Vec<OracleClaimMeta>,
+}
+
+/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+pub fn constraint_set_mlecheck_claims<F: TowerField>(
+	constraint_sets: Vec<ConstraintSet<F>>,
+) -> Result<MLEcheckClaimsWithMeta<F, ArithCircuitPoly<F>>, Error> {
+	let mut claims = Vec::with_capacity(constraint_sets.len());
+	let mut metas = Vec::with_capacity(constraint_sets.len());
+
+	for constraint_set in constraint_sets {
+		let (claim, meta) = constraint_set_mlecheck_claim(constraint_set)?;
+		metas.push(meta);
+		claims.push(claim);
+	}
+	Ok(MLEcheckClaimsWithMeta { claims, metas })
 }

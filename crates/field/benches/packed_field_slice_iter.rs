@@ -3,15 +3,15 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	packed::iter_packed_slice_with_offset, PackedBinaryField128x1b, PackedBinaryField16x32b,
-	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField256x1b,
-	PackedBinaryField2x128b, PackedBinaryField2x64b, PackedBinaryField32x8b,
-	PackedBinaryField4x128b, PackedBinaryField4x32b, PackedBinaryField4x64b,
-	PackedBinaryField512x1b, PackedBinaryField64x8b, PackedBinaryField8x32b,
-	PackedBinaryField8x64b, PackedField,
+	PackedBinaryField1x128b, PackedBinaryField2x64b, PackedBinaryField2x128b,
+	PackedBinaryField4x32b, PackedBinaryField4x64b, PackedBinaryField4x128b,
+	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedBinaryField16x8b,
+	PackedBinaryField16x32b, PackedBinaryField32x8b, PackedBinaryField64x8b,
+	PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedField,
+	packed::iter_packed_slice_with_offset,
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
+	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
 use rand::thread_rng;
 

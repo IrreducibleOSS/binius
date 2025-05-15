@@ -4,13 +4,13 @@ use std::iter::repeat_with;
 
 use binius_core::polynomial::ArithCircuitPoly;
 use binius_field::{
-	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+	BinaryField1b, Field, PackedBinaryField1x128b, PackedBinaryField16x8b, PackedBinaryField128x1b,
 	PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
 use binius_math::{ArithExpr as Expr, CompositionPoly, RowsBatchRef};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use rand::{thread_rng, RngCore};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use rand::{RngCore, thread_rng};
 
 const BATCH_SIZE: usize = 256;
 
@@ -62,9 +62,10 @@ fn benchmark_evaluate(c: &mut Criterion) {
 	let mut results1x128b = vec![PackedBinaryField1x128b::zero(); BATCH_SIZE];
 
 	let arith_circuit_poly = ArithCircuitPoly::new(
-		&(Expr::Var(0) * Expr::Var(1)
+		(Expr::Var(0) * Expr::Var(1)
 			+ (Expr::Const(BinaryField1b::ONE) - Expr::Var(0)) * Expr::Var(2)
-			- Expr::Var(3)),
+			- Expr::Var(3))
+		.into(),
 	);
 	let arith_circuit_poly_cached =
 		arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch, BinaryField1b);

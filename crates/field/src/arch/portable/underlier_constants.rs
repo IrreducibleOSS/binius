@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::packed_arithmetic::{
-	interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+	UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
 };
-use crate::underlier::{UnderlierType, U1, U2, U4};
+use crate::underlier::{U1, U2, U4, UnderlierType};
 
 impl UnderlierWithBitConstants for U1 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[];

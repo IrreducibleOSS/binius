@@ -3,7 +3,7 @@
 use binius_core::constraint_system::channel::{ChannelId, FlushDirection};
 
 use super::column::ColumnIndex;
-use crate::builder::{Col, B1};
+use crate::builder::{B1, Col};
 
 /// A flushing rule within a table.
 #[derive(Debug)]
@@ -13,10 +13,10 @@ pub struct Flush {
 	pub direction: FlushDirection,
 	/// The number of times the values are flushed to the channel.
 	pub multiplicity: u32,
-	/// An optional reference to a column to select which values to flush.
+	/// Selector columns that determine which row events are flushed
 	///
-	/// The referenced selector column must hold 1-bit values.
-	pub selector: Option<ColumnIndex>,
+	/// The referenced selector columns must hold 1-bit values.
+	pub selectors: Vec<ColumnIndex>,
 }
 
 /// Options for a channel flush.
@@ -24,19 +24,19 @@ pub struct Flush {
 pub struct FlushOpts {
 	/// The number of times the values are flushed to the channel.
 	pub multiplicity: u32,
-	/// An optional reference to a column to select which values to flush.
+	/// Selector columns that determine which row events are flushed..
 	///
-	/// The referenced selector column must hold 1-bit values and contain only zeros after the
-	/// index that is the height of the table. If the selector is `None`, all values up to the
+	/// The referenced selector columns must hold 1-bit values and contain only zeros after the
+	/// index that is the height of the table. If the selectors is empty, all values up to the
 	/// table height are flushed.
-	pub selector: Option<Col<B1>>,
+	pub selectors: Vec<Col<B1>>,
 }
 
 impl Default for FlushOpts {
 	fn default() -> Self {
 		Self {
 			multiplicity: 1,
-			selector: None,
+			selectors: vec![],
 		}
 	}
 }

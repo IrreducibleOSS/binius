@@ -2,11 +2,11 @@
 
 use super::packed::PackedPrimitiveType;
 use crate::{
+	AESTowerField8b, BinaryField2b, BinaryField4b, BinaryField8b,
 	arch::PairwiseTableStrategy,
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	packed::PackedField,
 	underlier::UnderlierType,
-	AESTowerField8b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
 
 impl<U: UnderlierType> TaggedMul<PairwiseTableStrategy> for PackedPrimitiveType<U, BinaryField2b>
@@ -170,7 +170,7 @@ fn multiply_8b_using_log_table(
 	log_table: &[u8; 256],
 	exp_table: &[u8; 256],
 ) -> u8 {
-	let result = if lhs != 0 && rhs != 0 {
+	if lhs != 0 && rhs != 0 {
 		let log_table_index = log_table[lhs as usize] as usize + log_table[rhs as usize] as usize;
 		let log_table_index = if log_table_index > 254 {
 			log_table_index - 255
@@ -188,9 +188,7 @@ fn multiply_8b_using_log_table(
 		}
 	} else {
 		0
-	};
-
-	result
+	}
 }
 
 /// Return the result of the operation by a table search for each scalar value

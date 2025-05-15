@@ -2,10 +2,10 @@
 
 use std::{cmp::Reverse, marker::PhantomData, ops::Range};
 
-use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField, util::eq};
 use binius_hal::{
-	make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator,
-	SumcheckMultilinear,
+	ComputationBackend, Error as HalError, SumcheckEvaluator, SumcheckMultilinear,
+	make_portable_backend,
 };
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
@@ -21,12 +21,12 @@ use tracing::instrument;
 use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultivariatePoly},
 	protocols::sumcheck::{
-		common::{
-			equal_n_vars_check, get_nontrivial_evaluation_points,
-			interpolation_domains_for_composition_degrees, RoundCoeffs,
-		},
-		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
 		CompositeSumClaim, Error,
+		common::{
+			RoundCoeffs, equal_n_vars_check, get_nontrivial_evaluation_points,
+			interpolation_domains_for_composition_degrees,
+		},
+		prove::{ProverState, SumcheckInterpolator, SumcheckProver, common::fold_partial_eq_ind},
 	},
 	transparent::{eq_ind::EqIndPartialEval, step_up::StepUp},
 };
@@ -208,7 +208,8 @@ where
 		})
 	}
 
-	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids duplicate work.
+	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids
+	/// duplicate work.
 	pub fn with_eq_ind_partial_evals(mut self, eq_ind_partial_evals: Backend::Vec<P>) -> Self {
 		self.eq_ind_partial_evals = Some(eq_ind_partial_evals);
 		self
@@ -216,9 +217,9 @@ where
 
 	/// Specify the value of round polynomial at 1 in the first round if it is available beforehand.
 	///
-	/// Prime example of this is GPA (grand product argument), where the value of the previous GKR layer
-	/// may be used as an advice to compute the round polynomial at 1 directly with less effort compared
-	/// to direct composite evaluation.
+	/// Prime example of this is GPA (grand product argument), where the value of the previous GKR
+	/// layer may be used as an advice to compute the round polynomial at 1 directly with less
+	/// effort compared to direct composite evaluation.
 	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
 		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
 		self
@@ -447,8 +448,10 @@ type CompositionsAndSums<F, Composition> = (Vec<(Composition, ConstEvalSuffix<F>
 //
 // Algorithm outline:
 //  * sort multilinears by non-increasing const suffix length
-//  * processing multilinears in this order, symbolically substitute suffix eval for the current variable and optimize
-//  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this suffix
+//  * processing multilinears in this order, symbolically substitute suffix eval for the current
+//    variable and optimize
+//  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this
+//    suffix
 fn determine_const_eval_suffixes<F, P, Composition>(
 	composite_claims: Vec<CompositeSumClaim<F, Composition>>,
 	const_suffixes: impl IntoIterator<Item = (F, usize)>,
@@ -475,12 +478,15 @@ where
 
 			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
 				expr = expr.const_subst(var_index, suffix_eval).optimize();
-				// NB: infinity point has a different interpolation result; in characteristic 2, it's always zero.
+				// NB: infinity point has a different interpolation result; in characteristic 2,
+				// it's always zero.
 				expr_at_inf = expr_at_inf
 					.const_subst(var_index, suffix_eval + suffix_eval)
 					.optimize();
 
-				if let Some((value, value_at_inf)) = expr.constant().zip(expr_at_inf.constant()) {
+				if let Some((value, value_at_inf)) =
+					expr.get_constant().zip(expr_at_inf.get_constant())
+				{
 					const_eval_suffix = ConstEvalSuffix {
 						suffix,
 						value,
@@ -535,7 +541,7 @@ where
 			.iter_mut()
 			.map(|(composition, const_eval_suffix)| {
 				let composition_at_infinity =
-					ArithCircuitPoly::new(&composition.expression().leading_term());
+					ArithCircuitPoly::new(composition.expression().leading_term());
 
 				const_eval_suffix.update(self.state.evaluation_order(), n_rounds_remaining);
 
@@ -748,10 +754,11 @@ where
 		round_evals.insert(0, zero_evaluation);
 
 		if round_evals.len() > 3 {
-			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
-			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
-			// Putting "special" evaluation points at the beginning of domain allows benefitting from
-			// faster/skipped interpolation even in case of mixed degree compositions .
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then
+			// subspace points. InterpolationDomain expects "infinity" at the last position, thus
+			// reordering is needed. Putting "special" evaluation points at the beginning of
+			// domain allows benefitting from faster/skipped interpolation even in case of mixed
+			// degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}

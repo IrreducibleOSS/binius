@@ -50,7 +50,7 @@ mod model {
 				event.fire(&mut sequence_chan);
 			}
 
-			assert!(sequence_chan.is_balanced());
+			sequence_chan.assert_balanced();
 		}
 	}
 
@@ -103,15 +103,15 @@ mod arithmetization {
 		oracle::ShiftVariant,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU, Field,
-		PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+		Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU,
 	};
 	use binius_m3::{
 		builder::{
-			test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
-			TableWitnessSegment, WitnessIndex, B1, B128, B32,
+			B1, B32, B128, Col, ConstraintSystem, TableFiller, TableId, TableWitnessSegment,
+			WitnessIndex, test_utils::validate_system_witness,
 		},
-		gadgets::u32::{U32Add, U32AddFlags},
+		gadgets::add::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
 

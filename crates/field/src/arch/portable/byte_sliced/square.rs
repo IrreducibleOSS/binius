@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 use super::multiply::mul_alpha;
 use crate::{
+	AESTowerField8b, PackedField,
 	tower_levels::{TowerLevel, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
-	AESTowerField8b, PackedField,
 };
 
 #[inline(always)]

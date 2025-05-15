@@ -3,23 +3,23 @@
 use std::iter::repeat_with;
 
 use binius_field::{
+	BinaryField32b, BinaryField128b, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 	arch::{OptimalUnderlier256b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField32b, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
 };
 use binius_hash::groestl::Groestl256;
 use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::zeroed_vec;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
 	fiat_shamir::HasherChallenger,
 	oracle::MultilinearOracleSet,
-	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
+	protocols::gkr_gpa::{GrandProductBatchProveOutput, batch_prove, batch_verify},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };

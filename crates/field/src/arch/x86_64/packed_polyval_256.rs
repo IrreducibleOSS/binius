@@ -4,9 +4,9 @@ use cfg_if::cfg_if;
 
 use super::m256::M256;
 use crate::{
-	arch::{portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy},
-	arithmetic_traits::{impl_invert_with, impl_square_with},
 	BinaryField128bPolyval,
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy, portable::packed::PackedPrimitiveType},
+	arithmetic_traits::{impl_invert_with, impl_square_with},
 };
 
 /// Define packed type

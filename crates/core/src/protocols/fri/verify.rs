@@ -3,18 +3,18 @@
 use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_hal::{ComputationBackend, make_portable_backend};
 use binius_ntt::SingleThreadedNTT;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 use bytes::Buf;
 use itertools::izip;
 use tracing::instrument;
 
-use super::{common::vcs_optimal_layers_depths_iter, error::Error, VerificationError};
+use super::{VerificationError, common::vcs_optimal_layers_depths_iter, error::Error};
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::MerkleTreeScheme,
-	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams},
+	protocols::fri::common::{FRIParams, fold_chunk, fold_interleaved_chunk},
 	transcript::{TranscriptReader, VerifierTranscript},
 };
 
@@ -172,13 +172,13 @@ where
 				.chunks(1 << n_final_challenges)
 				.enumerate()
 				.map(|(i, coset_values)| {
+					scratch_buffer.copy_from_slice(coset_values);
 					fold_chunk(
 						ntt,
-						n_prior_challenges,
+						n_final_challenges + self.params.rs_code().log_inv_rate(),
 						i,
-						coset_values,
-						final_challenges,
 						&mut scratch_buffer,
+						final_challenges,
 					)
 				})
 				.collect::<Vec<_>>()
@@ -187,13 +187,14 @@ where
 			// codeword.
 
 			let fold_arity = self.params.rs_code().log_dim() + self.params.log_batch_size();
-			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
+			let mut scratch_buffer = vec![F::default(); 1 << self.params.rs_code().log_dim()];
 			terminate_codeword
 				.chunks(1 << fold_arity)
 				.enumerate()
 				.map(|(i, chunk)| {
 					fold_interleaved_chunk(
 						ntt,
+						self.params.rs_code().log_len(),
 						self.params.log_batch_size(),
 						i,
 						chunk,
@@ -290,6 +291,7 @@ where
 		)?;
 		let mut next_value = fold_interleaved_chunk(
 			ntt,
+			self.params.rs_code().log_len(),
 			self.params.log_batch_size(),
 			index,
 			&values,
@@ -306,7 +308,7 @@ where
 
 			log_n_cosets -= arity;
 
-			let values = verify_coset_opening(
+			let mut values = verify_coset_opening(
 				self.vcs,
 				coset_index,
 				arity,
@@ -326,11 +328,10 @@ where
 
 			next_value = fold_chunk(
 				ntt,
-				fold_round,
+				self.params.rs_code().log_len() - fold_round,
 				coset_index,
-				&values,
+				&mut values,
 				&self.fold_challenges[fold_round..fold_round + arity],
-				scratch_buffer,
 			);
 			index = coset_index;
 			fold_round += arity;

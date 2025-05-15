@@ -3,13 +3,13 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 };
 use binius_math::BinarySubspace;
 use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
+use crate::{AdditiveNTT, Error, NTTShape, SingleThreadedNTT, twiddle::TwiddleAccess};
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
@@ -36,7 +36,12 @@ where
 	P: PackedField,
 {
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
+		unsafe {
+			get_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+			)
+		}
 	}
 
 	fn len(&self) -> usize {
@@ -49,11 +54,13 @@ where
 	P: PackedField,
 {
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(
-			self.data,
-			self.batch_index + (index << self.log_batch_count),
-			value,
-		);
+		unsafe {
+			set_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+				value,
+			);
+		}
 	}
 }
 
@@ -64,6 +71,7 @@ fn forward_transform_simple<F, FF>(
 	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
+	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
@@ -76,7 +84,7 @@ where
 		});
 	}
 
-	for i in (0..log_n).rev() {
+	for i in (0..(log_n - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
@@ -109,6 +117,7 @@ fn inverse_transform_simple<F, FF>(
 	data: &mut impl RandomAccessSequenceMut<FF>,
 	coset: u32,
 	log_n: usize,
+	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
@@ -122,7 +131,7 @@ where
 	}
 
 	#[allow(clippy::needless_range_loop)]
-	for i in 0..log_n {
+	for i in 0..(log_n - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
@@ -144,7 +153,8 @@ where
 	Ok(())
 }
 
-/// Simple NTT implementation that uses the reference implementation for the forward and inverse NTT.
+/// Simple NTT implementation that uses the reference implementation for the forward and inverse
+/// NTT.
 pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	s_evals: Vec<TA>,
 	_marker: PhantomData<F>,
@@ -170,6 +180,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
 			log_x,
@@ -190,6 +201,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					skip_rounds,
 				)?;
 			}
 		}
@@ -202,6 +214,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
 			log_x,
@@ -222,6 +235,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					skip_rounds,
 				)?;
 			}
 		}

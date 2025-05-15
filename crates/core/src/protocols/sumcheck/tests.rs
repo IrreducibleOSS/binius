@@ -6,34 +6,34 @@ use std::{
 };
 
 use binius_field::{
+	BinaryField, BinaryField8b, BinaryField32b, BinaryField128b, ExtensionField, Field,
+	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
+	RepackedExtension, TowerField,
 	arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
-	RepackedExtension, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+use binius_hal::{ComputationBackend, ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	ArithCircuit, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use itertools::izip;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
+	BatchSumcheckOutput, SumcheckClaim,
 	common::CompositeSumClaim,
 	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
 	prove::{
-		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
+		RegularSumcheckProver, batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver,
 	},
 	verify_sumcheck::batch_verify,
-	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
 	composition::index_composition,
@@ -60,8 +60,8 @@ impl<P: PackedField> CompositionPoly<P> for PowerComposition {
 		self.exponent
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0).pow(self.exponent as _)
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		ArithCircuit::var(0).pow(self.exponent as _)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -460,11 +460,11 @@ fn test_prove_verify_batch_constant_polys() {
 
 fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
-		prove_verify_batch_front_loaded_with_evaluation_order(evaluation_order, claim_shapes);
+		test_prove_verify_batch_front_loaded_with_evaluation_order(evaluation_order, claim_shapes);
 	}
 }
 
-fn prove_verify_batch_front_loaded_with_evaluation_order(
+fn test_prove_verify_batch_front_loaded_with_evaluation_order(
 	evaluation_order: EvaluationOrder,
 	claim_shapes: &[TestSumcheckClaimShape],
 ) {
@@ -494,49 +494,20 @@ fn prove_verify_batch_front_loaded_with_evaluation_order(
 		provers.push(prover);
 	}
 
-	let n_rounds = claim_shapes
-		.iter()
-		.map(|claim_shape| claim_shape.n_vars)
-		.max()
-		.unwrap_or(0);
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-	let mut batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
-	for _ in 0..n_rounds {
-		batch_prover
-			.send_round_proof(&mut transcript.message())
-			.unwrap();
-		let challenge = transcript.sample();
-		batch_prover.receive_challenge(challenge).unwrap();
-	}
-	batch_prover.finish(&mut transcript.message()).unwrap();
+	let batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
+
+	let _batch_prover_output = batch_prover.run(&mut transcript).unwrap();
 
 	let mut transcript = transcript.into_verifier();
-	let mut challenges = Vec::with_capacity(n_rounds);
-	let mut multilinear_evals = Vec::with_capacity(claims.len());
 
-	let mut verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
-	for _ in 0..n_rounds {
-		let mut writer = transcript.message();
-		while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
-			multilinear_evals.push(claim_multilinear_evals);
-		}
-		verifier.receive_round_proof(&mut writer).unwrap();
+	let verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
 
-		let challenge = transcript.sample();
-		verifier.finish_round(challenge).unwrap();
-
-		challenges.push(challenge);
-	}
-
-	let mut writer = transcript.message();
-	while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
-		multilinear_evals.push(claim_multilinear_evals);
-	}
-	verifier.finish().unwrap();
-
-	assert_eq!(multilinear_evals.len(), claims.len());
+	let BatchSumcheckOutput {
+		challenges,
+		multilinear_evals,
+	} = verifier.run(&mut transcript).unwrap();
 
 	for (claim_shape, mles_i, multilinear_evals_i) in izip!(claim_shapes, mles, multilinear_evals) {
 		let TestSumcheckClaimShape { n_vars, .. } = claim_shape.clone();

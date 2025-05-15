@@ -13,6 +13,10 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];
 
+	fn narrow<'a>(data: &'a &[F]) -> &'a [F] {
+		data
+	}
+
 	fn as_const<'a>(data: &'a &mut [F]) -> &'a [F] {
 		data
 	}

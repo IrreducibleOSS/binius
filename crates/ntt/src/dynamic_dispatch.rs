@@ -50,7 +50,8 @@ pub struct NTTOptions {
 	pub thread_settings: ThreadingSettings,
 }
 
-/// An enum that can be used to switch between different NTT implementations without passing AdditiveNTT as a type parameter.
+/// An enum that can be used to switch between different NTT implementations without passing
+/// AdditiveNTT as a type parameter.
 #[derive(Debug)]
 pub enum DynamicDispatchNTT<F: BinaryField> {
 	SingleThreaded(SingleThreadedNTT<F>),
@@ -116,12 +117,17 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => ntt.forward_transform(data, shape, coset),
-			Self::SingleThreadedPrecompute(ntt) => ntt.forward_transform(data, shape, coset),
-			Self::MultiThreaded(ntt) => ntt.forward_transform(data, shape, coset),
-			Self::MultiThreadedPrecompute(ntt) => ntt.forward_transform(data, shape, coset),
+			Self::SingleThreaded(ntt) => ntt.forward_transform(data, shape, coset, skip_rounds),
+			Self::SingleThreadedPrecompute(ntt) => {
+				ntt.forward_transform(data, shape, coset, skip_rounds)
+			}
+			Self::MultiThreaded(ntt) => ntt.forward_transform(data, shape, coset, skip_rounds),
+			Self::MultiThreadedPrecompute(ntt) => {
+				ntt.forward_transform(data, shape, coset, skip_rounds)
+			}
 		}
 	}
 
@@ -130,12 +136,17 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		data: &mut [P],
 		shape: NTTShape,
 		coset: u32,
+		skip_rounds: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, shape, coset),
-			Self::SingleThreadedPrecompute(ntt) => ntt.inverse_transform(data, shape, coset),
-			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, shape, coset),
-			Self::MultiThreadedPrecompute(ntt) => ntt.inverse_transform(data, shape, coset),
+			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, shape, coset, skip_rounds),
+			Self::SingleThreadedPrecompute(ntt) => {
+				ntt.inverse_transform(data, shape, coset, skip_rounds)
+			}
+			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, shape, coset, skip_rounds),
+			Self::MultiThreadedPrecompute(ntt) => {
+				ntt.inverse_transform(data, shape, coset, skip_rounds)
+			}
 		}
 	}
 }

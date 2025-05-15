@@ -4,8 +4,8 @@ use std::fmt::Debug;
 
 use bytemuck::{NoUninit, Zeroable};
 use rand::{
-	distributions::{Distribution, Standard},
 	Rng, RngCore,
+	distributions::{Distribution, Standard},
 };
 use subtle::ConstantTimeEq;
 
@@ -38,12 +38,13 @@ pub trait UnderlierType:
 /// A type that is transparently backed by an underlier.
 ///
 /// This trait is needed to make it possible getting the underlier type from already defined type.
-/// Bidirectional `From` trait implementations are not enough, because they do not allow getting underlier type
-/// in a generic code.
+/// Bidirectional `From` trait implementations are not enough, because they do not allow getting
+/// underlier type in a generic code.
 ///
 /// # Safety
-/// `WithUnderlier` can be implemented for a type only if it's representation is a transparent `Underlier`'s representation.
-/// That's allows us casting references of type and it's underlier in both directions.
+/// `WithUnderlier` can be implemented for a type only if it's representation is a transparent
+/// `Underlier`'s representation. That's allows us casting references of type and it's underlier in
+/// both directions.
 pub unsafe trait WithUnderlier: Sized + Zeroable + Copy + Send + Sync + 'static {
 	/// Underlier primitive type
 	type Underlier: UnderlierType;
@@ -174,7 +175,7 @@ where
 	Standard: Distribution<T>,
 {
 	fn random(mut rng: impl RngCore) -> Self {
-		rng.gen()
+		rng.r#gen()
 	}
 }
 

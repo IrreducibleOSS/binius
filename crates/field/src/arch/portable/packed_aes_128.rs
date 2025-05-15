@@ -1,12 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{impl_broadcast, PackedPrimitiveType},
+	packed::{PackedPrimitiveType, impl_broadcast},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
 	aes_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
 	},
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
 	arithmetic_traits::{

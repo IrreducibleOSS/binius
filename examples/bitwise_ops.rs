@@ -3,15 +3,14 @@
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::Result;
-use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, types::U};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_field::{tower::CanonicalTowerFamily, BinaryField1b, BinaryField32b, TowerField};
+use binius_field::{BinaryField1b, BinaryField32b, TowerField, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_macros::arith_expr;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Clone, Copy)]
@@ -91,12 +90,7 @@ fn main() -> Result<()> {
 	)?;
 	let _result = match args.op {
 		BitwiseOp::And => binius_circuits::bitwise::and(&mut builder, "a_and_b", in_a, in_b),
-		BitwiseOp::Xor => {
-			let out = binius_circuits::bitwise::xor(&mut builder, "a_xor_b", in_a, in_b)?;
-			// TODO: Assert equality so that something is constrained.
-			builder.assert_zero("zero", [in_a], arith_expr!([x] = x - x).convert_field());
-			Ok(out)
-		}
+		BitwiseOp::Xor => binius_circuits::bitwise::xor(&mut builder, "a_xor_b", in_a, in_b),
 		BitwiseOp::Or => binius_circuits::bitwise::or(&mut builder, "a_or_b", in_a, in_b),
 	};
 	drop(trace_gen_scope);

@@ -13,12 +13,12 @@ use std::{
 	ops::{BitXor, Mul},
 };
 
-use super::packed::{impl_broadcast, PackedPrimitiveType};
+use super::packed::{PackedPrimitiveType, impl_broadcast};
 use crate::{
-	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
-	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
-	packed::PackedField,
 	BinaryField128bPolyval,
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{InvertOrZero, impl_square_with, impl_transformation_with_strategy},
+	packed::PackedField,
 };
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<u128, BinaryField128bPolyval>;
@@ -54,13 +54,15 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 		// Square res to get its exponent to be 10 in binary
 		let mut res = pow_2_2_n(self_pow_2_pow_k1s, 0);
 
-		// Contains sel raised to the power whose binary representation is 2^k ones followed by 2^k zeros
+		// Contains sel raised to the power whose binary representation is 2^k ones followed by 2^k
+		// zeros
 		let mut selt_pow_2_pow_k1s_to_k0s = res;
 
 		// Loop invariant
-		// res contains z raised to the power whose binary representation is 2^{k+1}-1 ones followed by a single zero
-		// self_pow_2_pow_k1s contains z raised to the power whose binary representation is 2^k ones
-		// selt_pow_2_pow_k1s_to_k0s contains z raised to the power whose binary representation is 2^k ones followed by 2^k zeros
+		// res contains z raised to the power whose binary representation is 2^{k+1}-1 ones followed
+		// by a single zero self_pow_2_pow_k1s contains z raised to the power whose binary
+		// representation is 2^k ones selt_pow_2_pow_k1s_to_k0s contains z raised to the power
+		// whose binary representation is 2^k ones followed by 2^k zeros
 		for k in 1..7 {
 			// Fill in the zeros in the exponent of selt_pow_2_pow_k1s_to_k0s with ones
 			self_pow_2_pow_k1s *= selt_pow_2_pow_k1s_to_k0s;

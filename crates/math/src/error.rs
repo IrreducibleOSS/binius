@@ -31,6 +31,8 @@ pub enum Error {
 	IncorrectQuerySize { expected: usize },
 	#[error("the sum of the query and the start index must be at most {expected}")]
 	IncorrectStartIndex { expected: usize },
+	#[error("the zero padding start index must be at most {expected}")]
+	IncorrectStartIndexZeroPad { expected: usize },
 	#[error("the index of the nonzero block should be at most {expected}")]
 	IncorrectNonZeroIndex { expected: usize },
 	#[error("the nonzero scalar prefix should be at most {expected}")]
@@ -51,12 +53,16 @@ pub enum Error {
 	HypercubeIndexOutOfRange { index: usize },
 	#[error("the output polynomial must have size {expected}")]
 	IncorrectOutputPolynomialSize { expected: usize },
-	#[error("the total number of coefficients, {total_length}, in the piecewise multilinear is too large: {total_length} > 2^{total_n_vars}")]
+	#[error(
+		"the total number of coefficients, {total_length}, in the piecewise multilinear is too large: {total_length} > 2^{total_n_vars}"
+	)]
 	PiecewiseMultilinearTooLong {
 		total_length: usize,
 		total_n_vars: usize,
 	},
-	#[error("there are a total of {actual} polynomials, according to n_pieces_by_vars, while you have provided evaluations for {expected}")]
+	#[error(
+		"there are a total of {actual} polynomials, according to n_pieces_by_vars, while you have provided evaluations for {expected}"
+	)]
 	PiecewiseMultilinearIncompatibleEvals { actual: usize, expected: usize },
 	#[error("cannot fold a constant multilinear")]
 	ConstantFold,

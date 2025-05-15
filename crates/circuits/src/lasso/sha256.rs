@@ -3,19 +3,19 @@
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::PackedType, packed::packed_from_fn_with_offset, BinaryField16b, BinaryField1b,
-	BinaryField32b, BinaryField4b, PackedField, TowerField,
+	BinaryField1b, BinaryField4b, BinaryField16b, BinaryField32b, PackedField, TowerField,
+	as_packed_field::PackedType, packed::packed_from_fn_with_offset,
 };
 
 use super::{lasso::lasso, u32add::SeveralU32add};
 use crate::{
 	arithmetic::u32::u32const_repeating,
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	pack::pack,
-	sha256::{rotate_and_xor, RotateRightType, INIT, ROUND_CONSTS_K},
+	sha256::{INIT, ROUND_CONSTS_K, RotateRightType, rotate_and_xor},
 };
 
 pub const CH_MAJ_T_LOG_SIZE: usize = 12;
@@ -187,7 +187,7 @@ pub fn sha256(
 
 	let mut several_maj = SeveralBitwise::new(builder, |a, b, c| (a & b) ^ (a & c) ^ (b & c))?;
 
-	let mut w = [OracleId::MAX; 64];
+	let mut w = [OracleId::invalid(); 64];
 
 	w[0..16].copy_from_slice(&input);
 
@@ -288,7 +288,7 @@ pub fn sha256(
 #[cfg(test)]
 mod tests {
 	use binius_core::oracle::OracleId;
-	use binius_field::{as_packed_field::PackedType, BinaryField1b, BinaryField8b, TowerField};
+	use binius_field::{BinaryField1b, BinaryField8b, TowerField, as_packed_field::PackedType};
 	use sha2::{compress256, digest::generic_array::GenericArray};
 
 	use crate::{

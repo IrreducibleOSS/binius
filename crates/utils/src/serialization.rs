@@ -435,7 +435,7 @@ pub fn assert_enough_data_for(read_buf: &impl Buf, size: usize) -> Result<(), Se
 #[cfg(test)]
 mod tests {
 	use generic_array::typenum::U32;
-	use rand::{rngs::StdRng, RngCore, SeedableRng};
+	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 	use super::*;
 

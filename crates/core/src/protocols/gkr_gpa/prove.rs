@@ -2,7 +2,7 @@
 
 use binius_field::{Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder};
+use binius_math::{EvaluationDomainFactory, EvaluationOrder, extrapolate_line_scalar};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
@@ -11,16 +11,15 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
 	Error, GrandProductClaim, GrandProductWitness,
+	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
 };
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		self,
-		prove::{eq_ind::EqIndSumcheckProverBuilder, SumcheckProver},
 		BatchSumcheckOutput, CompositeSumClaim,
+		prove::{SumcheckProver, eq_ind::EqIndSumcheckProverBuilder, front_loaded},
 	},
 	transcript::ProverTranscript,
 };
@@ -92,7 +91,16 @@ where
 				backend,
 			)?;
 
-			sumcheck::batch_prove(vec![eq_ind_sumcheck_prover], transcript)?
+			let batch_sumcheck_prover =
+				front_loaded::BatchProver::new(vec![eq_ind_sumcheck_prover], transcript)?;
+
+			let mut batch_output = batch_sumcheck_prover.run(transcript)?;
+
+			if evaluation_order == EvaluationOrder::HighToLow {
+				batch_output.challenges.reverse();
+			}
+
+			batch_output
 		};
 
 		// Step 3: Sample a challenge for the next layer

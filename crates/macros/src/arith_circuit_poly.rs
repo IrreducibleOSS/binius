@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use quote::{quote, ToTokens};
-use syn::{bracketed, parse::Parse, parse_quote, spanned::Spanned, Token};
+use quote::{ToTokens, quote};
+use syn::{Token, bracketed, parse::Parse, parse_quote, spanned::Spanned};
 
 #[derive(Debug)]
 pub(crate) struct ArithCircuitPolyItem {
@@ -18,7 +18,7 @@ impl ToTokens for ArithCircuitPolyItem {
 				use binius_field::Field;
 				use binius_math::ArithExpr as Expr;
 
-				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new(&#poly)
+				binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new((#poly).into())
 			}
 		});
 	}

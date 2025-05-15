@@ -1,11 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use binius_core::constraint_system::channel::ChannelId;
 use binius_field::{ExtensionField, PackedExtension, PackedField, PackedSubfield, TowerField};
 use itertools::Itertools;
 
-use crate::builder::{Col, FlushOpts, TableBuilder, TableWitnessSegment, B1, B128};
+use crate::builder::{B1, B128, Col, FlushOpts, TableBuilder, TableWitnessSegment};
 
 /// A lookup producer gadget is used to create a lookup table.
 ///
@@ -38,7 +38,7 @@ impl LookupProducer {
 				value_cols.iter().copied(),
 				FlushOpts {
 					multiplicity: 1 << i,
-					selector: Some(multiplicity_col),
+					selectors: vec![multiplicity_col],
 				},
 			);
 		}
@@ -60,6 +60,16 @@ impl LookupProducer {
 		P: PackedExtension<B1>,
 		P::Scalar: TowerField,
 	{
+		if self.multiplicity_bits.len() < u32::BITS as usize {
+			for count in counts.clone() {
+				ensure!(
+					count < (1 << self.multiplicity_bits.len()) as u32,
+					"count {count} exceeds maximum configured multiplicity; \
+					try raising the multiplicity bits in the constraint system"
+				);
+			}
+		}
+
 		// TODO: Optimize the gadget for bit-transposing u32s
 		for (j, &multiplicity_col) in self.multiplicity_bits.iter().enumerate().take(32) {
 			let mut multiplicity_col = index.get_mut(multiplicity_col)?;
@@ -82,12 +92,12 @@ mod tests {
 
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		test_utils::{validate_system_witness, ClosureFiller},
 		ConstraintSystem, WitnessIndex,
+		test_utils::{ClosureFiller, validate_system_witness},
 	};
 
 	fn with_lookup_test_instance(
@@ -211,5 +221,47 @@ mod tests {
 		with_lookup_test_instance(true, |cs, witness| {
 			validate_system_witness::<OptimalUnderlier128b>(cs, witness, vec![])
 		});
+	}
+
+	#[test]
+	fn test_lookup_overflows_max_multiplicity() {
+		let mut cs = ConstraintSystem::new();
+		let chan = cs.add_channel("values");
+
+		let mut lookup_table = cs.add_table("lookup");
+		lookup_table.require_power_of_two_size();
+		let lookup_table_id = lookup_table.id();
+		let values_col = lookup_table.add_committed::<B128, 1>("values");
+		let lookup_producer = LookupProducer::new(&mut lookup_table, chan, &[values_col], 1);
+
+		let lookup_table_size = 64;
+		let mut rng = StdRng::seed_from_u64(0);
+		let values = repeat_with(|| B128::random(&mut rng))
+			.take(lookup_table_size)
+			.collect::<Vec<_>>();
+
+		let counts = vec![9; lookup_table_size];
+		let values_and_counts = iter::zip(values, counts).collect::<Vec<_>>();
+
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		// Attempt to fill the lookup table
+		let result = witness.fill_table_sequential(
+			&ClosureFiller::new(lookup_table_id, |values_and_counts, witness| {
+				{
+					let mut values_col = witness.get_scalars_mut(values_col)?;
+					for (dst, (val, _)) in iter::zip(&mut *values_col, values_and_counts) {
+						*dst = *val;
+					}
+				}
+				lookup_producer
+					.populate(witness, values_and_counts.iter().map(|(_, count)| *count))?;
+				Ok(())
+			}),
+			&values_and_counts,
+		);
+		assert!(result.is_err());
 	}
 }

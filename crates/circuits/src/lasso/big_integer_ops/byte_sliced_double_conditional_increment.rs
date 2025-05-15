@@ -3,7 +3,7 @@
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{tower_levels::TowerLevel, BinaryField1b, BinaryField8b};
+use binius_field::{BinaryField1b, BinaryField8b, tower_levels::TowerLevel};
 
 use crate::{
 	builder::ConstraintSystemBuilder,
@@ -21,7 +21,7 @@ pub fn byte_sliced_double_conditional_increment<Level: TowerLevel<Data<OracleId>
 	first_carry_in: OracleId,
 	second_carry_in: OracleId,
 	log_size: usize,
-	zero_oracle_carry: usize,
+	zero_oracle_carry: OracleId,
 	lookup_batch_dci: &mut LookupBatch,
 ) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error> {
 	if Level::WIDTH == 1 {

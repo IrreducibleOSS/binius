@@ -8,16 +8,16 @@ use binius_core::{
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 };
 use binius_field::{
-	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField1b, BinaryField64b, Field,
-	PackedField, TowerField,
+	BinaryField1b, BinaryField64b, Field, PackedField, TowerField, as_packed_field::PackedType,
+	underlier::WithUnderlier,
 };
 use binius_macros::arith_expr;
-use bytemuck::{pod_collect_to_vec, Pod};
+use bytemuck::{Pod, pod_collect_to_vec};
 
 use crate::{
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	transparent::step_down,
 };
@@ -510,9 +510,9 @@ const KECCAKF_RC: [u64; ROUNDS_PER_PERMUTATION] = [
 
 #[cfg(test)]
 mod tests {
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
-	use super::{keccakf, KeccakfState};
+	use super::{KeccakfState, keccakf};
 	use crate::builder::test_utils::test_circuit;
 
 	#[test]
@@ -520,7 +520,7 @@ mod tests {
 		test_circuit(|builder| {
 			let log_size = 5;
 			let mut rng = StdRng::seed_from_u64(0);
-			let input_states = vec![KeccakfState(rng.gen())];
+			let input_states = vec![KeccakfState(rng.r#gen())];
 			let _state_out = keccakf(builder, &Some(input_states), log_size)?;
 			Ok(vec![])
 		})

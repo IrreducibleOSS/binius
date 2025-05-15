@@ -3,15 +3,16 @@
 use std::{array, mem::MaybeUninit};
 
 use binius_field::{
-	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	make_binary_to_aes_packed_transformer, underlier::WithUnderlier, AesToBinaryTransformation,
-	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, PackedAESBinaryField8x32b,
-	PackedBinaryField8x32b, PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	AesToBinaryTransformation, BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable, linear_transformation::Transformation,
+	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
+	underlier::WithUnderlier,
 };
 use digest::{
+	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
 	consts::{U32, U96},
 	core_api::BlockSizeUser,
-	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
 };
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
@@ -359,8 +360,8 @@ mod tests {
 	use hex_literal::hex;
 
 	use super::{
-		MultiDigest, VisionHasherDigest, VisionHasherDigestByteSliced,
-		HASHES_PER_BYTE_SLICED_PERMUTATION,
+		HASHES_PER_BYTE_SLICED_PERMUTATION, MultiDigest, VisionHasherDigest,
+		VisionHasherDigestByteSliced,
 	};
 
 	#[test]
@@ -369,7 +370,8 @@ mod tests {
 		let data = [0xde, 0xad, 0xbe, 0xef];
 		hasher.update(data);
 		let out = hasher.finalize();
-		// This hash is retrieved from a modified python implementation with the Keccak padding scheme and the changed mds matrix.
+		// This hash is retrieved from a modified python implementation with the Keccak padding
+		// scheme and the changed mds matrix.
 		let expected = &hex!("8ed389809fabe91cead4786eb08e2d32647a9ac69143040de500e4465c72f173");
 		assert_eq!(expected, &*out);
 	}

@@ -17,18 +17,18 @@ use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::super::portable::{
-	packed::{impl_pack_scalar, PackedPrimitiveType},
-	packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
+	packed::{PackedPrimitiveType, impl_pack_scalar},
+	packed_arithmetic::{UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd},
 };
 use crate::{
+	BinaryField,
 	arch::binary_utils::{as_array_mut, as_array_ref},
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, transpose_128b_values, unpack_lo_128b_fallback, NumCast,
-		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		NumCast, Random, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+		impl_divisible, impl_iteration, transpose_128b_values, unpack_lo_128b_fallback,
 	},
-	BinaryField,
 };
 
 /// 128-bit value that is used for 128-bit SIMD operations

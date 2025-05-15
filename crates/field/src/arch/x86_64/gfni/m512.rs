@@ -3,15 +3,15 @@
 use core::arch::x86_64::*;
 use std::array;
 
-use gfni_arithmetics::{get_8x8_matrix, GfniType};
+use gfni_arithmetics::{GfniType, get_8x8_matrix};
 
 use super::*;
 use crate::{
-	arch::{x86_64::m512::M512, GfniSpecializedStrategy512b},
+	BinaryField, PackedField,
+	arch::{GfniSpecializedStrategy512b, x86_64::m512::M512},
 	arithmetic_traits::TaggedPackedTransformationFactory,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::WithUnderlier,
-	BinaryField, PackedField,
 };
 
 impl GfniType for M512 {
@@ -33,7 +33,8 @@ impl GfniType for M512 {
 
 /// Specialized GFNI transformation for AVX512-packed 128-bit binary fields.
 /// Get advantage of the fact that we can multiply 8 8x8 matrices by some elements at once.
-/// Theoretically we can have similar implementation for different scalar sizes, but it is not implemented yet.
+/// Theoretically we can have similar implementation for different scalar sizes, but it is not
+/// implemented yet.
 pub struct GfniTransformation512b {
 	// Each element contains 8 8x8 matrices
 	bases_8x8: [[__m512i; 2]; 16],
@@ -89,8 +90,9 @@ where
 		let even_mask = unsafe { _mm512_set1_epi16(0xff00u16 as i16) };
 		for col in 0..16 {
 			// Permute 8b elements from [b_0, ..., b_64] to
-			// [b_col, b_col, b_(col + 16), b_(col + 16), b_(col + 32), b_(col + 32), b_(col + 48), b_(col + 48), ...]
-			// This is a cross-lane operation and usually takes more cycles so we are doing it once for the pair instead of twice.
+			// [b_col, b_col, b_(col + 16), b_(col + 16), b_(col + 32), b_(col + 32), b_(col + 48),
+			// b_(col + 48), ...] This is a cross-lane operation and usually takes more cycles so
+			// we are doing it once for the pair instead of twice.
 			let permuted_data = unsafe { _mm512_permutexvar_epi8(self.permute_masks[col], data.0) };
 
 			// Multiply 8 8x8 matrices by odd 8b elements

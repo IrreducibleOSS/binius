@@ -1,7 +1,7 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use super::{arithmetic_traits::InvertOrZero, binary_field::*};
-use crate::{arithmetic_traits::MulAlpha, PackedField};
+use crate::{PackedField, arithmetic_traits::MulAlpha};
 
 pub(crate) trait TowerFieldArithmetic: TowerField {
 	fn multiply(self, rhs: Self) -> Self;
@@ -103,8 +103,8 @@ impl_arithmetic_using_packed!(BinaryField32b);
 impl_arithmetic_using_packed!(BinaryField64b);
 impl_arithmetic_using_packed!(BinaryField128b);
 
-/// For some architectures it may be faster to used SIM versions for packed fields than to use portable
-/// single-element arithmetics. That's why we need these functions
+/// For some architectures it may be faster to used SIM versions for packed fields than to use
+/// portable single-element arithmetics. That's why we need these functions
 #[inline]
 pub(super) fn multiple_using_packed<P: PackedField>(lhs: P::Scalar, rhs: P::Scalar) -> P::Scalar {
 	(P::set_single(lhs) * P::set_single(rhs)).get(0)

@@ -2,15 +2,15 @@
 
 use binius_field::PackedField;
 use binius_math::{
-	fold_left_lerp_inplace, fold_right_lerp, EvaluationOrder, MultilinearPoly, MultilinearQueryRef,
+	EvaluationOrder, MultilinearPoly, MultilinearQueryRef, fold_left_lerp_inplace, fold_right_lerp,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::zeroed_vec;
 
 use crate::{
-	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
 	Error, SumcheckMultilinear,
+	common::{MAX_SRC_SUBCUBE_LOG_BITS, subcube_vars_for_bits},
 };
 
 pub(crate) fn fold_multilinears<P, M>(
@@ -53,7 +53,8 @@ where
 				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
-					// At switchover we partially evaluate the multilinear at an expanded tensor query.
+					// At switchover we partially evaluate the multilinear at an expanded tensor
+					// query.
 					let tensor_query = tensor_query
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");
@@ -120,7 +121,8 @@ where
 
 				fold_right_lerp(
 					evals.as_slice(),
-					// evals is optimally truncated, upper bound on non const scalars is quite tight
+					// evals is optimally truncated, upper bound on non const scalars is quite
+					// tight
 					evals.len() * P::WIDTH,
 					challenge,
 					suffix_eval,
@@ -162,7 +164,8 @@ where
 				const_suffix: (suffix_eval, suffix_len),
 			} => {
 				if *switchover_round == 0 {
-					// At switchover we partially evaluate the multilinear at an expanded tensor query.
+					// At switchover we partially evaluate the multilinear at an expanded tensor
+					// query.
 					let tensor_query = tensor_query
 						.as_ref()
 						.expect("guaranteed to be Some while there is still a transparent");

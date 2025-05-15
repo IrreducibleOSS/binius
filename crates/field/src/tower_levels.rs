@@ -15,9 +15,9 @@ use binius_utils::checked_arithmetics::checked_log_2;
 ///
 /// This is mostly useful for recursively implementing arithmetic operations
 ///
-/// These separate implementations are necessary to overcome the limitations of const generics in Rust.
-/// These implementations eliminate costly bounds checking that would otherwise be imposed by the compiler
-/// and allow easy inlining of recursive functions.
+/// These separate implementations are necessary to overcome the limitations of const generics in
+/// Rust. These implementations eliminate costly bounds checking that would otherwise be imposed by
+/// the compiler and allow easy inlining of recursive functions.
 pub trait TowerLevel: 'static {
 	// WIDTH is ALWAYS a power of 2
 	const WIDTH: usize;

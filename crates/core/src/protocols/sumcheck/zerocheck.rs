@@ -5,8 +5,8 @@ use std::{
 	ops::{Mul, MulAssign},
 };
 
-use binius_field::{packed::set_packed_slice, ExtensionField, Field, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_field::{ExtensionField, Field, PackedField, TowerField, packed::set_packed_slice};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
@@ -18,8 +18,8 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck::{
-		eq_ind::EqIndSumcheckClaim, BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
-		VerificationError,
+		BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim, VerificationError,
+		eq_ind::EqIndSumcheckClaim,
 	},
 };
 
@@ -139,8 +139,8 @@ pub const fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: 
 
 /// Output of the batched zerocheck reduction
 pub struct BatchZerocheckOutput<F: Field> {
-	/// Sumcheck challenges corresponding to low indexed variables "skipped" by the univariate round.
-	/// Assigned by the univariatizing reduction sumcheck.
+	/// Sumcheck challenges corresponding to low indexed variables "skipped" by the univariate
+	/// round. Assigned by the univariatizing reduction sumcheck.
 	pub skipped_challenges: Vec<F>,
 	/// Sumcheck challenges correspending to high indexed variables that are not "skipped" and are
 	/// reduced via follow up multilinear eq-ind sumcheck.
@@ -149,10 +149,11 @@ pub struct BatchZerocheckOutput<F: Field> {
 	pub concat_multilinear_evals: Vec<F>,
 }
 
-/// A reduction from a set of multilinear zerocheck claims to the set of univariatized eq-ind sumcheck claims.
+/// A reduction from a set of multilinear zerocheck claims to the set of univariatized eq-ind
+/// sumcheck claims.
 ///
-/// Zerocheck claims should be in non-descending `n_vars` order. The resulting claims assume that a univariate
-/// round of `skip_rounds` has taken place before the eq-ind sumchecks.
+/// Zerocheck claims should be in non-descending `n_vars` order. The resulting claims assume that a
+/// univariate round of `skip_rounds` has taken place before the eq-ind sumchecks.
 pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	skip_rounds: usize,
 	claims: &[ZerocheckClaim<F, Composition>],
@@ -186,14 +187,15 @@ pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 		.collect()
 }
 
-/// Creates a "combined" sumcheck claim for the reduction from evaluations of univariatized virtual multilinear
-/// oracles to "regular" multilinear evaluations.
+/// Creates a "combined" sumcheck claim for the reduction from evaluations of univariatized virtual
+/// multilinear oracles to "regular" multilinear evaluations.
 ///
 /// Univariatized virtual multilinear oracles are given by:
-/// $$\hat{M}(\hat{u}_1,x_1,\ldots,x_n) = \sum M(u_1,\ldots, u_k, x_1, \ldots, x_n) \cdot L_u(\hat{u}_1)$$
-/// It is assumed that `univariatized_multilinear_evals` came directly from a previous sumcheck with a univariate
-/// round batching `skip_rounds` variables. Multilinear evals of the reduction sumcheck are concatenated together
-/// in order to create the Lagrange coefficient MLE (in the last position) only once.
+/// $$\hat{M}(\hat{u}_1,x_1,\ldots,x_n) = \sum M(u_1,\ldots, u_k, x_1, \ldots, x_n) \cdot
+/// L_u(\hat{u}_1)$$ It is assumed that `univariatized_multilinear_evals` came directly from a
+/// previous sumcheck with a univariate round batching `skip_rounds` variables. Multilinear evals of
+/// the reduction sumcheck are concatenated together in order to create the Lagrange coefficient MLE
+/// (in the last position) only once.
 pub fn univariatizing_reduction_claim<F: Field>(
 	skip_rounds: usize,
 	univariatized_multilinear_evals: &[impl AsRef<[F]>],
@@ -227,8 +229,9 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// Verify the validity of sumcheck outputs for the reduction zerocheck.
 ///
 /// This takes in the output of the univariatizing reduction sumcheck and returns the output that
-/// can be used to create multilinear evaluation claims. This simply strips off the evaluation of the
-/// Lagrange basis MLE at `univariate_challenge` (denoted by \hat{u}_1$) and verifies its correctness.
+/// can be used to create multilinear evaluation claims. This simply strips off the evaluation of
+/// the Lagrange basis MLE at `univariate_challenge` (denoted by \hat{u}_1$) and verifies its
+/// correctness.
 pub fn verify_reduction_sumcheck_output<F>(
 	claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 	skip_rounds: usize,
@@ -313,16 +316,16 @@ mod tests {
 	use std::sync::Arc;
 
 	use binius_field::{
+		AESTowerField8b, AESTowerField16b, AESTowerField128b, BinaryField8b, BinaryField16b,
+		BinaryField128b, ByteSlicedAES64x128b,
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		underlier::{UnderlierType, WithUnderlier},
-		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
-		BinaryField8b, ByteSlicedAES64x128b,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::Groestl256;
 	use binius_math::IsomorphicEvaluationDomainFactory;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{
@@ -468,8 +471,8 @@ mod tests {
 
 	#[test]
 	fn test_zerocheck_end_to_end_with_nontrivial_packing() {
-		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 4.
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 4.
 		test_zerocheck_end_to_end_helper::<
 			OptimalUnderlier512b,
 			BinaryField128b,

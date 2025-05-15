@@ -3,23 +3,23 @@
 use std::any::TypeId;
 
 use binius_utils::random_access_sequence::RandomAccessSequence;
-use bytemuck::{zeroed_vec, Pod};
+use bytemuck::{Pod, zeroed_vec};
 
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+	BinaryField128bPolyval, PackedField,
 	arch::{
-		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
-		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*,
-		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
+		byte_sliced::*, packed_8::*, packed_16::*, packed_32::*, packed_64::*, packed_128::*,
+		packed_256::*, packed_512::*, packed_aes_8::*, packed_aes_16::*, packed_aes_32::*,
+		packed_aes_64::*, packed_aes_128::*, packed_aes_256::*, packed_aes_512::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
-	BinaryField8b, PackedField,
 };
 
 /// A marker trait that the slice of packed values can be iterated as a sequence of bytes.
-/// The order of the iteration by BinaryField1b subfield elements and bits within iterated bytes must
-/// be the same.
+/// The order of the iteration by BinaryField1b subfield elements and bits within iterated bytes
+/// must be the same.
 ///
 /// # Safety
 /// The implementor must ensure that the cast of the slice of packed values to the slice of bytes
@@ -225,14 +225,15 @@ macro_rules! iterate_byte_sliced {
 }
 
 /// Callback for byte iteration.
-/// We can't return different types from the `iterate_bytes` and Fn traits don't support associated types
-/// that's why we use a callback with a generic function.
+/// We can't return different types from the `iterate_bytes` and Fn traits don't support associated
+/// types that's why we use a callback with a generic function.
 pub trait ByteIteratorCallback {
 	fn call(&mut self, iter: impl Iterator<Item = u8>);
 }
 
 /// Iterate over bytes of a slice of the packed values.
-/// The method panics if the packed field doesn't support byte iteration, so use `can_iterate_bytes` to check it.
+/// The method panics if the packed field doesn't support byte iteration, so use `can_iterate_bytes`
+/// to check it.
 #[inline(always)]
 pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIteratorCallback) {
 	if is_sequential_bytes::<P>() {
@@ -377,12 +378,12 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 	}
 }
 
-/// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding to bits in a byte.
-/// The lookup table has the following structure:
+/// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding
+/// to bits in a byte. The lookup table has the following structure:
 /// [
-///     partial_sum_chunk_0_7_byte_0, partial_sum_chunk_0_7_byte_1, ..., partial_sum_chunk_0_7_byte_255,
-///     partial_sum_chunk_8_15_byte_0, partial_sum_chunk_8_15_byte_1, ..., partial_sum_chunk_8_15_byte_255,
-///    ...
+///     partial_sum_chunk_0_7_byte_0, partial_sum_chunk_0_7_byte_1, ...,
+/// partial_sum_chunk_0_7_byte_255,     partial_sum_chunk_8_15_byte_0,
+/// partial_sum_chunk_8_15_byte_1, ..., partial_sum_chunk_8_15_byte_255,    ...
 /// ]
 pub fn create_partial_sums_lookup_tables<P: PackedField>(
 	values: impl RandomAccessSequence<P>,

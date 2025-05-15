@@ -11,7 +11,7 @@ use std::{
 use either::Either;
 
 use self::private::Try;
-use super::{parallel_wrapper::ParallelWrapper, FromParallelIterator, IntoParallelIterator};
+use super::{FromParallelIterator, IntoParallelIterator, parallel_wrapper::ParallelWrapper};
 
 /// `rayon::prelude::ParallelIterator` has at least `fold` method with a signature
 /// that is not compatible with the one in `std::iter::Iterator`. That's why we can't use
@@ -19,7 +19,8 @@ use super::{parallel_wrapper::ParallelWrapper, FromParallelIterator, IntoParalle
 /// (like it is in the original `maybe-rayon` crate) or even derive from it (this would raise
 /// ambiguous methods error at the place of usages allowing fully-qualified call syntax only which
 /// looks super-ugly).
-/// That's why we have this trait and implement `ParallelIterator` for `ParallelWrapper<I: ParallelIteratorInner>`.
+/// That's why we have this trait and implement `ParallelIterator` for `ParallelWrapper<I:
+/// ParallelIteratorInner>`.
 pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 	#[inline]
 	fn for_each<OP>(self, op: OP)
@@ -238,7 +239,8 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 			.unwrap_or_else(|| Self::Item::from_output(identity()))
 	}
 
-	/// Since `std::iterator::Iterator::try_reduce` is not stable yet, we have to implement it manually.
+	/// Since `std::iterator::Iterator::try_reduce` is not stable yet, we have to implement it
+	/// manually.
 	#[inline]
 	fn try_reduce_with<T, OP>(self, op: OP) -> Option<Self::Item>
 	where

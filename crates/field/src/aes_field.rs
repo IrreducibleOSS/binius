@@ -9,20 +9,23 @@ use std::{
 };
 
 use binius_utils::{
-	bytes::{Buf, BufMut},
 	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	bytes::{Buf, BufMut},
 };
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::{
+	BinaryField8b, Error, PackedExtension, PackedSubfield,
 	arithmetic_traits::InvertOrZero,
-	binary_field::{binary_field, impl_field_extension, BinaryField, BinaryField1b},
+	binary_field::{BinaryField, BinaryField1b, binary_field, impl_field_extension},
 	binary_field_arithmetic::TowerFieldArithmetic,
-	mul_by_binary_field_1b, BinaryField8b, Error, PackedExtension, PackedSubfield,
+	mul_by_binary_field_1b,
 };
 use crate::{
+	BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b, ExtensionField, Field,
+	TowerField,
 	as_packed_field::AsPackedField,
 	binary_field_arithmetic::{impl_arithmetic_using_packed, impl_mul_primitive},
 	binary_tower,
@@ -31,15 +34,14 @@ use crate::{
 	},
 	packed::PackedField,
 	underlier::U1,
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	TowerField,
 };
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
 // that is isomorphically included into binary tower, i.e.:
 //  - AESTowerField16b is GF(2^16) / (x^2 + x * x_2 + 1) where `x_2` is 0x10 from
 // BinaryField8b isomorphically projected to AESTowerField8b.
-//  - AESTowerField32b is GF(2^32) / (x^2 + x * x_3 + 1), where `x_3` is 0x1000 from AESTowerField16b.
+//  - AESTowerField32b is GF(2^32) / (x^2 + x * x_3 + 1), where `x_3` is 0x1000 from
+//    AESTowerField16b.
 //  ...
 binary_field!(pub AESTowerField8b(u8), 0xD0);
 binary_field!(pub AESTowerField16b(u16), 0x4745);
@@ -348,15 +350,15 @@ serialize_deserialize_non_canonical!(AESTowerField128b, canonical = BinaryField1
 
 #[cfg(test)]
 mod tests {
-	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
+	use binius_utils::{SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::{arbitrary::any, proptest};
 	use rand::thread_rng;
 
 	use super::*;
 	use crate::{
+		PackedAESBinaryField4x32b, PackedAESBinaryField8x32b, PackedAESBinaryField16x32b,
+		PackedBinaryField4x32b, PackedBinaryField8x32b, PackedBinaryField16x32b,
 		binary_field::tests::is_binary_field_valid_generator, underlier::WithUnderlier,
-		PackedAESBinaryField16x32b, PackedAESBinaryField4x32b, PackedAESBinaryField8x32b,
-		PackedBinaryField16x32b, PackedBinaryField4x32b, PackedBinaryField8x32b,
 	};
 
 	fn check_square(f: impl Field) {

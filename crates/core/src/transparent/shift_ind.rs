@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField, util::eq};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -34,12 +34,13 @@ use crate::{
 /// Observe $\forall x \in \{0, 1\}^b$, there is at most one $y \in \{0, 1\}^b$ s.t. $f(x, y) = 1$
 ///
 /// # Intuition
-/// Consider the lexicographic ordering of each point on the $b$-variate hypercube into a $2^b$ length array.
-/// Thus, we can give each element on the hypercube a unique index $\in \{0, \ldots, 2^b - 1\}$
-/// Let $x, y \in \{0, 1\}^{b}$ be s.t. $\{x\} = i$ and $\{y\} = j$
+/// Consider the lexicographic ordering of each point on the $b$-variate hypercube into a $2^b$
+/// length array. Thus, we can give each element on the hypercube a unique index $\in \{0, \ldots,
+/// 2^b - 1\}$ Let $x, y \in \{0, 1\}^{b}$ be s.t. $\{x\} = i$ and $\{y\} = j$
 /// $f(x, y) = 1$ iff:
 ///     * taking $o$ steps from $j$ gets you to $i$
-/// (wrap around if ShiftVariant is Circular + direction of steps depending on ShiftVariant's direction)
+/// (wrap around if ShiftVariant is Circular + direction of steps depending on ShiftVariant's
+/// direction)
 ///
 /// # Note
 /// CircularLeft corresponds to the shift indicator in Section 4.3.
@@ -57,8 +58,9 @@ use crate::{
 ///     * $f((1, 0), (0, 1)) = 1$ because $2 - 1 = 1$ mod $4$
 ///     * $f((0, 1), (1, 1)) = 1$ because $3 - 1 = 2$ mod $4$
 ///     * $f((1, 1), (0, 0)) = 1$ because $0 - 1 = 3$ mod $4$
-/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-/// Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[b_i, c_i, d_i, a_i]_i]
+/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) =
+/// 0. Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[b_i, c_i, d_i,
+/// a_i]_i]
 ///
 /// # Example
 /// Let $b$ = 2, $o$ = 1, variant = LogicalLeft.
@@ -68,8 +70,9 @@ use crate::{
 ///     * $f((0, 0), (1, 0)) = 1$ because $1 - 1 = 0$
 ///     * $f((1, 0), (0, 1)) = 1$ because $2 - 1 = 1$
 ///     * $f((0, 1), (1, 1)) = 1$ because $3 - 1 = 2$
-/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-/// Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[b_i, c_i, d_i, 0]_i]
+/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) =
+/// 0. Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[b_i, c_i, d_i,
+/// 0]_i]
 ///
 /// # Example
 /// Let $b$ = 2, $o$ = 1, variant = LogicalRight.
@@ -79,8 +82,9 @@ use crate::{
 ///     * $f((1, 0), (0, 0)) = 1$ because $0 + 1 = 1$
 ///     * $f((0, 1), (1, 0)) = 1$ because $1 + 1 = 2$
 ///     * $f((1, 1), (0, 1)) = 1$ because $2 + 1 = 3$
-/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-/// Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[0, a_i, b_i, c_i]_i]
+/// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) =
+/// 0. Using these shift params, if f = [[a_i, b_i, c_i, d_i]_i], then shifted_f = [[0, a_i, b_i,
+/// c_i]_i]
 #[derive(Debug, Clone)]
 pub struct ShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
@@ -427,8 +431,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;

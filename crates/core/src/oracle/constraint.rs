@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use binius_field::{Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::{ArithCircuit, ArithExpr, CompositionPoly};
+use binius_math::{ArithCircuit, CompositionPoly};
 use binius_utils::bail;
 use itertools::Itertools;
 
@@ -15,7 +15,8 @@ use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
 /// concrete types.
 pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 
-/// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
+/// Constraint is a type erased composition along with a predicate on its values on the boolean
+/// hypercube
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Constraint<F: Field> {
 	pub name: String,
@@ -23,15 +24,16 @@ pub struct Constraint<F: Field> {
 	pub predicate: ConstraintPredicate<F>,
 }
 
-/// Predicate can either be a sum of values of a composition on the hypercube (sumcheck) or equality to zero
-/// on the hypercube (zerocheck)
+/// Predicate can either be a sum of values of a composition on the hypercube (sumcheck) or equality
+/// to zero on the hypercube (zerocheck)
 #[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
 pub enum ConstraintPredicate<F: Field> {
 	Sum(F),
 	Zero,
 }
 
-/// Constraint set is a group of constraints that operate over the same set of oracle-identified multilinears
+/// Constraint set is a group of constraints that operate over the same set of oracle-identified
+/// multilinears
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct ConstraintSet<F: Field> {
 	pub n_vars: usize,
@@ -39,17 +41,19 @@ pub struct ConstraintSet<F: Field> {
 	pub constraints: Vec<Constraint<F>>,
 }
 
-// A deferred constraint constructor that instantiates index composition after the superset of oracles is known
+// A deferred constraint constructor that instantiates index composition after the superset of
+// oracles is known
 #[allow(clippy::type_complexity)]
 struct UngroupedConstraint<F: Field> {
 	name: String,
 	oracle_ids: Vec<OracleId>,
-	composition: ArithExpr<F>,
+	composition: ArithCircuit<F>,
 	predicate: ConstraintPredicate<F>,
 }
 
 /// A builder struct that turns individual compositions over oraclized multilinears into a set of
-/// type erased `IndexComposition` instances operating over a superset of oracles of all constraints.
+/// type erased `IndexComposition` instances operating over a superset of oracles of all
+/// constraints.
 #[derive(Default)]
 pub struct ConstraintSetBuilder<F: Field> {
 	constraints: Vec<UngroupedConstraint<F>>,
@@ -65,7 +69,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 	pub fn add_sumcheck(
 		&mut self,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-		composition: ArithExpr<F>,
+		composition: ArithCircuit<F>,
 		sum: F,
 	) {
 		self.constraints.push(UngroupedConstraint {
@@ -80,7 +84,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		&mut self,
 		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-		composition: ArithExpr<F>,
+		composition: ArithCircuit<F>,
 	) {
 		self.constraints.push(UngroupedConstraint {
 			name: name.to_string(),
@@ -133,7 +137,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 				.into_iter()
 				.map(|constraint| Constraint {
 					name: constraint.name,
-					composition: ArithCircuit::<F>::from(&constraint.composition)
+					composition: constraint
+						.composition
 						.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
 							"precondition: oracle_ids is a superset of constraint.oracle_ids",
 						))
@@ -160,23 +165,21 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.constraints
 			.iter()
 			.map(|constraint| constraint.oracle_ids.clone())
-			.chain(oracles.iter().filter_map(|oracle| match oracle.variant {
-				MultilinearPolyVariant::Shifted(ref shifted) => {
-					Some(vec![oracle.id(), shifted.id()])
-				}
-				MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+			.chain(oracles.polys().filter_map(|oracle| match &oracle.variant {
+				MultilinearPolyVariant::Shifted(shifted) => Some(vec![oracle.id(), shifted.id()]),
+				MultilinearPolyVariant::LinearCombination(linear_combination) => {
 					Some(linear_combination.polys().chain([oracle.id()]).collect())
 				}
 				_ => None,
 			}))
 			.collect::<Vec<_>>();
 
-		let groups = binius_utils::graph::connected_components(
-			&connected_oracle_chunks
-				.iter()
-				.map(|x| x.as_slice())
-				.collect::<Vec<_>>(),
-		);
+		let connected_oracle_chunks = connected_oracle_chunks
+			.iter()
+			.map(|x| x.iter().map(|y| y.index()).collect::<Vec<usize>>())
+			.collect::<Vec<Vec<usize>>>();
+
+		let groups = binius_utils::graph::connected_components(&connected_oracle_chunks);
 
 		let n_vars_and_constraints = self
 			.constraints
@@ -210,8 +213,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 
 		let grouped_constraints = n_vars_and_constraints
 			.into_iter()
-			.sorted_by_key(|(_, constraint)| groups[constraint.oracle_ids[0]])
-			.chunk_by(|(_, constraint)| groups[constraint.oracle_ids[0]]);
+			.sorted_by_key(|(_, constraint)| groups[constraint.oracle_ids[0].index()])
+			.chunk_by(|(_, constraint)| groups[constraint.oracle_ids[0].index()]);
 
 		let constraint_sets = grouped_constraints
 			.into_iter()
@@ -233,7 +236,8 @@ impl<F: Field> ConstraintSetBuilder<F> {
 					.into_iter()
 					.map(|constraint| Constraint {
 						name: constraint.name,
-						composition: ArithCircuit::<F>::from(&constraint.composition)
+						composition: constraint
+							.composition
 							.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
 								"precondition: oracle_ids is a superset of constraint.oracle_ids",
 							))

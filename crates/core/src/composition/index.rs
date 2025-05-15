@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use binius_field::PackedField;
-use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef};
+use binius_math::{ArithCircuit, CompositionPoly, RowsBatchRef};
 use binius_utils::bail;
 
 use crate::polynomial::Error;
@@ -45,7 +45,7 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		self.composition.degree()
 	}
 
-	fn expression(&self) -> ArithExpr<<P as PackedField>::Scalar> {
+	fn expression(&self) -> ArithCircuit<<P as PackedField>::Scalar> {
 		self.composition
 			.expression()
 			.remap_vars(&self.indices)
@@ -80,7 +80,8 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 
 /// A factory helper method to create an [`IndexComposition`] by looking at
 ///  * `superset` - a set of identifiers of a greater (outer) query
-///  * `subset` - a set of identifiers of a smaller query, the one which corresponds to the inner composition directly
+///  * `subset` - a set of identifiers of a smaller query, the one which corresponds to the inner
+///    composition directly
 ///
 /// Identifiers may be anything `Eq` - `OracleId`, `MultilinearPolyOracle<F>`, etc.
 pub fn index_composition<E, C, const N: usize>(
@@ -152,7 +153,7 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 		}
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
 		match self {
 			Self::Trivariate(index_composition) => {
 				CompositionPoly::<P>::expression(index_composition)
@@ -173,23 +174,16 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 
 #[cfg(test)]
 mod tests {
-	use std::sync::Arc;
-
 	use binius_field::{BinaryField1b, Field};
+	use binius_math::ArithExpr;
 
 	use super::*;
 	use crate::polynomial::ArithCircuitPoly;
 
 	#[test]
 	fn tests_expr() {
-		let expr = ArithExpr::Mul(
-			Arc::new(ArithExpr::Var(0)),
-			Arc::new(ArithExpr::Add(
-				Arc::new(ArithExpr::Var(1)),
-				Arc::new(ArithExpr::Const(BinaryField1b::ONE)),
-			)),
-		);
-		let circuit = ArithCircuitPoly::new(&expr);
+		let expr = ArithExpr::Var(0) * (ArithExpr::Var(1) + ArithExpr::Const(BinaryField1b::ONE));
+		let circuit = ArithCircuitPoly::new((&expr).into());
 
 		let composition = IndexComposition {
 			n_vars: 3,
@@ -199,13 +193,9 @@ mod tests {
 
 		assert_eq!(
 			(&composition as &dyn CompositionPoly<BinaryField1b>).expression(),
-			ArithExpr::Mul(
-				Arc::new(ArithExpr::Var(1)),
-				Arc::new(ArithExpr::Add(
-					Arc::new(ArithExpr::Var(2)),
-					Arc::new(ArithExpr::Const(BinaryField1b::ONE)),
-				)),
-			)
+			ArithCircuit::from(
+				&(ArithExpr::Var(1) * (ArithExpr::Var(2) + ArithExpr::Const(BinaryField1b::ONE)))
+			),
 		);
 	}
 }

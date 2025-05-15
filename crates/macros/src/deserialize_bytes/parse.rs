@@ -1,10 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use syn::{
+	Ident, TypePath,
 	parse::Parse,
 	punctuated::Punctuated,
 	token::{Comma, Eq},
-	Ident, TypePath,
 };
 
 /// Container attributes for the `deserialize_bytes` derive macro.

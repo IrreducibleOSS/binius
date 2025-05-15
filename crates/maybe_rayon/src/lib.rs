@@ -5,10 +5,10 @@
 //! compilation without `rayon`.
 //! This is useful for profiling single-threaded code, as it simplifies call stacks significantly.
 //! The initial code was taken from the `maybe-rayon` crate, but many changes were made to
-//! support the usage of `ParallelIterator` and `IndexedParallelIterator` methods, which have different
-//! signatures from `std::iter::Iterator`. Some of these changes may be potentially backward-incompatible,
-//! and given the absence of tests in the original crate, it is very unlikely that it is possible to
-//! commit the changes back to the original crate.
+//! support the usage of `ParallelIterator` and `IndexedParallelIterator` methods, which have
+//! different signatures from `std::iter::Iterator`. Some of these changes may be potentially
+//! backward-incompatible, and given the absence of tests in the original crate, it is very unlikely
+//! that it is possible to commit the changes back to the original crate.
 
 cfg_if::cfg_if! {
 	if #[cfg(any(not(feature = "rayon"), all(target_arch="wasm32", not(target_feature = "atomics"))))] {

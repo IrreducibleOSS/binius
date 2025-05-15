@@ -3,9 +3,9 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField128b, Field, PackedField, TowerField};
-use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
+use binius_macros::{DeserializeBytes, SerializeBytes, erased_serialize_bytes};
 use binius_math::MultilinearExtension;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -20,7 +20,8 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// * $1, X_0, X_1, X_0X_1, X_2, \ldots, X_0 X_1 \ldots X_{\iota-1}$
 ///
 /// Thus, $\mathcal{T}_{\iota+k}$ has a $\mathcal{T}_{\iota}$-basis of size $2^k$:
-/// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1} \ldots X_{\iota+k-1}$
+/// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1}
+///   \ldots X_{\iota+k-1}$
 #[derive(Debug, Copy, Clone, SerializeBytes, DeserializeBytes)]
 pub struct TowerBasis<F: Field> {
 	k: usize,
@@ -106,9 +107,9 @@ where
 mod tests {
 	use std::iter::repeat_with;
 
-	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_field::{BinaryField32b, BinaryField128b, PackedBinaryField4x32b};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

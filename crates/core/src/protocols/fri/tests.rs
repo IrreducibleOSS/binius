@@ -3,13 +3,13 @@
 use std::{iter::repeat_with, vec};
 
 use binius_field::{
-	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
+	BinaryField, BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField,
+	PackedBinaryField16x16b, PackedField, TowerField,
+	arch::{OptimalUnderlier128b, packed_64::PackedBinaryField4x16b},
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField,
-	PackedBinaryField16x16b, PackedField, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::ParallelIterator;
@@ -22,8 +22,8 @@ use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
-		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
-		FoldRoundOutput,
+		self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput,
+		to_par_scalar_small_chunks,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::ProverTranscript,
@@ -111,7 +111,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let eval_query = backend
 		.multilinear_query::<F>(&verifier_challenges)
 		.unwrap();
-	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.
+	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean
+	// hypercube of) a multilinear polynomial.
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();
 

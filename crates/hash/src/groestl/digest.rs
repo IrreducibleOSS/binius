@@ -7,13 +7,13 @@ use core::fmt;
 
 pub use digest;
 use digest::{
+	HashMarker, InvalidOutputSize, Output,
 	block_buffer::Eager,
 	core_api::{
 		AlgorithmName, Block, BlockSizeUser, Buffer, BufferKindUser, CoreWrapper,
 		CtVariableCoreWrapper, OutputSizeUser, TruncSide, UpdateCore, VariableOutputCore,
 	},
-	typenum::{Unsigned, U32, U64},
-	HashMarker, InvalidOutputSize, Output,
+	typenum::{U32, U64, Unsigned},
 };
 
 use super::{GroestlShortImpl, GroestlShortInternal};

@@ -3,10 +3,10 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
 	packed::{get_packed_slice, get_packed_slice_checked},
 	recast_packed_mut,
 	util::inner_product_unchecked,
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -24,10 +24,13 @@ use tracing::instrument;
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		common::{equal_n_vars_check, small_field_embedding_degree_check},
-		prove::RegularSumcheckProver,
-		zerocheck::{domain_size, extrapolated_scalars_count},
 		Error,
+		common::{equal_n_vars_check, small_field_embedding_degree_check},
+		prove::{
+			RegularSumcheckProver,
+			logging::{ExpandQueryData, UnivariateSkipCalculateCoeffsData},
+		},
+		zerocheck::{domain_size, extrapolated_scalars_count},
 	},
 };
 
@@ -42,7 +45,8 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 
 #[derive(Debug)]
 struct ParFoldStates<FBase: Field, P: PackedExtension<FBase>> {
-	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals). Scratch space.
+	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals).
+	/// Scratch space.
 	evals: Vec<P>,
 	/// `evals` extrapolated beyond first 2^skip_rounds domain points, per multilinear.
 	extrapolated_evals: Vec<Vec<PackedSubfield<P, FBase>>>,
@@ -194,30 +198,35 @@ where
 /// folding for `skip_rounds` (denoted below as $k$) to reap the benefits of faster small field
 /// multiplications. Naive extensions to sumcheck protocol which compute multivariate round
 /// polynomials do not work though, given that for a composition of degree $d$ one would need
-/// $(d+1)^k-2^k$ evaluations (assuming [Gruen24] section 3.2 optimizations), which usually grows faster
-/// than $2^k$ and thus will typically require more work than large field sumcheck. We adopt a
-/// univariatizing approach instead, where we define "oblong" multivariates:
-/// $$\hat{M}(\hat{u}_1,x_1,\ldots,x_n) = \sum M(u_1,\ldots, u_k, x_1, \ldots, x_n) \cdot L_u(\hat{u}_1)$$
-/// with $\mathbb{M}: \hat{u}_1 \rightarrow (u_1, \ldots, u_k)$ being some map from the univariate domain to
-/// the $\mathcal{B}_k$ hypercube and $L_u(\hat{u})$ being Lagrange polynomials.
+/// $(d+1)^k-2^k$ evaluations (assuming [Gruen24] section 3.2 optimizations), which usually grows
+/// faster than $2^k$ and thus will typically require more work than large field sumcheck. We adopt
+/// a univariatizing approach instead, where we define "oblong" multivariates:
+/// $$\hat{M}(\hat{u}_1,x_1,\ldots,x_n) = \sum M(u_1,\ldots, u_k, x_1, \ldots, x_n) \cdot
+/// L_u(\hat{u}_1)$$ with $\mathbb{M}: \hat{u}_1 \rightarrow (u_1, \ldots, u_k)$ being some map from
+/// the univariate domain to the $\mathcal{B}_k$ hypercube and $L_u(\hat{u})$ being Lagrange
+/// polynomials.
 ///
 /// The main idea of the univariatizing approach is that $\hat{M}$ are of degree $2^k-1$ in
 /// $\hat{u}_1$ and multilinear in other variables, thus evaluating a composition of degree $d$ over
 /// $\hat{M}$ yields a total degree of $d(2^k-1)$ in the first round (again, assuming [Gruen24]
 /// section 3.2 trick to avoid multiplication by the equality indicator), which is comparable to
 /// what a regular non-skipping zerocheck prover would do. The only issue is that we normally don't
-/// have an oracle for $\hat{M}$, which necessitates an extra sumcheck reduction to multilinear claims
+/// have an oracle for $\hat{M}$, which necessitates an extra sumcheck reduction to multilinear
+/// claims
 /// (see [univariatizing_reduction_claim](`super::super::zerocheck::univariatizing_reduction_claim`)).
 ///
-/// One special trick of the univariate round is that round polynomial is represented in Lagrange form:
-///  1. Honest prover evaluates to zero on $2^k$ domain points mapping to $\mathcal{B}_k$, reducing proof size
-///  2. Avoiding monomial conversion saves prover time by skipping $O(N^3)$ inverse Vandermonde precomp
+/// One special trick of the univariate round is that round polynomial is represented in Lagrange
+/// form:
+///  1. Honest prover evaluates to zero on $2^k$ domain points mapping to $\mathcal{B}_k$, reducing
+///     proof size
+///  2. Avoiding monomial conversion saves prover time by skipping $O(N^3)$ inverse Vandermonde
+///     precomp
 ///  3. Evaluation in the verifier can be made linear time when barycentric weights are precomputed
 ///
-/// This implementation defines $\mathbb{M}$ to be the basis-induced mapping of the binary field `FDomain`;
-/// the main reason for that is to be able to use additive NTT from [LCH14] for extrapolation. The choice
-/// of domain field impacts performance, thus generally the smallest field with cardinality not less than
-/// the degree of the round polynomial should be used.
+/// This implementation defines $\mathbb{M}$ to be the basis-induced mapping of the binary field
+/// `FDomain`; the main reason for that is to be able to use additive NTT from [LCH14] for
+/// extrapolation. The choice of domain field impacts performance, thus generally the smallest field
+/// with cardinality not less than the degree of the round polynomial should be used.
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
@@ -284,13 +293,16 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
+	let dimensions_data = ExpandQueryData::new(zerocheck_challenges);
 	let expand_span = tracing::debug_span!(
 		"[task] Expand Query",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		?dimensions_data,
 	)
 	.entered();
-	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
+	let partial_eq_ind_evals: <Backend as ComputationBackend>::Vec<P> =
+		backend.tensor_product_full_query(zerocheck_challenges)?;
 	drop(expand_span);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -304,10 +316,13 @@ where
 			)
 		})
 		.collect::<Vec<_>>();
+	let dimensions_data =
+		UnivariateSkipCalculateCoeffsData::new(n_vars, skip_rounds, n_multilinears, log_batch);
 	let coeffs_span = tracing::debug_span!(
 		"[task] Univariate Skip Calculate coeffs",
 		phase = "zerocheck",
-		perfetto_category = "task.main"
+		perfetto_category = "task.main",
+		?dimensions_data,
 	)
 	.entered();
 
@@ -356,8 +371,9 @@ where
 					)?;
 
 					// Extrapolate evals using a conservative upper bound of the composition
-					// degree. We use Additive NTT to extrapolate evals beyond the first 2^skip_rounds,
-					// exploiting the fact that extension field NTT is a strided base field NTT.
+					// degree. We use Additive NTT to extrapolate evals beyond the first
+					// 2^skip_rounds, exploiting the fact that extension field NTT is a strided
+					// base field NTT.
 					let evals_base = <P as PackedExtension<FBase>>::cast_bases_mut(evals);
 					let evals_domain = recast_packed_mut::<P, FBase, FDomain>(evals_base);
 					let extrapolated_evals_domain =
@@ -470,9 +486,9 @@ where
 			},
 		)?;
 
-	// So far evals of each composition are "staggered" in a sense that they are evaluated on the smallest
-	// domain which guarantees uniqueness of the round polynomial. We extrapolate them to max_domain_size to
-	// aid in Gruen section 3.2 optimization below and batch mixing.
+	// So far evals of each composition are "staggered" in a sense that they are evaluated on the
+	// smallest domain which guarantees uniqueness of the round polynomial. We extrapolate them to
+	// max_domain_size to aid in Gruen section 3.2 optimization below and batch mixing.
 	let round_evals = extrapolate_round_evals(staggered_round_evals, skip_rounds, max_domain_size)?;
 	drop(coeffs_span);
 
@@ -555,7 +571,8 @@ fn extrapolate_round_evals<F: TowerField>(
 	max_domain_size: usize,
 ) -> Result<Vec<Vec<F>>, Error> {
 	// Instantiate a large enough NTT over F to be able to forward transform to full domain size.
-	// REVIEW: should be possible to use an existing FDomain NTT with striding, possibly with larger domain.
+	// REVIEW: should be possible to use an existing FDomain NTT with striding, possibly with larger
+	// domain.
 	let ntt = SingleThreadedNTT::with_canonical_field(log2_ceil_usize(max_domain_size))?;
 
 	// Cache OddInterpolate instances, which, albeit small in practice, take cubic time to create.
@@ -587,12 +604,14 @@ fn extrapolate_round_evals<F: TowerField>(
 			log_y: next_log_n,
 			..Default::default()
 		};
-		ntt.forward_transform(round_evals, shape, 0)?;
+		ntt.forward_transform(round_evals, shape, 0, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
-		debug_assert!(round_evals[..1 << skip_rounds]
-			.iter()
-			.all(|&coeff| coeff == F::ZERO));
+		debug_assert!(
+			round_evals[..1 << skip_rounds]
+				.iter()
+				.all(|&coeff| coeff == F::ZERO)
+		);
 
 		// Trim the result.
 		round_evals.resize(max_domain_size, F::ZERO);
@@ -621,15 +640,16 @@ where
 	};
 
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0)?;
+	ntt.inverse_transform(evals, shape, 0, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
 	for (coset, extrapolated_chunk) in
 		izip!(1u32.., extrapolated_evals.chunks_exact_mut(evals.len()))
 	{
-		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when composition_max_degree == 2
+		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when
+		// composition_max_degree == 2
 		extrapolated_chunk.copy_from_slice(evals);
-		ntt.forward_transform(extrapolated_chunk, shape, coset)?;
+		ntt.forward_transform(extrapolated_chunk, shape, coset, 0)?;
 	}
 
 	Ok(())
@@ -648,16 +668,16 @@ mod tests {
 	use std::sync::Arc;
 
 	use binius_field::{
+		BinaryField1b, BinaryField8b, BinaryField16b, BinaryField128b, ExtensionField, Field,
+		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		underlier::UnderlierType,
-		BinaryField128b, BinaryField16b, BinaryField1b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain, MultilinearPoly};
 	use binius_ntt::SingleThreadedNTT;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use crate::{
 		composition::{IndexComposition, ProductComposition},
@@ -753,8 +773,8 @@ mod tests {
 
 	#[test]
 	fn zerocheck_univariate_evals_with_nontrivial_packing() {
-		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 4.
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 4.
 		zerocheck_univariate_evals_invariants_helper::<
 			OptimalUnderlier512b,
 			BinaryField128b,
@@ -822,10 +842,12 @@ mod tests {
 
 			// naive computation of the univariate skip output
 			let round_evals_len = 4usize << skip_rounds;
-			assert!(output
-				.round_evals
-				.iter()
-				.all(|round_evals| round_evals.len() == round_evals_len));
+			assert!(
+				output
+					.round_evals
+					.iter()
+					.all(|round_evals| round_evals.len() == round_evals_len)
+			);
 
 			let compositions = compositions
 				.iter()

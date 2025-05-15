@@ -3,7 +3,7 @@
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{tower_levels::TowerLevel, BinaryField8b};
+use binius_field::{BinaryField8b, tower_levels::TowerLevel};
 
 use super::{byte_sliced_add, byte_sliced_double_conditional_increment};
 use crate::{

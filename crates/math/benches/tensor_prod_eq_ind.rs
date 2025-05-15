@@ -3,11 +3,11 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	arch::packed_64::PackedBinaryField32x2b, BinaryField128b, PackedBinaryField128x1b, PackedField,
+	BinaryField128b, PackedBinaryField128x1b, PackedField, arch::packed_64::PackedBinaryField32x2b,
 };
 use binius_math::tensor_prod_eq_ind;
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 
 pub fn bench_tensor_prod_eq_ind<P: PackedField>(

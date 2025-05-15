@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
-	underlier::{UnderlierType, WithUnderlier},
 	PackedField,
+	underlier::{UnderlierType, WithUnderlier},
 };
 
 // A kibibyte per multilinear seems like a reasonable compromise.

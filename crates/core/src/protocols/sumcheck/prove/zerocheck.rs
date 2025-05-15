@@ -3,10 +3,10 @@
 use std::{marker::PhantomData, mem, sync::Arc};
 
 use binius_field::{
-	packed::{copy_packed_from_scalars_slice, get_packed_slice, set_packed_slice},
-	util::powers,
 	ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, RepackedExtension,
 	TowerField,
+	packed::{copy_packed_from_scalars_slice, get_packed_slice, set_packed_slice},
+	util::powers,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -16,24 +16,24 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use itertools::{izip, Either};
+use itertools::{Either, izip};
 use tracing::instrument;
 
 use crate::{
 	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		common::{equal_n_vars_check, CompositeSumClaim},
+		Error,
+		common::{CompositeSumClaim, equal_n_vars_check},
 		prove::{
+			SumcheckProver, ZerocheckProver,
 			common::fold_partial_eq_ind,
 			eq_ind::EqIndSumcheckProverBuilder,
 			univariate::{
-				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
-				ZerocheckUnivariateFoldResult,
+				ZerocheckUnivariateEvalsOutput, ZerocheckUnivariateFoldResult,
+				zerocheck_univariate_evals,
 			},
-			SumcheckProver, ZerocheckProver,
 		},
-		zerocheck::{domain_size, ZerocheckRoundEvals},
-		Error,
+		zerocheck::{ZerocheckRoundEvals, domain_size},
 	},
 };
 
@@ -74,8 +74,8 @@ where
 	Ok(())
 }
 
-// Pad a small field multilinear to at least `min_n_vars` variables. Padding is on the high indexed variables
-// via concatenating `2^(min_n_vars - n_vars)` copies of evals.
+// Pad a small field multilinear to at least `min_n_vars` variables. Padding is on the high indexed
+// variables via concatenating `2^(min_n_vars - n_vars)` copies of evals.
 pub fn high_pad_small_multilinear<PBase, P, M>(
 	min_n_vars: usize,
 	multilinear: M,
@@ -120,12 +120,14 @@ where
 
 /// Small-field aware zerocheck prover.
 ///
-/// This is a state machine satisfying the contract of [ZerocheckProver](`super::ZerocheckProver`) trait.
-/// Object safety of the latter allows batching several zerocheck provers over different base fields together.
+/// This is a state machine satisfying the contract of [ZerocheckProver](`super::ZerocheckProver`)
+/// trait. Object safety of the latter allows batching several zerocheck provers over different base
+/// fields together.
 ///
-/// Full zerocheck reduction is laid out in the [batch_verify_zerocheck](super::super::batch_verify_zerocheck).
-/// This struct implements the univariate round, witness folding and prover construction for multilinear rounds,
-/// and witness projection for the univariatizing reduction.
+/// Full zerocheck reduction is laid out in the
+/// [batch_verify_zerocheck](super::super::batch_verify_zerocheck). This struct implements the
+/// univariate round, witness folding and prover construction for multilinear rounds, and witness
+/// projection for the univariatizing reduction.
 #[derive(Debug)]
 #[allow(clippy::type_complexity)]
 pub struct ZerocheckProverImpl<
@@ -297,16 +299,18 @@ where
 		self.n_vars
 	}
 
-	fn domain_size(&self, skip_rounds: usize) -> usize {
+	fn domain_size(&self, skip_rounds: usize) -> Option<usize> {
 		let ZerocheckProverState::RoundEval { compositions, .. } = &self.state else {
-			panic!("ZerocheckProver::domain_size should be called before folding/projection")
+			return None;
 		};
 
-		compositions
-			.iter()
-			.map(|(_, composition, _)| domain_size(composition.degree(), skip_rounds))
-			.max()
-			.unwrap_or(0)
+		Some(
+			compositions
+				.iter()
+				.map(|(_, composition, _)| domain_size(composition.degree(), skip_rounds))
+				.max()
+				.unwrap_or(0),
+		)
 	}
 
 	fn execute_univariate_round(

@@ -4,7 +4,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 
 use super::{structured::StructuredDynSize, table::TableId, types::B128};
 
@@ -153,12 +153,16 @@ pub enum ColumnDef<F: TowerField = B128> {
 	},
 	Computed {
 		cols: Vec<ColumnIndex>,
-		expr: ArithExpr<F>,
+		expr: ArithCircuit<F>,
 	},
 	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
+		data: Vec<F>,
 	},
 	StructuredDynSize(StructuredDynSize),
+	StructuredFixedSize {
+		expr: ArithCircuit<F>,
+	},
 	StaticExp {
 		bit_cols: Vec<ColumnIndex>,
 		base: F,

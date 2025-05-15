@@ -5,9 +5,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
+		ConstraintSystem,
 		channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
 		exp::Exp,
-		ConstraintSystem,
 	},
 	oracle::{
 		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId, ShiftVariant,
@@ -17,10 +17,10 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	BinaryField1b,
+	as_packed_field::{PackScalar, PackedType},
 };
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 use binius_utils::bail;
 
 use crate::builder::{
@@ -86,7 +86,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	) -> Result<MultilinearExtensionIndex<'arena, PackedType<U, F>>, anyhow::Error> {
 		Option::take(&mut self.witness)
 			.ok_or_else(|| {
-				anyhow!("Witness is missing. Are you in verifier mode, or have you already extraced the witness?")
+				anyhow!(
+					"Witness is missing. Are you in verifier mode, or have you already extraced the witness?"
+				)
 			})?
 			.build()
 	}
@@ -144,14 +146,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			selector
 		};
 
-		self.flush_custom(direction, channel_id, selector, oracle_ids, multiplicity)
+		self.flush_custom(direction, channel_id, vec![selector], oracle_ids, multiplicity)
 	}
 
 	pub fn flush_custom(
 		&mut self,
 		direction: FlushDirection,
 		channel_id: ChannelId,
-		selector: OracleId,
+		selectors: Vec<OracleId>,
 		oracle_ids: impl IntoIterator<Item = OracleOrConst<F>> + Clone,
 		multiplicity: u64,
 	) -> anyhow::Result<()> {
@@ -167,9 +169,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 
 		let log_rows = self.log_rows(non_const_oracles.iter().copied())?;
 		ensure!(
-			log_rows == self.log_rows([selector])?,
-			"Selector {} n_vars does not match flush {:?}",
-			selector,
+			log_rows == self.log_rows(selectors.clone())?,
+			"Selectors {:?} n_vars does not match flush {:?}",
+			&selectors,
 			non_const_oracles
 		);
 
@@ -177,7 +179,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.flushes.push(Flush {
 			channel_id,
 			direction,
-			selector: Some(selector),
+			selectors,
 			oracles,
 			multiplicity,
 		});
@@ -213,7 +215,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		&mut self,
 		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-		composition: ArithExpr<F>,
+		composition: ArithCircuit<F>,
 	) {
 		self.constraints
 			.add_zerocheck(name, oracle_ids, composition);
@@ -326,7 +328,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
-		comp: ArithExpr<F>,
+		comp: ArithCircuit<F>,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
@@ -353,7 +355,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		id: OracleId,
 		values: Vec<F>,
 		start_index: usize,
-	) -> Result<usize, OracleError> {
+	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
@@ -366,7 +368,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		name: impl ToString,
 		id: OracleId,
 		values: Vec<F>,
-	) -> Result<usize, OracleError> {
+	) -> Result<OracleId, OracleError> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
@@ -410,14 +412,15 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.transparent(poly)
 	}
 
-	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars` variables.
+	/// Adds a zero padding starting at `start_index`, resulting in an output with `n_vars`
+	/// variables.
 	///
 	/// Arguments:
 	/// - `name`: The name of the oracle.
 	/// - `id`: The id of the oracle.
 	/// - `n_pad_vars`: The number of padding variables in the new column.
-	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1 << m`,
-	///   and it is the index of the nonzero block.
+	/// - `nonzero_index`: If there are `m` new variables, then `nonzero_index` is between 0 and `1
+	///   << m`, and it is the index of the nonzero block.
 	pub fn add_zero_padded(
 		&mut self,
 		name: impl ToString,
@@ -441,7 +444,8 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		}
 	}
 
-	/// Anything pushed to the namespace will become part of oracle name, which is useful for debugging.
+	/// Anything pushed to the namespace will become part of oracle name, which is useful for
+	/// debugging.
 	///
 	/// Use `pop_namespace(&mut self)` to remove the latest name.
 	///
@@ -478,7 +482,8 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	///
 	/// Fails if no columns are provided, or not all columns have the same number of rows.
 	///
-	/// This is useful for writing circuits with internal columns that depend on the height of input columns.
+	/// This is useful for writing circuits with internal columns that depend on the height of input
+	/// columns.
 	pub fn log_rows(
 		&self,
 		oracle_ids: impl IntoIterator<Item = OracleId>,

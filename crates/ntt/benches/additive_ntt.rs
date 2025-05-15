@@ -3,14 +3,14 @@
 use std::{iter::repeat_with, mem};
 
 use binius_field::{
+	BinaryField, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedBinaryField8x32b,
+	PackedBinaryField16x16b, PackedField,
 	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
-	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
-	PackedBinaryField8x32b, PackedField,
 };
 use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
-	Throughput,
+	BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
+	measurement::WallTime,
 };
 use rand::thread_rng;
 
@@ -136,7 +136,7 @@ fn bench_forward_transform(c: &mut Criterion) {
 				..Default::default()
 			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.forward_transform(data, shape, 0));
+				b.iter(|| ntt.forward_transform(data, shape, 0, 0));
 			});
 		}
 	}
@@ -166,7 +166,7 @@ fn bench_inverse_transform(c: &mut Criterion) {
 				..Default::default()
 			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.inverse_transform(data, shape, 0));
+				b.iter(|| ntt.inverse_transform(data, shape, 0, 0));
 			});
 		}
 	}

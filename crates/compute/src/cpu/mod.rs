@@ -8,6 +8,7 @@
 
 pub mod layer;
 pub mod memory;
+mod tower_macro;
 
 pub use layer::CpuLayer;
 pub use memory::CpuMemory;

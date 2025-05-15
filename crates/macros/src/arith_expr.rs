@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use quote::{quote, ToTokens};
-use syn::{bracketed, parse::Parse, parse_quote, spanned::Spanned, Token};
+use quote::{ToTokens, quote};
+use syn::{Token, bracketed, parse::Parse, parse_quote, spanned::Spanned};
 
 #[derive(Debug)]
 pub(crate) struct ArithExprItem(syn::Expr);
@@ -9,7 +9,7 @@ pub(crate) struct ArithExprItem(syn::Expr);
 impl ToTokens for ArithExprItem {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
 		let Self(expr) = self;
-		tokens.extend(quote!(#expr));
+		tokens.extend(quote!(binius_math::ArithCircuit::from(#expr)));
 	}
 }
 
@@ -57,8 +57,13 @@ fn rewrite_expr(
 					"1" => parse_quote!(binius_field::Field::ONE),
 					_ => match prefixed_field {
 						Some(field) => parse_quote!(#field::new(#int)),
-						_ => return Err(syn::Error::new(expr.span(), "You need to specify an explicit field to use constants other than 0 or 1"))
-					}
+						_ => {
+							return Err(syn::Error::new(
+								expr.span(),
+								"You need to specify an explicit field to use constants other than 0 or 1",
+							));
+						}
+					},
 				};
 				*expr = parse_quote!(binius_math::ArithExpr::<#field>::Const(#value));
 			}

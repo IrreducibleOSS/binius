@@ -1,10 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_field::{Field, PackedField, util::eq};
+use binius_math::{ArithCircuit, CompositionPoly};
 use binius_utils::bail;
 use getset::CopyGetters;
-use itertools::{izip, Either};
+use itertools::{Either, izip};
 
 use super::{
 	common::{CompositeSumClaim, SumcheckClaim},
@@ -41,10 +41,7 @@ where
 		n_multilinears: usize,
 		eq_ind_composite_sums: Vec<CompositeSumClaim<F, Composition>>,
 	) -> Result<Self, Error> {
-		for CompositeSumClaim {
-			ref composition, ..
-		} in &eq_ind_composite_sums
-		{
+		for CompositeSumClaim { composition, .. } in &eq_ind_composite_sums {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
 					actual: composition.n_vars(),
@@ -76,7 +73,8 @@ where
 /// A reduction from a set of eq-ind sumcheck claims to the set of regular sumcheck claims.
 ///
 /// Requirement: eq-ind sumcheck challenges have been sampled before this is called. This routine
-/// adds an extra multiplication by the equality indicator (which is the last multilinear, by agreement).
+/// adds an extra multiplication by the equality indicator (which is the last multilinear, by
+/// agreement).
 pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
@@ -146,7 +144,8 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		bail!(VerificationError::NumberOfRounds);
 	}
 
-	// Incremental equality indicator computation by linear scan over claims in ascending `n_vars` order.
+	// Incremental equality indicator computation by linear scan over claims in ascending `n_vars`
+	// order.
 	let mut eq_ind_eval = F::ONE;
 	let mut last_n_vars = 0;
 	for (claim, multilinear_evals) in claims_evals_non_desc {
@@ -199,8 +198,8 @@ where
 		self.inner.degree() + 1
 	}
 
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::Var(self.inner.n_vars())
+	fn expression(&self) -> ArithCircuit<P::Scalar> {
+		self.inner.expression() * ArithCircuit::var(self.inner.n_vars())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -223,16 +222,16 @@ mod tests {
 	use std::{iter, sync::Arc};
 
 	use binius_field::{
+		BinaryField8b, BinaryField32b, BinaryField128b, ExtensionField, Field,
+		PackedBinaryField1x128b, PackedExtension, PackedField, PackedFieldIndexable,
+		PackedSubfield, RepackedExtension, TowerField,
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		packed::set_packed_slice,
 		underlier::UnderlierType,
-		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField1x128b, PackedExtension, PackedField, PackedFieldIndexable,
-		PackedSubfield, RepackedExtension, TowerField,
 	};
 	use binius_hal::{
-		make_portable_backend, ComputationBackend, ComputationBackendExt, SumcheckMultilinear,
+		ComputationBackend, ComputationBackendExt, SumcheckMultilinear, make_portable_backend,
 	};
 	use binius_hash::groestl::Groestl256;
 	use binius_math::{
@@ -240,24 +239,23 @@ mod tests {
 		IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 		MultilinearQuery,
 	};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use crate::{
 		composition::BivariateProduct,
 		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			sumcheck::{
-				self,
+				self, BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim,
 				eq_ind::{ClaimsSortingOrder, ExtraProduct},
 				immediate_switchover_heuristic,
 				prove::{
-					eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 					RegularSumcheckProver,
+					eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 				},
-				BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::{
-				generate_zero_product_multilinears, AddOneComposition, TestProductComposition,
+				AddOneComposition, TestProductComposition, generate_zero_product_multilinears,
 			},
 		},
 		transcript::ProverTranscript,
@@ -405,8 +403,8 @@ mod tests {
 	fn test_eq_ind_sumcheck_prove_verify_256b() {
 		let n_vars = 8;
 
-		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 2.
+		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 2.
 		test_prove_verify_bivariate_product_helper::<
 			OptimalUnderlier256b,
 			BinaryField128b,
@@ -418,8 +416,8 @@ mod tests {
 	fn test_eq_ind_sumcheck_prove_verify_512b() {
 		let n_vars = 8;
 
-		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
-		// non-trivial packing width of 4.
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have
+		// a non-trivial packing width of 4.
 		test_prove_verify_bivariate_product_helper::<
 			OptimalUnderlier512b,
 			BinaryField128b,

@@ -2,9 +2,9 @@
 
 use std::iter::repeat_with;
 
-use binius_field::{BinaryField128b, BinaryField1b, BinaryField32b, ExtensionField, PackedField};
+use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, ExtensionField, PackedField};
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 
 pub fn bench_inner_product_par<FX, PX, PY>(

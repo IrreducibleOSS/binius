@@ -4,13 +4,13 @@ use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
-	tower_levels::TowerLevel, underlier::WithUnderlier, BinaryField32b, BinaryField8b, TowerField,
+	BinaryField8b, BinaryField32b, TowerField, tower_levels::TowerLevel, underlier::WithUnderlier,
 };
 use binius_macros::arith_expr;
 
 use super::{byte_sliced_add_carryfree, byte_sliced_mul};
 use crate::{
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 	lasso::{
 		batch::LookupBatch,
 		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
@@ -38,7 +38,7 @@ pub fn byte_sliced_modular_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = 
 
 	// The double conditional increment wont be used if we're at the base of the tower
 	let lookup_t_dci = if LevelIn::WIDTH == 1 {
-		usize::MAX
+		OracleId::invalid()
 	} else {
 		dci_lookup(builder, "dci table")?
 	};
@@ -100,7 +100,7 @@ pub fn byte_sliced_modular_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = 
 
 		let mut remainder: Vec<_> = (0..LevelIn::WIDTH)
 			.map(|this_byte_idx| {
-				let this_byte_oracle: usize = remainder[this_byte_idx];
+				let this_byte_oracle = remainder[this_byte_idx];
 				witness.new_column::<B8>(this_byte_oracle)
 			})
 			.collect();

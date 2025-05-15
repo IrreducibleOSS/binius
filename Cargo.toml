@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 authors = ["Irreducible Team <opensource@irreducible.com>"]
 
 [workspace.lints.clippy]
@@ -91,7 +91,7 @@ bytemuck = { version = "1.18.0", features = [
     "must_cast",
 ] }
 bytes = "1.7.2"
-bytesize = "1.3.0"
+bytesize = "2.0"
 cfg-if = "1.0.0"
 criterion = { version = "0.5.1" }
 derive_more = "0.99.17"
@@ -100,9 +100,9 @@ either = "1.11.0"
 generic-array = "0.14.7"
 getset = "0.1.2"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
-hex-literal = "0.4.1"
+hex-literal = "1.0"
 inventory = "0.3.19"
-itertools = "0.13.0"
+itertools = "0.14.0"
 lazy_static = "1.5.0"
 paste = "1.0.15"
 proc-macro2 = "1.0.81"
@@ -111,6 +111,9 @@ quote = "1.0.36"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rayon = "1.8.0"
 seq-macro = "0.3.5"
+serde = "1.0.219"
+serde_json = "1.0.140"
+serde_json_any_key = "2.0.0"
 sha2 = "0.10.8"
 stackalloc = "1.2.1"
 subtle = "2.5.0"
@@ -120,7 +123,7 @@ thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 trait-set = "0.3.0"
 tracing = "0.1.38"
-tracing-profile = "0.10.4"
+tracing-profile = "0.10.5"
 transpose = "0.2.2"
 
 [profile.release]
