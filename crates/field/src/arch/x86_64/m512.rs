@@ -1743,7 +1743,7 @@ mod tests {
 
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let original_value = M512::from(core::array::from_fn(|_| rng.gen::<u128>()));
+		let original_value = M512::from(core::array::from_fn(|_| rng.r#gen::<u128>()));
 
 		let mut buf = BytesMut::new();
 		original_value.serialize(&mut buf, mode).unwrap();

@@ -1547,7 +1547,7 @@ mod tests {
 
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let original_value = M256::from([rng.gen::<u128>(), rng.gen::<u128>()]);
+		let original_value = M256::from([rng.r#gen::<u128>(), rng.r#gen::<u128>()]);
 
 		let mut buf = BytesMut::new();
 		original_value.serialize(&mut buf, mode).unwrap();
