@@ -47,11 +47,27 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		}
 	}
 
+	/// Declares that the table's size must be a power of two.
+	///
+	/// The table's size is decided by the prover, but it must be a power of two.
+	///
+	/// ## Pre-conditions
+	///
+	/// This cannot be called if [`Self::require_power_of_two_size`] or
+	/// [`Self::require_fixed_size`] has already been called.
 	pub fn require_power_of_two_size(&mut self) {
+		assert!(matches!(self.table.table_size_spec, TableSizeSpec::Arbitrary));
 		self.table.table_size_spec = TableSizeSpec::PowerOfTwo;
 	}
 
+	/// Declares that the table's size must be a fixed power of two.
+	///
+	/// ## Pre-conditions
+	///
+	/// This cannot be called if [`Self::require_power_of_two_size`] or
+	/// [`Self::require_fixed_size`] has already been called.
 	pub fn require_fixed_size(&mut self, log_size: usize) {
+		assert!(matches!(self.table.table_size_spec, TableSizeSpec::Arbitrary));
 		self.table.table_size_spec = TableSizeSpec::Fixed { log_size };
 	}
 
@@ -172,6 +188,13 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Adds a derived column that is computed as an expression over other columns in the table.
+	///
+	/// The derived column has the same vertical stacking factor as the input columns and its
+	/// values are computed independently. The cost of the column's evaluations are proportional
+	/// to the polynomial degree of the expression. When the expression is linear, the column's
+	/// cost is minimal. When the expression is non-linear, the column's evaluations are resolved
+	/// by a sumcheck reduction.
 	pub fn add_computed<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
@@ -215,44 +238,56 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_selected<FSub, const VALUES_PER_ROW: usize>(
+	/// Add a derived column that selects a single value from a vertically stacked column.
+	///
+	/// The virtual column is derived from another column in the table passed as `col`, which we'll
+	/// call the "inner" column. The inner column has `V` values vertically stacked per table cell.
+	/// The `index` is in the range `0..V`, and it selects the `index`-th value from the inner
+	/// column.
+	pub fn add_selected<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		col: Col<FSub, VALUES_PER_ROW>,
+		col: Col<FSub, V>,
 		index: usize,
 	) -> Col<FSub, 1>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(index < VALUES_PER_ROW);
+		assert!(index < V);
 		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Selected {
 				col: col.id(),
 				index,
-				index_bits: log2_strict_usize(VALUES_PER_ROW),
+				index_bits: log2_strict_usize(V),
 			},
 		)
 	}
 
-	pub fn add_selected_block<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+	/// Add a derived column that selects a subrange of values from a vertically stacked column.
+	///
+	/// The virtual column is derived from another column in the table passed as `col`, which we'll
+	/// call the "inner" column. The inner column has `V` values vertically stacked per table cell.
+	/// The `index` is in the range `0..(V - NEW_V)`, and it selects the values
+	/// `(i * NEW_V)..((i + 1) * NEW_V)` from the inner column.
+	pub fn add_selected_block<FSub, const V: usize, const NEW_V: usize>(
 		&mut self,
 		name: impl ToString,
-		col: Col<FSub, VALUES_PER_ROW>,
+		col: Col<FSub, V>,
 		index: usize,
-	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	) -> Col<FSub, NEW_V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(VALUES_PER_ROW.is_power_of_two());
-		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
-		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
+		assert!(V.is_power_of_two());
+		assert!(NEW_V.is_power_of_two());
+		assert!(NEW_V < V);
 
-		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(V);
 		// This is also the value of the start_index.
-		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_V);
 		// Get the log size of the query.
 		let log_query_size = log_values_per_row - log_new_values_per_row;
 
@@ -330,18 +365,22 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
+	/// Adds a column to the table with a constant cell value.
+	///
+	/// The cell is repeated for each row in the table, but the values stacked vertically within
+	/// the cell are not necessarily all equal.
+	pub fn add_constant<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		constants: [FSub; VALUES_PER_ROW],
-	) -> Col<FSub, VALUES_PER_ROW>
+		constants: [FSub; V],
+	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
 	{
 		let namespaced_name = self.namespaced_name(name);
-		let n_vars = log2_strict_usize(VALUES_PER_ROW);
+		let n_vars = log2_strict_usize(V);
 		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
 		let mle = MultilinearExtensionTransparent::<
 			PackedType<OptimalUnderlier, FSub>,
@@ -470,17 +509,19 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.new_column(namespaced_name, ColumnDef::StructuredFixedSize { expr })
 	}
 
-	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		expr: Expr<FSub, VALUES_PER_ROW>,
-	) where
+	/// Constrains that an expression computed over the table columns is zero.
+	///
+	/// The zero constraint applies to all values stacked vertically within the column cells. That
+	/// means that the expression is evaluated independently `V` times per row, and each evaluation
+	/// in the stack must be zero.
+	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
+	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
 		let namespaced_name = self.namespaced_name(name);
 		self.table
-			.partition_mut(VALUES_PER_ROW)
+			.partition_mut(V)
 			.assert_zero(namespaced_name, expr)
 	}
 
