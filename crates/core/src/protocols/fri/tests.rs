@@ -62,7 +62,7 @@ fn test_help_fri_compatible_ntt_domains(log_dim: usize, arity: usize) {
 	.unwrap();
 
 	// Encode the message over the large domain.
-	let mut codeword = msg.clone();
+	let mut codeword = msg;
 	ntt.forward_transform(
 		&mut codeword,
 		NTTShape {

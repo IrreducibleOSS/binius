@@ -335,6 +335,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
 			// i indexes the layer of the NTT network, also the binary subspace.
+			#[allow(clippy::needless_range_loop)]
 			for i in 0..par_rounds.saturating_sub(skip_rounds) {
 				let s_evals_par_i = &s_evals[i];
 				let coset_offset = coset << (par_rounds - 1 - i);
