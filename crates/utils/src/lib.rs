@@ -10,6 +10,7 @@ pub mod felts;
 pub mod formatting;
 pub mod graph;
 pub mod iter;
+pub mod mem;
 pub mod random_access_sequence;
 pub mod rayon;
 pub mod serialization;
