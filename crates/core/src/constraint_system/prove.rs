@@ -500,8 +500,10 @@ where
 					.collect::<Result<Vec<_>, _>>()?;
 
 				let n_vars = composite.n_vars();
+
 				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
 
+				let len: usize = 1 << n_vars;
 				let packed_len: usize = 1 << n_vars.saturating_sub(log_width);
 
 				let inner_c = composite.c();
@@ -509,7 +511,7 @@ where
 				let zero_suffixes = count_zero_suffixes(&selectors);
 
 				for (zero_suffix, id, poly) in izip!(&zero_suffixes, inner_polys, selectors) {
-					let nonzero_scalars_prefixes = (1 << oracles.n_vars(*id)) - zero_suffix;
+					let nonzero_scalars_prefixes = len.saturating_sub(*zero_suffix);
 
 					witness.update_multilin_poly_with_nonzero_scalars_prefixes([(
 						*id,
