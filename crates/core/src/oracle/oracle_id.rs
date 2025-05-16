@@ -7,6 +7,7 @@ use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, Seri
 /// Identifier for a multilinear oracle in a [`super::MultilinearOracleSet`].
 ///
 /// This is essentially an index.
+#[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OracleId(usize);
 
