@@ -2,17 +2,11 @@
 
 use std::iter;
 
-use binius_field::{
-	packed::{iter_packed_slice_with_offset, len_packed_slice},
-	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
-};
+use binius_field::{BinaryField, ExtensionField, PackedField};
 use binius_math::{extrapolate_line_scalar, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::AdditiveNTT;
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, SerializeBytes};
 use bytemuck::zeroed_vec;
-use bytes::BufMut;
-use itertools::izip;
 use tracing::instrument;
 
 /// FRI-fold the interleaved codeword using the given challenges.
@@ -29,7 +23,7 @@ use tracing::instrument;
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[instrument(skip_all, level = "debug")]
-pub fn fold_interleaved<F, FS, NTT, P>(
+pub fn fold_interleaved_allocated<F, FS, NTT, P>(
 	ntt: &NTT,
 	codeword: &[P],
 	challenges: &[F],
@@ -44,7 +38,7 @@ pub fn fold_interleaved<F, FS, NTT, P>(
 {
 	assert_eq!(codeword.len(), 1 << (log_len + log_batch_size).saturating_sub(P::LOG_WIDTH));
 	assert!(challenges.len() >= log_batch_size);
-	assert_eq!(out.len(), 1 << (log_len - log_batch_size));
+	assert_eq!(out.len(), 1 << (log_len - (challenges.len() - log_batch_size)));
 
 	let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
 	let tensor = MultilinearQuery::expand(interleave_challenges);
@@ -71,6 +65,25 @@ pub fn fold_interleaved<F, FS, NTT, P>(
 				)
 			},
 		)
+}
+
+pub fn fold_interleaved<F, FS, NTT, P>(
+	ntt: &NTT,
+	codeword: &[P],
+	challenges: &[F],
+	log_len: usize,
+	log_batch_size: usize,
+) -> Vec<F>
+where
+	F: BinaryField + ExtensionField<FS>,
+	FS: BinaryField,
+	NTT: AdditiveNTT<FS> + Sync,
+	P: PackedField<Scalar = F>,
+{
+	let mut result =
+		zeroed_vec(1 << log_len.saturating_sub(challenges.len().saturating_sub(log_batch_size)));
+	fold_interleaved_allocated(ntt, codeword, challenges, log_len, log_batch_size, &mut result);
+	result
 }
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.

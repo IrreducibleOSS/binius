@@ -2,6 +2,7 @@
 
 use std::{array, iter::repeat_with};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	AESTowerField128b, BinaryField128b, BinaryField1b, ByteSliced16x128x1b, ByteSlicedAES16x128b,
@@ -21,7 +22,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::{
 	fiat_shamir::HasherChallenger,
 	oracle::{MultilinearOracleSet, ShiftVariant},
-	polynomial::{ArithCircuitPoly, MultivariatePoly},
+	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
 		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckHint,
 		EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,

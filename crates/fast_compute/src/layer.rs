@@ -4,14 +4,13 @@ use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUnini
 
 use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
-	cpu::{layer::count_total_local_buffer_sizes, CpuLayer},
+	cpu::layer::count_total_local_buffer_sizes,
 	layer::{
 		ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap, KernelMemMapChunk,
 	},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
-	packed::PackedSlice,
 	tower::{PackedTop, TowerFamily},
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
@@ -20,10 +19,7 @@ use binius_field::{
 use binius_math::{
 	fold_left, fold_right, tensor_prod_eq_ind, ArithExpr, CompositionPoly, RowsBatchRef,
 };
-use binius_maybe_rayon::{
-	iter::{IntoParallelIterator, ParallelIterator},
-	slice::{ParallelSlice, ParallelSliceMut},
-};
+use binius_maybe_rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
@@ -33,7 +29,7 @@ use bytemuck::zeroed_vec;
 
 use crate::{
 	arith_circuit::ArithCircuitPoly,
-	fri::fold_interleaved,
+	fri::fold_interleaved_allocated,
 	memory::{PackedMemory, PackedMemorySliceMut},
 };
 
@@ -188,7 +184,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 	fn accumulate_kernels(
 		&self,
-		exec: &mut Self::Exec,
+		_exec: &mut Self::Exec,
 		map: impl Sync
 			+ for<'a> Fn(
 				&'a mut Self::KernelExec,
@@ -327,7 +323,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 	fn fold_right<'a>(
 		&'a self,
-		exec: &'a mut Self::Exec,
+		_exec: &'a mut Self::Exec,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
 		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
@@ -456,12 +452,19 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		unpack_if_possible_mut(
 			data_out.data,
 			|out| {
-				fold_interleaved(ntt, data_in.data, challenges, log_len, log_batch_size, out);
+				fold_interleaved_allocated(
+					ntt,
+					data_in.data,
+					challenges,
+					log_len,
+					log_batch_size,
+					out,
+				);
 			},
 			|packed| {
 				let mut out_scalars =
 					zeroed_vec(1 << (log_len - (challenges.len() - log_batch_size)));
-				fold_interleaved(
+				fold_interleaved_allocated(
 					ntt,
 					packed,
 					challenges,

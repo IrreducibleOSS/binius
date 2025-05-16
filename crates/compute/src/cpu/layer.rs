@@ -521,7 +521,7 @@ where
 mod tests {
 	use std::{iter::repeat_with, mem::MaybeUninit};
 
-	use binius_core::protocols::fri::fold_interleaved;
+	use binius_fast_compute::fri::fold_interleaved;
 	use binius_field::{
 		tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
 		ExtensionField, Field, PackedExtension, PackedField, TowerField,
@@ -737,7 +737,10 @@ mod tests {
 		assert_eq!(eval2, expected_eval2);
 	}
 
-	fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+	fn test_generic_single_inner_product_using_kernel_accumulator<
+		F: Field,
+		C: ComputeLayer<F, ExprEval: Sync> + Sync,
+	>(
 		compute: C,
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		n_vars: usize,
@@ -789,9 +792,9 @@ mod tests {
 							.iter()
 							.map(|buf| buf.to_ref())
 							.collect::<Vec<_>>();
-						let slice_batch = SlicesBatch::new(&kernel_data, kernel_data[0].len());
+						let row_len = kernel_data[0].len();
+						let slice_batch = SlicesBatch::new(kernel_data, row_len);
 						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-						let log_len = checked_log_2(kernel_data[0].len());
 						compute
 							.sum_composition_evals(
 								kernel_exec,

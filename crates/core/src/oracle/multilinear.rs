@@ -2,6 +2,7 @@
 
 use std::{array, sync::Arc};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::ArithCircuit;
@@ -10,9 +11,7 @@ use getset::{CopyGetters, Getters};
 
 use crate::{
 	oracle::{CompositePolyOracle, Error, OracleId},
-	polynomial::{
-		ArithCircuitPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
-	},
+	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
 
 /// Meta struct that lets you add optional `name` for the Multilinear before adding to the

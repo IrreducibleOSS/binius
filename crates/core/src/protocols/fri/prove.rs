@@ -1,10 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
 	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
 };
-use binius_math::MultilinearQuery;
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::AdditiveNTT;
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize, SerializeBytes};
@@ -22,7 +22,7 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	protocols::fri::{common::fold_interleaved_chunk, logging::FRIFoldData},
+	protocols::fri::logging::FRIFoldData,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{ProverTranscript, TranscriptWriter},
 };

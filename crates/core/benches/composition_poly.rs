@@ -2,7 +2,7 @@
 
 use std::iter::repeat_with;
 
-use binius_core::polynomial::ArithCircuitPoly;
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 	PackedField,

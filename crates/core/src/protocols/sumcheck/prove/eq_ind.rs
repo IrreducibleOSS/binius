@@ -2,6 +2,7 @@
 
 use std::{cmp::Reverse, marker::PhantomData, ops::Range};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{
 	make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator,
@@ -19,7 +20,7 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultivariatePoly},
+	polynomial::{Error as PolynomialError, MultivariatePoly},
 	protocols::sumcheck::{
 		common::{
 			equal_n_vars_check, get_nontrivial_evaluation_points,

@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::{Deref, RangeBounds};
+use std::ops::RangeBounds;
 
 use binius_field::TowerField;
 use binius_utils::checked_arithmetics::checked_int_div;

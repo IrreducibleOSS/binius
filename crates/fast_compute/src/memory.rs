@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 use binius_compute::memory::{ComputeMemory, SizedSlice};
 use binius_field::PackedField;
-use binius_utils::checked_arithmetics::checked_int_div;
 
 pub struct PackedMemory<P>(PhantomData<P>);
 

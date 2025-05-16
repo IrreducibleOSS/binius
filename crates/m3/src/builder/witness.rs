@@ -9,9 +9,9 @@ use std::{
 };
 
 use binius_core::{
-	oracle::OracleId, polynomial::ArithCircuitPoly, transparent::step_down::StepDown,
-	witness::MultilinearExtensionIndex,
+	oracle::OracleId, transparent::step_down::StepDown, witness::MultilinearExtensionIndex,
 };
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::PackedType,
