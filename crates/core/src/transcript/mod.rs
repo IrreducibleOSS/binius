@@ -14,11 +14,11 @@
 
 mod error;
 
-use std::{iter::repeat_with, slice};
+use std::{fs::File, io::Write, iter::repeat_with, slice};
 
 use binius_field::{PackedField, TowerField};
 use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
-use bytes::{Buf, BufMut, Bytes, BytesMut, buf::UninitSlice};
+use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
 use tracing::warn;
 
@@ -112,7 +112,9 @@ impl<Challenger_: Default + Challenger> ProverTranscript<Challenger_> {
 	}
 
 	pub fn into_verifier(self) -> VerifierTranscript<Challenger_> {
-		VerifierTranscript::new(self.finalize())
+		let transcript = self.finalize();
+
+		VerifierTranscript::new(transcript)
 	}
 }
 
@@ -124,7 +126,15 @@ impl<Challenger_: Default + Challenger> Default for ProverTranscript<Challenger_
 
 impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	pub fn finalize(self) -> Vec<u8> {
-		self.combined.buffer.to_vec()
+		let transcript = self.combined.buffer.to_vec();
+
+		if let Ok(filename) = std::env::var("BINIUS_DUMP_PROOF") {
+			let mut file = File::create(&filename)
+				.unwrap_or_else(|_| panic!("Failed to create proof dump file: {filename}"));
+			file.write_all(&transcript)
+				.expect("Failed to write proof to dump file");
+		}
+		transcript
 	}
 
 	/// Sets the debug flag.
@@ -489,11 +499,11 @@ pub fn write_u64<B: BufMut>(transcript: &mut TranscriptWriter<B>, n: u64) {
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField128b, BinaryField8b,
-		BinaryField32b, BinaryField64b, BinaryField128b, BinaryField128bPolyval,
+		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField8b, BinaryField128b,
+		BinaryField128bPolyval, BinaryField32b, BinaryField64b, BinaryField8b,
 	};
 	use binius_hash::groestl::Groestl256;
-	use rand::{RngCore, thread_rng};
+	use rand::{thread_rng, RngCore};
 
 	use super::*;
 	use crate::fiat_shamir::HasherChallenger;
