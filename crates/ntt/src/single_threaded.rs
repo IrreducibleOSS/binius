@@ -456,9 +456,11 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
 	use assert_matches::assert_matches;
 	use binius_field::{
-		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedFieldIndexable,
+		BinaryField16b, BinaryField8b, Field, PackedBinaryField8x16b, PackedFieldIndexable,
 	};
 	use binius_math::Error as MathError;
 	use rand::{rngs::StdRng, SeedableRng};
@@ -478,6 +480,62 @@ mod tests {
 		let ntt = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
 		assert_eq!(ntt.subspace(0).dim(), 10);
 		assert_eq!(ntt.subspace(9).dim(), 1);
+	}
+
+	/// The additive NTT has a useful property that the NTT output of an internally zero-padded
+	/// input has the structure of repeating codeword symbols.
+	///
+	/// More precisely, let $m \in K^{2^\ell}$ be a message and $c = \text{NTT}_{\ell}(m)$ be its
+	/// NTT evaluation on the domain $S^{(\ell)}$. Define $m' \in K^{2^{\ell+\nu}}$ to be a
+	/// sequence with $m'_{i * 2^\nu} = m_i$ and $m'_j = 0$ when $j \ne 0 \mod 2^\nu$. The
+	/// property is that $c' = \text{NTT}_{\ell+\nu}(m')$ will have the structure
+	/// $c'_j = c_{\lfloor j / 2^\nu \rfloor}$.
+	///
+	/// So for $\nu = 2$, then $m' = (m_0, 0, 0, 0, m_1, 0, 0, 0, \ldots, m_{\ell-1}, 0, 0, 0)$ and
+	/// $c' = (c_0, c_0, c_0, c_0, c_1, c_1, c_1, c_1, \ldots, c_{\ell-1}, c_{\ell-1}, c_{\ell-1},
+	/// c_{\ell-1})$.
+	#[test]
+	fn test_repetition_property() {
+		let log_len = 8;
+		let ntt = SingleThreadedNTT::<BinaryField16b>::new(log_len + 2).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let msg = repeat_with(|| <BinaryField16b as Field>::random(&mut rng))
+			.take(1 << log_len)
+			.collect::<Vec<_>>();
+
+		let mut msg_padded = vec![BinaryField16b::ZERO; 1 << (log_len + 2)];
+		for i in 0..1 << log_len {
+			msg_padded[i << 2] = msg[i];
+		}
+
+		let mut out = msg;
+		ntt.forward_transform(
+			&mut out,
+			NTTShape {
+				log_y: log_len,
+				..Default::default()
+			},
+			0,
+			0,
+			0,
+		)
+		.unwrap();
+		let mut out_rep = msg_padded;
+		ntt.forward_transform(
+			&mut out_rep,
+			NTTShape {
+				log_y: log_len + 2,
+				..Default::default()
+			},
+			0,
+			0,
+			0,
+		)
+		.unwrap();
+		for i in 0..1 << (log_len + 2) {
+			assert_eq!(out_rep[i], out[i >> 2]);
+		}
 	}
 
 	#[test]
