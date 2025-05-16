@@ -18,7 +18,7 @@ use std::{fs::File, io::Write, iter::repeat_with, slice};
 
 use binius_field::{PackedField, TowerField};
 use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
-use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut, buf::UninitSlice};
 pub use error::Error;
 use tracing::warn;
 
@@ -499,11 +499,11 @@ pub fn write_u64<B: BufMut>(transcript: &mut TranscriptWriter<B>, n: u64) {
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField8b, BinaryField128b,
-		BinaryField128bPolyval, BinaryField32b, BinaryField64b, BinaryField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField128b, BinaryField8b,
+		BinaryField32b, BinaryField64b, BinaryField128b, BinaryField128bPolyval,
 	};
 	use binius_hash::groestl::Groestl256;
-	use rand::{thread_rng, RngCore};
+	use rand::{RngCore, thread_rng};
 
 	use super::*;
 	use crate::fiat_shamir::HasherChallenger;
