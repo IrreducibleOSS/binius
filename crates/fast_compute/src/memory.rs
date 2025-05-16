@@ -162,7 +162,7 @@ mod tests {
 
 		assert_eq!(PackedMemory::slice(memory, 0..2 * Packed::WIDTH).data, &data_clone[0..2]);
 		assert_eq!(PackedMemory::slice(memory, ..2 * Packed::WIDTH).data, &data_clone[..2]);
-		assert_eq!(PackedMemory::slice(memory, 1 * Packed::WIDTH..).data, &data_clone[1..]);
+		assert_eq!(PackedMemory::slice(memory, Packed::WIDTH..).data, &data_clone[1..]);
 		assert_eq!(PackedMemory::slice(memory, ..).data, &data_clone[..]);
 
 		// check panic on non-aligned slice
@@ -188,9 +188,9 @@ mod tests {
 	fn test_convert_mut_mem_slice_to_const() {
 		let mut data = make_random_vec(3);
 		let data_clone = data.clone();
-		let mut memory = PackedMemorySliceMut::new(&mut data);
+		let memory = PackedMemorySliceMut::new(&mut data);
 
-		assert_eq!(PackedMemory::as_const(&mut memory).data, &data_clone[..]);
+		assert_eq!(PackedMemory::as_const(&memory).data, &data_clone[..]);
 	}
 
 	#[test]

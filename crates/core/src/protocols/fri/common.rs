@@ -1,10 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter, marker::PhantomData};
+use std::marker::PhantomData;
 
-use binius_field::{BinaryField, ExtensionField, PackedField};
-use binius_math::extrapolate_line_scalar;
-use binius_ntt::AdditiveNTT;
+use binius_field::{BinaryField, ExtensionField};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 

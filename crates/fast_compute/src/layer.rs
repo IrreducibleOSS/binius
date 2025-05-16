@@ -148,8 +148,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			7 => inner_product_par(b_in.data, PackedExtension::<T::B128>::cast_bases(a_in.data)),
 			_ => {
 				return Err(Error::InputValidation(format!(
-					"unsupported value of a_edeg: {}",
-					a_edeg
+					"unsupported value of a_edeg: {a_edeg}"
 				)))
 			}
 		};
