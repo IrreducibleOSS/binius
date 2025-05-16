@@ -6,20 +6,19 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
-use bytemuck::{Pod, Zeroable, must_cast};
+use bytemuck::{must_cast, Pod, Zeroable};
 use cfg_if::cfg_if;
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
-	BinaryField,
 	arch::{
 		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
-			packed::{PackedPrimitiveType, impl_pack_scalar},
+			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
-				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
+				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 			},
 		},
 		x86_64::m128::bitshift_128b,
@@ -27,11 +26,12 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		NumCast, Random, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration,
 		pair_unpack_lo_hi_128b_lanes, spread_fallback, transpose_128b_blocks_low_to_high,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
+	BinaryField,
 };
 
 /// 256-bit value that is used for 256-bit SIMD operations
@@ -514,36 +514,38 @@ impl UnderlierWithBitOps for M256 {
 		T: UnderlierWithBitOps,
 		Self: From<T>,
 	{
-		match T::BITS {
-			1 | 2 | 4 => {
-				let elements_in_8 = 8 / T::BITS;
-				let mask = (1u8 << T::BITS) - 1;
-				let shift = (i % elements_in_8) * T::BITS;
-				let val = u8::num_cast_from(Self::from(val)) << shift;
-				let mask = mask << shift;
+		unsafe {
+			match T::BITS {
+				1 | 2 | 4 => {
+					let elements_in_8 = 8 / T::BITS;
+					let mask = (1u8 << T::BITS) - 1;
+					let shift = (i % elements_in_8) * T::BITS;
+					let val = u8::num_cast_from(Self::from(val)) << shift;
+					let mask = mask << shift;
 
-				as_array_mut::<_, u8, 32>(self, |array| unsafe {
-					let element = array.get_unchecked_mut(i / elements_in_8);
-					*element &= !mask;
-					*element |= val;
-				});
+					as_array_mut::<_, u8, 32>(self, |array| unsafe {
+						let element = array.get_unchecked_mut(i / elements_in_8);
+						*element &= !mask;
+						*element |= val;
+					});
+				}
+				8 => as_array_mut::<_, u8, 32>(self, |array| unsafe {
+					*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
+				}),
+				16 => as_array_mut::<_, u16, 16>(self, |array| unsafe {
+					*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
+				}),
+				32 => as_array_mut::<_, u32, 8>(self, |array| unsafe {
+					*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
+				}),
+				64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
+					*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
+				}),
+				128 => as_array_mut::<_, u128, 2>(self, |array| {
+					*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
+				}),
+				_ => panic!("unsupported bit count"),
 			}
-			8 => as_array_mut::<_, u8, 32>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
-			}),
-			16 => as_array_mut::<_, u16, 16>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
-			}),
-			32 => as_array_mut::<_, u32, 8>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
-			}),
-			64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
-			}),
-			128 => as_array_mut::<_, u128, 2>(self, |array| {
-				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
-			}),
-			_ => panic!("unsupported bit count"),
 		}
 	}
 

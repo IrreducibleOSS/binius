@@ -89,7 +89,7 @@ impl<'a, T> RowsBatchRef<'a, T> {
 	/// It is the caller's responsibility to ensure that `row_len` is less than or equal
 	/// to the length of each row.
 	pub unsafe fn new_unchecked(rows: &'a [&'a [T]], row_len: usize) -> Self {
-		Self::new_with_offset_unchecked(rows, 0, row_len)
+		unsafe { Self::new_with_offset_unchecked(rows, 0, row_len) }
 	}
 
 	/// Create a new `RowsBatchRef` from a slice of rows and the given row length and offset.
