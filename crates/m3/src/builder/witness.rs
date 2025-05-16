@@ -31,7 +31,7 @@ use getset::CopyGetters;
 use itertools::Itertools;
 
 use super::{
-	ColumnDef, ColumnId, ColumnInfo, ColumnPartitionIndex, ConstraintSystem, Expr,
+	ColumnDef, ColumnId, ColumnInfo, ConstraintSystem, Expr,
 	column::{Col, ColumnShape},
 	constraint_system::OracleMapping,
 	error::Error,
@@ -1095,11 +1095,13 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 			.columns
 			.iter()
 			.zip(expr_circuit.vars_usage())
-			.enumerate()
-			.map(|(partition_index, (col_id, used))| {
+			.map(|(col_id, used)| {
 				used.then(|| {
-					// TODO: conjuring up Col is discouraged.
-					self.get(Col::<FSub, V>::new(*col_id, ColumnPartitionIndex(partition_index)))
+					let col = self
+						.get_col_data(*col_id)
+						.ok_or_else(|| Error::MissingColumn(*col_id))?;
+					let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+					Ok::<_, Error>(Ref::map(col_ref, |packed| PackedExtension::cast_bases(packed)))
 				})
 				.transpose()
 			})
