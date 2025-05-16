@@ -44,12 +44,12 @@ pub struct NTTShape {
 ///
 /// An [`AdditiveNTT`] implementation with a maximum domain dimension of $\ell$ can be applied on
 /// a sequence of  $\ell + 1$ evaluation domains of sizes $2^0, \ldots, 2^\ell$. These are the
-/// domains $S^(0), \ldots, S^(\ell)$ defined in [DP24] Section 4. The methods
+/// domains $S^{(\ell)}, S^{(\ell - 1)}, \ldots, S^{(0)}$ defined in [DP24] Section 4. The methods
 /// [`Self::forward_transform`] and [`Self::inverse_transform`] require a parameter
 /// `log_domain_size` that indicates which of the $S^(i)$ domains to use for the transformation's
 /// evaluation domain and novel polynomial basis. (Remember, the novel polynomial basis is itself
-/// parameterized by basis). **Counterintuitively, the field subspace $S^(i)$ is not necessarily a
-/// subset of $S^(i+1)$**. We choose this behavior for the [`AdditiveNTT`] trait because it
+/// parameterized by basis). **Counterintuitively, the field subspace $S^(i+1)$ is not necessarily
+/// a subset of $S^i$**. We choose this behavior for the [`AdditiveNTT`] trait because it
 /// facilitates compatibility with FRI when batching proximity tests for codewords of different
 /// dimensions.
 ///
