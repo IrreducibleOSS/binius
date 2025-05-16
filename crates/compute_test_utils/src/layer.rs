@@ -9,6 +9,7 @@ use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{tensor_prod_eq_ind, ArithExpr, MultilinearExtension, MultilinearQuery};
 use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::zeroed_vec;
 use rand::{prelude::StdRng, SeedableRng};
 
 pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
@@ -163,9 +164,17 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		.execute(|exec| {
 			{
 				// Swap first element on the device buffer
-				let mut first_elt =
-					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
-				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				let mut first_elts = <C::DevMem as ComputeMemory<F>>::slice_mut(
+					&mut eq_ind_slice,
+					..C::DevMem::MIN_SLICE_LEN,
+				);
+				let mut buffer = zeroed_vec::<F>(C::DevMem::MIN_SLICE_LEN);
+				compute.copy_d2h(
+					<C::DevMem as ComputeMemory<F>>::as_const(&first_elts),
+					&mut buffer,
+				)?;
+				buffer[0].set(0, F::ONE);
+				compute.copy_h2d(&buffer, &mut first_elts)?;
 			}
 
 			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;

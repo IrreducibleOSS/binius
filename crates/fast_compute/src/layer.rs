@@ -201,20 +201,20 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.min(log_chunks_range.end)
 			.max(log_chunks_range.start);
 		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
-		let chunk_alloc = (total_alloc >> log_chunks).max(1);
 
+		let mem_maps_count = mem_maps.len();
 		let mut memory_chunks = repeat_with(KernelMemMapChunk::default)
-			.take(mem_maps.len() << log_chunks)
+			.take(mem_maps_count << log_chunks)
 			.collect::<Vec<_>>();
 		for (i, mem_map) in mem_maps.into_iter().enumerate() {
 			for (j, chunk) in mem_map.chunks(1 << log_chunks).enumerate() {
-				memory_chunks[i + (j << log_chunks)] = chunk;
+				memory_chunks[i + j * mem_maps_count] = chunk;
 			}
 		}
 
 		memory_chunks
-			.par_chunks_exact_mut(1 << log_chunks)
-			.map_with(zeroed_vec::<P>(chunk_alloc), |buffer, chunk| {
+			.par_chunks_exact_mut(mem_maps_count)
+			.map_with(zeroed_vec::<P>(total_alloc), |buffer, chunk| {
 				let buffer = PackedMemorySliceMut::new(buffer);
 				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
 

@@ -415,7 +415,7 @@ pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
 		.iter()
 		.map(|mapping| match mapping {
 			KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
-			KernelMemMap::Local { .. } => 1 << log_chunk_size,
+			KernelMemMap::Local { log_size } => 1 << log_size.saturating_sub(log_chunk_size),
 		})
 		.sum()
 }

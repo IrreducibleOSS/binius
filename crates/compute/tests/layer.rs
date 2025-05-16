@@ -2,7 +2,7 @@
 
 use binius_compute::cpu::CpuLayer;
 use binius_compute_test_utils::layer::{
-	test_gaeneric_fri_fold, test_generic_kernel_add, test_generic_multiple_multilinear_evaluations,
+	test_generic_fri_fold, test_generic_kernel_add, test_generic_multiple_multilinear_evaluations,
 	test_generic_single_inner_product, test_generic_single_inner_product_using_kernel_accumulator,
 	test_generic_single_left_fold, test_generic_single_right_fold,
 	test_generic_single_tensor_expand,
