@@ -75,7 +75,7 @@ impl ToTokens for CompositionPolyItem {
 					batch_query: &binius_math::RowsBatchRef<P>,
 					evals: &mut [P],
 				) -> Result<(), binius_math::Error> {
-					if batch_query.row_len() != #n_vars {
+					if batch_query.n_rows() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 
