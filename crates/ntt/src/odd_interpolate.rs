@@ -7,28 +7,29 @@ use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use crate::{
 	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
-	twiddle::TwiddleAccess,
 };
 
-pub struct OddInterpolate<F: BinaryField> {
+/// A struct that can interpolate polynomials over odd NTT domains.
+///
+/// An _odd NTT domain_ is an interpolation domain that is the union of multiple cosets of an
+/// additive subspace. The set of the domain is $d 2^{\ell}$. We generally care about the case when
+/// $d$ is an odd integer, otherwise $\ell$ could be incremented, though the struct handles even
+/// $d$ values as well (even though it's suboptimal).
+///
+/// The complexity of the interpolation algorithm is $O(d^2 2^{\ell} + \ell 2^{\ell})$.
+#[derive(Debug)]
+pub struct OddInterpolate<'a, F: BinaryField, NTT: AdditiveNTT<F>> {
 	vandermonde_inverse: Matrix<F>,
 	ell: usize,
 	coset_bits: usize,
+	ntt: &'a NTT,
 }
 
-impl<F: BinaryField> OddInterpolate<F> {
+impl<'a, F: BinaryField, NTT: AdditiveNTT<F>> OddInterpolate<'a, F, NTT> {
 	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times
 	/// 2^{\ell}$. Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and
 	/// compute its inverse. Time complexity is $\mathcal{O}(d^3).$
-	pub fn new<TA>(
-		d: usize,
-		ell: usize,
-		coset_bits: usize,
-		twiddle_access: &[TA],
-	) -> Result<Self, Error>
-	where
-		TA: TwiddleAccess<F>,
-	{
+	pub fn new(ntt: &'a NTT, d: usize, ell: usize, coset_bits: usize) -> Result<Self, Error> {
 		if d > (1 << coset_bits) {
 			bail!(Error::CosetIndexOutOfBounds {
 				coset: d - 1,
@@ -36,15 +37,20 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		// TODO: This constructor should accept an `impl AdditiveNTT` instead of an
-		// `impl TwiddleAccess`. It can use `AdditiveNTT::get_subspace_eval` instead of the twiddle
-		// accessors directly. `AdditiveNTT` is a more public interface.
-		let vandermonde = novel_vandermonde(d, ell, coset_bits, twiddle_access)?;
+		let log_required_domain_size = coset_bits + ell;
+		if ntt.log_domain_size() < log_required_domain_size {
+			bail!(Error::DomainTooSmall {
+				log_required_domain_size
+			});
+		}
+
+		let vandermonde = novel_vandermonde(ntt, d, coset_bits)?;
 
 		let mut vandermonde_inverse = Matrix::zeros(d, d);
 		vandermonde.inverse_into(&mut vandermonde_inverse)?;
 
 		Ok(Self {
+			ntt,
 			vandermonde_inverse,
 			ell,
 			coset_bits,
@@ -64,11 +70,8 @@ impl<F: BinaryField> OddInterpolate<F> {
 	///
 	/// Time complexity is $\mathcal{O}(d^2\times 2^{\ell} + \ell 2^{\ell})$, thus this routine is
 	/// intended to be used for small values of $d$.
-	pub fn inverse_transform<NTT>(&self, ntt: &NTT, data: &mut [F]) -> Result<(), Error>
-	where
-		// REVIEW: generalize this to any P: PackedField<Scalar=F>
-		NTT: AdditiveNTT<F>,
-	{
+	pub fn inverse_transform(&self, data: &mut [F]) -> Result<(), Error> {
+		// TODO: Generalize `data` to packed fields
 		let d = self.vandermonde_inverse.m();
 		let ell = self.ell;
 
@@ -78,19 +81,13 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		let log_required_domain_size = self.coset_bits + ell;
-		if ntt.log_domain_size() < log_required_domain_size {
-			bail!(Error::DomainTooSmall {
-				log_required_domain_size
-			});
-		}
-
 		let shape = NTTShape {
 			log_y: ell,
 			..Default::default()
 		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, shape, i, self.coset_bits, 0)?;
+			self.ntt
+				.inverse_transform(chunk, shape, i, self.coset_bits, 0)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is
@@ -117,22 +114,11 @@ impl<F: BinaryField> OddInterpolate<F> {
 /// $j^{\text{th}}$ element of the field with respect to the $\beta^{(\ell)}_i$ in little Endian
 /// order. The matrix has dimensions $d\times d$. The key trick is that
 /// $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
-fn novel_vandermonde<F, TA>(
-	d: usize,
-	ell: usize,
-	coset_bits: usize,
-	twiddle_access: &[TA],
-) -> Result<Matrix<F>, Error>
+fn novel_vandermonde<F, NTT>(ntt: &NTT, d: usize, coset_bits: usize) -> Result<Matrix<F>, Error>
 where
 	F: BinaryField,
-	TA: TwiddleAccess<F>,
+	NTT: AdditiveNTT<F>,
 {
-	if d == 0 {
-		return Ok(Matrix::zeros(0, 0));
-	}
-
-	let log_d = log2_ceil_usize(d);
-
 	// This will contain the evaluations of $X^{(\ell)}_{j}(w^{(\ell)}_i)$. As usual, indexing goes
 	// from 0..d-1.
 	let mut x_ell = Matrix::zeros(d, d);
@@ -140,19 +126,15 @@ where
 	// $X_0$ is the function "1".
 	(0..d).for_each(|j| x_ell[(j, 0)] = F::ONE);
 
-	let log_required_domain_size = coset_bits + ell;
-	if twiddle_access.len() < log_required_domain_size {
-		bail!(Error::DomainTooSmall {
-			log_required_domain_size
-		});
+	if d == 0 {
+		return Ok(x_ell);
 	}
 
-	let twiddle_access = &twiddle_access[twiddle_access.len() - coset_bits..];
-	for (j, twiddle_access_j_plus_ell) in twiddle_access.iter().take(log_d).enumerate() {
-		assert!(twiddle_access_j_plus_ell.log_n() >= coset_bits - 1 - j);
-
+	let log_d = log2_ceil_usize(d);
+	for j in 0..log_d {
+		let subspace_idx = ntt.log_domain_size() - coset_bits + j;
 		for i in 0..d {
-			x_ell[(i, 1 << j)] = twiddle_access_j_plus_ell.get(i >> (j + 1))
+			x_ell[(i, 1 << j)] = ntt.get_subspace_eval(subspace_idx, i >> (j + 1))
 				+ if (i >> j) & 1 == 1 { F::ONE } else { F::ZERO };
 		}
 
@@ -207,10 +189,9 @@ mod tests {
 					.unwrap();
 
 				let coset_bits = next_log_n.saturating_sub(ell);
-				let odd_interpolate =
-					OddInterpolate::new(d, ell, coset_bits, &ntt.s_evals).unwrap();
+				let odd_interpolate = OddInterpolate::new(&ntt, d, ell, coset_bits).unwrap();
 				odd_interpolate
-					.inverse_transform(&ntt, &mut ntt_evals[..d << ell])
+					.inverse_transform(&mut ntt_evals[..d << ell])
 					.unwrap();
 
 				assert_eq!(expected_novel, &ntt_evals[..d << ell]);
