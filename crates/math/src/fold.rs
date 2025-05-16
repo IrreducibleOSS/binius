@@ -17,11 +17,10 @@ use binius_field::{
 	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
-use binius_utils::bail;
+use binius_utils::{bail, mem::slice_assume_init_mut};
 use bytemuck::fill_zeroes;
 use itertools::izip;
 use lazy_static::lazy_static;
-use stackalloc::helpers::slice_assume_init_mut;
 
 use crate::Error;
 
