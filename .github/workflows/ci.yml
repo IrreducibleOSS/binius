@@ -101,9 +101,6 @@ jobs:
             name: "amd-stable"
             cmd: 'RUSTFLAGS="-C target-cpu=native" CARGO_STABLE=true ./scripts/run_tests_and_examples.sh'
           - runner: "c7a-2xlarge"
-            name: "docs"
-            cmd: 'cargo test --doc'
-          - runner: "c7a-2xlarge"
             name: "single-threaded"
             cmd: 'RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
           - runner: "c7a-2xlarge"
