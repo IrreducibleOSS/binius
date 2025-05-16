@@ -55,6 +55,7 @@ impl<T: Eq + PartialEq + Ord + PartialOrd> Channel<T> {
 }
 
 impl<T: Debug + Ord + PartialOrd> Channel<T> {
+	#[track_caller]
 	pub fn assert_balanced(&self) {
 		if !self.is_balanced() {
 			let (push, pull) = self
