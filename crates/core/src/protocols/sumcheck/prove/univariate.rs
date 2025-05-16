@@ -623,7 +623,7 @@ where
 			log_y: next_log_n,
 			..Default::default()
 		};
-		ntt.forward_transform(round_evals, shape, 0, 0)?;
+		ntt.forward_transform(round_evals, shape, 0, 0, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(round_evals[..1 << skip_rounds]
@@ -656,17 +656,19 @@ where
 		log_z: log_batch,
 	};
 
+	let n_chunks = extrapolated_evals.len() / evals.len();
+	let coset_bits = min_bits(n_chunks);
+
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0, 0)?;
+	ntt.inverse_transform(evals, shape, 0, 0, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
-	for (coset, extrapolated_chunk) in
-		izip!(1u32.., extrapolated_evals.chunks_exact_mut(evals.len()))
+	for (coset, extrapolated_chunk) in izip!(1.., extrapolated_evals.chunks_exact_mut(evals.len()))
 	{
 		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when
 		// composition_max_degree == 2
 		extrapolated_chunk.copy_from_slice(evals);
-		ntt.forward_transform(extrapolated_chunk, shape, coset, 0)?;
+		ntt.forward_transform(extrapolated_chunk, shape, coset, coset_bits, 0)?;
 	}
 
 	Ok(())

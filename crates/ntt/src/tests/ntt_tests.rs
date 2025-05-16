@@ -3,20 +3,20 @@
 use std::ops::Range;
 
 use binius_field::{
-	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES8x16x16b, ByteSlicedAES16x32x8b,
-	PackedBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField32x16b, PackedExtension,
-	PackedField, RepackedExtension,
 	arch::{
-		packed_8::PackedBinaryField1x8b,
 		packed_16::{PackedBinaryField1x16b, PackedBinaryField2x8b},
 		packed_32::PackedBinaryField2x16b,
 		packed_64::{PackedBinaryField2x32b, PackedBinaryField4x16b},
+		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
+	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES16x32x8b, ByteSlicedAES8x16x16b,
+	PackedBinaryField16x32b, PackedBinaryField32x16b, PackedBinaryField8x32b, PackedExtension,
+	PackedField, RepackedExtension,
 };
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{rngs::StdRng, SeedableRng};
 
-use crate::{AdditiveNTT, NTTShape, SingleThreadedNTT, dynamic_dispatch::DynamicDispatchNTT};
+use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, NTTShape, SingleThreadedNTT};
 
 /// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and
 /// inverse transformation of `reference_ntt` on `data` and that the result of the roundtrip is the
@@ -26,7 +26,8 @@ fn check_roundtrip_with_reference<F, P>(
 	ntt: &impl AdditiveNTT<F>,
 	data: &[P],
 	shape: NTTShape,
-	cosets: Range<u32>,
+	cosets: Range<usize>,
+	coset_bits: usize,
 	skip_rounds: usize,
 ) where
 	F: BinaryField,
@@ -51,18 +52,18 @@ fn check_roundtrip_with_reference<F, P>(
 	let mut data_copy_ref = orig_data.clone();
 
 	for coset in cosets {
-		ntt.forward_transform(&mut data_copy_impl, shape, coset, skip_rounds)
+		ntt.forward_transform(&mut data_copy_impl, shape, coset, coset_bits, skip_rounds)
 			.unwrap();
 		reference_ntt
-			.forward_transform(&mut data_copy_ref, shape, coset, skip_rounds)
+			.forward_transform(&mut data_copy_ref, shape, coset, coset_bits, skip_rounds)
 			.unwrap();
 
 		assert_eq!(&data_copy_impl, &data_copy_ref);
 
-		ntt.inverse_transform(&mut data_copy_impl, shape, coset, skip_rounds)
+		ntt.inverse_transform(&mut data_copy_impl, shape, coset, coset_bits, skip_rounds)
 			.unwrap();
 		reference_ntt
-			.inverse_transform(&mut data_copy_ref, shape, coset, skip_rounds)
+			.inverse_transform(&mut data_copy_ref, shape, coset, coset_bits, skip_rounds)
 			.unwrap();
 
 		assert_eq!(&orig_data, &data_copy_impl);
@@ -130,6 +131,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 					check_roundtrip_with_reference(
@@ -138,6 +140,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 					check_roundtrip_with_reference(
@@ -146,6 +149,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 					check_roundtrip_with_reference(
@@ -154,6 +158,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 					check_roundtrip_with_reference(
@@ -162,6 +167,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 					check_roundtrip_with_reference(
@@ -170,6 +176,7 @@ fn check_roundtrip_all_ntts<P>(
 						&data,
 						shape,
 						cosets.clone(),
+						max_log_coset,
 						skip_rounds,
 					);
 				}
@@ -227,7 +234,8 @@ fn check_packed_extension_roundtrip_with_reference<F, PE>(
 	reference_ntt: &impl AdditiveNTT<F>,
 	ntt: &impl AdditiveNTT<F>,
 	data: &mut [PE],
-	cosets: Range<u32>,
+	cosets: Range<usize>,
+	coset_bits: usize,
 ) where
 	F: BinaryField,
 	PE: PackedExtension<F>,
@@ -243,16 +251,18 @@ fn check_packed_extension_roundtrip_with_reference<F, PE>(
 			..Default::default()
 		};
 
-		ntt.forward_transform_ext(data, shape, coset, 0).unwrap();
+		ntt.forward_transform_ext(data, shape, coset, coset_bits, 0)
+			.unwrap();
 		reference_ntt
-			.forward_transform_ext(&mut data_copy_2, shape, coset, 0)
+			.forward_transform_ext(&mut data_copy_2, shape, coset, coset_bits, 0)
 			.unwrap();
 
 		assert_eq!(data, &data_copy_2);
 
-		ntt.inverse_transform_ext(data, shape, coset, 0).unwrap();
+		ntt.inverse_transform_ext(data, shape, coset, coset_bits, 0)
+			.unwrap();
 		reference_ntt
-			.inverse_transform_ext(&mut data_copy_2, shape, coset, 0)
+			.inverse_transform_ext(&mut data_copy_2, shape, coset, coset_bits, 0)
 			.unwrap();
 
 		assert_eq!(data, &data_copy);
@@ -297,30 +307,35 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 		&single_threaded_ntt,
 		&mut data,
 		cosets.clone(),
+		max_log_coset,
 	);
 	check_packed_extension_roundtrip_with_reference(
 		&simple_ntt,
 		&single_threaded_precompute_ntt,
 		&mut data,
 		cosets.clone(),
+		max_log_coset,
 	);
 	check_packed_extension_roundtrip_with_reference(
 		&simple_ntt,
 		&multithreaded_ntt,
 		&mut data,
 		cosets.clone(),
+		max_log_coset,
 	);
 	check_packed_extension_roundtrip_with_reference(
 		&simple_ntt,
 		&multithreaded_precompute_ntt,
 		&mut data,
 		cosets.clone(),
+		max_log_coset,
 	);
 	check_packed_extension_roundtrip_with_reference(
 		&simple_ntt,
 		&dynamic_dispatch_ntt,
 		&mut data,
 		cosets,
+		max_log_coset,
 	);
 }
 
@@ -378,7 +393,8 @@ fn check_ntt_with_transform<P1, P2>(
 		.collect();
 	let data_as_aes: Vec<_> = data.iter().map(|x| P2::Scalar::from(*x)).collect();
 
-	for coset in 0..4 {
+	let coset_bits = 2;
+	for coset in 0..1 << coset_bits {
 		let mut result_bin = data.clone();
 		let mut result_aes = data_as_aes.clone();
 		let mut result_aes_cob = data_as_aes.clone();
@@ -390,13 +406,13 @@ fn check_ntt_with_transform<P1, P2>(
 		};
 
 		ntt_binary
-			.forward_transform(&mut result_bin, shape, coset, 0)
+			.forward_transform(&mut result_bin, shape, coset, coset_bits, 0)
 			.unwrap();
 		ntt_aes_1
-			.forward_transform(&mut result_aes, shape, coset, 0)
+			.forward_transform(&mut result_aes, shape, coset, coset_bits, 0)
 			.unwrap();
 		ntt_aes_2
-			.forward_transform(&mut result_aes_cob, shape, coset, 0)
+			.forward_transform(&mut result_aes_cob, shape, coset, coset_bits, 0)
 			.unwrap();
 
 		let result_bin_to_aes: Vec<_> = result_bin.iter().map(|x| P2::Scalar::from(*x)).collect();
@@ -405,13 +421,13 @@ fn check_ntt_with_transform<P1, P2>(
 		assert_ne!(result_bin_to_aes, result_aes);
 
 		ntt_binary
-			.inverse_transform(&mut result_bin, shape, coset, 0)
+			.inverse_transform(&mut result_bin, shape, coset, coset_bits, 0)
 			.unwrap();
 		ntt_aes_1
-			.inverse_transform(&mut result_aes, shape, coset, 0)
+			.inverse_transform(&mut result_aes, shape, coset, coset_bits, 0)
 			.unwrap();
 		ntt_aes_2
-			.inverse_transform(&mut result_aes_cob, shape, coset, 0)
+			.inverse_transform(&mut result_aes_cob, shape, coset, coset_bits, 0)
 			.unwrap();
 
 		let result_bin_to_aes: Vec<_> = result_bin.iter().map(|x| P2::Scalar::from(*x)).collect();

@@ -82,7 +82,8 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error>;
 
@@ -103,7 +104,8 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error>;
 
@@ -111,27 +113,29 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [PE],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
+		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset, coset_bits, skip_rounds)
 	}
 
 	fn inverse_transform_ext<PE: PackedExtension<F>>(
 		&self,
 		data: &mut [PE],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
+		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset, coset_bits, skip_rounds)
 	}
 }

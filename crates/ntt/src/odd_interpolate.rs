@@ -2,7 +2,10 @@
 
 use binius_field::BinaryField;
 use binius_math::Matrix;
-use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
+use binius_utils::{
+	bail,
+	checked_arithmetics::{log2_ceil_usize, min_bits},
+};
 
 use crate::{
 	additive_ntt::{AdditiveNTT, NTTShape},
@@ -64,7 +67,8 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		let log_required_domain_size = log2_ceil_usize(d) + ell;
+		let coset_bits = min_bits(d);
+		let log_required_domain_size = coset_bits + ell;
 		if ntt.log_domain_size() < log_required_domain_size {
 			bail!(Error::DomainTooSmall {
 				log_required_domain_size
@@ -76,7 +80,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			..Default::default()
 		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, shape, i as u32, 0)?;
+			ntt.inverse_transform(chunk, shape, i, coset_bits, 0)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is
@@ -153,7 +157,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, Field};
-	use rand::{SeedableRng, rngs::StdRng};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 	use crate::single_threaded::SingleThreadedNTT;
@@ -182,7 +186,8 @@ mod tests {
 					log_y: next_log_n,
 					..Default::default()
 				};
-				ntt.forward_transform(&mut ntt_evals, shape, 0, 0).unwrap();
+				ntt.forward_transform(&mut ntt_evals, shape, 0, 0, 0)
+					.unwrap();
 
 				let odd_interpolate = OddInterpolate::new(d, ell, &ntt.s_evals).unwrap();
 				odd_interpolate
