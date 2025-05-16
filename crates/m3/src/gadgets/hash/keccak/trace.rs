@@ -3,8 +3,8 @@
 use std::array;
 
 use super::{
-	state::{StateMatrix, StateRow},
 	RC, RHO, ROUNDS_PER_PERMUTATION,
+	state::{StateMatrix, StateRow},
 };
 
 /// Trace of a keccak-f round.
@@ -59,11 +59,7 @@ impl RoundTrace {
 			let a_chi = b[(x, y)] ^ (!b[(x + 1, y)] & b[(x + 2, y)]);
 
 			// # ι step
-			if (x, y) == (0, 0) {
-				a_chi ^ rc
-			} else {
-				a_chi
-			}
+			if (x, y) == (0, 0) { a_chi ^ rc } else { a_chi }
 		});
 
 		RoundTrace {
@@ -129,7 +125,7 @@ pub fn keccakf_trace(state_in: StateMatrix<u64>) -> PermutationTrace {
 #[cfg(test)]
 mod tests {
 	use super::{
-		super::{test_vector, StateMatrix},
+		super::{StateMatrix, test_vector},
 		RoundTrace,
 	};
 

@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_field::{BinaryField1b, Field, PackedField, packed::set_packed_slice};
 
 use crate::polynomial::MultivariatePoly;
 

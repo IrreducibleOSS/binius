@@ -2,11 +2,11 @@
 
 use std::array;
 
-use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField, packed::set_packed_slice};
 use itertools::izip;
 
 use crate::{
-	builder::{Col, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	builder::{B1, B32, B64, B128, Col, TableBuilder, TableWitnessSegment},
 	gadgets::{
 		add::{U32AddFlags, WideAdd},
 		mul::{MulSS32, MulUU32, SignConverter, UnsignedMulPrimitives},

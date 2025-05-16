@@ -65,13 +65,14 @@ mod model {
 mod arithmetization {
 	use binius_core::constraint_system::channel::ChannelId;
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, PackedExtension,
-		PackedFieldIndexable,
+		PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier128b,
+		as_packed_field::PackedType,
 	};
 	use binius_m3::{
 		builder::{
-			test_utils::validate_system_witness, Boundary, Col, ConstraintSystem, FlushDirection,
-			TableBuilder, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B1, B128, B32,
+			B1, B32, B128, Boundary, Col, ConstraintSystem, FlushDirection, TableBuilder,
+			TableFiller, TableId, TableWitnessSegment, WitnessIndex,
+			test_utils::validate_system_witness,
 		},
 		gadgets::add::{U32Add, U32AddFlags},
 	};

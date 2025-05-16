@@ -1,15 +1,15 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, types::U};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_field::{tower::CanonicalTowerFamily, BinaryField32b, TowerField};
+use binius_field::{BinaryField32b, TowerField, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_macros::arith_expr;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use itertools::izip;
 use tracing_profile::init_tracing;
 

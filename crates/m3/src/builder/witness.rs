@@ -869,7 +869,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegmentedView<'a
 		// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
 		#[allow(clippy::mut_from_ref)]
 		unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
-			slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
+			unsafe { slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len()) }
 		}
 
 		// Convert cols with mutable references into cols with const refs so that they can be
@@ -1049,7 +1049,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 	pub fn eval_expr<FSub: TowerField, const V: usize>(
 		&self,
 		expr: &Expr<FSub, V>,
-	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>>, Error>
+	) -> Result<impl Iterator<Item = PackedSubfield<P, FSub>> + use<FSub, V, F, P>, Error>
 	where
 		P: PackedExtension<FSub>,
 	{
@@ -1560,7 +1560,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 
@@ -1604,7 +1604,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.gen())
+		let rows = repeat_with(|| rng.r#gen())
 			.take(table_size)
 			.collect::<Vec<_>>();
 

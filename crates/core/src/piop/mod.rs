@@ -43,4 +43,4 @@ mod verify;
 pub use commit::*;
 pub use error::*;
 pub use prove::*;
-pub use verify::{make_commit_params_with_optimal_arity, verify, CommitMeta, PIOPSumcheckClaim};
+pub use verify::{CommitMeta, PIOPSumcheckClaim, make_commit_params_with_optimal_arity, verify};

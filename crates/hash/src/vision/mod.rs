@@ -8,4 +8,4 @@ pub mod permutation;
 pub use compression::*;
 pub use constants::*;
 pub use digest::*;
-pub use permutation::{Vision32MDSTransform, Vision32bPermutation, INV_PACKED_TRANS_AES};
+pub use permutation::{INV_PACKED_TRANS_AES, Vision32MDSTransform, Vision32bPermutation};

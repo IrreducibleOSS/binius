@@ -3,13 +3,14 @@
 use std::{any::TypeId, arch::x86_64::*};
 
 use crate::{
+	BinaryField, BinaryField8b, PackedField, TowerField,
 	aes_field::AESTowerField8b,
 	arch::{
+		SimdStrategy,
 		portable::{
 			packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField,
 			reuse_multiply_arithmetic::Alpha,
 		},
-		SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
@@ -18,7 +19,6 @@ use crate::{
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
-	BinaryField, BinaryField8b, PackedField, TowerField,
 };
 
 pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {
@@ -91,7 +91,7 @@ pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {
 
 	#[inline(always)]
 	fn alpha<Scalar: BinaryField>() -> Self {
-		let alpha_128 = unsafe {
+		let alpha_128 = {
 			match Scalar::N_BITS.ilog2() {
 				3 => {
 					// Compiler will optimize this if out for each instantiation
@@ -103,11 +103,11 @@ pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {
 					} else {
 						panic!("tower field not supported")
 					};
-					_mm_set1_epi8(value)
+					unsafe { _mm_set1_epi8(value) }
 				}
-				4 => _mm_set1_epi16(0x0100),
-				5 => _mm_set1_epi32(0x00010000),
-				6 => _mm_set1_epi64x(0x0000000100000000),
+				4 => unsafe { _mm_set1_epi16(0x0100) },
+				5 => unsafe { _mm_set1_epi32(0x00010000) },
+				6 => unsafe { _mm_set1_epi64x(0x0000000100000000) },
 				_ => panic!("unsupported bit count"),
 			}
 		};
@@ -117,12 +117,12 @@ pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {
 
 	#[inline(always)]
 	fn even_mask<Scalar: BinaryField>() -> Self {
-		let mask_128 = unsafe {
+		let mask_128 = {
 			match Scalar::N_BITS.ilog2() {
-				3 => _mm_set1_epi16(0x00FF),
-				4 => _mm_set1_epi32(0x0000FFFF),
-				5 => _mm_set1_epi64x(0x00000000FFFFFFFF),
-				6 => _mm_set_epi64x(0, -1),
+				3 => unsafe { _mm_set1_epi16(0x00FF) },
+				4 => unsafe { _mm_set1_epi32(0x0000FFFF) },
+				5 => unsafe { _mm_set1_epi64x(0x00000000FFFFFFFF) },
+				6 => unsafe { _mm_set_epi64x(0, -1) },
 				_ => panic!("unsupported bit count"),
 			}
 		};

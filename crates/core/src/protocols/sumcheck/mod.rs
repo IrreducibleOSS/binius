@@ -19,8 +19,8 @@ pub mod verify_zerocheck;
 pub mod zerocheck;
 
 pub use common::{
-	equal_n_vars_check, immediate_switchover_heuristic, standard_switchover_heuristic,
 	BatchSumcheckOutput, CompositeSumClaim, RoundCoeffs, RoundProof, SumcheckClaim,
+	equal_n_vars_check, immediate_switchover_heuristic, standard_switchover_heuristic,
 };
 pub use eq_ind::EqIndSumcheckClaim;
 pub use error::*;

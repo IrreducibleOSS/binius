@@ -6,17 +6,17 @@ use seq_macro::seq;
 
 use super::m128::M128;
 use crate::{
+	BinaryField, TowerField,
 	arch::{
+		SimdStrategy,
 		portable::packed_arithmetic::{
 			PackedTowerField, TowerConstants, UnderlierWithBitConstants,
 		},
-		SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	BinaryField, TowerField,
 };
 
 #[inline]

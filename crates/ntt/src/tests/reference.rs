@@ -36,7 +36,12 @@ where
 	P: PackedField,
 {
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
+		unsafe {
+			get_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+			)
+		}
 	}
 
 	fn len(&self) -> usize {
@@ -49,11 +54,13 @@ where
 	P: PackedField,
 {
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(
-			self.data,
-			self.batch_index + (index << self.log_batch_count),
-			value,
-		);
+		unsafe {
+			set_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+				value,
+			);
+		}
 	}
 }
 

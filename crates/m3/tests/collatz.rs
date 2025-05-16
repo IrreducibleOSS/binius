@@ -103,13 +103,13 @@ mod arithmetization {
 		oracle::ShiftVariant,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU, Field,
-		PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+		Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, underlier::SmallU,
 	};
 	use binius_m3::{
 		builder::{
-			test_utils::validate_system_witness, Col, ConstraintSystem, TableFiller, TableId,
-			TableWitnessSegment, WitnessIndex, B1, B128, B32,
+			B1, B32, B128, Col, ConstraintSystem, TableFiller, TableId, TableWitnessSegment,
+			WitnessIndex, test_utils::validate_system_witness,
 		},
 		gadgets::add::{U32Add, U32AddFlags},
 	};

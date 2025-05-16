@@ -6,10 +6,10 @@ mod arith_expr;
 mod composition_poly;
 mod deserialize_bytes;
 
-use deserialize_bytes::{parse_container_attributes, split_for_impl, GenericsSplit};
+use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
+use quote::{ToTokens, quote};
+use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
 
 use crate::{
 	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,

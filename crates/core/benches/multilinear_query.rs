@@ -1,15 +1,15 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	arch::ArchOptimal, BinaryField, BinaryField128b, BinaryField1b, ExtensionField, Field,
-	PackedField,
+	BinaryField, BinaryField1b, BinaryField128b, ExtensionField, Field, PackedField,
+	arch::ArchOptimal,
 };
-use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+use binius_hal::{ComputationBackend, ComputationBackendExt, make_portable_backend};
 use binius_math::MultilinearExtension;
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
+	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 type B1Packed = <BinaryField1b as ArchOptimal>::OptimalThroughputPacked;
 type B128Packed = <BinaryField128b as ArchOptimal>::OptimalThroughputPacked;

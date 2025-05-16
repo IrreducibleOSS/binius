@@ -262,7 +262,7 @@ impl<F: Field> SubAssign<&Self> for Matrix<F> {
 mod tests {
 	use binius_field::BinaryField32b;
 	use proptest::prelude::*;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

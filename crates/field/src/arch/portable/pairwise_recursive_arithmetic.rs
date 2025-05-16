@@ -1,12 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use crate::{
+	TowerExtensionField,
 	arch::PairwiseRecursiveStrategy,
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
 	packed::PackedField,
-	TowerExtensionField,
 };
 
 impl<P> TaggedMul<PairwiseRecursiveStrategy> for P

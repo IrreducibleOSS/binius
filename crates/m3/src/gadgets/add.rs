@@ -4,13 +4,13 @@ use std::{array, marker::PhantomData, ops::Deref};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	PackedSubfield, TowerField,
+	Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
+	packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::builder::{
-	column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128, B32, B64,
+	B32, B64, B128, TableBuilder, column::Col, types::B1, witness::TableWitnessSegment,
 };
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
@@ -370,11 +370,11 @@ mod tests {
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
 	use bumpalo::Bump;
-	use rand::{prelude::StdRng, Rng as _, SeedableRng};
+	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::builder::{
-		test_utils::validate_system_witness, ConstraintSystem, Statement, WitnessIndex,
+		ConstraintSystem, Statement, WitnessIndex, test_utils::validate_system_witness,
 	};
 
 	#[test]
@@ -384,8 +384,8 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
 				let (z, carry) = x.overflowing_add(y);
 				// (x, y, carry_in, zout, final_carry)
 				(x, y, 0x00000000, z, carry)
@@ -408,9 +408,9 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
-				let carry_in = rng.gen::<bool>() as u32;
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
+				let carry_in = rng.r#gen::<bool>() as u32;
 				let (x_plus_y, carry1) = x.overflowing_add(y);
 				let (z, carry2) = x_plus_y.overflowing_add(carry_in);
 				let final_carry = carry1 | carry2;
@@ -537,7 +537,7 @@ mod tests {
 
 		let table_id = table.id();
 		let mut rng = StdRng::seed_from_u64(0);
-		let test_values = repeat_with(|| B32::new(rng.gen::<u32>()))
+		let test_values = repeat_with(|| B32::new(rng.r#gen::<u32>()))
 			.take(TABLE_SIZE)
 			.collect::<Vec<_>>();
 

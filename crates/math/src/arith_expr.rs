@@ -2,7 +2,7 @@
 
 use std::{
 	cmp::Ordering,
-	collections::{hash_map::Entry, HashMap},
+	collections::{HashMap, hash_map::Entry},
 	fmt::{self, Display},
 	hash::{Hash, Hasher},
 	iter::{Product, Sum},
@@ -1156,7 +1156,7 @@ mod tests {
 	use std::collections::HashSet;
 
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField, BinaryField128b, BinaryField1b, BinaryField8b};
+	use binius_field::{BinaryField, BinaryField1b, BinaryField8b, BinaryField128b};
 	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
 
 	use super::*;

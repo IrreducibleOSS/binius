@@ -3,16 +3,16 @@
 use cfg_if::cfg_if;
 
 use super::{
-	packed::{impl_broadcast, PackedPrimitiveType},
+	packed::{PackedPrimitiveType, impl_broadcast},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 };
 
 // Define 64 bit packed field types

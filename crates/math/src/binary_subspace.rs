@@ -120,7 +120,7 @@ impl<F: BinaryField> Default for BinarySubspace<F> {
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, BinaryField8b};
+	use binius_field::{BinaryField8b, BinaryField128b};
 
 	use super::*;
 

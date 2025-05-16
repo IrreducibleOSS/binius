@@ -18,7 +18,7 @@ use std::{iter::repeat_with, slice};
 
 use binius_field::{PackedField, TowerField};
 use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
-use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut, buf::UninitSlice};
 pub use error::Error;
 use tracing::warn;
 
@@ -86,10 +86,12 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 
 		// NOTE: This is the unsafe part, you are reading the next cnt bytes on the assumption that
 		// caller has ensured us the next cnt bytes are initialized.
-		let written: &[u8] = slice::from_raw_parts(written.as_mut_ptr(), cnt);
+		let written: &[u8] = unsafe { slice::from_raw_parts(written.as_mut_ptr(), cnt) };
 
 		self.challenger.observer().put_slice(written);
-		self.buffer.advance_mut(cnt);
+		unsafe {
+			self.buffer.advance_mut(cnt);
+		}
 	}
 
 	fn chunk_mut(&mut self) -> &mut UninitSlice {
@@ -487,11 +489,11 @@ pub fn write_u64<B: BufMut>(transcript: &mut TranscriptWriter<B>, n: u64) {
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField8b, BinaryField128b,
-		BinaryField128bPolyval, BinaryField32b, BinaryField64b, BinaryField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField128b, BinaryField8b,
+		BinaryField32b, BinaryField64b, BinaryField128b, BinaryField128bPolyval,
 	};
 	use binius_hash::groestl::Groestl256;
-	use rand::{thread_rng, RngCore};
+	use rand::{RngCore, thread_rng};
 
 	use super::*;
 	use crate::fiat_shamir::HasherChallenger;

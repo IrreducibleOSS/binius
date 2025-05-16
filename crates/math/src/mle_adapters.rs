@@ -3,10 +3,10 @@
 use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
 
 use binius_field::{
+	ExtensionField, Field, PackedField, RepackedExtension,
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
 	},
-	ExtensionField, Field, PackedField, RepackedExtension,
 };
 use binius_utils::bail;
 
@@ -612,15 +612,15 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, as_packed_field::PackedType, BinaryField128b, BinaryField16b,
-		BinaryField32b, BinaryField8b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-		PackedBinaryField4x128b, PackedBinaryField4x32b, PackedBinaryField64x8b,
-		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
+		BinaryField8b, BinaryField16b, BinaryField32b, BinaryField128b, PackedBinaryField1x128b,
+		PackedBinaryField4x32b, PackedBinaryField4x128b, PackedBinaryField8x16b,
+		PackedBinaryField16x8b, PackedBinaryField64x8b, PackedExtension, PackedField,
+		PackedFieldIndexable, arch::OptimalUnderlier256b, as_packed_field::PackedType,
 	};
 	use rand::prelude::*;
 
 	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use crate::{MultilinearQuery, tensor_prod_eq_ind};
 
 	type F = BinaryField16b;
 	type P = PackedBinaryField8x16b;

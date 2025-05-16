@@ -233,7 +233,7 @@ where
 				)?;
 			}
 		}
-		MultilinearPolyVariant::Packed(ref packed) => {
+		MultilinearPolyVariant::Packed(packed) => {
 			let expected = witness.get_multilin_poly(packed.id())?;
 			let got = witness.get_multilin_poly(oracle.id())?;
 			if expected.packed_evals() != got.packed_evals() {

@@ -74,7 +74,7 @@ impl<F: TowerField> CompositePolyOracle<F> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
+	use binius_field::{BinaryField2b, BinaryField8b, BinaryField32b, BinaryField128b, TowerField};
 	use binius_math::{ArithCircuit, ArithExpr};
 
 	use super::*;

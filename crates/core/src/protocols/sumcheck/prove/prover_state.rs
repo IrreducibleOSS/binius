@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::powers, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField, util::powers};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery, evaluate_univariate,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -202,10 +202,9 @@ where
 						multilinear: inner_multilinear,
 						..
 					} => {
-						let tensor_query = self.tensor_query.as_ref()
-							.expect(
-								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
-							);
+						let tensor_query = self.tensor_query.as_ref().expect(
+							"tensor_query is guaranteed to be Some while there is still a transparent multilinear",
+						);
 						inner_multilinear.evaluate(tensor_query.to_ref())
 					}
 					SumcheckMultilinear::Folded {

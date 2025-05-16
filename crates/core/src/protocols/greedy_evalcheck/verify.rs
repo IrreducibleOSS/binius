@@ -12,9 +12,10 @@ use crate::{
 	protocols::{
 		evalcheck::{ConstraintSetsEqIndPoints, EvalcheckMultilinearClaim, EvalcheckVerifier},
 		sumcheck::{
-			self, constraint_set_mlecheck_claims, constraint_set_sumcheck_claims,
-			eq_ind::{self, reduce_to_regular_sumchecks, ClaimsSortingOrder},
-			front_loaded, MLEcheckClaimsWithMeta, SumcheckClaimsWithMeta,
+			self, MLEcheckClaimsWithMeta, SumcheckClaimsWithMeta, constraint_set_mlecheck_claims,
+			constraint_set_sumcheck_claims,
+			eq_ind::{self, ClaimsSortingOrder, reduce_to_regular_sumchecks},
+			front_loaded,
 		},
 	},
 	transcript::VerifierTranscript,

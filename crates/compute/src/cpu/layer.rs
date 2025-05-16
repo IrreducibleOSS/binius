@@ -10,6 +10,7 @@ use binius_math::{extrapolate_line_scalar, ArithCircuit, ArithExpr};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
+use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
@@ -250,6 +251,25 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
+	fn kernel_add(
+		&self,
+		_exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: FSlice<'_, T::B128, Self>,
+		src2: FSlice<'_, T::B128, Self>,
+		dst: &mut FSliceMut<'_, T::B128, Self>,
+	) -> Result<(), Error> {
+		assert_eq!(src1.len(), 1 << log_len);
+		assert_eq!(src2.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
+			*dst_i = src1_i + src2_i;
+		}
+
+		Ok(())
+	}
+
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
@@ -303,20 +323,17 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		{
 			// Apply folding with interleaved challenges.
 			values[..(1 << challenges.len())].copy_from_slice(chunk);
-			let batches_count = 1 << (challenges.len() - log_batch_size);
-			for (round, challenge) in interleave_challenges.iter().enumerate() {
-				let folds_count = 1 << (log_batch_size - round - 1);
-				// On every round fold the adjacent pairs of values
-				for batch_index in 0..batches_count {
-					let batch_offset = batch_index << (log_batch_size - round);
-					for i in 0..folds_count {
-						values[batch_offset / 2 + i] = extrapolate_line_scalar(
-							values[batch_offset + (i << 1)],
-							values[batch_offset + (i << 1) + 1],
-							*challenge,
-						);
-					}
+			let mut current_values = &mut values[0..1 << challenges.len()];
+			for challenge in interleave_challenges {
+				let new_num_elements = current_values.len() / 2;
+				for out_idx in 0..new_num_elements {
+					current_values[out_idx] = extrapolate_line_scalar(
+						current_values[out_idx * 2],
+						current_values[out_idx * 2 + 1],
+						*challenge,
+					);
 				}
+				current_values = &mut current_values[0..new_num_elements];
 			}
 
 			// Apply the inverse NTT to the folded values.
@@ -822,6 +839,97 @@ mod tests {
 		assert_eq!(actual, expected);
 	}
 
+	fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
+		compute: C,
+		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
+		log_len: usize,
+	) where
+		C::DevMem: 'a,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+		let log_min_chunk_size = 3;
+
+		let device_allocator =
+			BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
+
+		// Allocate buffers a and b to be device mapped
+		let mut a_buffer = compute.host_alloc(1 << log_len);
+		let a_buffer = a_buffer.as_mut();
+		for x_i in a_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let a = a_buffer.to_vec();
+
+		let mut b_buffer = compute.host_alloc(1 << log_len);
+		let b_buffer = b_buffer.as_mut();
+		for x_i in b_buffer.iter_mut() {
+			*x_i = <F as Field>::random(&mut rng);
+		}
+		let b = b_buffer.to_vec();
+
+		// Copy a and b to device (creating F-slices)
+		let mut a_slice = device_allocator.alloc(1 << log_len).unwrap();
+		compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
+		let a_slice = C::DevMem::as_const(&a_slice);
+
+		let mut b_slice = device_allocator.alloc(1 << log_len).unwrap();
+		compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
+		let b_slice = C::DevMem::as_const(&b_slice);
+
+		// Run the HAL operation to compute the a + b
+		let arith = ArithExpr::Var(0);
+		let eval = compute.compile_expr(&arith).unwrap();
+		let [actual] = compute
+			.execute(|exec| {
+				let a_slice = KernelMemMap::Chunked {
+					data: a_slice,
+					log_min_chunk_size,
+				};
+				let b_slice = KernelMemMap::Chunked {
+					data: b_slice,
+					log_min_chunk_size,
+				};
+				let c_slice = KernelMemMap::Local { log_size: log_len };
+				let results = compute.accumulate_kernels(
+					exec,
+					|kernel_exec, _log_chunks, kernel_data| {
+						let [a, b, c] = kernel_data
+							.try_into()
+							.unwrap_or_else(|_| panic!("expected 3 buffers"));
+						let a = a.to_ref();
+						let b = b.to_ref();
+						let mut c = match c {
+							KernelBuffer::Mut(c) => c,
+							_ => unreachable!(),
+						};
+						let log_len = checked_log_2(a.len());
+						compute.kernel_add(kernel_exec, log_len, a, b, &mut c)?;
+						let c = C::DevMem::as_const(&c);
+						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
+						compute.sum_composition_evals(
+							kernel_exec,
+							log_len,
+							&[c],
+							&eval,
+							F::ONE,
+							&mut res,
+						)?;
+						Ok(vec![res])
+					},
+					vec![a_slice, b_slice, c_slice],
+				)?;
+				assert_eq!(results.len(), 1);
+				Ok(results)
+			})
+			.unwrap()
+			.try_into()
+			.unwrap();
+
+		// Compute the expected value and compare
+		let expected = a.iter().chain(b.iter()).sum::<F>();
+		assert_eq!(actual, expected);
+	}
+
 	fn test_generic_fri_fold<'a, F, FSub, C>(
 		compute: C,
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
@@ -1178,5 +1286,14 @@ mod tests {
 			log_batch_size,
 			log_fold_challenges,
 		);
+	}
+
+	#[test]
+	fn test_exec_kernel_add() {
+		type F = BinaryField128b;
+		let log_len = 10;
+		let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut device_memory = vec![F::ZERO; 1 << (log_len + 3)];
+		test_generic_kernel_add::<F, _>(compute, &mut device_memory, log_len);
 	}
 }

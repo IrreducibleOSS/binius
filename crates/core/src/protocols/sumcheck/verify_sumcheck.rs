@@ -1,14 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPoly, EvaluationOrder};
+use binius_math::{CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 
 use super::{
-	common::{batch_weighted_value, BatchSumcheckOutput, RoundProof, SumcheckClaim},
-	error::{Error, VerificationError},
 	RoundCoeffs,
+	common::{BatchSumcheckOutput, RoundProof, SumcheckClaim, batch_weighted_value},
+	error::{Error, VerificationError},
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},

@@ -3,12 +3,12 @@
 use std::cmp::Reverse;
 
 use binius_field::{
+	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	packed::get_packed_slice_checked,
 	tower::{ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
-	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::{MultilinearExtension, MultilinearPoly};

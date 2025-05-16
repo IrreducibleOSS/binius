@@ -5,7 +5,7 @@
 //! The primitive data types are fields in the canonical tower.
 
 use binius_field::{
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
+	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
 };
 
 pub type B1 = BinaryField1b;

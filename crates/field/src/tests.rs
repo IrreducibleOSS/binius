@@ -5,19 +5,19 @@ use std::iter;
 use proptest::prelude::*;
 
 use crate::{
-	underlier::{SmallU, WithUnderlier},
-	AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
-	BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, Field,
-	PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField128x4b,
-	PackedBinaryField16x16b, PackedBinaryField16x32b, PackedBinaryField16x4b,
-	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField1x64b,
-	PackedBinaryField256x1b, PackedBinaryField256x2b, PackedBinaryField2x128b,
-	PackedBinaryField2x32b, PackedBinaryField2x64b, PackedBinaryField32x16b,
+	AESTowerField8b, BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b,
+	BinaryField32b, BinaryField64b, BinaryField128b, BinaryField128bPolyval, Field,
+	PackedBinaryField1x64b, PackedBinaryField1x128b, PackedBinaryField2x32b,
+	PackedBinaryField2x64b, PackedBinaryField2x128b, PackedBinaryField4x16b,
+	PackedBinaryField4x32b, PackedBinaryField4x64b, PackedBinaryField4x128b, PackedBinaryField8x8b,
+	PackedBinaryField8x16b, PackedBinaryField8x32b, PackedBinaryField8x64b, PackedBinaryField16x4b,
+	PackedBinaryField16x8b, PackedBinaryField16x16b, PackedBinaryField16x32b,
 	PackedBinaryField32x2b, PackedBinaryField32x4b, PackedBinaryField32x8b,
-	PackedBinaryField4x128b, PackedBinaryField4x16b, PackedBinaryField4x32b,
-	PackedBinaryField4x64b, PackedBinaryField512x1b, PackedBinaryField64x1b,
-	PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField8x16b,
-	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedBinaryField8x8b, PackedField,
+	PackedBinaryField32x16b, PackedBinaryField64x1b, PackedBinaryField64x2b,
+	PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField128x1b,
+	PackedBinaryField128x2b, PackedBinaryField128x4b, PackedBinaryField256x1b,
+	PackedBinaryField256x2b, PackedBinaryField512x1b, PackedField,
+	underlier::{SmallU, WithUnderlier},
 };
 
 #[test]

@@ -3,12 +3,12 @@
 use std::{env, marker::PhantomData};
 
 use binius_field::{
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 	as_packed_field::PackedType,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
@@ -19,15 +19,15 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
-use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
+use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
 use super::{
+	ConstraintSystem, Proof,
 	channel::Boundary,
 	error::Error,
 	verify::{make_flush_oracles, max_n_vars_and_skip_rounds},
-	ConstraintSystem, Proof,
 };
 use crate::{
 	constraint_system::{
@@ -243,7 +243,7 @@ where
 
 	let GrandProductBatchProveOutput { final_layer_claims } =
 		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
-			EvaluationOrder::LowToHigh,
+			EvaluationOrder::HighToLow,
 			all_gpa_witnesses,
 			&all_gpa_claims,
 			&fast_domain_factory,

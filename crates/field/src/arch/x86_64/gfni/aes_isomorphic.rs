@@ -1,13 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use super::gfni_arithmetics::{linear_transform, GfniType, AES_TO_TOWER_MAP, TOWER_TO_AES_MAP};
+use super::gfni_arithmetics::{AES_TO_TOWER_MAP, GfniType, TOWER_TO_AES_MAP, linear_transform};
 use crate::{
-	arch::{portable::packed::PackedPrimitiveType, AESIsomorphicStrategy},
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b, PackedField,
+	TowerField,
+	arch::{AESIsomorphicStrategy, portable::packed::PackedPrimitiveType},
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedSquare},
 	underlier::UnderlierType,
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField8b, PackedField,
-	TowerField,
 };
 
 /// Canonical field that is isomorphic to the corresponding AES field.

@@ -52,7 +52,7 @@ impl<T: Copy> RandomAccessSequence<T> for &[T] {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		*<[T]>::get_unchecked(self, index)
+		unsafe { *<[T]>::get_unchecked(self, index) }
 	}
 }
 
@@ -69,7 +69,7 @@ impl<T: Copy> RandomAccessSequence<T> for &mut [T] {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		*<[T]>::get_unchecked(self, index)
+		unsafe { *<[T]>::get_unchecked(self, index) }
 	}
 }
 
@@ -81,7 +81,9 @@ impl<T: Copy> RandomAccessSequenceMut<T> for &mut [T] {
 
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: T) {
-		*<[T]>::get_unchecked_mut(self, index) = value;
+		unsafe {
+			*<[T]>::get_unchecked_mut(self, index) = value;
+		}
 	}
 }
 
@@ -118,7 +120,7 @@ impl<T: Copy, Inner: RandomAccessSequence<T>> RandomAccessSequence<T>
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		self.inner.get_unchecked(index + self.offset)
+		unsafe { self.inner.get_unchecked(index + self.offset) }
 	}
 }
 
@@ -153,7 +155,7 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequence<T>
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> T {
-		self.inner.get_unchecked(index + self.offset)
+		unsafe { self.inner.get_unchecked(index + self.offset) }
 	}
 }
 impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
@@ -161,7 +163,9 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
 {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: T) {
-		self.inner.set_unchecked(index + self.offset, value);
+		unsafe {
+			self.inner.set_unchecked(index + self.offset, value);
+		}
 	}
 }
 
@@ -169,7 +173,7 @@ impl<T: Copy, Inner: RandomAccessSequenceMut<T>> RandomAccessSequenceMut<T>
 mod tests {
 	use std::fmt::Debug;
 
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 
@@ -187,10 +191,10 @@ mod tests {
 
 	fn check_collection_get_set<T: Eq + Copy + Debug>(
 		collection: &mut impl RandomAccessSequenceMut<T>,
-		gen: &mut impl FnMut() -> T,
+		r#gen: &mut impl FnMut() -> T,
 	) {
 		for i in 0..collection.len() {
-			let value = gen();
+			let value = r#gen();
 			collection.set(i, value);
 			assert_eq!(collection.get(i), value);
 			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
@@ -209,16 +213,16 @@ mod tests {
 	#[test]
 	fn check_slice_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut gen = || -> usize { rng.gen() };
+		let mut r#gen = || -> usize { rng.r#gen() };
 
 		let mut slice: &mut [usize] = &mut [];
 
 		check_collection(&slice, slice);
-		check_collection_get_set(&mut slice, &mut gen);
+		check_collection_get_set(&mut slice, &mut r#gen);
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3];
 		check_collection(&slice, slice);
-		check_collection_get_set(&mut slice, &mut gen);
+		check_collection_get_set(&mut slice, &mut r#gen);
 	}
 
 	#[test]
@@ -231,12 +235,12 @@ mod tests {
 	#[test]
 	fn test_subrange_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut gen = || -> usize { rng.gen() };
+		let mut r#gen = || -> usize { rng.r#gen() };
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3, 4, 5];
 		let values = slice[1..4].to_vec();
 		let mut subrange = SequenceSubrangeMut::new(&mut slice, 1, 3);
 		check_collection(&subrange, &values);
-		check_collection_get_set(&mut subrange, &mut gen);
+		check_collection_get_set(&mut subrange, &mut r#gen);
 	}
 }

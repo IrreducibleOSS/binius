@@ -86,7 +86,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	) -> Result<MultilinearExtensionIndex<'arena, PackedType<U, F>>, anyhow::Error> {
 		Option::take(&mut self.witness)
 			.ok_or_else(|| {
-				anyhow!("Witness is missing. Are you in verifier mode, or have you already extraced the witness?")
+				anyhow!(
+					"Witness is missing. Are you in verifier mode, or have you already extraced the witness?"
+				)
 			})?
 			.build()
 	}

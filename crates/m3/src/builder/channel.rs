@@ -3,7 +3,7 @@
 use binius_core::constraint_system::channel::{ChannelId, FlushDirection};
 
 use super::column::ColumnIndex;
-use crate::builder::{Col, B1};
+use crate::builder::{B1, Col};
 
 /// A flushing rule within a table.
 #[derive(Debug)]

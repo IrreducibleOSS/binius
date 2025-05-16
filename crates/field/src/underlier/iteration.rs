@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
 
-use super::{Divisible, NumCast, UnderlierType, UnderlierWithBitOps, U1, U2, U4};
+use super::{Divisible, NumCast, U1, U2, U4, UnderlierType, UnderlierWithBitOps};
 
 /// The iteration strategy for the given underlier type 'U' that is treated as a packed collection
 /// of 'T's.

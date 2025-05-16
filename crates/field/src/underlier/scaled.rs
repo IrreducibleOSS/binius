@@ -6,7 +6,7 @@ use std::{
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{must_cast_mut, must_cast_ref, NoUninit, Pod, Zeroable};
+use bytemuck::{NoUninit, Pod, Zeroable, must_cast_mut, must_cast_ref};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 

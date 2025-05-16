@@ -10,22 +10,22 @@ use super::{
 	},
 };
 use crate::{
+	PackedBinaryField16x8b,
 	aes_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
 	},
 	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 		portable::{
 			packed::PackedPrimitiveType,
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
-		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
-		impl_transformation_with_strategy, InvertOrZero, MulAlpha, Square,
+		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
+		impl_square_with, impl_transformation_with_strategy,
 	},
 	underlier::WithUnderlier,
-	PackedBinaryField16x8b,
 };
 
 // Define 128 bit packed field types

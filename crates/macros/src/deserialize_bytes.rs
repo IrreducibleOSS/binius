@@ -34,10 +34,10 @@ pub fn parse_container_attributes(input: &DeriveInput) -> syn::Result<ContainerA
 /// taking into account container attributes like `eval_generics(X = Y, ...)`.
 ///
 /// This is similar to [`syn::Generics::split_for_impl`].
-pub fn split_for_impl<'gen, 'attr>(
-	generics: &'gen Generics,
+pub fn split_for_impl<'generics, 'attr>(
+	generics: &'generics Generics,
 	container_attributes: &'attr ContainerAttributes,
-) -> GenericsSplit<'gen, 'attr> {
+) -> GenericsSplit<'generics, 'attr> {
 	GenericsSplit::new(generics, &container_attributes.eval_generics)
 }
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
-use binius_hal::{make_portable_backend, CpuBackend};
+use binius_hal::{CpuBackend, make_portable_backend};
 use binius_math::{
 	BinarySubspace, EvaluationDomain, EvaluationOrder, IsomorphicEvaluationDomainFactory,
 	MLEDirectAdapter, MultilinearPoly,
@@ -13,15 +13,14 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		immediate_switchover_heuristic,
+		BatchSumcheckOutput, Error, immediate_switchover_heuristic,
 		prove::{
-			front_loaded, logging::FoldLowDimensionsData, RegularSumcheckProver, SumcheckProver,
+			RegularSumcheckProver, SumcheckProver, front_loaded, logging::FoldLowDimensionsData,
 		},
 		zerocheck::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_claim,
-			BatchZerocheckOutput, ZerocheckRoundEvals,
+			BatchZerocheckOutput, ZerocheckRoundEvals, lagrange_evals_multilinear_extension,
+			univariatizing_reduction_claim,
 		},
-		BatchSumcheckOutput, Error,
 	},
 	transcript::ProverTranscript,
 };

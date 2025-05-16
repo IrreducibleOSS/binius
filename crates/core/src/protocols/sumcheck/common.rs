@@ -3,8 +3,8 @@
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
 use binius_field::{
-	util::{inner_product_unchecked, powers},
 	ExtensionField, Field, PackedField,
+	util::{inner_product_unchecked, powers},
 };
 use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_utils::bail;
@@ -57,10 +57,7 @@ where
 		n_multilinears: usize,
 		composite_sums: Vec<CompositeSumClaim<F, Composition>>,
 	) -> Result<Self, Error> {
-		for CompositeSumClaim {
-			ref composition, ..
-		} in &composite_sums
-		{
+		for CompositeSumClaim { composition, .. } in &composite_sums {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
 					actual: composition.n_vars(),
@@ -186,7 +183,7 @@ impl<F: Field> RoundProof<F> {
 
 	/// The truncated polynomial coefficients.
 	pub fn coeffs(&self) -> &[F] {
-		&self.0 .0
+		&self.0.0
 	}
 
 	/// Representation in an isomorphic field
@@ -351,13 +348,13 @@ mod tests {
 	fn test_round_coeffs_truncate_non_empty() {
 		let coeffs = RoundCoeffs(vec![F::from(1), F::from(2), F::from(3)]);
 		let truncated = coeffs.truncate();
-		assert_eq!(truncated.0 .0, vec![F::from(1), F::from(2)]);
+		assert_eq!(truncated.0.0, vec![F::from(1), F::from(2)]);
 	}
 
 	#[test]
 	fn test_round_coeffs_truncate_empty() {
 		let coeffs = RoundCoeffs::<F>(vec![]);
 		let truncated = coeffs.truncate();
-		assert!(truncated.0 .0.is_empty());
+		assert!(truncated.0.0.is_empty());
 	}
 }

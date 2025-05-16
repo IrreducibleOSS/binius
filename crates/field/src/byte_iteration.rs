@@ -3,18 +3,18 @@
 use std::any::TypeId;
 
 use binius_utils::random_access_sequence::RandomAccessSequence;
-use bytemuck::{zeroed_vec, Pod};
+use bytemuck::{Pod, zeroed_vec};
 
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+	BinaryField128bPolyval, PackedField,
 	arch::{
-		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
-		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*,
-		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
+		byte_sliced::*, packed_8::*, packed_16::*, packed_32::*, packed_64::*, packed_128::*,
+		packed_256::*, packed_512::*, packed_aes_8::*, packed_aes_16::*, packed_aes_32::*,
+		packed_aes_64::*, packed_aes_128::*, packed_aes_256::*, packed_aes_512::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
-	BinaryField8b, PackedField,
 };
 
 /// A marker trait that the slice of packed values can be iterated as a sequence of bytes.

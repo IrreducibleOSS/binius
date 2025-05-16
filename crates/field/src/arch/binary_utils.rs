@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use bytemuck::{must_cast_mut, must_cast_ref, AnyBitPattern, NoUninit};
+use bytemuck::{AnyBitPattern, NoUninit, must_cast_mut, must_cast_ref};
 
 use crate::underlier::{NumCast, UnderlierType};
 

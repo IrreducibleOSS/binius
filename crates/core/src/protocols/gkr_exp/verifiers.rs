@@ -164,11 +164,7 @@ where
 	}
 
 	fn layer_n_claims(&self, layer_no: usize) -> usize {
-		if self.is_last_layer(layer_no) {
-			0
-		} else {
-			1
-		}
+		if self.is_last_layer(layer_no) { 0 } else { 1 }
 	}
 }
 
