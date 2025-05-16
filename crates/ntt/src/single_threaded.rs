@@ -4,6 +4,7 @@ use std::{cmp, marker::PhantomData};
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_math::BinarySubspace;
+use binius_utils::bail;
 
 use super::{
 	additive_ntt::{AdditiveNTT, NTTShape},
@@ -375,10 +376,10 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	} = shape;
 
 	if !data.len().is_power_of_two() {
-		return Err(Error::PowerOfTwoLengthRequired);
+		bail!(Error::PowerOfTwoLengthRequired);
 	}
 	if skip_rounds > log_y {
-		return Err(Error::SkipRoundsTooLarge);
+		bail!(Error::SkipRoundsTooLarge);
 	}
 
 	let full_sized_y = (data.len() * PB::WIDTH) >> (log_x + log_z);
@@ -386,18 +387,18 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	// Verify that our log_y exactly matches the data length, except when we are NTT-ing one packed
 	// field
 	if (1 << log_y != full_sized_y && data.len() > 2) || (1 << log_y > full_sized_y) {
-		return Err(Error::BatchTooLarge);
+		bail!(Error::BatchTooLarge);
 	}
 
 	if coset >= (1 << coset_bits) {
-		return Err(Error::CosetIndexOutOfBounds { coset, coset_bits });
+		bail!(Error::CosetIndexOutOfBounds { coset, coset_bits });
 	}
 
 	// The domain size should be at least large enough to represent the given coset.
 	let log_required_domain_size = log_y + coset_bits;
 	if log_required_domain_size > log_domain_size {
-		return Err(Error::DomainTooSmall {
-			log_required_domain_size,
+		bail!(Error::DomainTooSmall {
+			log_required_domain_size
 		});
 	}
 

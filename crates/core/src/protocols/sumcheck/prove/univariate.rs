@@ -660,7 +660,7 @@ where
 	let coset_bits = min_bits(n_chunks);
 
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0, 0, 0)?;
+	ntt.inverse_transform(evals, shape, 0, coset_bits, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
 	for (coset, extrapolated_chunk) in izip!(1.., extrapolated_evals.chunks_exact_mut(evals.len()))
