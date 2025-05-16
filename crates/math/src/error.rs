@@ -27,8 +27,8 @@ pub enum Error {
 		expected length {expected}, got length {actual}"
 	)]
 	BatchEvaluateSizeMismatch { expected: usize, actual: usize },
-	#[error("the query must have size {expected}")]
-	IncorrectQuerySize { expected: usize },
+	#[error("the query must have size {expected}, instead it has {actual}")]
+	IncorrectQuerySize { expected: usize, actual: usize },
 	#[error("the sum of the query and the start index must be at most {expected}")]
 	IncorrectStartIndex { expected: usize },
 	#[error("the zero padding start index must be at most {expected}")]

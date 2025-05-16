@@ -48,6 +48,7 @@ impl<F: TowerField> MultivariatePoly<F> for Constant<F> {
 		if query.len() != self.n_vars {
 			bail!(Error::IncorrectQuerySize {
 				expected: self.n_vars,
+				actual: query.len(),
 			});
 		}
 		Ok(self.value)

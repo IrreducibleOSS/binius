@@ -6,8 +6,8 @@ use binius_field::Error as FieldError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("the query must have size {expected}")]
-	IncorrectQuerySize { expected: usize },
+	#[error("the query must have size {expected}, and istead has {actual}")]
+	IncorrectQuerySize { expected: usize, actual: usize },
 	#[error("all polynomials in mixed composition should have {expected} vars")]
 	IncorrectArityInMixedComposition { expected: usize },
 	#[error("array of inner composition evaluations is of incorrect length")]

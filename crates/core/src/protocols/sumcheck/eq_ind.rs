@@ -205,7 +205,10 @@ where
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: n_vars });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 
 		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;
