@@ -608,7 +608,8 @@ where
 			let ell = n.trailing_zeros() as usize;
 			assert!(ell >= skip_rounds);
 
-			OddInterpolate::new(n >> ell, ell, ntt.twiddles())
+			let coset_bits = ntt.log_domain_size() - ell;
+			OddInterpolate::new(n >> ell, ell, coset_bits, ntt.twiddles())
 				.expect("domain large enough by construction")
 		});
 
@@ -658,8 +659,7 @@ where
 		log_z: log_batch,
 	};
 
-	let n_chunks = extrapolated_evals.len() / evals.len();
-	let coset_bits = min_bits(n_chunks);
+	let coset_bits = ntt.log_domain_size() - skip_rounds;
 
 	// Inverse NTT: convert evals to novel basis representation
 	ntt.inverse_transform(evals, shape, 0, coset_bits, 0)?;
