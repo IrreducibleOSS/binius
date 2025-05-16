@@ -10,11 +10,11 @@ use super::{structured::StructuredDynSize, table::TableId, types::B128};
 
 /// An index of a column within a table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ColumnIndex(pub(crate) usize);
+pub(crate) struct ColumnIndex(pub(crate) usize);
 
 /// An index of a column within a partition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColumnPartitionIndex(pub(crate) usize);
+pub(crate) struct ColumnPartitionIndex(pub(crate) usize);
 
 /// A typed identifier for a column in a table.
 ///
@@ -25,10 +25,10 @@ pub struct ColumnPartitionIndex(pub(crate) usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
 	pub table_id: TableId,
-	pub table_index: ColumnIndex,
+	pub(crate) table_index: ColumnIndex,
 	// Denormalized partition index so that we can use it to construct arithmetic expressions over
 	// the partition columns.
-	pub partition_index: ColumnPartitionIndex,
+	pub(crate) partition_index: ColumnPartitionIndex,
 	_marker: PhantomData<F>,
 }
 
@@ -116,8 +116,8 @@ impl ColumnShape {
 /// columns are added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ColumnId {
-	pub table_id: TableId,
-	pub table_index: ColumnIndex,
+	pub(crate) table_id: TableId,
+	pub(crate) table_index: ColumnIndex,
 }
 
 /// A definition of a column in a table.
