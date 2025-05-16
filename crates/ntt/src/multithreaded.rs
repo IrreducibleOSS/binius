@@ -174,12 +174,14 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		let log_strides = log_max_threads.min(log_width);
 		let log_stride_len = log_width - log_strides;
 
+		let s_evals = &s_evals[log_domain_size - (par_rounds + coset_bits)..];
+
 		matrix
 			.into_par_strides(1 << log_stride_len)
 			.for_each(|mut stride| {
 				// i indexes the layer of the NTT network, also the binary subspace.
 				for i in (0..par_rounds.saturating_sub(skip_rounds)).rev() {
-					let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+					let s_evals_par_i = &s_evals[i];
 					let coset_offset = coset << (par_rounds - 1 - i);
 
 					// j indexes the outer Z tensor axis.
@@ -216,7 +218,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::forward_transform(
 				log_domain_size,
-				&s_evals[0..log_y - par_rounds],
+				s_evals, //[0..log_y - par_rounds],
 				chunk,
 				NTTShape {
 					log_x,
@@ -307,7 +309,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::inverse_transform(
 				log_domain_size,
-				&s_evals[0..log_y - par_rounds],
+				s_evals,
 				chunk,
 				NTTShape {
 					log_x,
@@ -327,12 +329,14 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let log_strides = log_max_threads.min(log_width);
 	let log_stride_len = log_width - log_strides;
 
+	let s_evals = &s_evals[log_domain_size - (par_rounds + coset_bits)..];
+
 	matrix
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
 			// i indexes the layer of the NTT network, also the binary subspace.
 			for i in 0..par_rounds.saturating_sub(skip_rounds) {
-				let s_evals_par_i = &s_evals[log_y - par_rounds + i];
+				let s_evals_par_i = &s_evals[i];
 				let coset_offset = coset << (par_rounds - 1 - i);
 
 				// j indexes the outer Z tensor axis.

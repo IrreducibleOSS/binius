@@ -190,6 +190,10 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	// packed base field elements.
 	let cutoff = log_w.saturating_sub(log_x);
 
+	// Choose the twiddle factors so that NTTs on differently sized domains, with the same
+	// coset_bits, share the beginning layer twiddles.
+	let s_evals = &s_evals[log_domain_size - (log_y + coset_bits)..];
+
 	// i indexes the layer of the NTT network, also the binary subspace.
 	for i in (cutoff..(log_y - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
@@ -299,6 +303,10 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
 	let cutoff = log_w.saturating_sub(log_x);
+
+	// Choose the twiddle factors so that NTTs on differently sized domains, with the same
+	// coset_bits, share the final layer twiddles.
+	let s_evals = &s_evals[log_domain_size - (log_y + coset_bits)..];
 
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..cutoff.min(log_y - skip_rounds) {

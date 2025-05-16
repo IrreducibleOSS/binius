@@ -2,10 +2,7 @@
 
 use binius_field::BinaryField;
 use binius_math::Matrix;
-use binius_utils::{
-	bail,
-	checked_arithmetics::{log2_ceil_usize, min_bits},
-};
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 
 use crate::{
 	additive_ntt::{AdditiveNTT, NTTShape},
@@ -67,7 +64,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		let coset_bits = min_bits(d);
+		let coset_bits = log2_ceil_usize(d);
 		let log_required_domain_size = coset_bits + ell;
 		if ntt.log_domain_size() < log_required_domain_size {
 			bail!(Error::DomainTooSmall {
@@ -132,7 +129,8 @@ where
 		});
 	}
 
-	for (j, twiddle_access_j_plus_ell) in twiddle_access[ell..ell + log_d].iter().enumerate() {
+	let twiddle_access = &twiddle_access[twiddle_access.len() - log_d..];
+	for (j, twiddle_access_j_plus_ell) in twiddle_access.iter().enumerate() {
 		assert!(twiddle_access_j_plus_ell.log_n() >= log_d - 1 - j);
 
 		for i in 0..d {

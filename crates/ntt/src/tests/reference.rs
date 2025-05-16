@@ -87,6 +87,8 @@ where
 		});
 	}
 
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
+
 	for i in (0..(log_n - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
@@ -131,6 +133,8 @@ where
 			log_required_domain_size: log_n + coset_bits,
 		});
 	}
+
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
 
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..(log_n - skip_rounds) {
