@@ -1,0 +1,18 @@
+[package]
+name = "binius_compute_test_utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+binius_compute = { path = "../compute", default-features = false }
+binius_fast_compute ={ path = "../fast_compute", default-features = false }
+binius_field = { path = "../field", default-features = false }
+binius_math = { path = "../math", default-features = false }
+binius_ntt = { path = "../ntt", default-features = false }
+binius_utils = { path = "../utils", default-features = false }
+rand = { workspace = true, features = ["std"] }
