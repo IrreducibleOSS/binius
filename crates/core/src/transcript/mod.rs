@@ -129,7 +129,16 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 		let transcript = self.combined.buffer.to_vec();
 
 		if let Ok(filename) = std::env::var("BINIUS_DUMP_PROOF") {
-			let mut file = File::create(&filename)
+			let path = if cfg!(test) {
+				let current_thread = std::thread::current();
+				let test_name = current_thread.name().unwrap_or("unknown");
+				let filename = if filename == "./" { "../.." } else { &filename };
+				format!("{filename}/{test_name}.bin")
+			} else {
+				filename.to_string()
+			};
+
+			let mut file = File::create(path)
 				.unwrap_or_else(|_| panic!("Failed to create proof dump file: {filename}"));
 			file.write_all(&transcript)
 				.expect("Failed to write proof to dump file");
