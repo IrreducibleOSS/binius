@@ -56,66 +56,6 @@ impl<P: PackedField, M: MultilinearPoly<P>> SumcheckMultilinear<P, M> {
 		}
 	}
 
-	pub fn auto_set_zero_const_suffix(&mut self, n_vars: usize) {
-		let packed_zero = P::zero();
-
-		match self {
-			Self::Transparent {
-				multilinear,
-				const_suffix,
-				..
-			} => {
-				if *const_suffix != <(P::Scalar, usize)>::default() {
-					return;
-				}
-
-				let mut new_suffix_len = 0;
-
-				if let Some(packed_evals) = multilinear.packed_evals() {
-					for packed_evals in packed_evals.iter().rev() {
-						if *packed_evals != packed_zero {
-							break;
-						}
-						new_suffix_len += P::WIDTH << multilinear.log_extension_degree();
-					}
-
-					new_suffix_len = new_suffix_len.min(1 << n_vars);
-
-					for i in (0..((1 << n_vars) - new_suffix_len)).rev() {
-						if multilinear
-							.evaluate_on_hypercube(i)
-							.expect("poly has correct length")
-							== P::Scalar::zero()
-						{
-							new_suffix_len += 1;
-						} else {
-							break;
-						}
-					}
-					self.update_const_suffix(n_vars, (P::Scalar::zero(), new_suffix_len));
-				}
-			}
-			Self::Folded {
-				large_field_folded_evals,
-				..
-			} => {
-				let mut new_suffix_len = 0;
-
-				if large_field_folded_evals.len() != 1 << n_vars.saturating_sub(P::LOG_WIDTH) {
-					return;
-				}
-
-				for eval in large_field_folded_evals.iter().rev() {
-					if *eval != packed_zero {
-						break;
-					}
-					new_suffix_len += P::WIDTH;
-				}
-				self.update_const_suffix(n_vars, (P::Scalar::zero(), new_suffix_len));
-			}
-		}
-	}
-
 	pub fn update_const_suffix(&mut self, n_vars: usize, new_const_suffix: (P::Scalar, usize)) {
 		match self {
 			Self::Transparent { const_suffix, .. } => {

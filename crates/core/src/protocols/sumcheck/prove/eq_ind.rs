@@ -247,14 +247,6 @@ where
 		Ok(self)
 	}
 
-	/// Automatically infers a constant suffix consisting of zeroes if not explicitly specified.
-	pub fn with_auto_zero_suffixes(mut self) -> Self {
-		self.multilinears
-			.par_iter_mut()
-			.for_each(|multilinear| multilinear.auto_set_zero_const_suffix(self.n_vars));
-		self
-	}
-
 	#[instrument(skip_all, level = "debug", name = "EqIndSumcheckProverBuilder::build")]
 	pub fn build<FDomain, Composition>(
 		self,
