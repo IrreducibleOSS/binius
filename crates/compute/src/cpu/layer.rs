@@ -839,7 +839,7 @@ mod tests {
 		assert_eq!(actual, expected);
 	}
 
-	fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
+	fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F, ExprEval: Sync> + Sync>(
 		compute: C,
 		device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
 		log_len: usize,
@@ -908,8 +908,7 @@ mod tests {
 						let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 						compute.sum_composition_evals(
 							kernel_exec,
-							log_len,
-							&[c],
+							&SlicesBatch::new(vec![c], c.len()),
 							&eval,
 							F::ONE,
 							&mut res,

@@ -26,6 +26,7 @@ use binius_utils::{
 	rayon::get_log_max_threads,
 };
 use bytemuck::zeroed_vec;
+use itertools::izip;
 
 use crate::{
 	arith_circuit::ArithCircuitPoly,
@@ -149,7 +150,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			_ => {
 				return Err(Error::InputValidation(format!(
 					"unsupported value of a_edeg: {a_edeg}"
-				)))
+				)));
 			}
 		};
 
@@ -312,7 +313,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 				return Err(Error::InputValidation(format!(
 					"unsupported value of mat.tower_level: {}",
 					mat.tower_level
-				)))
+				)));
 			}
 		};
 
@@ -381,7 +382,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 				return Err(Error::InputValidation(format!(
 					"unsupported value of mat.tower_level: {}",
 					mat.tower_level
-				)))
+				)));
 			}
 		};
 
@@ -429,6 +430,25 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 			*accumulator +=
 				batch_coeff * output.into_iter().take(inputs.row_len()).sum::<T::B128>();
+		}
+
+		Ok(())
+	}
+
+	fn kernel_add(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: FSlice<'_, T::B128, Self>,
+		src2: FSlice<'_, T::B128, Self>,
+		dst: &mut FSliceMut<'_, T::B128, Self>,
+	) -> Result<(), Error> {
+		assert_eq!(src1.len(), 1 << log_len);
+		assert_eq!(src2.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src1_i, &src2_i) in izip!(dst.data.iter_mut(), src1.data, src2.data) {
+			*dst_i = src1_i + src2_i;
 		}
 
 		Ok(())
