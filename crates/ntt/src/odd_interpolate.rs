@@ -155,7 +155,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, Field};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::single_threaded::SingleThreadedNTT;

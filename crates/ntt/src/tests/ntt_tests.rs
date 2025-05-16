@@ -3,20 +3,20 @@
 use std::ops::Range;
 
 use binius_field::{
+	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES8x16x16b, ByteSlicedAES16x32x8b,
+	PackedBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField32x16b, PackedExtension,
+	PackedField, RepackedExtension,
 	arch::{
+		packed_8::PackedBinaryField1x8b,
 		packed_16::{PackedBinaryField1x16b, PackedBinaryField2x8b},
 		packed_32::PackedBinaryField2x16b,
 		packed_64::{PackedBinaryField2x32b, PackedBinaryField4x16b},
-		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, ByteSlicedAES16x32x8b, ByteSlicedAES8x16x16b,
-	PackedBinaryField16x32b, PackedBinaryField32x16b, PackedBinaryField8x32b, PackedExtension,
-	PackedField, RepackedExtension,
 };
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
-use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, NTTShape, SingleThreadedNTT};
+use crate::{AdditiveNTT, NTTShape, SingleThreadedNTT, dynamic_dispatch::DynamicDispatchNTT};
 
 /// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and
 /// inverse transformation of `reference_ntt` on `data` and that the result of the roundtrip is the

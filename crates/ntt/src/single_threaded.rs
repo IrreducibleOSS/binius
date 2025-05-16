@@ -11,7 +11,7 @@ use super::{
 	error::Error,
 	twiddle::TwiddleAccess,
 };
-use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess};
+use crate::twiddle::{OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess, expand_subspace_evals};
 
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
@@ -461,10 +461,10 @@ mod tests {
 
 	use assert_matches::assert_matches;
 	use binius_field::{
-		BinaryField16b, BinaryField8b, Field, PackedBinaryField8x16b, PackedFieldIndexable,
+		BinaryField8b, BinaryField16b, Field, PackedBinaryField8x16b, PackedFieldIndexable,
 	};
 	use binius_math::Error as MathError;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 
