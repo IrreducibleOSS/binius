@@ -4,7 +4,7 @@ use cfg_if::cfg_if;
 
 mod arch;
 mod compression;
-mod digest;
+pub mod digest;
 #[cfg(test)]
 mod tests;
 
