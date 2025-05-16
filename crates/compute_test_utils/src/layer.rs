@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use std::{iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
