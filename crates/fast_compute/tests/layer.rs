@@ -6,12 +6,9 @@ use binius_compute_test_utils::layer::{
 	test_generic_single_left_fold, test_generic_single_right_fold,
 	test_generic_single_tensor_expand,
 };
-use binius_fast_compute::{
-	layer::FastCpuLayer,
-	memory::{PackedMemorySlice, PackedMemorySliceMut},
-};
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
-	tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b, Field,
+	tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
 	PackedBinaryField2x128b, PackedField,
 };
 
