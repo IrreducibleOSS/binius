@@ -218,7 +218,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		.try_for_each(|(inner_coset, chunk)| {
 			single_threaded::forward_transform(
 				log_domain_size,
-				s_evals, //[0..log_y - par_rounds],
+				s_evals,
 				chunk,
 				NTTShape {
 					log_x,
