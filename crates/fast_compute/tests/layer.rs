@@ -8,8 +8,8 @@ use binius_compute_test_utils::layer::{
 };
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
-	tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b,
-	PackedBinaryField2x128b, PackedField,
+	BinaryField16b, BinaryField32b, BinaryField128b, PackedBinaryField2x128b, PackedField,
+	tower::CanonicalTowerFamily,
 };
 
 #[test]

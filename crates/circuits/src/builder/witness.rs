@@ -2,19 +2,19 @@
 
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use binius_core::{
 	oracle::{MultilinearOracleSet, OracleId},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
+	ExtensionField, PackedField, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::WithUnderlier,
-	ExtensionField, PackedField, TowerField,
 };
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
+use bytemuck::{Pod, must_cast_slice, must_cast_slice_mut};
 
 use super::types::{F, U};
 

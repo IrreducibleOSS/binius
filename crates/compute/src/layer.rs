@@ -154,11 +154,11 @@ pub trait ComputeLayer<F: Field> {
 		&self,
 		exec: &mut Self::Exec,
 		map: impl Sync
-			+ for<'a> Fn(
-				&'a mut Self::KernelExec,
-				usize,
-				Vec<KernelBuffer<'a, F, Self::DevMem>>,
-			) -> Result<Vec<Self::KernelValue>, Error>,
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
 
@@ -507,8 +507,8 @@ pub type FSliceMut<'a, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{tower::CanonicalTowerFamily, BinaryField128b, Field, TowerField};
-	use rand::{prelude::StdRng, SeedableRng};
+	use binius_field::{BinaryField128b, Field, TowerField, tower::CanonicalTowerFamily};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{

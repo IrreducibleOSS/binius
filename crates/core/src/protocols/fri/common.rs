@@ -174,7 +174,7 @@ pub fn estimate_optimal_arity(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, BinaryField32b};
+	use binius_field::{BinaryField32b, BinaryField128b};
 
 	use super::*;
 

@@ -2,22 +2,22 @@
 
 use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{
-	packed::{iter_packed_slice_with_offset, len_packed_slice},
 	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
+	packed::{iter_packed_slice_with_offset, len_packed_slice},
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::AdditiveNTT;
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, SerializeBytes};
+use binius_utils::{SerializeBytes, bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{vcs_optimal_layers_depths_iter, FRIParams},
+	TerminateCodeword,
+	common::{FRIParams, vcs_optimal_layers_depths_iter},
 	error::Error,
 	logging::{MerkleTreeDimensionData, RSEncodeDimensionData, SortAndMergeDimensionData},
-	TerminateCodeword,
 };
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},

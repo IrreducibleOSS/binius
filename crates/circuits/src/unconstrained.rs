@@ -1,13 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 use binius_core::oracle::OracleId;
-use binius_field::{as_packed_field::PackScalar, ExtensionField, TowerField};
+use binius_field::{ExtensionField, TowerField, as_packed_field::PackScalar};
 use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 
 pub fn unconstrained<FS>(

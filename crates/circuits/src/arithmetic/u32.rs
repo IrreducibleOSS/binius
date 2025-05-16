@@ -5,18 +5,18 @@ use binius_core::{
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
-	as_packed_field::PackedType, packed::set_packed_slice, underlier::WithUnderlier, BinaryField1b,
-	BinaryField32b, Field, PackedField, TowerField,
+	BinaryField1b, BinaryField32b, Field, PackedField, TowerField, as_packed_field::PackedType,
+	packed::set_packed_slice, underlier::WithUnderlier,
 };
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{pod_collect_to_vec, Pod};
+use bytemuck::{Pod, pod_collect_to_vec};
 
 use crate::{
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	transparent,
 };

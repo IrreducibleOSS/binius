@@ -3,15 +3,15 @@
 use anyhow::Ok;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	ExtensionField, PackedFieldIndexable, TowerField,
+	as_packed_field::{PackScalar, PackedType},
 };
 use itertools::Itertools;
 
 use super::lasso::lasso;
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 pub struct LookupBatch {
 	lookup_us: Vec<Vec<OracleId>>,

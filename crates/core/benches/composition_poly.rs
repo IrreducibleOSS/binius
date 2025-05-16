@@ -4,13 +4,13 @@ use std::iter::repeat_with;
 
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
-	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+	BinaryField1b, Field, PackedBinaryField1x128b, PackedBinaryField16x8b, PackedBinaryField128x1b,
 	PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
 use binius_math::{ArithExpr as Expr, CompositionPoly, RowsBatchRef};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use rand::{thread_rng, RngCore};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use rand::{RngCore, thread_rng};
 
 const BATCH_SIZE: usize = 256;
 

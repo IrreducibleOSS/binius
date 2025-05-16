@@ -60,7 +60,7 @@ mod tests {
 
 	use binius_core::polynomial::test_utils::decompose_index_to_hypercube_point;
 	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
-	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField32b};
+	use binius_field::{BinaryField32b, arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use binius_math::{ArithCircuit, CompositionPoly};
 	use bumpalo::Bump;
 	use itertools::izip;
@@ -68,8 +68,8 @@ mod tests {
 	use super::*;
 	use crate::{
 		builder::{
-			test_utils::{validate_system_witness, ClosureFiller},
-			ConstraintSystem, WitnessIndex, B128, B16, B32,
+			B16, B32, B128, ConstraintSystem, WitnessIndex,
+			test_utils::{ClosureFiller, validate_system_witness},
 		},
 		gadgets::structured::fill_incrementing_b32,
 	};

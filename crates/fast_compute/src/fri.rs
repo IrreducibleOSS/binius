@@ -3,7 +3,7 @@
 use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, PackedField};
-use binius_math::{extrapolate_line_scalar, MultilinearQuery};
+use binius_math::{MultilinearQuery, extrapolate_line_scalar};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::AdditiveNTT;
 use bytemuck::zeroed_vec;

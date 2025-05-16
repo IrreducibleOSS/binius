@@ -13,9 +13,9 @@ use std::array;
 use anyhow::Error;
 use binius_core::oracle::OracleId;
 use binius_field::{
+	BinaryField, BinaryField1b, BinaryField16b, BinaryField64b, Field, TowerField,
 	as_packed_field::PackedType,
 	packed::{get_packed_slice, set_packed_slice},
-	BinaryField, BinaryField16b, BinaryField1b, BinaryField64b, Field, TowerField,
 };
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
@@ -26,8 +26,8 @@ use itertools::izip;
 
 use super::static_exp::u16_static_exp_lookups;
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 
 pub fn mul<FExpBase>(
@@ -405,13 +405,13 @@ mod tests {
 		constraint_system::{self},
 		fiat_shamir::HasherChallenger,
 	};
-	use binius_field::{tower::CanonicalTowerFamily, BinaryField1b, BinaryField8b};
+	use binius_field::{BinaryField1b, BinaryField8b, tower::CanonicalTowerFamily};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 
 	use super::mul;
 	use crate::{
-		builder::{types::U, ConstraintSystemBuilder},
+		builder::{ConstraintSystemBuilder, types::U},
 		unconstrained::unconstrained,
 	};
 

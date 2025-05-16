@@ -3,13 +3,13 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 };
 use binius_math::BinarySubspace;
 use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
+use crate::{AdditiveNTT, Error, NTTShape, SingleThreadedNTT, twiddle::TwiddleAccess};
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]

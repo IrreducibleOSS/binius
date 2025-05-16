@@ -28,16 +28,16 @@ mod tests {
 	use binius_core::{
 		constraint_system::{
 			self,
-			channel::{validate_witness, Boundary, FlushDirection, OracleOrConst},
+			channel::{Boundary, FlushDirection, OracleOrConst, validate_witness},
 		},
 		fiat_shamir::HasherChallenger,
 		oracle::{OracleId, ShiftVariant},
 	};
 	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{
+		BinaryField1b, BinaryField8b, BinaryField64b, BinaryField128b, Field, TowerField,
 		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
-		underlier::WithUnderlier, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b,
-		Field, TowerField,
+		underlier::WithUnderlier,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -50,9 +50,9 @@ mod tests {
 
 	use crate::{
 		builder::{
+			ConstraintSystemBuilder,
 			test_utils::test_circuit,
 			types::{F, U},
-			ConstraintSystemBuilder,
 		},
 		unconstrained::unconstrained,
 	};

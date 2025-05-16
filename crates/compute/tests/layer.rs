@@ -8,7 +8,7 @@ use binius_compute_test_utils::layer::{
 	test_generic_single_tensor_expand,
 };
 use binius_field::{
-	tower::CanonicalTowerFamily, BinaryField128b, BinaryField16b, BinaryField32b, Field,
+	BinaryField16b, BinaryField32b, BinaryField128b, Field, tower::CanonicalTowerFamily,
 };
 
 #[test]

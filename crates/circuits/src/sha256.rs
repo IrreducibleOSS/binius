@@ -1,14 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::oracle::{OracleId, ShiftVariant};
-use binius_field::{as_packed_field::PackedType, BinaryField1b, Field, TowerField};
+use binius_field::{BinaryField1b, Field, TowerField, as_packed_field::PackedType};
 use binius_macros::arith_expr;
 use itertools::izip;
 
 use crate::{
 	arithmetic,
-	arithmetic::u32::{u32const_repeating, LOG_U32_BITS},
-	builder::{types::U, ConstraintSystemBuilder},
+	arithmetic::u32::{LOG_U32_BITS, u32const_repeating},
+	builder::{ConstraintSystemBuilder, types::U},
 };
 
 type B1 = BinaryField1b;
@@ -260,7 +260,7 @@ pub fn sha256(
 #[cfg(test)]
 mod tests {
 	use binius_core::oracle::OracleId;
-	use binius_field::{as_packed_field::PackedType, BinaryField1b};
+	use binius_field::{BinaryField1b, as_packed_field::PackedType};
 	use sha2::{compress256, digest::generic_array::GenericArray};
 
 	use crate::{

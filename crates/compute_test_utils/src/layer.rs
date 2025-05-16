@@ -9,10 +9,10 @@ use binius_compute::{
 };
 use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_math::{tensor_prod_eq_ind, ArithExpr, MultilinearExtension, MultilinearQuery};
+use binius_math::{ArithExpr, MultilinearExtension, MultilinearQuery, tensor_prod_eq_ind};
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
-use rand::{prelude::StdRng, SeedableRng};
+use rand::{SeedableRng, prelude::StdRng};
 
 pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 	compute: C,

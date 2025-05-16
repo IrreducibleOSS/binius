@@ -8,7 +8,7 @@ use binius_utils::checked_arithmetics::log2_ceil_usize;
 
 use crate::{
 	arithmetic::u32::LOG_U32_BITS,
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 };
 
 const STATE_SIZE: usize = 32;
@@ -503,10 +503,10 @@ pub fn blake3_compress(
 mod tests {
 	use std::array;
 
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use crate::{
-		blake3::{blake3_compress, Blake3CompressState, F32, IV, MSG_PERMUTATION},
+		blake3::{Blake3CompressState, F32, IV, MSG_PERMUTATION, blake3_compress},
 		builder::test_utils::test_circuit,
 	};
 

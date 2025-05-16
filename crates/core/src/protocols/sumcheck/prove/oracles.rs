@@ -7,16 +7,16 @@ use binius_math::{EvaluationDomainFactory, EvaluationOrder, MultilinearPoly};
 use binius_utils::bail;
 
 use super::{
-	eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder},
 	RegularSumcheckProver, ZerocheckProverImpl,
+	eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder},
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
 	protocols::{
-		evalcheck::{subclaims::MemoizedData, EvalPoint},
+		evalcheck::{EvalPoint, subclaims::MemoizedData},
 		sumcheck::{
-			constraint_set_mlecheck_claim, constraint_set_sumcheck_claim, CompositeSumClaim, Error,
-			OracleClaimMeta,
+			CompositeSumClaim, Error, OracleClaimMeta, constraint_set_mlecheck_claim,
+			constraint_set_sumcheck_claim,
 		},
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},

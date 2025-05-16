@@ -12,8 +12,8 @@ pub mod u8add_carryfree;
 pub mod u8mul;
 
 pub use sha256::sha256;
-pub use u32add::u32add;
 pub use u8_double_conditional_increment::u8_double_conditional_increment;
 pub use u8add::u8add;
 pub use u8add_carryfree::u8add_carryfree;
 pub use u8mul::u8mul;
+pub use u32add::u32add;

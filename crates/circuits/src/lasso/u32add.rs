@@ -5,18 +5,18 @@ use std::marker::PhantomData;
 use anyhow::Result;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
+	BinaryField1b, BinaryField8b, BinaryField32b, ExtensionField, TowerField,
 	as_packed_field::PackScalar,
 	packed::{packed_from_fn_with_offset, set_packed_slice},
 	underlier::U1,
-	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, TowerField,
 };
 use itertools::izip;
 
 use super::lasso::lasso;
 use crate::{
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	pack::pack,
 };

@@ -7,16 +7,16 @@ use binius_math::MultilinearPoly;
 use binius_utils::bail;
 
 use super::{
+	ConstraintSystem,
 	channel::{self, Boundary},
 	error::Error,
-	ConstraintSystem,
 };
 use crate::{
 	oracle::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ShiftVariant,
 	},
-	polynomial::{test_utils::decompose_index_to_hypercube_point, MultilinearComposite},
+	polynomial::{MultilinearComposite, test_utils::decompose_index_to_hypercube_point},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };

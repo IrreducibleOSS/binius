@@ -140,7 +140,7 @@ impl<'a, P: PackedField> SizedSlice for PackedMemorySliceMut<'a, P> {
 #[cfg(test)]
 mod tests {
 	use binius_field::PackedBinaryField4x32b;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

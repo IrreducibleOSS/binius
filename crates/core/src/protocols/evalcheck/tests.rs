@@ -4,28 +4,28 @@ use std::{array, iter::repeat_with};
 
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
+	AESTowerField128b, BinaryField1b, BinaryField128b, ByteSliced16x128x1b, ByteSlicedAES16x16x8b,
+	ByteSlicedAES16x128b, ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField16x8b,
+	PackedBinaryField128x1b, PackedField, RepackedExtension, TowerField,
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
-	AESTowerField128b, BinaryField128b, BinaryField1b, ByteSliced16x128x1b, ByteSlicedAES16x128b,
-	ByteSlicedAES16x16x8b, ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedField, RepackedExtension, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{
-	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery, extrapolate_line,
 };
-use bytemuck::{cast_slice_mut, Pod};
+use bytemuck::{Pod, cast_slice_mut};
 use itertools::Either;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use crate::{
 	fiat_shamir::HasherChallenger,
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
-		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckHint,
-		EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
+		EvalcheckHint, EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
+		deserialize_evalcheck_proof, serialize_evalcheck_proof,
 	},
 	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,

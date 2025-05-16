@@ -4,11 +4,11 @@ use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, BinaryField32b, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::{
 	arithmetic,
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 	transparent::step_down,
 };
 

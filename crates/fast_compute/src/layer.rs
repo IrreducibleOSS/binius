@@ -11,13 +11,13 @@ use binius_compute::{
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
+	ExtensionField, PackedExtension, PackedField,
 	tower::{PackedTop, TowerFamily},
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
-	ExtensionField, PackedExtension, PackedField,
 };
 use binius_math::{
-	fold_left, fold_right, tensor_prod_eq_ind, ArithExpr, CompositionPoly, RowsBatchRef,
+	ArithExpr, CompositionPoly, RowsBatchRef, fold_left, fold_right, tensor_prod_eq_ind,
 };
 use binius_maybe_rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
 use binius_ntt::AdditiveNTT;
@@ -186,11 +186,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		&self,
 		_exec: &mut Self::Exec,
 		map: impl Sync
-			+ for<'a> Fn(
-				&'a mut Self::KernelExec,
-				usize,
-				Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-			) -> Result<Vec<Self::KernelValue>, Error>,
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)

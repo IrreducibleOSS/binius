@@ -3,10 +3,10 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	tower::TowerFamily, util::inner_product_unchecked, BinaryField, ExtensionField, Field,
-	TowerField,
+	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
+	util::inner_product_unchecked,
 };
-use binius_math::{extrapolate_line_scalar, ArithCircuit, ArithExpr};
+use binius_math::{ArithCircuit, ArithExpr, extrapolate_line_scalar};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
@@ -94,11 +94,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		&self,
 		_exec: &mut Self::Exec,
 		map: impl Sync
-			+ for<'a> Fn(
-				&'a mut Self::KernelExec,
-				usize,
-				Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-			) -> Result<Vec<Self::KernelValue>, Error>,
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+		) -> Result<Vec<Self::KernelValue>, Error>,
 		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
