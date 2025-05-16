@@ -5,13 +5,14 @@ use std::ops::Range;
 use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::ArithExpr;
 use binius_ntt::AdditiveNTT;
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
+use either::Either;
 
 use super::{
 	alloc::Error as AllocError,
 	memory::{ComputeMemory, SubfieldSlice},
 };
-use crate::memory::SizedSlice;
+use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F: Field> {
@@ -152,7 +153,8 @@ pub trait ComputeLayer<F: Field> {
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
-		map: impl for<'a> Fn(
+		map: impl Sync
+		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
@@ -293,8 +295,7 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
-	/// * `inputs` - the input buffers.
+	/// * `inputs` - the input buffers, each buffer is of the the same length.
 	/// * `composition` - the compiled composition polynomial expression. This is an output of
 	///   [`Self::compile_expr`].
 	/// * `batch_coeff` - the scaling coefficient.
@@ -302,8 +303,7 @@ pub trait ComputeLayer<F: Field> {
 	fn sum_composition_evals(
 		&self,
 		exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, F, Self>],
+		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
@@ -395,6 +395,9 @@ pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
 	Local { log_size: usize },
 }
 
+/// A convenience alias for the kernel-local memory mapping.
+pub type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
+
 impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 	/// Computes a range of possible number of chunks that data can be split into, given a sequence
 	/// of memory mappings.
@@ -420,6 +423,40 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 			})
 			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
 	}
+
+	// Split the memory mapping into chunks of the specified length.
+	pub fn chunks(self, chunks: usize) -> impl Iterator<Item = KernelMemMapChunk<'a, F, Mem>> {
+		match self {
+			Self::Chunked { data, .. } => Either::Left(Either::Left(
+				Mem::slice_chunks(data, checked_int_div(data.len(), chunks))
+					.map(KernelMemMapChunk::Slice),
+			)),
+			Self::ChunkedMut { data, .. } => {
+				let chunks_count = checked_int_div(data.len(), chunks);
+				Either::Left(Either::Right(
+					Mem::slice_chunks_mut(data, chunks_count).map(KernelMemMapChunk::SliceMut),
+				))
+			}
+			Self::Local { log_size } => Either::Right(
+				std::iter::repeat_with(move || {
+					KernelMemMapChunk::Local(checked_int_div(1 << log_size, chunks))
+				})
+				.take(chunks),
+			),
+		}
+	}
+}
+
+pub enum KernelMemMapChunk<'a, F, Mem: ComputeMemory<F>> {
+	Slice(Mem::FSlice<'a>),
+	SliceMut(Mem::FSliceMut<'a>),
+	Local(usize),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> Default for KernelMemMapChunk<'a, F, Mem> {
+	fn default() -> Self {
+		Self::Local(0)
+	}
 }
 
 /// A memory buffer mapped into a kernel.
@@ -429,6 +466,9 @@ pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 	Ref(Mem::FSlice<'a>),
 	Mut(Mem::FSliceMut<'a>),
 }
+
+/// A convenience alias for the kernel-local memory buffer.
+pub type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
 
 impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
 	/// Returns underlying data as an `FSlice`.

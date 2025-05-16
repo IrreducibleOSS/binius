@@ -2,6 +2,7 @@
 
 use std::iter;
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -12,7 +13,6 @@ use super::{
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
-	polynomial::ArithCircuitPoly,
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 

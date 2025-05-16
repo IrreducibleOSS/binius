@@ -14,6 +14,7 @@ proc-macro2.workspace = true
 
 [dev-dependencies]
 binius_core = { path = "../core", default-features = false }
+binius_fast_compute = { path = "../fast_compute", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math", default-features = false }
 binius_utils = { path = "../utils", default-features = false }

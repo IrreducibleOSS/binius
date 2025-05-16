@@ -2,6 +2,7 @@
 
 use std::{marker::PhantomData, ops::Range};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
@@ -15,7 +16,7 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
+	polynomial::{Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
 		common::{
 			CompositeSumClaim, RoundCoeffs, equal_n_vars_check, get_nontrivial_evaluation_points,

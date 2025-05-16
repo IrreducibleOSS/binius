@@ -58,9 +58,8 @@ pub fn incrementing_expr<F: TowerField>(log_size: usize) -> Result<ArithExpr<F>,
 mod tests {
 	use std::iter::{self};
 
-	use binius_core::polynomial::{
-		ArithCircuitPoly, test_utils::decompose_index_to_hypercube_point,
-	};
+	use binius_core::polynomial::test_utils::decompose_index_to_hypercube_point;
+	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{BinaryField32b, arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use binius_math::{ArithCircuit, CompositionPoly};
 	use bumpalo::Bump;

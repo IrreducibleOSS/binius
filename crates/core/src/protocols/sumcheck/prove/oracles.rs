@@ -1,5 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder, MultilinearPoly};
@@ -11,7 +12,6 @@ use super::{
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
-	polynomial::ArithCircuitPoly,
 	protocols::{
 		evalcheck::{EvalPoint, subclaims::MemoizedData},
 		sumcheck::{

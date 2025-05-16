@@ -2,7 +2,11 @@
 
 use std::ops::RangeBounds;
 
+use binius_field::TowerField;
+use binius_utils::checked_arithmetics::checked_int_div;
+
 pub trait SizedSlice {
+	#[inline(always)]
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
@@ -19,6 +23,38 @@ impl<T> SizedSlice for &[T] {
 impl<T> SizedSlice for &mut [T] {
 	fn len(&self) -> usize {
 		(**self).len()
+	}
+}
+
+/// A batch of slices of the same length.
+pub struct SlicesBatch<Slice: SizedSlice> {
+	rows: Vec<Slice>,
+	row_len: usize,
+}
+
+impl<Slice: SizedSlice> SlicesBatch<Slice> {
+	pub fn new(rows: Vec<Slice>, row_len: usize) -> Self {
+		for row in &rows {
+			assert_eq!(row.len(), row_len);
+		}
+
+		Self { rows, row_len }
+	}
+
+	pub fn n_rows(&self) -> usize {
+		self.rows.len()
+	}
+
+	pub fn row_len(&self) -> usize {
+		self.row_len
+	}
+
+	pub fn row(&self, index: usize) -> &Slice {
+		&self.rows[index]
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = &Slice> {
+		self.rows.iter()
 	}
 }
 
@@ -45,7 +81,21 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
-	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
+	fn slice<'a>(data: Self::FSlice<'a>, range: impl RangeBounds<usize>) -> Self::FSlice<'a>;
+
+	/// Splits slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks<'a>(
+		data: Self::FSlice<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSlice<'a>> {
+		let n_chunks = checked_int_div(data.len(), chunk_len);
+		(0..n_chunks).map(move |i| Self::slice(data, i * chunk_len..(i + 1) * chunk_len))
+	}
 
 	/// Borrows a subslice of a mutable memory slice.
 	///
@@ -56,6 +106,17 @@ pub trait ComputeMemory<F> {
 		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
 	) -> Self::FSliceMut<'a>;
+
+	/// Splits a mutable slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>>;
 
 	/// Splits a mutable slice into two disjoint subslices.
 	///
@@ -106,6 +167,13 @@ impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
 	}
+
+	pub fn subfield_len(&self) -> usize
+	where
+		F: TowerField,
+	{
+		self.slice.len() << (F::TOWER_LEVEL - self.tower_level)
+	}
 }
 
 /// `SubfieldSliceMut` represents a mutable slice of field elements with identical semantics to
@@ -118,5 +186,12 @@ pub struct SubfieldSliceMut<'a, F, Mem: ComputeMemory<F>> {
 impl<'a, F, Mem: ComputeMemory<F>> SubfieldSliceMut<'a, F, Mem> {
 	pub fn new(slice: Mem::FSliceMut<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
+	}
+
+	pub fn subfield_len(&self) -> usize
+	where
+		F: TowerField,
+	{
+		self.slice.len() << (F::TOWER_LEVEL - self.tower_level)
 	}
 }

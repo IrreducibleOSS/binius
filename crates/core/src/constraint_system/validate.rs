@@ -1,5 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{BinaryField1b, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackendExt;
 use binius_math::MultilinearPoly;
@@ -15,9 +16,7 @@ use crate::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ShiftVariant,
 	},
-	polynomial::{
-		ArithCircuitPoly, MultilinearComposite, test_utils::decompose_index_to_hypercube_point,
-	},
+	polynomial::{MultilinearComposite, test_utils::decompose_index_to_hypercube_point},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };

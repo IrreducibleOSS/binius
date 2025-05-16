@@ -2,6 +2,7 @@
 
 use std::iter;
 
+use binius_fast_compute::fri::{fold_chunk, fold_interleaved_chunk};
 use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{ComputationBackend, make_portable_backend};
 use binius_ntt::SingleThreadedNTT;
@@ -14,7 +15,7 @@ use super::{VerificationError, common::vcs_optimal_layers_depths_iter, error::Er
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::MerkleTreeScheme,
-	protocols::fri::common::{FRIParams, fold_chunk, fold_interleaved_chunk},
+	protocols::fri::common::FRIParams,
 	transcript::{TranscriptReader, VerifierTranscript},
 };
 

@@ -32,8 +32,8 @@ mod tests {
 		},
 		fiat_shamir::HasherChallenger,
 		oracle::{OracleId, ShiftVariant},
-		polynomial::ArithCircuitPoly,
 	};
+	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{
 		BinaryField1b, BinaryField8b, BinaryField64b, BinaryField128b, Field, TowerField,
 		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
