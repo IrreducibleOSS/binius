@@ -5,13 +5,8 @@ use cfg_if::cfg_if;
 // We will choose the AVX512 Implementation of Grøstl if our machine supports the various AVX512
 // extensions, otherwise defaults to the portable implementation which was found to be fast in most
 // machines
-
-cfg_if! {
-	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "gfni", target_feature = "avx2",))] {
-		mod groestl_multi_avx2;
-		pub use groestl_multi_avx2::Groestl256Multi;
-	}
-}
+mod groestl_multi_avx2;
+pub use groestl_multi_avx2::Groestl256Multi;
 
 cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64",target_feature = "avx512bw",target_feature = "avx512vbmi",target_feature = "avx512f",target_feature = "gfni",))] {
