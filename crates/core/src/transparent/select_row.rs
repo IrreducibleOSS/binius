@@ -71,7 +71,10 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		let n_vars = MultivariatePoly::<F>::n_vars(self);
 		if query.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 		let mut k = self.index;
 		let mut result = F::ONE;

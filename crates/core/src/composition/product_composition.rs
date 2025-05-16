@@ -32,7 +32,10 @@ impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != N {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: N });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: N,
+				actual: query.len(),
+			});
 		}
 		Ok(query.iter().copied().product())
 	}

@@ -28,7 +28,10 @@ where
 		let n_vars = p0_vars + p1_vars;
 
 		if query.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len(),
+			});
 		}
 
 		let eval0 = self.0.evaluate(&query[..p0_vars])?;

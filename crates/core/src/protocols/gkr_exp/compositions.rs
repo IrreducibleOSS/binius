@@ -63,7 +63,8 @@ where
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != CompositionPoly::<P>::n_vars(self) {
 			bail!(binius_math::Error::IncorrectQuerySize {
-				expected: CompositionPoly::<P>::n_vars(self)
+				expected: CompositionPoly::<P>::n_vars(self),
+				actual: query.len(),
 			});
 		}
 		match self {

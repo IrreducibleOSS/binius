@@ -165,6 +165,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		if x.len() != self.block_size {
 			bail!(Error::IncorrectQuerySize {
 				expected: self.block_size,
+				actual: x.len(),
 			});
 		}
 
@@ -216,6 +217,7 @@ fn assert_valid_shift_ind_args<F: Field>(
 	if partial_query_point.len() != block_size {
 		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
+			actual: partial_query_point.len(),
 		});
 	}
 	if shift_offset == 0 || shift_offset >= 1 << block_size {
@@ -241,6 +243,7 @@ fn evaluate_shift_ind_help<F: Field>(
 	if x.len() != block_size {
 		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
+			actual: x.len(),
 		});
 	}
 	assert_valid_shift_ind_args(block_size, shift_offset, y)?;

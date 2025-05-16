@@ -56,6 +56,7 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		if query.len() != self.n_vars {
 			bail!(binius_math::Error::IncorrectQuerySize {
 				expected: self.n_vars,
+				actual: query.len(),
 			});
 		}
 
