@@ -14,7 +14,7 @@
 
 mod error;
 
-use std::{iter::repeat_with, slice};
+use std::{fs::File, io::Write, iter::repeat_with, slice};
 
 use binius_field::{PackedField, TowerField};
 use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
@@ -112,7 +112,9 @@ impl<Challenger_: Default + Challenger> ProverTranscript<Challenger_> {
 	}
 
 	pub fn into_verifier(self) -> VerifierTranscript<Challenger_> {
-		VerifierTranscript::new(self.finalize())
+		let transcript = self.finalize();
+
+		VerifierTranscript::new(transcript)
 	}
 }
 
@@ -124,7 +126,35 @@ impl<Challenger_: Default + Challenger> Default for ProverTranscript<Challenger_
 
 impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	pub fn finalize(self) -> Vec<u8> {
-		self.combined.buffer.to_vec()
+		let transcript = self.combined.buffer.to_vec();
+
+		// Dumps the transcript to the path set in the BINIUS_DUMP_PROOF env variable.
+		if let Ok(path) = std::env::var("BINIUS_DUMP_PROOF") {
+			let path = if cfg!(test) {
+				// Because tests may run simultaneously, each test includes its name in the file
+				// name to avoid collisions.
+				let current_thread = std::thread::current();
+				let test_name = current_thread.name().unwrap_or("unknown");
+				// Adjust "./" to "../../" to ensure files are saved in the project root rather than
+				// the package root.
+				let path = if let Some(stripped) = path.strip_prefix("./") {
+					format!("../../{stripped}",)
+				} else {
+					path
+				};
+				std::fs::create_dir_all(&path)
+					.unwrap_or_else(|_| panic!("Failed to create directories for path: {path}",));
+				format!("{path}/{test_name}.bin")
+			} else {
+				path
+			};
+
+			let mut file = File::create(&path)
+				.unwrap_or_else(|_| panic!("Failed to create proof dump file: {path}"));
+			file.write_all(&transcript)
+				.expect("Failed to write proof to dump file");
+		}
+		transcript
 	}
 
 	/// Sets the debug flag.
