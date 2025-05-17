@@ -143,7 +143,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 			log_y: self.log_len(),
 			..Default::default()
 		};
-		ntt.forward_transform(code, shape, 0, self.log_inv_rate)?;
+		ntt.forward_transform(code, shape, 0, 0, self.log_inv_rate)?;
 		Ok(())
 	}
 

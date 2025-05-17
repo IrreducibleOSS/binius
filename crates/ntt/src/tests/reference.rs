@@ -69,25 +69,30 @@ fn forward_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl RandomAccessSequenceMut<FF>,
-	coset: u32,
+	coset: usize,
 	log_n: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let coset_bits = 32 - coset.leading_zeros() as usize;
+	if coset >= (1 << coset_bits) {
+		return Err(Error::CosetIndexOutOfBounds { coset, coset_bits });
+	}
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size: log_n + coset_bits,
 		});
 	}
 
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
+
 	for i in (0..(log_n - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+			let twiddle = s_evals_i.get(coset << (log_n - 1 - i) | j);
 			for k in 0..1 << i {
 				let idx0 = j << (i + 1) | k;
 				let idx1 = idx0 | 1 << i;
@@ -103,10 +108,6 @@ where
 		}
 	}
 
-	for i in 1 << log_n..data.len() {
-		data.set(i, FF::ZERO);
-	}
-
 	Ok(())
 }
 
@@ -115,26 +116,31 @@ fn inverse_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl RandomAccessSequenceMut<FF>,
-	coset: u32,
+	coset: usize,
 	log_n: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let coset_bits = 32 - coset.leading_zeros() as usize;
+	if coset >= (1 << coset_bits) {
+		return Err(Error::CosetIndexOutOfBounds { coset, coset_bits });
+	}
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size: log_n + coset_bits,
 		});
 	}
 
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
+
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..(log_n - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+			let twiddle = s_evals_i.get(coset << (log_n - 1 - i) | j);
 			for k in 0..1 << i {
 				let idx0 = j << (i + 1) | k;
 				let idx1 = idx0 | 1 << i;
@@ -179,7 +185,8 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
@@ -201,6 +208,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					coset_bits,
 					skip_rounds,
 				)?;
 			}
@@ -213,7 +221,8 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
@@ -235,6 +244,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					coset_bits,
 					skip_rounds,
 				)?;
 			}

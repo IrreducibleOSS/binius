@@ -20,6 +20,8 @@ pub enum Error {
 	BatchTooLarge,
 	#[error("the skip_rounds parameter exceeds the total number of NTT rounds")]
 	SkipRoundsTooLarge,
+	#[error("coset index must be less than 2**{coset_bits}, got {coset}")]
+	CosetIndexOutOfBounds { coset: usize, coset_bits: usize },
 	#[error("odd interpolation length mismatch, expected to be exactly {expected_len}")]
 	OddInterpolateIncorrectLength { expected_len: usize },
 	#[error("math error: {0}")]

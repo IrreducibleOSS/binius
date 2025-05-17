@@ -18,7 +18,6 @@ binius_macros = { path = "../crates/macros", default-features = false }
 binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
-bytemuck.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 itertools.workspace = true

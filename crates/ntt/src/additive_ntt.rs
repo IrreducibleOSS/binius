@@ -42,6 +42,17 @@ pub struct NTTShape {
 /// domain. The inverse transformation interpolates polynomial values over the domain into novel
 /// polynomial basis coefficients.
 ///
+/// An [`AdditiveNTT`] implementation with a maximum domain dimension of $\ell$ can be applied on
+/// a sequence of  $\ell + 1$ evaluation domains of sizes $2^0, \ldots, 2^\ell$. These are the
+/// domains $S^(0), \ldots, S^(\ell)$ defined in [DP24] Section 4. The methods
+/// [`Self::forward_transform`] and [`Self::inverse_transform`] require a parameter
+/// `log_domain_size` that indicates which of the $S^(i)$ domains to use for the transformation's
+/// evaluation domain and novel polynomial basis. (Remember, the novel polynomial basis is itself
+/// parameterized by basis). **Counterintuitively, the field subspace $S^(i)$ is not necessarily a
+/// subset of $S^(i+1)$**. We choose this behavior for the [`AdditiveNTT`] trait because it
+/// facilitates compatibility with FRI when batching proximity tests for codewords of different
+/// dimensions.
+///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 pub trait AdditiveNTT<F: BinaryField> {
@@ -70,7 +81,11 @@ pub trait AdditiveNTT<F: BinaryField> {
 	/// The scalars of `data`, viewed in natural order, represent a tensor of `shape` dimensions.
 	/// See [`NTTShape`] for layout details. The transform is inplace, output adheres to `shape`.
 	///
-	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace.
+	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace. The coset
+	/// index must representable in `coset_bits` bits. The evaluation domain of the NTT is chosen
+	/// to be the subspace $S^{(i)}$ with dimension `shape.log_y + coset_bits`. Choosing the NTT
+	/// domain in this way ensures consistency of the domains when using FRI with different
+	/// codeword lengths.
 	///
 	/// The transformation accepts a `skip_rounds` parameter, which is a number of NTT layers to
 	/// skip at the beginning of the forward transform. This corresponds to parallel NTTs on
@@ -82,7 +97,8 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error>;
 
@@ -91,7 +107,11 @@ pub trait AdditiveNTT<F: BinaryField> {
 	/// The scalars of `data`, viewed in natural order, represent a tensor of `shape` dimensions.
 	/// See [`NTTShape`] for layout details. The transform is inplace, output adheres to `shape`.
 	///
-	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace.
+	/// The `coset` specifies the evaluation domain as an indexed coset of the subspace. The coset
+	/// index must representable in `coset_bits` bits. The evaluation domain of the NTT is chosen
+	/// to be the subspace $S^{(i)}$ with dimension `shape.log_y + coset_bits`. Choosing the NTT
+	/// domain in this way ensures consistency of the domains when using FRI with different
+	/// codeword lengths.
 	///
 	/// The transformation accepts a `skip_rounds` parameter, which is a number of NTT layers to
 	/// skip at the end of the inverse transform. This corresponds to parallel NTTs on multiple
@@ -103,7 +123,8 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error>;
 
@@ -111,27 +132,29 @@ pub trait AdditiveNTT<F: BinaryField> {
 		&self,
 		data: &mut [PE],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
+		self.forward_transform(PE::cast_bases_mut(data), shape_ext, coset, coset_bits, skip_rounds)
 	}
 
 	fn inverse_transform_ext<PE: PackedExtension<F>>(
 		&self,
 		data: &mut [PE],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let shape_ext = NTTShape {
 			log_x: shape.log_x + PE::Scalar::LOG_DEGREE,
 			..shape
 		};
-		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset, skip_rounds)
+		self.inverse_transform(PE::cast_bases_mut(data), shape_ext, coset, coset_bits, skip_rounds)
 	}
 }

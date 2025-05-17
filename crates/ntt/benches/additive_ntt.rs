@@ -136,7 +136,7 @@ fn bench_forward_transform(c: &mut Criterion) {
 				..Default::default()
 			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.forward_transform(data, shape, 0, 0));
+				b.iter(|| ntt.forward_transform(data, shape, 0, 0, 0));
 			});
 		}
 	}
@@ -166,7 +166,7 @@ fn bench_inverse_transform(c: &mut Criterion) {
 				..Default::default()
 			};
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.inverse_transform(data, shape, 0, 0));
+				b.iter(|| ntt.inverse_transform(data, shape, 0, 0, 0));
 			});
 		}
 	}
