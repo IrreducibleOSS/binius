@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::sync::Arc;
+use std::{ops::Index, sync::Arc};
 
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
@@ -20,7 +20,7 @@ use binius_utils::{
 };
 
 use super::{
-	B1, ColumnIndex, FlushOpts,
+	B1, ColumnIndex, ColumnPartitionIndex, FlushOpts,
 	channel::Flush,
 	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
@@ -205,23 +205,22 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		let expr_circuit = ArithCircuit::from(expr.expr());
-		let partition_indexes = expr_circuit
+		// Indicies within the partition.
+		let indices_within_partition = expr_circuit
 			.vars_usage()
 			.iter()
 			.enumerate()
 			.filter(|(_, used)| **used)
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>();
-		let cols = partition_indexes
+		let partition = &self.table.partitions[partition_id::<V>()];
+		let cols = indices_within_partition
 			.iter()
-			.map(|&partition_index| {
-				let partition = &self.table.partitions[partition_id::<V>()];
-				partition.columns[partition_index]
-			})
+			.map(|&partition_index| partition.columns[partition_index])
 			.collect::<Vec<_>>();
 
 		let mut var_remapping = vec![0; expr_circuit.n_vars()];
-		for (new_index, &old_index) in partition_indexes.iter().enumerate() {
+		for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
 			var_remapping[old_index] = new_index;
 		}
 		let remapped_expr = expr_circuit
@@ -421,9 +420,20 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	{
 		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
-		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
+		// TODO: Add check for F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
-		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		let bit_cols = pow_bits
+			.iter()
+			.enumerate()
+			.map(|(index, bit)| {
+				assert_eq!(
+					self.table.id(),
+					bit.id().table_id,
+					"passed foreign table column at index={index}"
+				);
+				bit.id()
+			})
+			.collect();
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::StaticExp {
@@ -459,13 +469,25 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	{
 		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
+		// TODO: Add check for F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
-		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		let bit_cols = pow_bits
+			.iter()
+			.enumerate()
+			.map(|(index, bit)| {
+				assert_eq!(
+					self.table.id(),
+					bit.id().table_id,
+					"passed foreign table column at index={index}"
+				);
+				bit.id()
+			})
+			.collect();
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::DynamicExp {
 				bit_cols,
-				base: base.id().table_index,
+				base: base.id(),
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
@@ -532,9 +554,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert_eq!(expr.table_id, self.id());
-		assert!(expr.table_index < self.table.columns.len());
+		assert!(expr.table_index.0 < self.table.columns.len());
 
-		self.table.columns[expr.table_index].is_nonzero = true;
+		self.table.columns[expr.table_index.0].is_nonzero = true;
 	}
 
 	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
@@ -623,7 +645,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub values_per_row: usize,
 	pub flushes: Vec<Flush>,
-	pub columns: Vec<ColumnIndex>,
+	pub columns: Vec<ColumnId>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 }
 
@@ -664,7 +686,7 @@ impl<F: TowerField> TablePartition<F> {
 			.into_iter()
 			.map(|col| {
 				assert_eq!(col.table_id, self.table_id);
-				col.table_index
+				col.id()
 			})
 			.collect();
 		let selectors = opts
@@ -672,7 +694,7 @@ impl<F: TowerField> TablePartition<F> {
 			.iter()
 			.map(|selector| {
 				assert_eq!(selector.table_id, self.table_id);
-				selector.table_index
+				selector.id()
 			})
 			.collect::<Vec<_>>();
 		self.flushes.push(Flush {
@@ -710,7 +732,7 @@ impl<F: TowerField> Table<F> {
 		F: ExtensionField<FSub>,
 	{
 		let table_id = self.id;
-		let table_index = self.columns.len();
+		let table_index = ColumnIndex(self.columns.len());
 		let partition = self.partition_mut(V);
 		let id = ColumnId {
 			table_id,
@@ -727,8 +749,8 @@ impl<F: TowerField> Table<F> {
 			is_nonzero: false,
 		};
 
-		let partition_index = partition.columns.len();
-		partition.columns.push(table_index);
+		let partition_index = ColumnPartitionIndex(partition.columns.len());
+		partition.columns.push(id);
 		self.columns.push(info);
 		Col::new(id, partition_index)
 	}
@@ -751,6 +773,23 @@ impl<F: TowerField> Table<F> {
 
 	pub fn stat(&self) -> TableStat {
 		TableStat::new(self)
+	}
+}
+
+impl<F: TowerField> Index<ColumnIndex> for Table<F> {
+	type Output = ColumnInfo<F>;
+
+	fn index(&self, index: ColumnIndex) -> &Self::Output {
+		&self.columns[index.0]
+	}
+}
+
+impl<F: TowerField> Index<ColumnId> for Table<F> {
+	type Output = ColumnInfo<F>;
+
+	fn index(&self, index: ColumnId) -> &Self::Output {
+		assert_eq!(index.table_id, self.id());
+		&self.columns[index.table_index.0]
 	}
 }
 
