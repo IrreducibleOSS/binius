@@ -138,12 +138,12 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 				// Adjust "./" to "../../" to ensure files are saved in the project root rather than
 				// the package root.
 				let path = if let Some(stripped) = path.strip_prefix("./") {
-					format!("../../{}", stripped)
+					format!("../../{stripped}",)
 				} else {
-					path.to_string()
+					path
 				};
 				std::fs::create_dir_all(&path)
-					.unwrap_or_else(|_| panic!("Failed to create directories for path: {}", path));
+					.unwrap_or_else(|_| panic!("Failed to create directories for path: {path}",));
 				format!("{path}/{test_name}.bin")
 			} else {
 				path
