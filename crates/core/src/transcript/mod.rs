@@ -128,18 +128,29 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	pub fn finalize(self) -> Vec<u8> {
 		let transcript = self.combined.buffer.to_vec();
 
-		if let Ok(filename) = std::env::var("BINIUS_DUMP_PROOF") {
+		// Dumps the transcript to the path set in the BINIUS_DUMP_PROOF env variable.
+		if let Ok(path) = std::env::var("BINIUS_DUMP_PROOF") {
 			let path = if cfg!(test) {
+				// Because tests may run simultaneously, each test includes its name in the file
+				// name to avoid collisions.
 				let current_thread = std::thread::current();
 				let test_name = current_thread.name().unwrap_or("unknown");
-				let filename = if filename == "./" { "../.." } else { &filename };
-				format!("{filename}/{test_name}.bin")
+				// Adjust "./" to "../../" to ensure files are saved in the project root rather than
+				// the package root.
+				let path = if let Some(stripped) = path.strip_prefix("./") {
+					format!("../../{}", stripped)
+				} else {
+					path.to_string()
+				};
+				std::fs::create_dir_all(&path)
+					.unwrap_or_else(|_| panic!("Failed to create directories for path: {}", path));
+				format!("{path}/{test_name}.bin")
 			} else {
-				filename.to_string()
+				path
 			};
 
-			let mut file = File::create(path)
-				.unwrap_or_else(|_| panic!("Failed to create proof dump file: {filename}"));
+			let mut file = File::create(&path)
+				.unwrap_or_else(|_| panic!("Failed to create proof dump file: {path}"));
 			file.write_all(&transcript)
 				.expect("Failed to write proof to dump file");
 		}
