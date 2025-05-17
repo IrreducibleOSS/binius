@@ -6,6 +6,11 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	bytes::{Buf, BufMut},
+	serialization::{assert_enough_data_for, assert_enough_space_for},
+};
 use bytemuck::{Pod, Zeroable, must_cast};
 use cfg_if::cfg_if;
 use rand::{Rng, RngCore};
@@ -113,6 +118,40 @@ impl From<M256> for __m256i {
 	#[inline(always)]
 	fn from(value: M256) -> Self {
 		value.0
+	}
+}
+
+impl SerializeBytes for M256 {
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		_mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
+
+		let raw_values: [u128; 2] = (*self).into();
+
+		for &val in raw_values.iter() {
+			write_buf.put_u128_le(val);
+		}
+
+		Ok(())
+	}
+}
+
+impl DeserializeBytes for M256 {
+	fn deserialize(
+		mut read_buf: impl Buf,
+		_mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		assert_enough_data_for(&read_buf, size_of::<Self>())?;
+
+		let raw_values = [read_buf.get_u128_le(), read_buf.get_u128_le()];
+
+		Ok(Self::from(raw_values))
 	}
 }
 
@@ -1315,7 +1354,9 @@ impl_iteration!(M256,
 
 #[cfg(test)]
 mod tests {
+	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;
@@ -1498,5 +1539,21 @@ mod tests {
 		assert_ne!(b, c);
 		assert_ne!(b, d);
 		assert_ne!(c, d);
+	}
+
+	#[test]
+	fn test_serialize_and_deserialize_m256() {
+		let mode = SerializationMode::Native;
+
+		let mut rng = StdRng::from_seed([0; 32]);
+
+		let original_value = M256::from([rng.r#gen::<u128>(), rng.r#gen::<u128>()]);
+
+		let mut buf = BytesMut::new();
+		original_value.serialize(&mut buf, mode).unwrap();
+
+		let deserialized_value = M256::deserialize(buf.freeze(), mode).unwrap();
+
+		assert_eq!(original_value, deserialized_value);
 	}
 }

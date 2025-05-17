@@ -8,7 +8,10 @@ use super::{
 };
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -22,6 +25,14 @@ pub type PackedBinaryField8x4b = PackedPrimitiveType<u32, BinaryField4b>;
 pub type PackedBinaryField4x8b = PackedPrimitiveType<u32, BinaryField8b>;
 pub type PackedBinaryField2x16b = PackedPrimitiveType<u32, BinaryField16b>;
 pub type PackedBinaryField1x32b = PackedPrimitiveType<u32, BinaryField32b>;
+
+// Define (de)serialize
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x32b);
 
 // Define broadcast
 impl_broadcast!(u32, BinaryField1b);

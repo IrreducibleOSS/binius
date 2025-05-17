@@ -7,7 +7,10 @@ use super::{
 };
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -19,6 +22,11 @@ use crate::{
 pub type PackedBinaryField4x1b = PackedPrimitiveType<U4, BinaryField1b>;
 pub type PackedBinaryField2x2b = PackedPrimitiveType<U4, BinaryField2b>;
 pub type PackedBinaryField1x4b = PackedPrimitiveType<U4, BinaryField4b>;
+
+// Define (de)serialize
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x4b);
 
 // Define broadcast
 impl_broadcast!(U4, BinaryField1b);

@@ -16,7 +16,10 @@ use super::{
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
 	BinaryField64b, BinaryField128b, PackedAESBinaryField16x8b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
 		impl_square_with, impl_transformation_with_strategy,
@@ -33,6 +36,16 @@ pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
 pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
 pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
 pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
+
+// Define (de)serialize
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x32b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x64b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x128b);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField128x1b);
