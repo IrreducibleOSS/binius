@@ -1,11 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::hint::black_box;
+
 use binius_field::{
 	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField128b, ExtensionField, Field,
 	PackedBinaryField2x128b, PackedExtension, PackedField, ext_base_mul,
 	packed::set_packed_slice_unchecked,
 };
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand::thread_rng;
 
 // Constants for input sizes
