@@ -33,6 +33,7 @@ pub struct SlicesBatch<Slice: SizedSlice> {
 }
 
 impl<Slice: SizedSlice> SlicesBatch<Slice> {
+	/// Creates a new batch of slices with the given length
 	pub fn new(rows: Vec<Slice>, row_len: usize) -> Self {
 		for row in &rows {
 			assert_eq!(row.len(), row_len);
@@ -41,18 +42,22 @@ impl<Slice: SizedSlice> SlicesBatch<Slice> {
 		Self { rows, row_len }
 	}
 
+	/// Number of memory slices
 	pub fn n_rows(&self) -> usize {
 		self.rows.len()
 	}
 
+	/// Length of each memory slice
 	pub fn row_len(&self) -> usize {
 		self.row_len
 	}
 
+	/// Returns a slice of the batch at the given index.
 	pub fn row(&self, index: usize) -> &Slice {
 		&self.rows[index]
 	}
 
+	/// Returns iterator over the slices in the batch.
 	pub fn iter(&self) -> impl Iterator<Item = &Slice> {
 		self.rows.iter()
 	}
@@ -168,6 +173,7 @@ impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 		Self { slice, tower_level }
 	}
 
+	/// Returns the length of the slice in terms of the number of subfield elements it contains.
 	pub fn subfield_len(&self) -> usize
 	where
 		F: TowerField,

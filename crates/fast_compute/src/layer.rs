@@ -37,6 +37,7 @@ use crate::{
 #[derive(Debug)]
 pub struct FastCpuExecutor;
 
+/// Optimized CPU implementation of the compute layer.
 #[derive(Debug, Default)]
 pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
 
@@ -196,12 +197,13 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
 			.expect("Many variant must have at least one entry");
 
-		// For the reference implementation, use the smallest chunk size.
+		// Choose the number of chnks based on the range and the number of threads available.
 		let log_chunks = (get_log_max_threads() + 1)
 			.min(log_chunks_range.end)
 			.max(log_chunks_range.start);
 		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
 
+		// Calculate memory needed for each chunk
 		let mem_maps_count = mem_maps.len();
 		let mut memory_chunks = repeat_with(KernelMemMapChunk::default)
 			.take(mem_maps_count << log_chunks)
@@ -437,7 +439,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 	fn kernel_add(
 		&self,
-		exec: &mut Self::KernelExec,
+		_exec: &mut Self::KernelExec,
 		log_len: usize,
 		src1: FSlice<'_, T::B128, Self>,
 		src2: FSlice<'_, T::B128, Self>,

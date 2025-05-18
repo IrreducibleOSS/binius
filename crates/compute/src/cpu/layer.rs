@@ -409,13 +409,13 @@ impl<T: TowerFamily> CpuLayer<T> {
 
 pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
 	mappings: &[KernelMemMap<F, Mem>],
-	log_chunk_size: usize,
+	log_chunks: usize,
 ) -> usize {
 	mappings
 		.iter()
 		.map(|mapping| match mapping {
 			KernelMemMap::Chunked { .. } | KernelMemMap::ChunkedMut { .. } => 0,
-			KernelMemMap::Local { log_size } => 1 << log_size.saturating_sub(log_chunk_size),
+			KernelMemMap::Local { log_size } => 1 << log_size.saturating_sub(log_chunks),
 		})
 		.sum()
 }

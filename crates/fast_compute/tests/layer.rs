@@ -14,7 +14,6 @@ use binius_field::{
 
 #[test]
 fn test_exec_single_tensor_expand() {
-	type F = BinaryField128b;
 	type P = PackedBinaryField2x128b;
 	let n_vars = 8;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
@@ -60,7 +59,6 @@ fn test_exec_single_right_fold() {
 
 #[test]
 fn test_exec_single_inner_product() {
-	type F = BinaryField128b;
 	type F2 = BinaryField16b;
 	type P = PackedBinaryField2x128b;
 	let n_vars = 8;
@@ -75,7 +73,6 @@ fn test_exec_single_inner_product() {
 
 #[test]
 fn test_exec_multiple_multilinear_evaluations() {
-	type F = BinaryField128b;
 	type F1 = BinaryField16b;
 	type F2 = BinaryField32b;
 	type P = PackedBinaryField2x128b;

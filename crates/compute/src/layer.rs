@@ -395,9 +395,6 @@ pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
 	Local { log_size: usize },
 }
 
-/// A convenience alias for the kernel-local memory mapping.
-pub type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
-
 impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 	/// Computes a range of possible number of chunks that data can be split into, given a sequence
 	/// of memory mappings.
@@ -447,6 +444,7 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 	}
 }
 
+/// A single chunk from [`KernelMemMap`].
 pub enum KernelMemMapChunk<'a, F, Mem: ComputeMemory<F>> {
 	Slice(Mem::FSlice<'a>),
 	SliceMut(Mem::FSliceMut<'a>),
@@ -466,9 +464,6 @@ pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 	Ref(Mem::FSlice<'a>),
 	Mut(Mem::FSliceMut<'a>),
 }
-
-/// A convenience alias for the kernel-local memory buffer.
-pub type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
 
 impl<'a, F, Mem: ComputeMemory<F>> KernelBuffer<'a, F, Mem> {
 	/// Returns underlying data as an `FSlice`.
