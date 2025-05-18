@@ -9,10 +9,10 @@ use std::{
 };
 
 use binius_core::{
-	polynomial::ArithCircuitPoly,
 	transparent::step_down::StepDown,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 	arch::OptimalUnderlier,

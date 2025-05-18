@@ -55,6 +55,15 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 	) -> (Self::FSliceMut<'_>, Self::FSliceMut<'_>) {
 		data.split_at_mut(mid)
 	}
+
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>> {
+		assert_eq!(data.len() % chunk_len, 0, "slice length must be a multiple of chunk_len",);
+
+		data.chunks_exact_mut(chunk_len)
+	}
 }
 
 #[cfg(test)]

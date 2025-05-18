@@ -540,7 +540,7 @@ impl UnderlierWithBitOps for M256 {
 			64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
-			128 => as_array_mut::<_, u128, 2>(self, |array| {
+			128 => as_array_mut::<_, u128, 2>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),

@@ -5,12 +5,13 @@ use std::{iter::repeat_with, mem::MaybeUninit};
 use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
-use binius_core::protocols::fri::fold_interleaved;
+use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{ArithExpr, MultilinearExtension, MultilinearQuery, tensor_prod_eq_ind};
 use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::zeroed_vec;
 use rand::{SeedableRng, prelude::StdRng};
 
 pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
@@ -166,9 +167,17 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		.execute(|exec| {
 			{
 				// Swap first element on the device buffer
-				let mut first_elt =
-					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
-				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				let mut first_elts = <C::DevMem as ComputeMemory<F>>::slice_mut(
+					&mut eq_ind_slice,
+					..C::DevMem::MIN_SLICE_LEN,
+				);
+				let mut buffer = zeroed_vec::<F>(C::DevMem::MIN_SLICE_LEN);
+				compute.copy_d2h(
+					<C::DevMem as ComputeMemory<F>>::as_const(&first_elts),
+					&mut buffer,
+				)?;
+				buffer[0].set(0, F::ONE);
+				compute.copy_h2d(&buffer, &mut first_elts)?;
 			}
 
 			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
@@ -221,7 +230,10 @@ pub fn test_generic_multiple_multilinear_evaluations<
 	assert_eq!(eval2, expected_eval2);
 }
 
-pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+pub fn test_generic_single_inner_product_using_kernel_accumulator<
+	F: Field,
+	C: ComputeLayer<F, ExprEval: Sync> + Sync,
+>(
 	compute: C,
 	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	n_vars: usize,
@@ -273,17 +285,11 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 						.iter()
 						.map(|buf| buf.to_ref())
 						.collect::<Vec<_>>();
+					let row_len = kernel_data[0].len();
+					let slice_batch = SlicesBatch::new(kernel_data, row_len);
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-					let log_len = checked_log_2(kernel_data[0].len());
 					compute
-						.sum_composition_evals(
-							kernel_exec,
-							log_len,
-							&kernel_data,
-							&eval,
-							F::ONE,
-							&mut res,
-						)
+						.sum_composition_evals(kernel_exec, &slice_batch, &eval, F::ONE, &mut res)
 						.unwrap();
 					Ok(vec![res])
 				},
@@ -303,7 +309,7 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 	assert_eq!(actual, expected);
 }
 
-pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
+pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F, ExprEval: Sync> + Sync>(
 	compute: C,
 	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
 	log_len: usize,
@@ -372,8 +378,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 					compute.sum_composition_evals(
 						kernel_exec,
-						log_len,
-						&[c],
+						&SlicesBatch::new(vec![c], c.len()),
 						&eval,
 						F::ONE,
 						&mut res,

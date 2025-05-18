@@ -22,7 +22,7 @@ pub struct MultithreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwidd
 	log_max_threads: usize,
 }
 
-impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
+impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 	/// Returns multithreaded NTT implementation which uses default number of threads.
 	pub fn multithreaded(self) -> MultithreadedNTT<F, TA> {
 		let log_max_threads = get_log_max_threads();

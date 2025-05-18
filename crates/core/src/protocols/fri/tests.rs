@@ -2,6 +2,7 @@
 
 use std::{iter::repeat_with, vec};
 
+use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField,
 	PackedBinaryField16x16b, PackedField, TowerField,
@@ -19,7 +20,7 @@ use bytemuck::zeroed_vec;
 use proptest::prelude::*;
 use rand::prelude::*;
 
-use super::{fold_interleaved, to_par_scalar_big_chunks};
+use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
