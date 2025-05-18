@@ -55,4 +55,4 @@ pub use packed_extension::*;
 pub use packed_extension_ops::*;
 pub use packed_polyval::*;
 pub use polyval::*;
-pub use transpose::{square_transpose, Error as TransposeError};
+pub use transpose::{Error as TransposeError, square_transpose};

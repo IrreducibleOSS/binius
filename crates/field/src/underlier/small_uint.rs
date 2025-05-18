@@ -7,20 +7,20 @@ use std::{
 };
 
 use binius_utils::{
+	SerializationError, SerializationMode, SerializeBytes,
 	bytes::{Buf, BufMut},
 	checked_arithmetics::checked_log_2,
 	serialization::DeserializeBytes,
-	SerializationError, SerializationMode, SerializeBytes,
 };
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
 use rand::{
-	distributions::{Distribution, Uniform},
 	RngCore,
+	distributions::{Distribution, Uniform},
 };
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
-use super::{underlier_with_bit_ops::UnderlierWithBitOps, Random, UnderlierType};
+use super::{Random, UnderlierType, underlier_with_bit_ops::UnderlierWithBitOps};
 
 /// Unsigned type with a size strictly less than 8 bits.
 #[derive(

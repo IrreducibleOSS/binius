@@ -6,9 +6,9 @@ use binius_math::MultilinearPoly;
 use binius_utils::bail;
 
 use super::{
+	ConstraintSystem,
 	channel::{self, Boundary},
 	error::Error,
-	ConstraintSystem,
 };
 use crate::{
 	oracle::{
@@ -16,7 +16,7 @@ use crate::{
 		ShiftVariant,
 	},
 	polynomial::{
-		test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly, MultilinearComposite,
+		ArithCircuitPoly, MultilinearComposite, test_utils::decompose_index_to_hypercube_point,
 	},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
@@ -234,7 +234,7 @@ where
 				)?;
 			}
 		}
-		MultilinearPolyVariant::Packed(ref packed) => {
+		MultilinearPolyVariant::Packed(packed) => {
 			let expected = witness.get_multilin_poly(packed.id())?;
 			let got = witness.get_multilin_poly(oracle.id())?;
 			if expected.packed_evals() != got.packed_evals() {

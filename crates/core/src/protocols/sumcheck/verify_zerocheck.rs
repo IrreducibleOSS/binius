@@ -1,16 +1,16 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::inner_product_unchecked, TowerField};
+use binius_field::{TowerField, util::inner_product_unchecked};
 use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize, sorting::is_sorted_ascending};
 use tracing::instrument;
 
 use super::{
+	BatchSumcheckOutput,
 	eq_ind::{self, ClaimsSortingOrder},
 	error::{Error, VerificationError},
 	front_loaded,
-	zerocheck::{self, univariatizing_reduction_claim, BatchZerocheckOutput, ZerocheckClaim},
-	BatchSumcheckOutput,
+	zerocheck::{self, BatchZerocheckOutput, ZerocheckClaim, univariatizing_reduction_claim},
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},

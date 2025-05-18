@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use rand::RngCore;
 
-use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
+use crate::{BinaryField, BinaryField1b, ExtensionField, packed::PackedBinaryField};
 
 /// Generic transformation trait that is used both for scalars and packed fields
 pub trait Transformation<Input, Output>: Sync {

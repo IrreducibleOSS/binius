@@ -11,7 +11,7 @@ use std::{
 use either::Either;
 
 use self::private::Try;
-use super::{parallel_wrapper::ParallelWrapper, FromParallelIterator, IntoParallelIterator};
+use super::{FromParallelIterator, IntoParallelIterator, parallel_wrapper::ParallelWrapper};
 
 /// `rayon::prelude::ParallelIterator` has at least `fold` method with a signature
 /// that is not compatible with the one in `std::iter::Iterator`. That's why we can't use

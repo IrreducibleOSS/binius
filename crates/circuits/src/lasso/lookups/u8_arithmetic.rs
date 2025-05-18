@@ -149,7 +149,7 @@ pub fn dci_lookup(
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField1b, BinaryField32b, BinaryField8b};
+	use binius_field::{BinaryField1b, BinaryField8b, BinaryField32b};
 
 	use crate::{
 		builder::test_utils::test_circuit,

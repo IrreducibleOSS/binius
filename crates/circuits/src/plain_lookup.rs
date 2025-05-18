@@ -2,22 +2,22 @@
 
 use std::{cmp::Reverse, fmt::Debug, hash::Hash};
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use binius_core::{
 	constraint_system::channel::{FlushDirection, OracleOrConst},
 	oracle::OracleId,
 };
 use binius_field::{
+	BinaryField1b, ExtensionField, Field, PackedField, TowerField,
 	as_packed_field::PackScalar,
 	packed::{get_packed_slice, set_packed_slice},
-	BinaryField1b, ExtensionField, Field, PackedField, TowerField,
 };
 use bytemuck::Pod;
 use itertools::izip;
 
 use crate::builder::{
-	types::{F, U},
 	ConstraintSystemBuilder,
+	types::{F, U},
 };
 
 /// A gadget validating the lookup relation between:
@@ -189,7 +189,7 @@ where
 #[cfg(test)]
 pub mod test_plain_lookup {
 	use binius_field::BinaryField32b;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::transparent;

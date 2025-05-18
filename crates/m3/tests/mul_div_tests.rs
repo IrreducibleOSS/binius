@@ -9,9 +9,9 @@ use binius_field::{
 };
 use binius_m3::{
 	builder::{
-		test_utils::{validate_system_witness, ClosureFiller},
-		ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment, WitnessIndex, B128,
-		B32, B64,
+		B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex,
+		test_utils::{ClosureFiller, validate_system_witness},
 	},
 	gadgets::{
 		div::{DivSS32, DivUU32},
@@ -21,7 +21,7 @@ use binius_m3::{
 use bumpalo::Bump;
 use bytemuck::Contiguous;
 use itertools::chain;
-use rand::{prelude::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, prelude::StdRng};
 
 // This needs to create witness data as well as later query for checking outputs.
 trait MulDivTestSuiteHelper
@@ -94,7 +94,7 @@ impl TableFiller for MulUU64TestTable {
 impl MulDivTestSuiteHelper for MulUU64TestTable {
 	fn generate_inputs(&self, table_size: usize) -> Vec<(B64, B64)> {
 		let mut rng = StdRng::seed_from_u64(0);
-		repeat_with(|| (B64::new(rng.gen::<u64>()), B64::new(rng.gen::<u64>())))
+		repeat_with(|| (B64::new(rng.r#gen::<u64>()), B64::new(rng.r#gen::<u64>())))
 			.take(table_size)
 			.collect::<Vec<_>>()
 	}
@@ -202,7 +202,7 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 		let mut rng = StdRng::seed_from_u64(seed);
 		match self.mul_div {
 			MulDivEnum::MulUU32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
+				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
 					.take(table_size)
 					.collect()
 			}
@@ -216,24 +216,27 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 
 				chain!(
 					EXPLICIT_TESTS.into_iter(),
-					repeat_with(|| (B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<u32>())))
+					repeat_with(|| (
+						B32::new(rng.r#gen::<i32>() as u32),
+						B32::new(rng.r#gen::<u32>())
+					))
 				)
 				.take(table_size)
 				.collect()
 			}
 			MulDivEnum::MulSS32(_) => repeat_with(|| {
-				(B32::new(rng.gen::<i32>() as u32), B32::new(rng.gen::<i32>() as u32))
+				(B32::new(rng.r#gen::<i32>() as u32), B32::new(rng.r#gen::<i32>() as u32))
 			})
 			.take(table_size)
 			.collect(),
 			MulDivEnum::DivUU32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
+				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
 			}
 			MulDivEnum::DivSS32(_) => {
-				repeat_with(|| (B32::new(rng.gen::<u32>()), B32::new(rng.gen::<u32>())))
+				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
@@ -384,8 +387,8 @@ fn test_mul_next_to_stacked_col() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let test_inputs = repeat_with(|| {
-		let a = rng.gen::<u32>();
-		let b = rng.gen::<u32>();
+		let a = rng.r#gen::<u32>();
+		let b = rng.r#gen::<u32>();
 		(a, b)
 	})
 	.take(17)

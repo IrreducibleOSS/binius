@@ -6,8 +6,8 @@ use binius_core::constraint_system::channel::{Boundary, ChannelId, FlushDirectio
 use binius_field::{Field, PackedExtension, PackedField, TowerField};
 
 use super::{
-	constraint_system::ConstraintSystem, error::Error, witness::WitnessIndex, B1, B128, B16, B32,
-	B64, B8,
+	B1, B8, B16, B32, B64, B128, constraint_system::ConstraintSystem, error::Error,
+	witness::WitnessIndex,
 };
 
 /// Indexed lookup tables are fixed-size tables where every entry is easily determined by its
@@ -27,6 +27,9 @@ pub trait IndexedLookup<F: TowerField> {
 
 	/// Encode a table entry as a table index.
 	fn entry_to_index(&self, entry: &[F]) -> usize;
+
+	/// Decode a table index to an entry.
+	fn index_to_entry(&self, index: usize, entry: &mut [F]);
 }
 
 /// Determine the read counts of each entry in an indexed lookup table.
@@ -114,13 +117,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::{cmp::Reverse, iter::repeat_with};
+	use std::{cmp::Reverse, iter::repeat_with, slice};
 
 	use binius_field::{
+		PackedFieldIndexable,
 		arch::OptimalUnderlier,
 		ext_basis,
 		packed::{get_packed_slice, set_packed_slice},
-		PackedFieldIndexable,
 	};
 	use bumpalo::Bump;
 	use itertools::Itertools;
@@ -129,8 +132,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		builder::{
-			test_utils::{validate_system_witness, ClosureFiller},
-			upcast_col, Col, TableBuilder, TableFiller, TableId, TableWitnessSegment,
+			Col, TableBuilder, TableFiller, TableId, TableWitnessSegment,
+			test_utils::{ClosureFiller, validate_system_witness},
+			upcast_col,
 		},
 		gadgets::lookup::LookupProducer,
 	};
@@ -141,11 +145,17 @@ mod tests {
 	fn test_fixed_lookup_producer() {
 		let mut cs = ConstraintSystem::new();
 		let incr_lookup_chan = cs.add_channel("incr lookup");
+		let incr_lookup_perm_chan = cs.add_channel("incr lookup permutation");
 
 		let n_multiplicity_bits = 8;
 
 		let mut incr_table = cs.add_table("increment");
-		let incr_lookup = IncrLookup::new(&mut incr_table, incr_lookup_chan, n_multiplicity_bits);
+		let incr_lookup = IncrLookup::new(
+			&mut incr_table,
+			incr_lookup_chan,
+			incr_lookup_perm_chan,
+			n_multiplicity_bits,
+		);
 
 		let mut looker_1 = cs.add_table("looker 1");
 		let looker_1_id = looker_1.id();
@@ -163,7 +173,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})
@@ -180,7 +190,7 @@ mod tests {
 			.unwrap();
 
 		let inputs_2 = repeat_with(|| {
-			let input = rng.gen::<u8>();
+			let input = rng.r#gen::<u8>();
 			let carry_in_bit = rng.gen_bool(0.5);
 			(input, carry_in_bit)
 		})
@@ -363,18 +373,33 @@ mod tests {
 
 	struct IncrLookup {
 		table_id: TableId,
-		merged: Col<B32>,
+		entries_ordered: Col<B32>,
+		entries_sorted: Col<B32>,
 		lookup_producer: LookupProducer,
 	}
 
 	impl IncrLookup {
-		fn new(table: &mut TableBuilder, chan: ChannelId, n_multiplicity_bits: usize) -> Self {
+		fn new(
+			table: &mut TableBuilder,
+			chan: ChannelId,
+			permutation_chan: ChannelId,
+			n_multiplicity_bits: usize,
+		) -> Self {
 			table.require_fixed_size(IncrIndexedLookup.log_size());
-			let merged = table.add_committed::<B32, 1>("merged");
-			let lookup_producer = LookupProducer::new(table, chan, &[merged], n_multiplicity_bits);
+			// TODO: Create the arithmetic circuit for this and define it as a fixed column.
+			let entries_ordered = table.add_committed::<B32, 1>("entries_ordered");
+			let entries_sorted = table.add_committed::<B32, 1>("entries_sorted");
+
+			// Use flush to check that entries_sorted is a permutation of entries_ordered.
+			table.push(permutation_chan, [entries_ordered]);
+			table.pull(permutation_chan, [entries_sorted]);
+
+			let lookup_producer =
+				LookupProducer::new(table, chan, &[entries_sorted], n_multiplicity_bits);
 			Self {
 				table_id: table.id(),
-				merged,
+				entries_ordered,
+				entries_sorted,
 				lookup_producer,
 			}
 		}
@@ -394,18 +419,29 @@ mod tests {
 			rows: impl Iterator<Item = &'a Self::Event> + Clone,
 			witness: &'a mut TableWitnessSegment,
 		) -> anyhow::Result<()> {
+			// Fill the entries_ordered column
 			{
-				let mut merged = witness.get_mut_as::<u32, _, 1>(self.merged)?;
-				for (merged_i, &(index, _)) in iter::zip(&mut *merged, rows.clone()) {
-					let input_i = (index % (1 << 8)) as u8;
-					let carry_in_bit = (index >> 8) & 1 == 1;
-					let (output_i, carry_out_bit) = input_i.overflowing_add(carry_in_bit.into());
-					*merged_i = ((carry_out_bit as u32) << 17)
-						| ((carry_in_bit as u32) << 16)
-						| ((output_i as u32) << 8)
-						| input_i as u32;
+				let mut col_data = witness.get_scalars_mut(self.entries_ordered)?;
+				let start_index = witness.index() << witness.log_size();
+				for (i, col_data_i) in col_data.iter_mut().enumerate() {
+					let mut entry_128b = B128::default();
+					IncrIndexedLookup
+						.index_to_entry(start_index + i, slice::from_mut(&mut entry_128b));
+					*col_data_i =
+						B32::try_from(entry_128b).expect("guaranteed by IncrIndexedLookup");
 				}
 			}
+
+			// Fill the entries_sorted column
+			{
+				let mut entries_sorted = witness.get_scalars_mut(self.entries_sorted)?;
+				for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.clone()) {
+					let mut entry_128b = B128::default();
+					IncrIndexedLookup.index_to_entry(index, slice::from_mut(&mut entry_128b));
+					*merged_i = B32::try_from(entry_128b).expect("guaranteed by IncrIndexedLookup");
+				}
+			}
+
 			self.lookup_producer
 				.populate(witness, rows.map(|&(_i, count)| count))?;
 			Ok(())
@@ -423,9 +459,18 @@ mod tests {
 		fn entry_to_index(&self, entry: &[B128]) -> usize {
 			debug_assert_eq!(entry.len(), 1);
 			let merged_val = entry[0].val() as u32;
-			let input_i = merged_val & 0xFF;
+			let input = merged_val & 0xFF;
 			let carry_in_bit = (merged_val >> 16) & 1 == 1;
-			(carry_in_bit as usize) << 8 | input_i as usize
+			(carry_in_bit as usize) << 8 | input as usize
+		}
+
+		fn index_to_entry(&self, index: usize, entry: &mut [B128]) {
+			debug_assert_eq!(entry.len(), 1);
+			let input = (index % (1 << 8)) as u8;
+			let carry_in_bit = (index >> 8) & 1 == 1;
+			let (output, carry_out_bit) = input.overflowing_add(carry_in_bit.into());
+			let entry_u32 = merge_incr_vals(input, carry_in_bit, output, carry_out_bit);
+			entry[0] = B32::new(entry_u32).into();
 		}
 	}
 }

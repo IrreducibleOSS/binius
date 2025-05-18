@@ -1,17 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, types::U};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
-	BinaryField1b, BinaryField8b,
+	BinaryField1b, BinaryField8b, arch::OptimalUnderlier, as_packed_field::PackedType,
+	tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 const MIN_N_ADDITIONS: usize = 1 << (PackedType::<OptimalUnderlier, BinaryField1b>::LOG_WIDTH);

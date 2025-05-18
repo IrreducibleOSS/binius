@@ -3,16 +3,16 @@
 use core::arch::x86_64::*;
 use std::array;
 
-use gfni_arithmetics::{get_8x8_matrix, GfniType};
+use gfni_arithmetics::{GfniType, get_8x8_matrix};
 use seq_macro::seq;
 
 use super::*;
 use crate::{
-	arch::{x86_64::m256::M256, GfniSpecializedStrategy256b},
+	BinaryField, PackedField,
+	arch::{GfniSpecializedStrategy256b, x86_64::m256::M256},
 	arithmetic_traits::TaggedPackedTransformationFactory,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::WithUnderlier,
-	BinaryField, PackedField,
 };
 
 impl GfniType for M256 {

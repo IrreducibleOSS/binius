@@ -177,9 +177,9 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{consts::U32, Digest, FixedOutput, HashMarker, OutputSizeUser, Update};
+	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Update, consts::U32};
 	use itertools::izip;
-	use rand::{rngs::StdRng, RngCore, SeedableRng};
+	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 	use super::*;
 

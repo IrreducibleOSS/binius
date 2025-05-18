@@ -4,11 +4,11 @@ use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithCircuit, ArithCircuitStep, CompositionPoly, Error, RowsBatchRef};
-use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
-use stackalloc::{
-	helpers::{slice_assume_init, slice_assume_init_mut},
-	stackalloc_uninit,
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail,
+	mem::{slice_assume_init_mut, slice_assume_init_ref},
 };
+use stackalloc::stackalloc_uninit;
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn convert_circuit_steps<F: Field>(
@@ -294,6 +294,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
+				actual: query.len(),
 			});
 		}
 
@@ -352,7 +353,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			// Some slots in `evals` might be empty, but we're guaranted that
 			// if `self.retval` points to a slot, that this slot is initialized.
 			unsafe {
-				let evals = slice_assume_init(evals);
+				let evals = slice_assume_init_ref(evals);
 				Ok(get_argument_value(self.retval, evals))
 			}
 		})
@@ -458,7 +459,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			match self.retval {
 				CircuitStepArgument::Expr(node) => {
 					// Safety: `sparse_evals` is fully initialized by the previous loop iterations
-					let sparse_evals = unsafe { slice_assume_init(sparse_evals) };
+					let sparse_evals = unsafe { slice_assume_init_ref(sparse_evals) };
 					evals.copy_from_slice(node.get_sparse_chunk(batch_query, sparse_evals, row_len))
 				}
 				CircuitStepArgument::Const(val) => evals.fill(P::broadcast(val.into())),
@@ -539,7 +540,7 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
+		BinaryField8b, BinaryField16b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
 	use binius_math::{ArithExpr, CompositionPoly, RowsBatch};
 	use binius_utils::felts;

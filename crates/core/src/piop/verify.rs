@@ -4,7 +4,7 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
-use binius_utils::{bail, checked_arithmetics::log2_ceil_usize, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail, checked_arithmetics::log2_ceil_usize};
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -16,9 +16,9 @@ use crate::{
 	piop::util::ResizeableIndex,
 	polynomial::MultivariatePoly,
 	protocols::{
-		fri::{self, estimate_optimal_arity, FRIParams, FRIVerifier},
+		fri::{self, FRIParams, FRIVerifier, estimate_optimal_arity},
 		sumcheck::{
-			front_loaded::BatchVerifier as SumcheckBatchVerifier, CompositeSumClaim, SumcheckClaim,
+			CompositeSumClaim, SumcheckClaim, front_loaded::BatchVerifier as SumcheckBatchVerifier,
 		},
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,

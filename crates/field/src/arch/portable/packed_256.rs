@@ -2,9 +2,9 @@
 
 use super::packed_scaled::packed_scaled_field;
 use crate::{
-	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-	PackedBinaryField2x64b, PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
-	PackedBinaryField8x16b,
+	PackedBinaryField1x128b, PackedBinaryField2x64b, PackedBinaryField4x32b,
+	PackedBinaryField8x16b, PackedBinaryField16x8b, PackedBinaryField32x4b, PackedBinaryField64x2b,
+	PackedBinaryField128x1b,
 };
 
 packed_scaled_field!(PackedBinaryField256x1b = [PackedBinaryField128x1b; 2]);

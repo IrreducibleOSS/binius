@@ -4,7 +4,7 @@ use std::ops::Mul;
 
 use super::{
 	super::portable::{
-		packed::{impl_ops_for_zero_height, PackedPrimitiveType},
+		packed::{PackedPrimitiveType, impl_ops_for_zero_height},
 		packed_arithmetic::{alphas, impl_tower_constants},
 	},
 	m128::M128,
@@ -14,14 +14,14 @@ use super::{
 	},
 };
 use crate::{
+	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+	BinaryField64b, BinaryField128b, PackedAESBinaryField16x8b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy},
 	arithmetic_traits::{
-		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
-		impl_transformation_with_strategy, InvertOrZero, MulAlpha, Square,
+		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
+		impl_square_with, impl_transformation_with_strategy,
 	},
 	underlier::WithUnderlier,
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b, PackedAESBinaryField16x8b,
 };
 
 // Define 128 bit packed field types

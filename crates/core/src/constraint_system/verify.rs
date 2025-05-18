@@ -1,21 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	BinaryField, PackedField, TowerField,
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
 };
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
-use digest::{core_api::BlockSizeUser, Digest, Output};
-use itertools::{chain, Itertools};
+use digest::{Digest, Output, core_api::BlockSizeUser};
+use itertools::{Itertools, chain};
 use tracing::instrument;
 
 use super::{
+	ConstraintSystem, Proof,
 	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
 	exp::{self, reorder_exponents},
-	ConstraintSystem, Proof,
 };
 use crate::{
 	constraint_system::{
@@ -30,7 +30,7 @@ use crate::{
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
-		sumcheck::{self, constraint_set_zerocheck_claim, ZerocheckClaim},
+		sumcheck::{self, ZerocheckClaim, constraint_set_zerocheck_claim},
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
@@ -143,7 +143,7 @@ where
 
 	// Verify grand products
 	let final_layer_claims = gkr_gpa::batch_verify(
-		EvaluationOrder::LowToHigh,
+		EvaluationOrder::HighToLow,
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&mut transcript,
 	)?;

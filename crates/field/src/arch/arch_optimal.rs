@@ -3,9 +3,9 @@
 use cfg_if::cfg_if;
 
 use crate::{
+	ByteSlicedUnderlier, Field, PackedField,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::WithUnderlier,
-	ByteSlicedUnderlier, Field, PackedField,
 };
 
 /// A trait to retrieve the optimal throughput `ordinal` packed field for a given architecture.

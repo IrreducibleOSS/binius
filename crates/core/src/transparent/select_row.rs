@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField};
-use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
+use binius_field::{BinaryField1b, BinaryField128b, Field, PackedField, packed::set_packed_slice};
+use binius_macros::{DeserializeBytes, SerializeBytes, erased_serialize_bytes};
 use binius_math::MultilinearExtension;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -71,7 +71,10 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		let n_vars = MultivariatePoly::<F>::n_vars(self);
 		if query.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 		let mut k = self.index;
 		let mut result = F::ONE;

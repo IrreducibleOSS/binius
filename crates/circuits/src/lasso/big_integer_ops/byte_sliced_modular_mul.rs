@@ -4,13 +4,13 @@ use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
-	tower_levels::TowerLevel, underlier::WithUnderlier, BinaryField32b, BinaryField8b, TowerField,
+	BinaryField8b, BinaryField32b, TowerField, tower_levels::TowerLevel, underlier::WithUnderlier,
 };
 use binius_macros::arith_expr;
 
 use super::{byte_sliced_add_carryfree, byte_sliced_mul};
 use crate::{
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 	lasso::{
 		batch::LookupBatch,
 		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},

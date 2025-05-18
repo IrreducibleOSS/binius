@@ -12,16 +12,17 @@ use std::array;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
+	BinaryField1b, BinaryField32b, ExtensionField, Field, PackedAESBinaryField8x32b,
+	PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
-	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
+	packed::get_packed_slice,
 };
-use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
+use binius_hash::{INV_PACKED_TRANS_AES, Vision32MDSTransform};
 use binius_macros::arith_expr;
 use binius_math::{ArithCircuit, ArithExpr};
 use bytemuck::must_cast_slice;
 
-use crate::builder::{types::F, ConstraintSystemBuilder};
+use crate::builder::{ConstraintSystemBuilder, types::F};
 
 pub fn vision_permutation(
 	builder: &mut ConstraintSystemBuilder,
@@ -68,7 +69,7 @@ pub fn vision_permutation(
 
 	#[cfg(debug_assertions)]
 	if let Some(witness) = builder.witness() {
-		use binius_hash::{permutation::Permutation, Vision32bPermutation};
+		use binius_hash::{Vision32bPermutation, permutation::Permutation};
 
 		let vision_perm = Vision32bPermutation::default();
 		let p_in_data: [_; STATE_SIZE] =

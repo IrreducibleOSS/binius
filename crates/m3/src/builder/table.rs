@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::sync::Arc;
+use std::{ops::Index, sync::Arc};
 
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
@@ -8,10 +8,10 @@ use binius_core::{
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
+	ExtensionField, TowerField,
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	packed::pack_slice,
-	ExtensionField, TowerField,
 };
 use binius_math::ArithCircuit;
 use binius_utils::{
@@ -20,13 +20,14 @@ use binius_utils::{
 };
 
 use super::{
+	B1, ColumnIndex, ColumnPartitionIndex, FlushOpts,
 	channel::Flush,
 	column::{Col, ColumnDef, ColumnId, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	stat::TableStat,
 	structured::StructuredDynSize,
 	types::B128,
-	upcast_col, ColumnIndex, FlushOpts, B1,
+	upcast_col,
 };
 
 pub type TableId = usize;
@@ -46,11 +47,27 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		}
 	}
 
+	/// Declares that the table's size must be a power of two.
+	///
+	/// The table's size is decided by the prover, but it must be a power of two.
+	///
+	/// ## Pre-conditions
+	///
+	/// This cannot be called if [`Self::require_power_of_two_size`] or
+	/// [`Self::require_fixed_size`] has already been called.
 	pub fn require_power_of_two_size(&mut self) {
+		assert!(matches!(self.table.table_size_spec, TableSizeSpec::Arbitrary));
 		self.table.table_size_spec = TableSizeSpec::PowerOfTwo;
 	}
 
+	/// Declares that the table's size must be a fixed power of two.
+	///
+	/// ## Pre-conditions
+	///
+	/// This cannot be called if [`Self::require_power_of_two_size`] or
+	/// [`Self::require_fixed_size`] has already been called.
 	pub fn require_fixed_size(&mut self, log_size: usize) {
+		assert!(matches!(self.table.table_size_spec, TableSizeSpec::Arbitrary));
 		self.table.table_size_spec = TableSizeSpec::Fixed { log_size };
 	}
 
@@ -171,6 +188,13 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Adds a derived column that is computed as an expression over other columns in the table.
+	///
+	/// The derived column has the same vertical stacking factor as the input columns and its
+	/// values are computed independently. The cost of the column's evaluations are proportional
+	/// to the polynomial degree of the expression. When the expression is linear, the column's
+	/// cost is minimal. When the expression is non-linear, the column's evaluations are resolved
+	/// by a sumcheck reduction.
 	pub fn add_computed<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
@@ -181,23 +205,22 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		let expr_circuit = ArithCircuit::from(expr.expr());
-		let partition_indexes = expr_circuit
+		// Indicies within the partition.
+		let indices_within_partition = expr_circuit
 			.vars_usage()
 			.iter()
 			.enumerate()
-			.filter(|(_, &used)| used)
+			.filter(|(_, used)| **used)
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>();
-		let cols = partition_indexes
+		let partition = &self.table.partitions[partition_id::<V>()];
+		let cols = indices_within_partition
 			.iter()
-			.map(|&partition_index| {
-				let partition = &self.table.partitions[partition_id::<V>()];
-				partition.columns[partition_index]
-			})
+			.map(|&partition_index| partition.columns[partition_index])
 			.collect::<Vec<_>>();
 
 		let mut var_remapping = vec![0; expr_circuit.n_vars()];
-		for (new_index, &old_index) in partition_indexes.iter().enumerate() {
+		for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
 			var_remapping[old_index] = new_index;
 		}
 		let remapped_expr = expr_circuit
@@ -214,44 +237,56 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_selected<FSub, const VALUES_PER_ROW: usize>(
+	/// Add a derived column that selects a single value from a vertically stacked column.
+	///
+	/// The virtual column is derived from another column in the table passed as `col`, which we'll
+	/// call the "inner" column. The inner column has `V` values vertically stacked per table cell.
+	/// The `index` is in the range `0..V`, and it selects the `index`-th value from the inner
+	/// column.
+	pub fn add_selected<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		col: Col<FSub, VALUES_PER_ROW>,
+		col: Col<FSub, V>,
 		index: usize,
 	) -> Col<FSub, 1>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(index < VALUES_PER_ROW);
+		assert!(index < V);
 		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Selected {
 				col: col.id(),
 				index,
-				index_bits: log2_strict_usize(VALUES_PER_ROW),
+				index_bits: log2_strict_usize(V),
 			},
 		)
 	}
 
-	pub fn add_selected_block<FSub, const VALUES_PER_ROW: usize, const NEW_VALUES_PER_ROW: usize>(
+	/// Add a derived column that selects a subrange of values from a vertically stacked column.
+	///
+	/// The virtual column is derived from another column in the table passed as `col`, which we'll
+	/// call the "inner" column. The inner column has `V` values vertically stacked per table cell.
+	/// The `index` is in the range `0..(V - NEW_V)`, and it selects the values
+	/// `(i * NEW_V)..((i + 1) * NEW_V)` from the inner column.
+	pub fn add_selected_block<FSub, const V: usize, const NEW_V: usize>(
 		&mut self,
 		name: impl ToString,
-		col: Col<FSub, VALUES_PER_ROW>,
+		col: Col<FSub, V>,
 		index: usize,
-	) -> Col<FSub, NEW_VALUES_PER_ROW>
+	) -> Col<FSub, NEW_V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert!(VALUES_PER_ROW.is_power_of_two());
-		assert!(NEW_VALUES_PER_ROW.is_power_of_two());
-		assert!(NEW_VALUES_PER_ROW < VALUES_PER_ROW);
+		assert!(V.is_power_of_two());
+		assert!(NEW_V.is_power_of_two());
+		assert!(NEW_V < V);
 
-		let log_values_per_row = log2_strict_usize(VALUES_PER_ROW);
+		let log_values_per_row = log2_strict_usize(V);
 		// This is also the value of the start_index.
-		let log_new_values_per_row = log2_strict_usize(NEW_VALUES_PER_ROW);
+		let log_new_values_per_row = log2_strict_usize(NEW_V);
 		// Get the log size of the query.
 		let log_query_size = log_values_per_row - log_new_values_per_row;
 
@@ -329,18 +364,22 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
+	/// Adds a column to the table with a constant cell value.
+	///
+	/// The cell is repeated for each row in the table, but the values stacked vertically within
+	/// the cell are not necessarily all equal.
+	pub fn add_constant<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		constants: [FSub; VALUES_PER_ROW],
-	) -> Col<FSub, VALUES_PER_ROW>
+		constants: [FSub; V],
+	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
 	{
 		let namespaced_name = self.namespaced_name(name);
-		let n_vars = log2_strict_usize(VALUES_PER_ROW);
+		let n_vars = log2_strict_usize(V);
 		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
 		let mle = MultilinearExtensionTransparent::<
 			PackedType<OptimalUnderlier, FSub>,
@@ -381,9 +420,20 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	{
 		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
-		// TODO: Add check for pow_bits, F, FSub, VALUES_PER_ROW
+		// TODO: Add check for F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
-		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		let bit_cols = pow_bits
+			.iter()
+			.enumerate()
+			.map(|(index, bit)| {
+				assert_eq!(
+					self.table.id(),
+					bit.id().table_id,
+					"passed foreign table column at index={index}"
+				);
+				bit.id()
+			})
+			.collect();
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::StaticExp {
@@ -419,13 +469,25 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	{
 		assert!(pow_bits.len() <= (1 << FExpBase::TOWER_LEVEL));
 
+		// TODO: Add check for F, FSub, VALUES_PER_ROW
 		let namespaced_name = self.namespaced_name(name);
-		let bit_cols = pow_bits.iter().map(|bit| bit.id().table_index).collect();
+		let bit_cols = pow_bits
+			.iter()
+			.enumerate()
+			.map(|(index, bit)| {
+				assert_eq!(
+					self.table.id(),
+					bit.id().table_id,
+					"passed foreign table column at index={index}"
+				);
+				bit.id()
+			})
+			.collect();
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::DynamicExp {
 				bit_cols,
-				base: base.id().table_index,
+				base: base.id(),
 				base_tower_level: FExpBase::TOWER_LEVEL,
 			},
 		)
@@ -469,17 +531,19 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.new_column(namespaced_name, ColumnDef::StructuredFixedSize { expr })
 	}
 
-	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		expr: Expr<FSub, VALUES_PER_ROW>,
-	) where
+	/// Constrains that an expression computed over the table columns is zero.
+	///
+	/// The zero constraint applies to all values stacked vertically within the column cells. That
+	/// means that the expression is evaluated independently `V` times per row, and each evaluation
+	/// in the stack must be zero.
+	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
+	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
 		let namespaced_name = self.namespaced_name(name);
 		self.table
-			.partition_mut(VALUES_PER_ROW)
+			.partition_mut(V)
 			.assert_zero(namespaced_name, expr)
 	}
 
@@ -490,9 +554,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert_eq!(expr.table_id, self.id());
-		assert!(expr.table_index < self.table.columns.len());
+		assert!(expr.table_index.0 < self.table.columns.len());
 
-		self.table.columns[expr.table_index].is_nonzero = true;
+		self.table.columns[expr.table_index.0].is_nonzero = true;
 	}
 
 	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
@@ -581,7 +645,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub values_per_row: usize,
 	pub flushes: Vec<Flush>,
-	pub columns: Vec<ColumnIndex>,
+	pub columns: Vec<ColumnId>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 }
 
@@ -622,7 +686,7 @@ impl<F: TowerField> TablePartition<F> {
 			.into_iter()
 			.map(|col| {
 				assert_eq!(col.table_id, self.table_id);
-				col.table_index
+				col.id()
 			})
 			.collect();
 		let selectors = opts
@@ -630,7 +694,7 @@ impl<F: TowerField> TablePartition<F> {
 			.iter()
 			.map(|selector| {
 				assert_eq!(selector.table_id, self.table_id);
-				selector.table_index
+				selector.id()
 			})
 			.collect::<Vec<_>>();
 		self.flushes.push(Flush {
@@ -668,7 +732,7 @@ impl<F: TowerField> Table<F> {
 		F: ExtensionField<FSub>,
 	{
 		let table_id = self.id;
-		let table_index = self.columns.len();
+		let table_index = ColumnIndex(self.columns.len());
 		let partition = self.partition_mut(V);
 		let id = ColumnId {
 			table_id,
@@ -685,8 +749,8 @@ impl<F: TowerField> Table<F> {
 			is_nonzero: false,
 		};
 
-		let partition_index = partition.columns.len();
-		partition.columns.push(table_index);
+		let partition_index = ColumnPartitionIndex(partition.columns.len());
+		partition.columns.push(id);
 		self.columns.push(info);
 		Col::new(id, partition_index)
 	}
@@ -709,6 +773,23 @@ impl<F: TowerField> Table<F> {
 
 	pub fn stat(&self) -> TableStat {
 		TableStat::new(self)
+	}
+}
+
+impl<F: TowerField> Index<ColumnIndex> for Table<F> {
+	type Output = ColumnInfo<F>;
+
+	fn index(&self, index: ColumnIndex) -> &Self::Output {
+		&self.columns[index.0]
+	}
+}
+
+impl<F: TowerField> Index<ColumnId> for Table<F> {
+	type Output = ColumnInfo<F>;
+
+	fn index(&self, index: ColumnId) -> &Self::Output {
+		assert_eq!(index.table_id, self.id());
+		&self.columns[index.table_index.0]
 	}
 }
 

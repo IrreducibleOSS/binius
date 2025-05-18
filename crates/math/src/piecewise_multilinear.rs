@@ -3,7 +3,7 @@
 use binius_field::Field;
 use tracing::instrument;
 
-use crate::{extrapolate_line_scalar, Error};
+use crate::{Error, extrapolate_line_scalar};
 
 /// Evaluate a piecewise multilinear polynomial at a point, given the evaluations of the pieces.
 ///
@@ -122,7 +122,7 @@ mod tests {
 
 	use binius_field::BinaryField32b;
 	use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{MultilinearExtension, MultilinearQuery};

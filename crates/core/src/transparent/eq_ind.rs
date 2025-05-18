@@ -61,7 +61,10 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPar
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		let n_vars = MultivariatePoly::<P>::n_vars(self);
 		if query.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 
 		let mut result = P::one();
@@ -84,8 +87,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::EqIndPartialEval;
 	use crate::polynomial::MultivariatePoly;

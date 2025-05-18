@@ -1,18 +1,18 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},
+	packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height},
 	packed_arithmetic::TowerConstants,
 	reuse_multiply_arithmetic::Alpha,
 };
 use crate::{
+	BinaryField1b, BinaryField2b, BinaryField4b,
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	underlier::{UnderlierType, U4},
-	BinaryField1b, BinaryField2b, BinaryField4b,
+	underlier::{U4, UnderlierType},
 };
 
 // Define 4 bit packed field types

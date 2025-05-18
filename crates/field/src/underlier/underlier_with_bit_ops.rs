@@ -5,8 +5,8 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, N
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
 use super::{
-	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
+	underlier_type::{NumCast, UnderlierType},
 };
 use crate::tower_levels::TowerLevel;
 
@@ -117,7 +117,7 @@ pub trait UnderlierWithBitOps:
 		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
 	{
-		spread_fallback(self, log_block_len, block_idx)
+		unsafe { spread_fallback(self, log_block_len, block_idx) }
 	}
 
 	/// Left shift within 128-bit lanes.
@@ -447,7 +447,7 @@ where
 	U: UnderlierWithBitOps + From<T>,
 	T: UnderlierType + NumCast<U>,
 {
-	std::array::from_fn(|i| value.get_subvalue::<T>(block_idx * BLOCK_LEN + i))
+	std::array::from_fn(|i| unsafe { value.get_subvalue::<T>(block_idx * BLOCK_LEN + i) })
 }
 
 /// A helper functions for implementing `UnderlierWithBitOps::spread_unchecked` for SIMD types.
@@ -464,7 +464,8 @@ where
 	U: UnderlierWithBitOps + From<T>,
 	T: UnderlierType + SpreadToByte + NumCast<U>,
 {
-	get_block_values::<U, T, BLOCK_LEN>(value, block_idx).map(SpreadToByte::spread_to_byte)
+	unsafe { get_block_values::<U, T, BLOCK_LEN>(value, block_idx) }
+		.map(SpreadToByte::spread_to_byte)
 }
 
 #[cfg(test)]

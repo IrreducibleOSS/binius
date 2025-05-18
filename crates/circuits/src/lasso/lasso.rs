@@ -1,21 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use anyhow::{ensure, Error, Result};
+use anyhow::{Error, Result, ensure};
 use binius_core::{
 	constraint_system::channel::{ChannelId, OracleOrConst},
 	oracle::OracleId,
 };
 use binius_field::{
+	ExtensionField, Field, PackedField, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
-	ExtensionField, Field, PackedField, TowerField,
 };
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 
 use crate::{
 	builder::{
-		types::{F, U},
 		ConstraintSystemBuilder,
+		types::{F, U},
 	},
 	transparent,
 };

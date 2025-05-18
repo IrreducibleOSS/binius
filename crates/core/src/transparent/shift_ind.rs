@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField, util::eq};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -165,6 +165,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		if x.len() != self.block_size {
 			bail!(Error::IncorrectQuerySize {
 				expected: self.block_size,
+				actual: x.len(),
 			});
 		}
 
@@ -216,6 +217,7 @@ fn assert_valid_shift_ind_args<F: Field>(
 	if partial_query_point.len() != block_size {
 		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
+			actual: partial_query_point.len(),
 		});
 	}
 	if shift_offset == 0 || shift_offset >= 1 << block_size {
@@ -241,6 +243,7 @@ fn evaluate_shift_ind_help<F: Field>(
 	if x.len() != block_size {
 		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
+			actual: x.len(),
 		});
 	}
 	assert_valid_shift_ind_args(block_size, shift_offset, y)?;
@@ -431,8 +434,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;

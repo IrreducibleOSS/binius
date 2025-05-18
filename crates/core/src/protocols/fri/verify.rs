@@ -3,18 +3,18 @@
 use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_hal::{ComputationBackend, make_portable_backend};
 use binius_ntt::SingleThreadedNTT;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 use bytes::Buf;
 use itertools::izip;
 use tracing::instrument;
 
-use super::{common::vcs_optimal_layers_depths_iter, error::Error, VerificationError};
+use super::{VerificationError, common::vcs_optimal_layers_depths_iter, error::Error};
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::MerkleTreeScheme,
-	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams},
+	protocols::fri::common::{FRIParams, fold_chunk, fold_interleaved_chunk},
 	transcript::{TranscriptReader, VerifierTranscript},
 };
 

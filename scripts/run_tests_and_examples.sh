@@ -14,6 +14,9 @@ CARGO="cargo ${CARGO_STABLE:+ +$RUST_VERSION}"
 # Do not build examples at this stage by passing "--tests" explicitly
 $CARGO test --profile $CARGO_PROFILE $FEATURES $CARGO_EXTRA_FLAGS --tests
 
+# Run docs tests
+cargo test --doc
+
 # First compile all the examples to speed up overall compilation time due to parallelism.
 $CARGO build --profile $CARGO_PROFILE $FEATURES $CARGO_EXTRA_FLAGS --examples
 

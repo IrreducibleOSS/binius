@@ -3,7 +3,7 @@
 use core::arch::x86_64::*;
 
 use super::simd_arithmetic::TowerSimdType;
-use crate::{arch::x86_64::m128::M128, BinaryField};
+use crate::{BinaryField, arch::x86_64::m128::M128};
 
 impl TowerSimdType for M128 {
 	#[inline(always)]

@@ -3,9 +3,9 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField128b, Field, PackedField, TowerField};
-use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
+use binius_macros::{DeserializeBytes, SerializeBytes, erased_serialize_bytes};
 use binius_math::MultilinearExtension;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -86,7 +86,10 @@ where
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != self.k {
-			bail!(Error::IncorrectQuerySize { expected: self.k });
+			bail!(Error::IncorrectQuerySize {
+				expected: self.k,
+				actual: query.len()
+			});
 		}
 
 		let mut result = F::ONE;
@@ -107,9 +110,9 @@ where
 mod tests {
 	use std::iter::repeat_with;
 
-	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_field::{BinaryField32b, BinaryField128b, PackedBinaryField4x32b};
+	use binius_hal::{ComputationBackendExt, make_portable_backend};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

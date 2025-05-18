@@ -5,9 +5,9 @@ use cfg_if::cfg_if;
 use super::m256::M256;
 use crate::{
 	aes_field::{
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
 	},
-	arch::{portable::packed::PackedPrimitiveType, SimdStrategy},
+	arch::{SimdStrategy, portable::packed::PackedPrimitiveType},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,

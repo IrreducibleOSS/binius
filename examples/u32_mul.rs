@@ -4,7 +4,7 @@ use std::array;
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 	lasso::{
 		batch::LookupBatch,
 		big_integer_ops::byte_sliced_mul,
@@ -14,15 +14,15 @@ use binius_circuits::{
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
+	BinaryField1b, BinaryField8b, BinaryField32b, Field,
 	tower::CanonicalTowerFamily,
 	tower_levels::{TowerLevel4, TowerLevel8},
-	BinaryField1b, BinaryField32b, BinaryField8b, Field,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

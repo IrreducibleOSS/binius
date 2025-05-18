@@ -2,15 +2,15 @@
 
 use binius_field::PackedField;
 use binius_math::{
-	fold_left_lerp_inplace, fold_right_lerp, EvaluationOrder, MultilinearPoly, MultilinearQueryRef,
+	EvaluationOrder, MultilinearPoly, MultilinearQueryRef, fold_left_lerp_inplace, fold_right_lerp,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::zeroed_vec;
 
 use crate::{
-	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
 	Error, SumcheckMultilinear,
+	common::{MAX_SRC_SUBCUBE_LOG_BITS, subcube_vars_for_bits},
 };
 
 pub(crate) fn fold_multilinears<P, M>(
@@ -182,8 +182,8 @@ where
 
 						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
-						let folded_scalars =
-							non_const_prefix.min(1 << (n_vars - tensor_query.n_vars()));
+						let folded_scalars = non_const_prefix
+							.min(1 << (multilinear.n_vars() - tensor_query.n_vars()));
 
 						let mut folded =
 							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);

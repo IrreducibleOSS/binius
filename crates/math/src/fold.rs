@@ -4,24 +4,23 @@ use core::slice;
 use std::{any::TypeId, cmp::min, mem::MaybeUninit};
 
 use binius_field::{
+	AESTowerField128b, BinaryField1b, BinaryField128b, BinaryField128bPolyval, ExtensionField,
+	Field, PackedField,
 	arch::{ArchOptimal, OptimalUnderlier},
 	byte_iteration::{
-		can_iterate_bytes, create_partial_sums_lookup_tables, is_sequential_bytes, iterate_bytes,
-		ByteIteratorCallback,
+		ByteIteratorCallback, can_iterate_bytes, create_partial_sums_lookup_tables,
+		is_sequential_bytes, iterate_bytes,
 	},
 	packed::{
-		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
-		PackedSlice,
+		PackedSlice, get_packed_slice, get_packed_slice_unchecked, set_packed_slice,
+		set_packed_slice_unchecked,
 	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
-	Field, PackedField,
 };
-use binius_utils::bail;
+use binius_utils::{bail, mem::slice_assume_init_mut};
 use bytemuck::fill_zeroes;
 use itertools::izip;
 use lazy_static::lazy_static;
-use stackalloc::helpers::slice_assume_init_mut;
 
 use crate::Error;
 
@@ -260,7 +259,8 @@ where
 {
 	if log_evals_size < log_query_size {
 		bail!(Error::IncorrectQuerySize {
-			expected: log_evals_size
+			expected: log_evals_size,
+			actual: log_query_size,
 		});
 	}
 
@@ -325,7 +325,10 @@ where
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
 	if log_evals_size == 0 {
-		bail!(Error::IncorrectQuerySize { expected: 1 });
+		bail!(Error::IncorrectQuerySize {
+			expected: 1,
+			actual: log_evals_size,
+		});
 	}
 
 	if non_const_prefix > 1 << log_evals_size {
@@ -954,11 +957,11 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
-		PackedBinaryField16x8b, PackedBinaryField32x1b, PackedBinaryField512x1b,
-		PackedBinaryField64x8b, PackedBinaryField8x1b,
+		PackedBinaryField8x1b, PackedBinaryField16x8b, PackedBinaryField16x32b,
+		PackedBinaryField32x1b, PackedBinaryField64x8b, PackedBinaryField128x1b,
+		PackedBinaryField512x1b, packed::set_packed_slice,
 	};
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

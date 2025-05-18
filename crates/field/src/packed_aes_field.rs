@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 pub use crate::arch::{
-	packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*, packed_aes_512::*,
-	packed_aes_64::*, packed_aes_8::*,
+	packed_aes_8::*, packed_aes_16::*, packed_aes_32::*, packed_aes_64::*, packed_aes_128::*,
+	packed_aes_256::*, packed_aes_512::*,
 };
 
 #[cfg(test)]
@@ -419,13 +419,13 @@ mod tests {
 		*,
 	};
 	use crate::{
+		PackedField,
 		arch::{
-			packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
-			packed_8::*,
+			packed_8::*, packed_16::*, packed_32::*, packed_64::*, packed_128::*, packed_256::*,
+			packed_512::*,
 		},
 		linear_transformation::PackedTransformationFactory,
 		test_utils::implements_transformation_factory,
-		PackedField,
 	};
 
 	define_multiply_tests!(Mul::mul, PackedField);

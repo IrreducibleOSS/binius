@@ -2,8 +2,8 @@
 // The code is initially based on `maybe-rayon` crate, https://github.com/shssoichiro/maybe-rayon
 
 use super::{
-	parallel_iterator::ParallelIteratorInner, parallel_wrapper::ParallelWrapper,
-	IntoParallelIterator, ParallelIterator,
+	IntoParallelIterator, ParallelIterator, parallel_iterator::ParallelIteratorInner,
+	parallel_wrapper::ParallelWrapper,
 };
 
 /// The reason why we need this trait is because `IndexedParallelIterator` contains
@@ -90,11 +90,7 @@ impl<I: Iterator> Iterator for Chunks<I> {
 				None => break,
 			}
 		}
-		if chunk.is_empty() {
-			None
-		} else {
-			Some(chunk)
-		}
+		if chunk.is_empty() { None } else { Some(chunk) }
 	}
 }
 

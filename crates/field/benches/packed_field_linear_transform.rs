@@ -1,16 +1,16 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
+	ExtensionField, PackedField,
 	arch::{
-		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
-		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*,
-		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
+		byte_sliced::*, packed_8::*, packed_16::*, packed_32::*, packed_64::*, packed_128::*,
+		packed_256::*, packed_512::*, packed_aes_8::*, packed_aes_16::*, packed_aes_32::*,
+		packed_aes_64::*, packed_aes_128::*, packed_aes_256::*, packed_aes_512::*,
 		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
 	},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
-	ExtensionField, PackedField,
 };
 use cfg_if::cfg_if;
 use criterion::criterion_main;

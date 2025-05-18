@@ -4,8 +4,8 @@ use std::fmt::Debug;
 
 use bytemuck::{NoUninit, Zeroable};
 use rand::{
-	distributions::{Distribution, Standard},
 	Rng, RngCore,
+	distributions::{Distribution, Standard},
 };
 use subtle::ConstantTimeEq;
 
@@ -175,7 +175,7 @@ where
 	Standard: Distribution<T>,
 {
 	fn random(mut rng: impl RngCore) -> Self {
-		rng.gen()
+		rng.r#gen()
 	}
 }
 

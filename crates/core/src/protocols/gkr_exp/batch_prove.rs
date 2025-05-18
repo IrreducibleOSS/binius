@@ -19,7 +19,7 @@ use super::{
 use crate::{
 	fiat_shamir::Challenger,
 	protocols::sumcheck::{
-		self, immediate_switchover_heuristic, BatchSumcheckOutput, CompositeSumClaim,
+		self, BatchSumcheckOutput, CompositeSumClaim, immediate_switchover_heuristic,
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,

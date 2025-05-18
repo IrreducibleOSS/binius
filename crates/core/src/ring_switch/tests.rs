@@ -3,11 +3,11 @@
 use std::{cmp::Ordering, iter::repeat_with};
 
 use binius_field::{
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -22,7 +22,7 @@ use rand::prelude::*;
 use super::{
 	common::EvalClaimSystem,
 	prove,
-	verify::{verify, ReducedClaim},
+	verify::{ReducedClaim, verify},
 };
 use crate::{
 	fiat_shamir::HasherChallenger,
@@ -30,7 +30,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
 	protocols::{
-		evalcheck::{subclaims::MemoizedData, EvalcheckMultilinearClaim},
+		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
 		fri::CommitOutput,
 	},
 	ring_switch::prove::ReducedWitness,

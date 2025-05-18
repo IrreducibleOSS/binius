@@ -5,8 +5,8 @@ use std::{
 	ops::{Mul, MulAssign},
 };
 
-use binius_field::{packed::set_packed_slice, ExtensionField, Field, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_field::{ExtensionField, Field, PackedField, TowerField, packed::set_packed_slice};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
@@ -18,8 +18,8 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck::{
-		eq_ind::EqIndSumcheckClaim, BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
-		VerificationError,
+		BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim, VerificationError,
+		eq_ind::EqIndSumcheckClaim,
 	},
 };
 
@@ -316,16 +316,16 @@ mod tests {
 	use std::sync::Arc;
 
 	use binius_field::{
+		AESTowerField8b, AESTowerField16b, AESTowerField128b, BinaryField8b, BinaryField16b,
+		BinaryField128b, ByteSlicedAES64x128b,
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		underlier::{UnderlierType, WithUnderlier},
-		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
-		BinaryField8b, ByteSlicedAES64x128b,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::Groestl256;
 	use binius_math::IsomorphicEvaluationDomainFactory;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{

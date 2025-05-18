@@ -2,11 +2,11 @@
 
 use super::m512::M512;
 use crate::{
+	BinaryField128bPolyval,
 	arch::{
-		cfg_if, portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy,
+		PairwiseStrategy, ReuseMultiplyStrategy, cfg_if, portable::packed::PackedPrimitiveType,
 	},
 	arithmetic_traits::{impl_invert_with, impl_square_with},
-	BinaryField128bPolyval,
 };
 
 /// Define packed type

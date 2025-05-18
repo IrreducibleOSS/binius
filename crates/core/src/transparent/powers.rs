@@ -3,12 +3,12 @@
 use std::iter::successors;
 
 use binius_field::{BinaryField128b, PackedField, TowerField};
-use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
+use binius_macros::{DeserializeBytes, SerializeBytes, erased_serialize_bytes};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
-use binius_utils::{bail, DeserializeBytes};
+use binius_utils::{DeserializeBytes, bail};
 use bytemuck::zeroed_vec;
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -70,7 +70,10 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for Powers<F
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		let n_vars = self.n_vars;
 		if query.len() != self.n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len(),
+			});
 		}
 
 		let mut result = P::one();
@@ -91,7 +94,7 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for Powers<F
 #[cfg(test)]
 mod tests {
 	use binius_field::{BinaryField32b, Field, PackedBinaryField4x32b, PackedField, TowerField};
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::Powers;
 	use crate::polynomial::MultivariatePoly;

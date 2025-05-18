@@ -1,10 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedField};
+use binius_field::{Field, PackedField, util::eq};
 use binius_math::{ArithCircuit, CompositionPoly};
 use binius_utils::bail;
 use getset::CopyGetters;
-use itertools::{izip, Either};
+use itertools::{Either, izip};
 
 use super::{
 	common::{CompositeSumClaim, SumcheckClaim},
@@ -41,10 +41,7 @@ where
 		n_multilinears: usize,
 		eq_ind_composite_sums: Vec<CompositeSumClaim<F, Composition>>,
 	) -> Result<Self, Error> {
-		for CompositeSumClaim {
-			ref composition, ..
-		} in &eq_ind_composite_sums
-		{
+		for CompositeSumClaim { composition, .. } in &eq_ind_composite_sums {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
 					actual: composition.n_vars(),
@@ -208,7 +205,10 @@ where
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: n_vars });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 
 		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;
@@ -225,16 +225,16 @@ mod tests {
 	use std::{iter, sync::Arc};
 
 	use binius_field::{
+		BinaryField8b, BinaryField32b, BinaryField128b, ExtensionField, Field,
+		PackedBinaryField1x128b, PackedExtension, PackedField, PackedFieldIndexable,
+		PackedSubfield, RepackedExtension, TowerField,
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
 		packed::set_packed_slice,
 		underlier::UnderlierType,
-		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField1x128b, PackedExtension, PackedField, PackedFieldIndexable,
-		PackedSubfield, RepackedExtension, TowerField,
 	};
 	use binius_hal::{
-		make_portable_backend, ComputationBackend, ComputationBackendExt, SumcheckMultilinear,
+		ComputationBackend, ComputationBackendExt, SumcheckMultilinear, make_portable_backend,
 	};
 	use binius_hash::groestl::Groestl256;
 	use binius_math::{
@@ -242,24 +242,23 @@ mod tests {
 		IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 		MultilinearQuery,
 	};
-	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use crate::{
 		composition::BivariateProduct,
 		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			sumcheck::{
-				self,
+				self, BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim,
 				eq_ind::{ClaimsSortingOrder, ExtraProduct},
 				immediate_switchover_heuristic,
 				prove::{
-					eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 					RegularSumcheckProver,
+					eq_ind::{ConstEvalSuffix, EqIndSumcheckProverBuilder},
 				},
-				BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::{
-				generate_zero_product_multilinears, AddOneComposition, TestProductComposition,
+				AddOneComposition, TestProductComposition, generate_zero_product_multilinears,
 			},
 		},
 		transcript::ProverTranscript,

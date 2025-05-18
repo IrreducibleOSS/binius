@@ -7,10 +7,10 @@ use binius_field::{Field, PackedField, TowerField};
 use binius_math::{
 	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::{bail, SerializationError, SerializationMode};
+use binius_utils::{SerializationError, SerializationMode, bail};
 use bytes::BufMut;
 use itertools::Itertools;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::error::Error;
 
@@ -64,7 +64,10 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != 1 {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: 1 });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: 1,
+				actual: query.len()
+			});
 		}
 		Ok(query[0])
 	}

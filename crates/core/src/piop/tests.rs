@@ -3,7 +3,7 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	AESTowerField16b, AESTowerField8b, BinaryField, BinaryField16b, BinaryField8b,
+	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
 	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField,
 };
 use binius_hal::make_portable_backend;
@@ -13,14 +13,13 @@ use binius_math::{
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
-	prove,
+	PIOPSumcheckClaim, prove,
 	prove::commit,
 	verify,
-	verify::{make_commit_params_with_optimal_arity, CommitMeta},
-	PIOPSumcheckClaim,
+	verify::{CommitMeta, make_commit_params_with_optimal_arity},
 };
 use crate::{
 	fiat_shamir::HasherChallenger,

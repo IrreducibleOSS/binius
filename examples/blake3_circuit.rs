@@ -5,7 +5,7 @@ use std::array;
 use anyhow::Result;
 use binius_circuits::{
 	blake3::Blake3CompressState,
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::tower::CanonicalTowerFamily;
@@ -13,8 +13,8 @@ use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
-use rand::{rngs::OsRng, Rng};
+use clap::{Parser, value_parser};
+use rand::{Rng, rngs::OsRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -48,13 +48,13 @@ fn main() -> Result<()> {
 	let mut rng = OsRng;
 	let input_witness = (0..args.n_compressions as usize)
 		.map(|_| {
-			let cv: [u32; 8] = array::from_fn(|_| rng.gen::<u32>());
-			let block: [u32; 16] = array::from_fn(|_| rng.gen::<u32>());
-			let counter = rng.gen::<u64>();
+			let cv: [u32; 8] = array::from_fn(|_| rng.r#gen::<u32>());
+			let block: [u32; 16] = array::from_fn(|_| rng.r#gen::<u32>());
+			let counter = rng.r#gen::<u64>();
 			let counter_low = counter as u32;
 			let counter_high = (counter >> 32) as u32;
-			let block_len = rng.gen::<u32>();
-			let flags = rng.gen::<u32>();
+			let block_len = rng.r#gen::<u32>();
+			let flags = rng.r#gen::<u32>();
 
 			Blake3CompressState {
 				cv,

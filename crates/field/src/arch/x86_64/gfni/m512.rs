@@ -3,15 +3,15 @@
 use core::arch::x86_64::*;
 use std::array;
 
-use gfni_arithmetics::{get_8x8_matrix, GfniType};
+use gfni_arithmetics::{GfniType, get_8x8_matrix};
 
 use super::*;
 use crate::{
-	arch::{x86_64::m512::M512, GfniSpecializedStrategy512b},
+	BinaryField, PackedField,
+	arch::{GfniSpecializedStrategy512b, x86_64::m512::M512},
 	arithmetic_traits::TaggedPackedTransformationFactory,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::WithUnderlier,
-	BinaryField, PackedField,
 };
 
 impl GfniType for M512 {

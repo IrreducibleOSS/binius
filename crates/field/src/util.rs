@@ -5,7 +5,7 @@ use std::iter;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_int_div;
 
-use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
+use crate::{ExtensionField, Field, PackedField, packed::get_packed_slice_unchecked};
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
 pub fn inner_product_unchecked<F, FE>(

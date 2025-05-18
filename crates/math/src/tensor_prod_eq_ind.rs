@@ -102,7 +102,7 @@ pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{packed::set_packed_slice, Field, PackedBinaryField4x32b};
+	use binius_field::{Field, PackedBinaryField4x32b, packed::set_packed_slice};
 	use itertools::Itertools;
 
 	use super::*;

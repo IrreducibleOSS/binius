@@ -149,7 +149,7 @@ jobs:
         run: ${{ matrix.expand.cmd }}
   deploy:
     name: deploy-pages
-    needs: [build]
+    needs: [build, test]
     runs-on: ubuntu-latest
     if: github.ref_name == 'main'
     permissions:
