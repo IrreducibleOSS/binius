@@ -113,7 +113,8 @@ where
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
 		if query.len() != self.n_vars() {
 			bail!(PolynomialError::IncorrectQuerySize {
-				expected: self.n_vars()
+				expected: self.n_vars(),
+				actual: query.len(),
 			});
 		};
 

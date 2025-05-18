@@ -514,38 +514,36 @@ impl UnderlierWithBitOps for M256 {
 		T: UnderlierWithBitOps,
 		Self: From<T>,
 	{
-		unsafe {
-			match T::BITS {
-				1 | 2 | 4 => {
-					let elements_in_8 = 8 / T::BITS;
-					let mask = (1u8 << T::BITS) - 1;
-					let shift = (i % elements_in_8) * T::BITS;
-					let val = u8::num_cast_from(Self::from(val)) << shift;
-					let mask = mask << shift;
+		match T::BITS {
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mask = (1u8 << T::BITS) - 1;
+				let shift = (i % elements_in_8) * T::BITS;
+				let val = u8::num_cast_from(Self::from(val)) << shift;
+				let mask = mask << shift;
 
-					as_array_mut::<_, u8, 32>(self, |array| unsafe {
-						let element = array.get_unchecked_mut(i / elements_in_8);
-						*element &= !mask;
-						*element |= val;
-					});
-				}
-				8 => as_array_mut::<_, u8, 32>(self, |array| unsafe {
-					*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
-				}),
-				16 => as_array_mut::<_, u16, 16>(self, |array| unsafe {
-					*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
-				}),
-				32 => as_array_mut::<_, u32, 8>(self, |array| unsafe {
-					*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
-				}),
-				64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
-					*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
-				}),
-				128 => as_array_mut::<_, u128, 2>(self, |array| {
-					*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
-				}),
-				_ => panic!("unsupported bit count"),
+				as_array_mut::<_, u8, 32>(self, |array| unsafe {
+					let element = array.get_unchecked_mut(i / elements_in_8);
+					*element &= !mask;
+					*element |= val;
+				});
 			}
+			8 => as_array_mut::<_, u8, 32>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
+			}),
+			16 => as_array_mut::<_, u16, 16>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
+			}),
+			32 => as_array_mut::<_, u32, 8>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
+			}),
+			64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
+			}),
+			128 => as_array_mut::<_, u128, 2>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
+			}),
+			_ => panic!("unsupported bit count"),
 		}
 	}
 

@@ -108,9 +108,9 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let log_chunks = log_chunks_range.end;
 		let total_alloc = count_total_local_buffer_sizes(&inputs, log_chunks);
 		let mut local_buffer = zeroed_vec(total_alloc);
-		let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
 		(0..1 << log_chunks)
 			.map(|i| {
+				let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
 				let kernel_data =
 					Self::map_kernel_mem(&mut inputs, &local_buffer_alloc, log_chunks, i);
 				map(&mut CpuExecutor, log_chunks, kernel_data)
@@ -273,7 +273,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
-		ntt: &impl AdditiveNTT<FSub>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[T::B128],

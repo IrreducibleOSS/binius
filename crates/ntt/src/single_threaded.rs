@@ -75,7 +75,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 impl<F, TA> AdditiveNTT<F> for SingleThreadedNTT<F, TA>
 where
 	F: BinaryField,
-	TA: TwiddleAccess<F> + Sync,
+	TA: TwiddleAccess<F>,
 {
 	fn log_domain_size(&self) -> usize {
 		self.s_evals.len()

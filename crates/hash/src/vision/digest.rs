@@ -9,13 +9,13 @@ use binius_field::{
 	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
 	underlier::WithUnderlier,
 };
+use binius_utils::mem::slice_assume_init_mut;
 use digest::{
 	FixedOutput, FixedOutputReset, HashMarker, OutputSizeUser, Reset, Update,
 	consts::{U32, U96},
 	core_api::BlockSizeUser,
 };
 use lazy_static::lazy_static;
-use stackalloc::helpers::slice_assume_init_mut;
 
 use super::permutation::{HASHES_PER_BYTE_SLICED_PERMUTATION, PERMUTATION};
 use crate::{

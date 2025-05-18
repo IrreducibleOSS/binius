@@ -61,7 +61,10 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPar
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		let n_vars = MultivariatePoly::<P>::n_vars(self);
 		if query.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len()
+			});
 		}
 
 		let mut result = P::one();

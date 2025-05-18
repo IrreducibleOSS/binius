@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use binius_compute::memory::{ComputeMemory, SizedSlice};
 use binius_field::PackedField;
 
+/// A packed memory implementation that uses slices of packed fields.
 pub struct PackedMemory<P>(PhantomData<P>);
 
 impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {

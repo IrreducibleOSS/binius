@@ -182,8 +182,8 @@ where
 
 						let packed_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 
-						let folded_scalars =
-							non_const_prefix.min(1 << (n_vars - tensor_query.n_vars()));
+						let folded_scalars = non_const_prefix
+							.min(1 << (multilinear.n_vars() - tensor_query.n_vars()));
 
 						let mut folded =
 							zeroed_vec(folded_scalars.div_ceil(1 << subcube_vars) * packed_len);

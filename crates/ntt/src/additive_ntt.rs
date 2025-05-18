@@ -44,7 +44,7 @@ pub struct NTTShape {
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [DP24]: <https://eprint.iacr.org/2024/504>
-pub trait AdditiveNTT<F: BinaryField>: Sync {
+pub trait AdditiveNTT<F: BinaryField> {
 	/// Base-2 logarithm of the maximum size of the NTT domain, $\ell$.
 	fn log_domain_size(&self) -> usize;
 

@@ -65,7 +65,10 @@ impl ToTokens for CompositionPolyItem {
 
 				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 					if query.len() != #n_vars {
-						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
+						return Err(binius_math::Error::IncorrectQuerySize {
+							expected: #n_vars,
+							actual: query.len(),
+						});
 					}
 					Ok(#eval_single)
 				}
@@ -76,7 +79,10 @@ impl ToTokens for CompositionPolyItem {
 					evals: &mut [P],
 				) -> Result<(), binius_math::Error> {
 					if batch_query.row_len() != #n_vars {
-						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
+						return Err(binius_math::Error::IncorrectQuerySize {
+							expected: #n_vars,
+							actual: batch_query.row_len(),
+						});
 					}
 
 					for row in 0..batch_query.row(0).len() {

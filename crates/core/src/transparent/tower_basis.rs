@@ -86,7 +86,10 @@ where
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != self.k {
-			bail!(Error::IncorrectQuerySize { expected: self.k });
+			bail!(Error::IncorrectQuerySize {
+				expected: self.k,
+				actual: query.len()
+			});
 		}
 
 		let mut result = F::ONE;

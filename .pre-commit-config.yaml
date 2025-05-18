@@ -5,7 +5,7 @@ repos:
     name: Run `rustfmt`
     language: rust
     types: [rust]
-    entry: cargo fmt -- 
+    entry: cargo fmt --
     stages: [commit]
   - id: clippy
     name: Run cargo clippy
