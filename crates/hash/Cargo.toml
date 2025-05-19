@@ -19,7 +19,6 @@ digest.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 sha2 = { workspace = true, features = ["compress"] }
-thiserror.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
