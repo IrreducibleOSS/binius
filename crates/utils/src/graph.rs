@@ -11,11 +11,11 @@ use std::cmp::Ordering;
 ///
 /// ```
 /// use binius_utils::graph::connected_components;
-/// assert_eq!(connected_components(&[]), vec![]);
-/// assert_eq!(connected_components(&[&[0], &[1]]), vec![0, 1]);
-/// assert_eq!(connected_components(&[&[0, 1], &[1, 2], &[2, 3], &[4]]), vec![0, 0, 0, 0, 4]);
+/// assert_eq!(connected_components::<&[&Vec<usize>]>(&[]), vec![]);
+/// assert_eq!(connected_components(&[&vec![0], &vec![1]]), vec![0, 1]);
+/// assert_eq!(connected_components(&[&vec![0, 1], &vec![1, 2], &vec![2, 3], &vec![4]]), vec![0, 0, 0, 0, 4]);
 /// assert_eq!(
-///     connected_components(&[&[0, 1, 2], &[5, 6, 7, 8], &[9], &[2, 3, 9]]),
+///     connected_components(&[&vec![0, 1, 2], &vec![5, 6, 7, 8], &vec![9], &vec![2, 3, 9]]),
 ///     vec![0, 0, 0, 0, 4, 5, 5, 5, 5, 0]
 /// );
 /// ```

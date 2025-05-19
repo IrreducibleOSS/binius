@@ -170,7 +170,10 @@ where
 	{
 		let query = query.into();
 		if self.mu != query.n_vars() {
-			bail!(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize {
+				expected: self.mu,
+				actual: query.n_vars()
+			});
 		}
 
 		if self.mu < P::LOG_WIDTH || query.n_vars() < PE::LOG_WIDTH {
@@ -208,7 +211,10 @@ where
 		}
 
 		if self.mu < query.n_vars() {
-			bail!(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize {
+				expected: self.mu,
+				actual: query.n_vars()
+			});
 		}
 
 		let new_n_vars = self.mu - query.n_vars();
@@ -297,7 +303,10 @@ where
 		let query = query.into();
 
 		if self.mu < query.n_vars() {
-			bail!(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize {
+				expected: self.mu,
+				actual: query.n_vars()
+			});
 		}
 
 		let new_n_vars = self.mu - query.n_vars();
