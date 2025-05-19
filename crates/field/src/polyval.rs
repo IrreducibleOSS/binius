@@ -10,9 +10,9 @@ use std::{
 };
 
 use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 	bytes::{Buf, BufMut},
 	iter::IterExtensions,
-	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
 };
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
@@ -21,20 +21,20 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use super::{
 	aes_field::AESTowerField128b,
 	arithmetic_traits::InvertOrZero,
-	binary_field::{BinaryField, BinaryField128b, BinaryField1b, TowerField},
+	binary_field::{BinaryField, BinaryField1b, BinaryField128b, TowerField},
 	error::Error,
 	extension::ExtensionField,
 	underlier::WithUnderlier,
 };
 use crate::{
+	Field,
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b,
 	arithmetic_traits::Square,
 	binary_field_arithmetic::{
 		invert_or_zero_using_packed, multiple_using_packed, square_using_packed,
 	},
 	linear_transformation::{FieldLinearTransformation, Transformation},
-	underlier::{IterationMethods, IterationStrategy, NumCast, UnderlierWithBitOps, U1},
-	Field,
+	underlier::{IterationMethods, IterationStrategy, NumCast, U1, UnderlierWithBitOps},
 };
 
 #[derive(
@@ -263,7 +263,7 @@ impl Field for BinaryField128bPolyval {
 	const CHARACTERISTIC: usize = 2;
 
 	fn random(mut rng: impl RngCore) -> Self {
-		Self(rng.gen())
+		Self(rng.r#gen())
 	}
 
 	fn double(&self) -> Self {
@@ -1073,21 +1073,21 @@ pub fn is_polyval_tower<F: TowerField>() -> bool {
 
 #[cfg(test)]
 mod tests {
-	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
+	use binius_utils::{SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::prelude::*;
 	use rand::thread_rng;
 
 	use super::*;
 	use crate::{
+		AESTowerField128b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
+		PackedAESBinaryField4x128b, PackedBinaryField1x128b, PackedBinaryField2x128b,
+		PackedBinaryField4x128b, PackedField,
 		arch::{
 			packed_polyval_256::PackedBinaryPolyval2x128b,
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
 		binary_field::tests::is_binary_field_valid_generator,
 		linear_transformation::PackedTransformationFactory,
-		AESTowerField128b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
-		PackedAESBinaryField4x128b, PackedBinaryField1x128b, PackedBinaryField2x128b,
-		PackedBinaryField4x128b, PackedField,
 	};
 
 	#[test]

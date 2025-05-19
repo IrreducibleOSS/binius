@@ -3,10 +3,10 @@
 use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
 
 use binius_field::{
+	ExtensionField, Field, PackedField, RepackedExtension,
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
 	},
-	ExtensionField, Field, PackedField, RepackedExtension,
 };
 use binius_utils::bail;
 
@@ -273,7 +273,8 @@ where
 			let bases_count = 1 << log_embedding_degree.min(subcube_vars);
 			for i in 0..1 << subcube_vars.saturating_sub(log_embedding_degree) {
 				for (j, base) in bases[..bases_count].iter_mut().enumerate() {
-					// Safety: i > 0 iff log_embedding_degree < subcube_vars and subcube_index < max_index check
+					// Safety: i > 0 iff log_embedding_degree < subcube_vars and subcube_index <
+					// max_index check
 					*base = unsafe {
 						get_packed_slice_unchecked(
 							self.0.evals(),
@@ -287,7 +288,8 @@ where
 					log_extension_degree - log_embedding_degree,
 				)?;
 
-				// Safety: i < 1 << min(0, subcube_vars - log_embedding_degree) <= correct_len * PE::WIDTH
+				// Safety: i < 1 << min(0, subcube_vars - log_embedding_degree) <= correct_len *
+				// PE::WIDTH
 				unsafe {
 					set_packed_slice_unchecked(evals, i, extension_scalar);
 				}
@@ -433,7 +435,8 @@ where
 		subcube_index: usize,
 		partial_low_evals: &mut [P],
 	) -> Result<(), Error> {
-		// TODO: think of a way to factor out duplicated implementation in direct & embedded adapters.
+		// TODO: think of a way to factor out duplicated implementation in direct & embedded
+		// adapters.
 		validate_subcube_partial_evals_params(
 			self.n_vars(),
 			query,
@@ -467,7 +470,8 @@ where
 		subcube_index: usize,
 		partial_high_evals: &mut [P],
 	) -> Result<(), Error> {
-		// TODO: think of a way to factor out duplicated implementation in direct & embedded adapters.
+		// TODO: think of a way to factor out duplicated implementation in direct & embedded
+		// adapters.
 		validate_subcube_partial_evals_params(
 			self.n_vars(),
 			query,
@@ -608,15 +612,15 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, as_packed_field::PackedType, BinaryField128b, BinaryField16b,
-		BinaryField32b, BinaryField8b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-		PackedBinaryField4x128b, PackedBinaryField4x32b, PackedBinaryField64x8b,
-		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
+		BinaryField8b, BinaryField16b, BinaryField32b, BinaryField128b, PackedBinaryField1x128b,
+		PackedBinaryField4x32b, PackedBinaryField4x128b, PackedBinaryField8x16b,
+		PackedBinaryField16x8b, PackedBinaryField64x8b, PackedExtension, PackedField,
+		PackedFieldIndexable, arch::OptimalUnderlier256b, as_packed_field::PackedType,
 	};
 	use rand::prelude::*;
 
 	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use crate::{MultilinearQuery, tensor_prod_eq_ind};
 
 	type F = BinaryField16b;
 	type P = PackedBinaryField8x16b;

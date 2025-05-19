@@ -4,11 +4,12 @@ use binius_field::Field;
 
 use crate::protocols::sumcheck::prove::eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder};
 
-/// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
+/// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation
+/// point
 ///
 /// Notation:
-/// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate values of the kth
-///   layer of the evaluated circuit.
+/// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate
+///   values of the kth layer of the evaluated circuit.
 #[derive(Debug, Clone, Default)]
 pub struct LayerClaim<F: Field> {
 	pub eval_point: Vec<F>,
@@ -30,7 +31,8 @@ impl<F: Field> LayerClaim<F> {
 	}
 }
 
-/// ExpClaim is a claim about the evaluation of the first layer-multilinear at a specific evaluation point.
+/// ExpClaim is a claim about the evaluation of the first layer-multilinear at a specific evaluation
+/// point.
 #[derive(Clone)]
 pub struct ExpClaim<F: Field> {
 	pub eval_point: Vec<F>,
@@ -78,8 +80,8 @@ pub struct BaseExpReductionOutput<F: Field> {
 	/// The first dimension of the vector represents each layer,
 	/// and the second dimension represents the LayerClaims.
 	///
-	/// Since [super::batch_prove] works with exponents of different widths and different types of base,
-	/// the length of each layer can vary.
+	/// Since [super::batch_prove] works with exponents of different widths and different types of
+	/// base, the length of each layer can vary.
 	pub layers_claims: Vec<Vec<LayerClaim<F>>>,
 }
 

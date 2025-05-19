@@ -6,19 +6,20 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
-use bytemuck::{must_cast, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, must_cast};
 use cfg_if::cfg_if;
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
+	BinaryField,
 	arch::{
 		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
-			packed::{impl_pack_scalar, PackedPrimitiveType},
+			packed::{PackedPrimitiveType, impl_pack_scalar},
 			packed_arithmetic::{
-				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
 			},
 		},
 		x86_64::m128::bitshift_128b,
@@ -26,12 +27,11 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
+		NumCast, Random, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration,
 		pair_unpack_lo_hi_128b_lanes, spread_fallback, transpose_128b_blocks_low_to_high,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback,
 	},
-	BinaryField,
 };
 
 /// 256-bit value that is used for 256-bit SIMD operations
@@ -290,7 +290,7 @@ impl ConditionallySelectable for M256 {
 
 impl Random for M256 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: [u128; 2] = rng.gen();
+		let val: [u128; 2] = rng.r#gen();
 		val.into()
 	}
 }
@@ -555,126 +555,126 @@ impl UnderlierWithBitOps for M256 {
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let bits = get_block_values::<_, U1, 1>(self, block_idx)[0];
 					Self::fill_with_bit(bits.val())
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bits = get_block_values::<_, U1, 2>(self, block_idx);
 					let values: [u64; 2] = bits.map(|b| u64::fill_with_bit(b.val()));
 					Self::from_fn::<u64>(|i| values[i / 2])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bits = get_block_values::<_, U1, 4>(self, block_idx);
 					Self::from_fn::<u64>(|i| u64::fill_with_bit(bits[i].val()))
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bits = get_block_values::<_, U1, 8>(self, block_idx);
 					Self::from_fn::<u32>(|i| u32::fill_with_bit(bits[i].val()))
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bits = get_block_values::<_, U1, 16>(self, block_idx);
 					Self::from_fn::<u16>(|i| u16::fill_with_bit(bits[i].val()))
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bits = get_block_values::<_, U1, 32>(self, block_idx);
 					Self::from_fn::<u8>(|i| u8::fill_with_bit(bits[i].val()))
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			1 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let byte = get_spread_bytes::<_, U2, 1>(self, block_idx)[0];
 
 					_mm256_set1_epi8(byte as _).into()
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 2>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 16])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 4>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 8])
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 8>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 4])
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 16>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 2])
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bytes = get_spread_bytes::<_, U2, 32>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i])
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			2 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let byte = get_spread_bytes::<_, U4, 1>(self, block_idx)[0];
 
 					_mm256_set1_epi8(byte as _).into()
-				}
-				1 => {
+				},
+				1 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 2>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 16])
-				}
-				2 => {
+				},
+				2 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 4>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 8])
-				}
-				3 => {
+				},
+				3 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 8>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 4])
-				}
-				4 => {
+				},
+				4 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 16>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i / 2])
-				}
-				5 => {
+				},
+				5 => unsafe {
 					let bytes = get_spread_bytes::<_, U4, 32>(self, block_idx);
 
 					Self::from_fn::<u8>(|i| bytes[i])
-				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				},
+				_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 			},
 			3 => {
 				cfg_if! {
 					if #[cfg(target_feature = "avx512f")] {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let byte = get_block_values::<_, u8, 1>(self, block_idx)[0];
 								_mm256_set1_epi8(byte as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B8_1[block_idx],
 									self.0,
 								).into()
 							}
-							2 => {
+							2 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B8_2[block_idx],
 									self.0,
 								).into()
 							}
-							3 => {
+							3 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B8_3[block_idx],
 									self.0,
 								).into()
 							}
-							4 => {
+							4 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B8_4[block_idx],
 									self.0,
@@ -685,23 +685,23 @@ impl UnderlierWithBitOps for M256 {
 						}
 					} else {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let byte = get_block_values::<_, u8, 1>(self, block_idx)[0];
 								_mm256_set1_epi8(byte as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								let bytes = get_block_values::<_, u8, 2>(self, block_idx);
 								Self::from_fn::<u8>(|i| bytes[i / 16])
 							}
-							2 => {
+							2 => unsafe {
 								let bytes = get_block_values::<_, u8, 4>(self, block_idx);
 								Self::from_fn::<u8>(|i| bytes[i / 8])
 							}
-							3 => {
+							3 => unsafe {
 								let bytes = get_block_values::<_, u8, 8>(self, block_idx);
 								Self::from_fn::<u8>(|i| bytes[i / 4])
 							}
-							4 => {
+							4 => unsafe {
 								let bytes = get_block_values::<_, u8, 16>(self, block_idx);
 								Self::from_fn::<u8>(|i| bytes[i / 2])
 							}
@@ -715,23 +715,23 @@ impl UnderlierWithBitOps for M256 {
 				cfg_if! {
 					if #[cfg(target_feature = "avx512f")] {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let value = get_block_values::<_, u16, 1>(self, block_idx)[0];
 								_mm256_set1_epi16(value as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B16_1[block_idx],
 									self.0,
 								).into()
 							}
-							2 => {
+							2 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B16_2[block_idx],
 									self.0,
 								).into()
 							}
-							3 => {
+							3 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B16_3[block_idx],
 									self.0,
@@ -742,19 +742,19 @@ impl UnderlierWithBitOps for M256 {
 						}
 					} else {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let value = get_block_values::<_, u16, 1>(self, block_idx)[0];
 								_mm256_set1_epi16(value as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								let values = get_block_values::<_, u16, 2>(self, block_idx);
 								Self::from_fn::<u16>(|i| values[i / 8])
 							}
-							2 => {
+							2 => unsafe {
 								let values = get_block_values::<_, u16, 4>(self, block_idx);
 								Self::from_fn::<u16>(|i| values[i / 4])
 							}
-							3 => {
+							3 => unsafe {
 								let values = get_block_values::<_, u16, 8>(self, block_idx);
 								Self::from_fn::<u16>(|i| values[i / 2])
 							}
@@ -768,17 +768,17 @@ impl UnderlierWithBitOps for M256 {
 				cfg_if! {
 					if #[cfg(target_feature = "avx512f")] {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let value = get_block_values::<_, u32, 1>(self, block_idx)[0];
 								_mm256_set1_epi32(value as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B32_1[block_idx],
 									self.0,
 								).into()
 							}
-							2 => {
+							2 => unsafe {
 								_mm256_permutexvar_epi8(
 									LOG_B32_2[block_idx],
 									self.0,
@@ -789,15 +789,15 @@ impl UnderlierWithBitOps for M256 {
 						}
 					} else {
 						match log_block_len {
-							0 => {
+							0 => unsafe {
 								let value = get_block_values::<_, u32, 1>(self, block_idx)[0];
 								_mm256_set1_epi32(value as _).into()
 							}
-							1 => {
+							1 => unsafe {
 								let values = get_block_values::<_, u32, 2>(self, block_idx);
 								Self::from_fn::<u32>(|i| values[i / 4])
 							}
-							2 => {
+							2 => unsafe {
 								let values = get_block_values::<_, u32, 4>(self, block_idx);
 								Self::from_fn::<u32>(|i| values[i / 2])
 							}
@@ -808,11 +808,11 @@ impl UnderlierWithBitOps for M256 {
 				}
 			}
 			6 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = get_block_values::<_, u64, 1>(self, block_idx)[0];
 					_mm256_set1_epi64x(value as _).into()
-				}
-				1 => {
+				},
+				1 => unsafe {
 					cfg_if! {
 						if #[cfg(target_feature = "avx512f")] {
 							_mm256_permutexvar_epi8(
@@ -824,19 +824,19 @@ impl UnderlierWithBitOps for M256 {
 							Self::from_fn::<u64>(|i| values[i / 2])
 						}
 					}
-				}
+				},
 				2 => self,
 				_ => panic!("unsupported block length"),
 			},
 			7 => match log_block_len {
-				0 => {
+				0 => unsafe {
 					let value = get_block_values::<_, u128, 1>(self, block_idx)[0];
 					Self::from_fn::<u128>(|_| value)
-				}
+				},
 				1 => self,
 				_ => panic!("unsupported block length"),
 			},
-			_ => spread_fallback(self, log_block_len, block_idx),
+			_ => unsafe { spread_fallback(self, log_block_len, block_idx) },
 		}
 	}
 
@@ -1115,19 +1115,19 @@ fn unpack_128b_lo_hi(data: &mut (impl AsMut<[M256]> + AsRef<[M256]>), i: usize, 
 #[inline]
 unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
 	match log_block_len {
-		0 => {
+		0 => unsafe {
 			let mask = _mm256_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
-		}
-		1 => {
+		},
+		1 => unsafe {
 			let mask = _mm256_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
-		}
-		2 => {
+		},
+		2 => unsafe {
 			let mask = _mm256_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
-		}
-		3 => {
+		},
+		3 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0,
@@ -1137,8 +1137,8 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi8(a, b);
 			let b_prime = _mm256_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0,
@@ -1148,8 +1148,8 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi16(a, b);
 			let b_prime = _mm256_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0,
@@ -1159,17 +1159,17 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let a_prime = _mm256_unpacklo_epi32(a, b);
 			let b_prime = _mm256_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let a_prime = _mm256_unpacklo_epi64(a, b);
 			let b_prime = _mm256_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
-		}
-		7 => {
+		},
+		7 => unsafe {
 			let a_prime = _mm256_permute2x128_si256(a, b, 0x20);
 			let b_prime = _mm256_permute2x128_si256(a, b, 0x31);
 			(a_prime, b_prime)
-		}
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -1177,7 +1177,7 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 #[inline]
 unsafe fn transpose_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
 	match log_block_len {
-		0..=3 => {
+		0..=3 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
 				14, 12, 10, 8, 6, 4, 2, 0,
@@ -1188,41 +1188,45 @@ unsafe fn transpose_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m25
 			}
 
 			(a, b)
-		}
-		4 => {
+		},
+		4 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
 				13, 12, 9, 8, 5, 4, 1, 0,
 			);
 
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		5 => {
+		},
+		5 => unsafe {
 			let shuffle = _mm256_set_epi8(
 				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
 				11, 10, 9, 8, 3, 2, 1, 0,
 			);
 
 			transpose_with_shuffle(a, b, shuffle)
-		}
-		6 => {
+		},
+		6 => unsafe {
 			let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
 
 			(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
-		}
-		7 => (_mm256_permute2x128_si256(a, b, 0x20), _mm256_permute2x128_si256(a, b, 0x31)),
+		},
+		7 => unsafe {
+			(_mm256_permute2x128_si256(a, b, 0x20), _mm256_permute2x128_si256(a, b, 0x31))
+		},
 		_ => panic!("unsupported block length"),
 	}
 }
 
 #[inline(always)]
 unsafe fn transpose_with_shuffle(a: __m256i, b: __m256i, shuffle: __m256i) -> (__m256i, __m256i) {
-	let a = _mm256_shuffle_epi8(a, shuffle);
-	let b = _mm256_shuffle_epi8(b, shuffle);
+	unsafe {
+		let a = _mm256_shuffle_epi8(a, shuffle);
+		let b = _mm256_shuffle_epi8(b, shuffle);
 
-	let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
+		let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
 
-	(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
+		(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
+	}
 }
 
 #[inline]
@@ -1231,10 +1235,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	b: __m256i,
 	mask: __m256i,
 ) -> (__m256i, __m256i) {
-	let t = _mm256_and_si256(_mm256_xor_si256(_mm256_srli_epi64::<BLOCK_LEN>(a), b), mask);
-	let a_prime = _mm256_xor_si256(a, _mm256_slli_epi64::<BLOCK_LEN>(t));
-	let b_prime = _mm256_xor_si256(b, t);
-	(a_prime, b_prime)
+	unsafe {
+		let t = _mm256_and_si256(_mm256_xor_si256(_mm256_srli_epi64::<BLOCK_LEN>(a), b), mask);
+		let a_prime = _mm256_xor_si256(a, _mm256_slli_epi64::<BLOCK_LEN>(t));
+		let b_prime = _mm256_xor_si256(b, t);
+		(a_prime, b_prime)
+	}
 }
 
 cfg_if! {

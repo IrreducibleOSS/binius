@@ -8,19 +8,19 @@ use binius_core::{
 	transcript::ProverTranscript,
 };
 use binius_field::{
+	AESTowerField8b, AESTowerField128b, BINARY_TO_POLYVAL_TRANSFORMATION, BinaryField,
+	BinaryField8b, BinaryField128b, BinaryField128bPolyval, PackedExtension, PackedField,
+	PackedFieldIndexable, TowerField,
 	arch::{OptimalUnderlier, OptimalUnderlierByteSliced},
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField128b, BinaryField128bPolyval,
-	BinaryField8b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-	BINARY_TO_POLYVAL_TRANSFORMATION,
 };
-use binius_hal::{make_portable_backend, CpuBackend};
+use binius_hal::{CpuBackend, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory};
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use rand::{rngs::StdRng, SeedableRng};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use rand::{SeedableRng, rngs::StdRng};
 
 // Creates T(x), a multilinear with evaluations over the n-dimensional boolean hypercube
 fn create_numerator<P: PackedField>(n_vars: usize) -> Vec<P> {

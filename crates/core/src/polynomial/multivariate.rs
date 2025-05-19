@@ -7,17 +7,17 @@ use binius_field::{Field, PackedField, TowerField};
 use binius_math::{
 	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::{bail, SerializationError, SerializationMode};
+use binius_utils::{SerializationError, SerializationMode, bail};
 use bytes::BufMut;
 use itertools::Itertools;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::error::Error;
 
 /// A multivariate polynomial over a binary tower field.
 ///
-/// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPoly`], except that
-/// `MultivariatePoly` is _object safe_, whereas `CompositionPoly` is not.
+/// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPoly`], except
+/// that `MultivariatePoly` is _object safe_, whereas `CompositionPoly` is not.
 #[auto_impl(Arc)]
 pub trait MultivariatePoly<P>: Debug + Send + Sync {
 	/// The number of variables.
@@ -33,7 +33,8 @@ pub trait MultivariatePoly<P>: Debug + Send + Sync {
 	fn binary_tower_level(&self) -> usize;
 
 	/// Serialize a type erased MultivariatePoly.
-	/// Since not every MultivariatePoly implements serialization, this defaults to returning an error.
+	/// Since not every MultivariatePoly implements serialization, this defaults to returning an
+	/// error.
 	fn erased_serialize(
 		&self,
 		write_buf: &mut dyn BufMut,
@@ -63,7 +64,10 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != 1 {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: 1 });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: 1,
+				actual: query.len()
+			});
 		}
 		Ok(query[0])
 	}
@@ -291,10 +295,11 @@ where
 }
 
 /// Fingerprinting for composition polynomials done by evaluation at a deterministic random point.
-/// Outputs f(r_0,...,r_n-1) where f is a composite and the r_i are the components of the random point.
+/// Outputs f(r_0,...,r_n-1) where f is a composite and the r_i are the components of the random
+/// point.
 ///
-/// Probabilistic collision resistance comes from Schwartz-Zippel on the equation f(x_0,...,x_n-1) = g(x_0,...,x_n-1)
-/// for two distinct multivariate polynomials f and g.
+/// Probabilistic collision resistance comes from Schwartz-Zippel on the equation f(x_0,...,x_n-1) =
+/// g(x_0,...,x_n-1) for two distinct multivariate polynomials f and g.
 ///
 /// NOTE: THIS IS NOT ADVERSARIALLY COLLISION RESISTANT, COLLISIONS CAN BE MANUFACTURED EASILY
 pub fn composition_hash<P: PackedField, C: CompositionPoly<P>>(composition: &C) -> P {

@@ -5,6 +5,9 @@
 use trait_set::trait_set;
 
 use crate::{
+	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+	BinaryField128bPolyval, ExtensionField, PackedExtension, PackedField, TowerField,
 	as_packed_field::PackScalar,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
@@ -12,9 +15,6 @@ use crate::{
 		POLYVAL_TO_AES_TRANSFORMARION, POLYVAL_TO_BINARY_TRANSFORMATION,
 	},
 	underlier::UnderlierType,
-	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
 };
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.

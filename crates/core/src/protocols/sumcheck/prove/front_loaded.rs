@@ -144,7 +144,7 @@ where
 				"[task] (PIOP Compiler) Fold",
 				phase = "piop_compiler",
 				round = self.round,
-				dimensions_data = ?dimensions_data,
+				?dimensions_data,
 			)
 			.entered();
 			prover.fold(challenge)?;

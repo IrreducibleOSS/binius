@@ -12,22 +12,22 @@ pub use underlier::ByteSlicedUnderlier;
 #[cfg(test)]
 pub mod tests {
 	use proptest::prelude::*;
-	use rand::{distributions::Uniform, rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, distributions::Uniform, rngs::StdRng};
 
 	use super::*;
 	use crate::{
+		PackedAESBinaryField1x128b, PackedAESBinaryField2x64b, PackedAESBinaryField2x128b,
+		PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField4x128b,
+		PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
+		PackedAESBinaryField16x8b, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
+		PackedAESBinaryField32x8b, PackedAESBinaryField32x16b, PackedAESBinaryField64x8b,
+		PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedField,
 		packed::{get_packed_slice, set_packed_slice},
 		underlier::WithUnderlier,
-		PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
-		PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
-		PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
-		PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
-		PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
-		PackedBinaryField128x1b, PackedBinaryField256x1b, PackedBinaryField512x1b, PackedField,
 	};
 
-	fn scalars_vec_strategy<P: PackedField<Scalar: WithUnderlier<Underlier: Arbitrary>>>(
-	) -> impl Strategy<Value = Vec<P::Scalar>> {
+	fn scalars_vec_strategy<P: PackedField<Scalar: WithUnderlier<Underlier: Arbitrary>>>()
+	-> impl Strategy<Value = Vec<P::Scalar>> {
 		proptest::collection::vec(
 			any::<<P::Scalar as WithUnderlier>::Underlier>().prop_map(P::Scalar::from_underlier),
 			P::WIDTH..=P::WIDTH,

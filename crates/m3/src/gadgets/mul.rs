@@ -4,13 +4,13 @@ use std::{array, marker::PhantomData};
 
 use anyhow::Result;
 use binius_field::{
-	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedSubfield, TowerField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
+	packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{Col, Expr, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	builder::{B1, B32, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment},
 	gadgets::{
 		add::{Incr, UnsignedAddPrimitives},
 		sub::{U32SubFlags, WideU32Sub},
@@ -108,11 +108,11 @@ struct Mul<UX: UnsignedMulPrimitives, const BIT_LENGTH: usize> {
 }
 
 impl<
-		FExpBase: TowerField,
-		FP: TowerField,
-		UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
-		const BIT_LENGTH: usize,
-	> Mul<UX, BIT_LENGTH>
+	FExpBase: TowerField,
+	FP: TowerField,
+	UX: UnsignedMulPrimitives<FP = FP, FExpBase = FExpBase>,
+	const BIT_LENGTH: usize,
+> Mul<UX, BIT_LENGTH>
 where
 	FExpBase: ExtensionField<FP> + ExtensionField<B1>,
 	B128: ExtensionField<FExpBase> + ExtensionField<FP> + ExtensionField<B1>,
@@ -138,8 +138,8 @@ where
 		let x_in = table.add_computed("x_in", pack_fp(xin_bits));
 		let y_in = table.add_computed("y_in", pack_fp(yin_bits));
 
-		let generator = UX::generator().into();
-		let generator_pow_bit_len = UX::shifted_generator().into();
+		let generator = UX::generator();
+		let generator_pow_bit_len = UX::shifted_generator();
 
 		let g_pow_x = table.add_static_exp::<FExpBase>("g^x", &xin_bits, generator);
 		let g_pow_xy = table.add_dynamic_exp::<FExpBase>("(g^x)^y", &yin_bits, g_pow_x);
@@ -227,6 +227,8 @@ where
 				);
 			}
 		}
+
+		// NB: Exponentiation result columns are filled by the core constraint system prover.
 
 		Ok(())
 	}
@@ -719,9 +721,11 @@ impl MulSU32 {
 	}
 }
 
-/// Simple struct to convert to and from Two's complement representation based on bits. See [`SignConverter::new`]
+/// Simple struct to convert to and from Two's complement representation based on bits. See
+/// [`SignConverter::new`]
 ///
-/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by caller*
+/// NOTE: *We do not handle witness generation for the `converted_bits` and should be handled by
+/// caller*
 #[derive(Debug)]
 pub struct SignConverter<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
 	twos_complement: TwosComplement<UPrimitive, BIT_LENGTH>,
@@ -742,7 +746,6 @@ impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	/// ## Example
 	/// - If the conditional is zero, the output will be the input bits.
 	/// - If the conditional is one, the output will be the two's complement of input bits.
-	///
 	pub fn new(
 		table: &mut TableBuilder,
 		xin: [Col<B1>; BIT_LENGTH],

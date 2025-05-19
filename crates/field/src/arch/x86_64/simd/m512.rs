@@ -3,7 +3,7 @@
 use core::arch::x86_64::*;
 
 use super::simd_arithmetic::TowerSimdType;
-use crate::{arch::x86_64::m512::M512, BinaryField};
+use crate::{BinaryField, arch::x86_64::m512::M512};
 
 impl TowerSimdType for M512 {
 	#[inline(always)]
@@ -27,7 +27,8 @@ impl TowerSimdType for M512 {
 		unsafe {
 			let alpha = Self::alpha::<Scalar>();
 			let mask = even_mask::<Scalar>();
-			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not a
+			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not
+			// a
 			_mm512_mask_blend_epi8(mask, alpha.0, self.0)
 		}
 		.into()

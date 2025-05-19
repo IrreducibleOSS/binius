@@ -10,23 +10,25 @@ pub fn is_sorted_ascending<T: PartialOrd + Clone>(values: impl Iterator<Item = T
 /// Stable sorts a collection of objects based on a key function and an optional descending flag.
 ///
 /// This function takes a collection of objects, sorts them stably based on the value returned by a
-/// key function, and can optionally use descending sort order. It returns a tuple containing a vector
-/// of the original indices of the objects and a vector of the sorted objects.
+/// key function, and can optionally use descending sort order. It returns a tuple containing a
+/// vector of the original indices of the objects and a vector of the sorted objects.
 ///
 /// # Arguments
 ///
 /// * `objs`: An iterable collection of objects to be sorted.
-/// * `key`: A function that takes a reference to an object and returns a `usize` value used for sorting.
+/// * `key`: A function that takes a reference to an object and returns a `usize` value used for
+///   sorting.
 /// * `descending`: A boolean flag indicating whether to sort in descending order.
 ///
 /// # Returns
 ///
-/// A tuple where the first element is a vector of the original indices of the objects and the second
-/// element is a vector of the sorted objects.
+/// A tuple where the first element is a vector of the original indices of the objects and the
+/// second element is a vector of the sorted objects.
 ///
 /// # Note
 ///
-/// This function uses stable sorting to ensure consistency in ordering objects that compare as equal.
+/// This function uses stable sorting to ensure consistency in ordering objects that compare as
+/// equal.
 pub fn stable_sort<T>(
 	objs: impl IntoIterator<Item = T>,
 	key: impl Fn(&T) -> usize,
@@ -44,8 +46,8 @@ pub fn stable_sort<T>(
 
 /// Restores the original order of a collection of objects based on their original indices.
 ///
-/// This function takes a collection of objects and their corresponding original indices, and returns
-/// a vector of the objects sorted back to their original order.
+/// This function takes a collection of objects and their corresponding original indices, and
+/// returns a vector of the objects sorted back to their original order.
 ///
 /// # Arguments
 ///
@@ -58,8 +60,8 @@ pub fn stable_sort<T>(
 ///
 /// # Note
 ///
-/// This function assumes that the length of `original_indices` and `sorted_objs` are the same, and that
-/// `original_indices` contains unique values representing valid indices.
+/// This function assumes that the length of `original_indices` and `sorted_objs` are the same, and
+/// that `original_indices` contains unique values representing valid indices.
 pub fn unsort<T>(
 	original_indices: impl IntoIterator<Item = usize>,
 	sorted_objs: impl IntoIterator<Item = T>,

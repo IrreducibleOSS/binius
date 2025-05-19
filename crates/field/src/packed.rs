@@ -18,13 +18,13 @@ use bytemuck::Zeroable;
 use rand::RngCore;
 
 use super::{
+	Error,
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
-	Error,
 };
 use crate::{
-	arithmetic_traits::InvertOrZero, is_packed_field_indexable, underlier::WithUnderlier,
-	unpack_if_possible_mut, BinaryField, Field, PackedExtension,
+	BinaryField, Field, PackedExtension, arithmetic_traits::InvertOrZero,
+	is_packed_field_indexable, underlier::WithUnderlier, unpack_if_possible_mut,
 };
 
 /// A packed field represents a vector of underlying field elements.
@@ -292,7 +292,8 @@ pub trait PackedField:
 
 /// Iterate over scalar values in a packed field slice.
 ///
-/// The iterator skips the first `offset` elements. This is more efficient than skipping elements of the iterator returned.
+/// The iterator skips the first `offset` elements. This is more efficient than skipping elements of
+/// the iterator returned.
 #[inline]
 pub fn iter_packed_slice_with_offset<P: PackedField>(
 	packed: &[P],
@@ -326,7 +327,8 @@ pub unsafe fn get_packed_slice_unchecked<P: PackedField>(packed: &[P], i: usize)
 		unsafe { *(packed.as_ptr() as *const P::Scalar).add(i) }
 	} else {
 		// Safety:
-		// - `i / P::WIDTH` is within the bounds of `packed` if `i` is less than `len_packed_slice(packed)`
+		// - `i / P::WIDTH` is within the bounds of `packed` if `i` is less than
+		//   `len_packed_slice(packed)`
 		// - `i % P::WIDTH` is always less than `P::WIDTH
 		unsafe {
 			packed
@@ -503,7 +505,7 @@ impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSlice<'_, P> {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.slice, index)
+		unsafe { get_packed_slice_unchecked(self.slice, index) }
 	}
 }
 
@@ -536,13 +538,13 @@ impl<P: PackedField> RandomAccessSequence<P::Scalar> for PackedSliceMut<'_, P> {
 
 	#[inline(always)]
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.slice, index)
+		unsafe { get_packed_slice_unchecked(self.slice, index) }
 	}
 }
 impl<P: PackedField> RandomAccessSequenceMut<P::Scalar> for PackedSliceMut<'_, P> {
 	#[inline(always)]
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(self.slice, index, value);
+		unsafe { set_packed_slice_unchecked(self.slice, index, value) }
 	}
 }
 
@@ -633,23 +635,23 @@ impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 mod tests {
 	use itertools::Itertools;
 	use rand::{
+		SeedableRng,
 		distributions::{Distribution, Uniform},
 		rngs::StdRng,
-		SeedableRng,
 	};
 
 	use super::*;
 	use crate::{
+		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
+		BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
+		BinaryField64b, BinaryField128b, BinaryField128bPolyval, PackedField,
 		arch::{
-			byte_sliced::*, packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_256::*,
-			packed_32::*, packed_4::*, packed_512::*, packed_64::*, packed_8::*, packed_aes_128::*,
-			packed_aes_16::*, packed_aes_256::*, packed_aes_32::*, packed_aes_512::*,
-			packed_aes_64::*, packed_aes_8::*, packed_polyval_128::*, packed_polyval_256::*,
-			packed_polyval_512::*,
+			byte_sliced::*, packed_1::*, packed_2::*, packed_4::*, packed_8::*, packed_16::*,
+			packed_32::*, packed_64::*, packed_128::*, packed_256::*, packed_512::*,
+			packed_aes_8::*, packed_aes_16::*, packed_aes_32::*, packed_aes_64::*,
+			packed_aes_128::*, packed_aes_256::*, packed_aes_512::*, packed_polyval_128::*,
+			packed_polyval_256::*, packed_polyval_512::*,
 		},
-		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-		BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField2b,
-		BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, PackedField,
 	};
 
 	trait PackedFieldTest {
@@ -911,10 +913,10 @@ mod tests {
 
 	fn check_collection_get_set<F: Field>(
 		collection: &mut impl RandomAccessSequenceMut<F>,
-		gen: &mut impl FnMut() -> F,
+		r#gen: &mut impl FnMut() -> F,
 	) {
 		for i in 0..collection.len() {
-			let value = gen();
+			let value = r#gen();
 			collection.set(i, value);
 			assert_eq!(collection.get(i), value);
 			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
@@ -944,7 +946,7 @@ mod tests {
 	#[test]
 	fn check_packed_slice_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut gen = || <BinaryField8b as Field>::random(&mut rng);
+		let mut r#gen = || <BinaryField8b as Field>::random(&mut rng);
 
 		let slice: &mut [PackedBinaryField16x8b] = &mut [];
 		let packed_slice = PackedSliceMut::new(slice);
@@ -960,11 +962,11 @@ mod tests {
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new(slice);
 		check_collection(&packed_slice, &values);
-		check_collection_get_set(&mut packed_slice, &mut gen);
+		check_collection_get_set(&mut packed_slice, &mut r#gen);
 
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new_with_len(slice, 3);
 		check_collection(&packed_slice, &values[..3]);
-		check_collection_get_set(&mut packed_slice, &mut gen);
+		check_collection_get_set(&mut packed_slice, &mut r#gen);
 	}
 }

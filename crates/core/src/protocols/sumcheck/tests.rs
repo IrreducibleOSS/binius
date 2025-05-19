@@ -6,15 +6,15 @@ use std::{
 };
 
 use binius_field::{
+	BinaryField, BinaryField8b, BinaryField32b, BinaryField128b, ExtensionField, Field,
+	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
+	RepackedExtension, TowerField,
 	arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
-	RepackedExtension, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+use binius_hal::{ComputationBackend, ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_math::{
 	ArithCircuit, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
@@ -24,16 +24,16 @@ use binius_math::{
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use itertools::izip;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
+	BatchSumcheckOutput, SumcheckClaim,
 	common::CompositeSumClaim,
 	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
 	prove::{
-		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
+		RegularSumcheckProver, batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver,
 	},
 	verify_sumcheck::batch_verify,
-	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
 	composition::index_composition,

@@ -2,7 +2,7 @@
 
 use std::ops::{AddAssign, Deref, DerefMut, Index, IndexMut};
 
-use bytemuck::{allocation::zeroed_vec, Zeroable};
+use bytemuck::{Zeroable, allocation::zeroed_vec};
 
 /// 2D array with row-major layout.
 #[derive(Debug)]
@@ -59,9 +59,10 @@ impl<T, Data: Deref<Target = [T]>> Array2D<T, Data> {
 
 	/// Return the element at the given row and column without bounds checking.
 	/// # Safety
-	/// The caller must ensure that `i` and `j` are less than the number of rows and columns respectively.
+	/// The caller must ensure that `i` and `j` are less than the number of rows and columns
+	/// respectively.
 	pub unsafe fn get_unchecked(&self, i: usize, j: usize) -> &T {
-		self.data.get_unchecked(i * self.cols + j)
+		unsafe { self.data.get_unchecked(i * self.cols + j) }
 	}
 
 	/// View of the array in a different shape, underlying elements stay the same.
@@ -87,9 +88,10 @@ impl<T, Data: DerefMut<Target = [T]>> Array2D<T, Data> {
 
 	/// Return the mutable element at the given row and column without bounds checking.
 	/// # Safety
-	/// The caller must ensure that `i` and `j` are less than the number of rows and columns respectively.
+	/// The caller must ensure that `i` and `j` are less than the number of rows and columns
+	/// respectively.
 	pub unsafe fn get_unchecked_mut(&mut self, i: usize, j: usize) -> &mut T {
-		self.data.get_unchecked_mut(i * self.cols + j)
+		unsafe { self.data.get_unchecked_mut(i * self.cols + j) }
 	}
 
 	/// Mutable view of the array in a different shape, underlying elements stay the same.

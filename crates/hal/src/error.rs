@@ -9,8 +9,8 @@ pub enum Error {
 	ZerocheckCpuHandlerError(Box<dyn std::error::Error + Send + Sync>),
 	#[error("{0}")]
 	MathError(#[from] binius_math::Error),
-	#[error("the query must have size {expected}")]
-	IncorrectQuerySize { expected: usize },
+	#[error("the query must have size {expected}, and instead has {actual}")]
+	IncorrectQuerySize { expected: usize, actual: usize },
 	#[error("provided nontrivial evaluation points are of incorrect length")]
 	IncorrectNontrivialEvalPointsLength,
 	#[error("scratch space not provided")]

@@ -11,9 +11,7 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error(
-		"flush selector with id {oracle} must have tower level 0 instead of {got_tower_level}"
-	)]
+	#[error("flush selector with id {oracle} must have tower level 0 instead of {got_tower_level}")]
 	FlushSelectorTowerLevel {
 		oracle: OracleId,
 		got_tower_level: usize,
@@ -22,10 +20,14 @@ pub enum Error {
 	#[error("flushes must have a non-empty list of oracles")]
 	EmptyFlushOracles,
 
-	#[error("All flushes within a channel must have the same width. Expected flushed values with length {expected}, got {got}")]
+	#[error(
+		"All flushes within a channel must have the same width. Expected flushed values with length {expected}, got {got}"
+	)]
 	ChannelFlushWidthMismatch { expected: usize, got: usize },
 
-	#[error("All oracles within a single flush must have the same n_vars. Expected oracle with n_vars={expected} got {got}")]
+	#[error(
+		"All oracles within a single flush must have the same n_vars. Expected oracle with n_vars={expected} got {got}"
+	)]
 	ChannelFlushNvarsMismatch { expected: usize, got: usize },
 
 	#[error("Channel id out of range. Got {got}, expected max={max}")]
@@ -38,7 +40,9 @@ pub enum Error {
 		reason: String,
 	},
 
-	#[error("{oracle} witness has unexpected n_vars={witness_num_vars}. Expected n_vars={oracle_num_vars}")]
+	#[error(
+		"{oracle} witness has unexpected n_vars={witness_num_vars}. Expected n_vars={oracle_num_vars}"
+	)]
 	VirtualOracleNvarsMismatch {
 		oracle: String,
 		oracle_num_vars: usize,

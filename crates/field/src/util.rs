@@ -5,7 +5,7 @@ use std::iter;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_int_div;
 
-use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
+use crate::{ExtensionField, Field, PackedField, packed::get_packed_slice_unchecked};
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
 pub fn inner_product_unchecked<F, FE>(
@@ -32,8 +32,8 @@ where
 		"Y elements has to be at least as wide as X elements"
 	);
 
-	// If number of elements in xs is less than number of elements in ys this will be because due to packing
-	// so we can use single-threaded version of the function.
+	// If number of elements in xs is less than number of elements in ys this will be because due to
+	// packing so we can use single-threaded version of the function.
 	if PX::WIDTH * xs.len() < PY::WIDTH * ys.len() {
 		return inner_product_unchecked(PackedField::iter_slice(xs), PackedField::iter_slice(ys));
 	}
@@ -57,7 +57,8 @@ where
 	if ys.len() < 16 * CHUNK_SIZE {
 		calc_product_by_ys(xs, ys)
 	} else {
-		// According to benchmark results iterating by chunks here is more efficient than using `par_iter` with `min_length` directly.
+		// According to benchmark results iterating by chunks here is more efficient than using
+		// `par_iter` with `min_length` directly.
 		ys.par_chunks(CHUNK_SIZE)
 			.enumerate()
 			.map(|(i, ys)| {

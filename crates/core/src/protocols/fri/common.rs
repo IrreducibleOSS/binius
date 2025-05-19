@@ -310,8 +310,10 @@ pub fn estimate_optimal_arity(
 		.map(|arity| {
 			(
 				// for given arity, return a tuple (arity, estimate of query_proof_size).
-				// this estimate is basd on the following approximation of a single query_proof_size, where $\vartheta$ is the arity:
-				// $\big((n-\vartheta) + (n-2\vartheta) + \ldots\big)\text{digest_size} + \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
+				// this estimate is basd on the following approximation of a single
+				// query_proof_size, where $\vartheta$ is the arity: $\big((n-\vartheta) +
+				// (n-2\vartheta) + \ldots\big)\text{digest_size} +
+				// \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
 				arity,
 				((log_block_length) / 2 * digest_size + (1 << arity) * field_size)
 					* (log_block_length - arity)
@@ -332,7 +334,7 @@ pub fn estimate_optimal_arity(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, BinaryField32b};
+	use binius_field::{BinaryField32b, BinaryField128b};
 
 	use super::*;
 

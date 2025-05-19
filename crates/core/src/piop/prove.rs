@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::Deref};
 
 use binius_compute::{alloc::ComputeAllocator, layer::ComputeLayer};
 use binius_field::{
-	packed::PackedSliceMut, BinaryField, Field, PackedExtension, PackedField, TowerField,
+	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -14,33 +14,33 @@ use binius_math::{
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
-	bail,
+	SerializeBytes, bail,
 	checked_arithmetics::checked_log_2,
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
-	SerializeBytes,
 };
 use either::Either;
-use itertools::{chain, Itertools};
+use itertools::{Itertools, chain};
 
 use super::{
 	error::Error,
-	verify::{make_sumcheck_claim_descs, PIOPSumcheckClaim},
+	verify::{PIOPSumcheckClaim, make_sumcheck_claim_descs},
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
+	oracle::OracleId,
 	piop::{
-		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 		CommitMeta,
+		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 	},
 	protocols::{
 		fri::{self, FRIFolder, FRIFolderCL, FRIParams, FoldRoundOutput},
 		sumcheck::{
 			self, immediate_switchover_heuristic,
 			prove::{
-				front_loaded::BatchProver as SumcheckBatchProver, RegularSumcheckProver,
-				SumcheckProver,
+				RegularSumcheckProver, SumcheckProver,
+				front_loaded::BatchProver as SumcheckBatchProver,
 			},
 		},
 	},
@@ -131,8 +131,8 @@ fn merge_multilins<F, P, Data>(
 /// * `fri_params` - the FRI parameters for the commitment opening protocol
 /// * `merkle_prover` - the Merkle tree prover used in FRI
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
-///   defined over subfields of `F`. They must be in ascending order by the number of variables
-///   in the packed multilinear (ie. number of variables minus log extension degree).
+///   defined over subfields of `F`. They must be in ascending order by the number of variables in
+///   the packed multilinear (ie. number of variables minus log extension degree).
 pub fn commit<F, FEncode, P, M, NTT, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
@@ -151,7 +151,9 @@ where
 	let packed_multilins = multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 	if !is_sorted_ascending(packed_multilins.iter().map(|mle| mle.n_vars())) {
 		return Err(Error::CommittedsNotSorted);
@@ -225,7 +227,8 @@ where
 		.iter()
 		.enumerate()
 		.map(|(i, unpacked_committed)| {
-			packed_committed(i, unpacked_committed).map(MLEDirectAdapter::from)
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+				.map(MLEDirectAdapter::from)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -334,7 +337,8 @@ where
 		.iter()
 		.enumerate()
 		.map(|(i, unpacked_committed)| {
-			packed_committed(i, unpacked_committed).map(MLEDirectAdapter::from)
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+				.map(MLEDirectAdapter::from)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -557,7 +561,7 @@ where
 			phase = "piop_compiler",
 			round = round,
 			perfetto_category = "phase.sub",
-			dimensions_data = ?dimensions_data,
+			?dimensions_data,
 		)
 		.entered();
 		match fri_prover.execute_fold_round(challenge)? {
@@ -587,7 +591,9 @@ where
 	let packed_committed = committed_multilins
 		.iter()
 		.enumerate()
-		.map(|(i, unpacked_committed)| packed_committed(i, unpacked_committed))
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for (i, claim) in claims.iter().enumerate() {
@@ -631,7 +637,7 @@ where
 /// the polynomial is extended by padding with more variables, which corresponds to repeating its
 /// subcube evaluations.
 fn packed_committed<F, P, M>(
-	id: usize,
+	id: OracleId,
 	unpacked_committed: &M,
 ) -> Result<MultilinearExtension<P, Cow<'_, [P]>>, Error>
 where
@@ -647,7 +653,11 @@ where
 		let packed_evals = unpacked_committed
 			.packed_evals()
 			.ok_or(Error::CommittedPackedEvaluationsMissing { id })?;
-		MultilinearExtension::from_values_generic(Cow::Borrowed(packed_evals))
+
+		MultilinearExtension::new(
+			unpacked_n_vars - unpacked_committed.log_extension_degree(),
+			Cow::Borrowed(packed_evals),
+		)
 	}?;
 	Ok(packed_committed)
 }
@@ -680,7 +690,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::PackedBinaryField2x128b;
-	use rand::{rngs::StdRng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 

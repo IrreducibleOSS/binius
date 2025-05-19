@@ -2,14 +2,11 @@
 
 use std::iter::repeat_with;
 
-use binius_compute::{
-	alloc::BumpAllocator,
-	cpu::CpuLayer,
-};
+use binius_compute::{alloc::BumpAllocator, cpu::CpuLayer};
 use binius_field::{
-	tower::{AESTowerFamily, CanonicalTowerFamily, TowerFamily},
-	AESTowerField16b, AESTowerField8b, BinaryField, BinaryField16b, BinaryField8b,
+	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
 	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField,
+	tower::{AESTowerFamily, CanonicalTowerFamily, TowerFamily},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -20,18 +17,18 @@ use binius_math::{
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use bytemuck::zeroed_vec;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
-	prove,
-	prove::commit,
-	prove_compute_layer, verify,
-	verify::{make_commit_params_with_optimal_arity, CommitMeta},
 	PIOPSumcheckClaim,
+	prove::commit,
+	prove_compute_layer,
+	verify::{CommitMeta, make_commit_params_with_optimal_arity},
 };
 use crate::{
 	fiat_shamir::{Challenger, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
+	piop::{prove, verify},
 	polynomial::MultivariatePoly,
 	protocols::fri::{CommitOutput, FRIParams},
 	transcript::ProverTranscript,

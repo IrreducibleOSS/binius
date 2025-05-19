@@ -4,9 +4,9 @@ use super::{
 	square::square_main,
 };
 use crate::{
+	AESTowerField8b, PackedField,
 	tower_levels::{TowerLevel, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
-	AESTowerField8b, PackedField,
 };
 
 #[inline(always)]

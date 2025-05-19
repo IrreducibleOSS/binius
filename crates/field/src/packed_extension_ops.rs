@@ -35,9 +35,11 @@ pub unsafe fn get_packed_subfields_at_pe_idx<PE: PackedExtension<F>, F: Field>(
 		bottom_most_scalar_idx % PE::PackedSubfield::WIDTH;
 	let block_idx = bottom_most_scalar_idx_within_packed_subfield / PE::WIDTH;
 
-	packed_subfields
-		.get_unchecked(bottom_most_scalar_idx_in_subfield_arr)
-		.spread_unchecked(PE::LOG_WIDTH, block_idx)
+	unsafe {
+		packed_subfields
+			.get_unchecked(bottom_most_scalar_idx_in_subfield_arr)
+			.spread_unchecked(PE::LOG_WIDTH, block_idx)
+	}
 }
 
 /// Refer to the functions above for examples of closures to pass
@@ -66,7 +68,8 @@ where
 	}
 
 	lhs.iter_mut().enumerate().for_each(|(i, lhs_elem)| {
-		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
+		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing
+		// PackedExtension
 		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
@@ -91,7 +94,8 @@ where
 	}
 
 	lhs.par_iter_mut().enumerate().for_each(|(i, lhs_elem)| {
-		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
+		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing
+		// PackedExtension
 		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
@@ -105,11 +109,10 @@ mod tests {
 	use proptest::prelude::*;
 
 	use crate::{
-		ext_base_mul, ext_base_mul_par,
+		BinaryField8b, BinaryField16b, BinaryField128b, PackedBinaryField2x128b,
+		PackedBinaryField16x16b, PackedBinaryField32x8b, ext_base_mul, ext_base_mul_par,
 		packed::{get_packed_slice, pack_slice},
 		underlier::WithUnderlier,
-		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x16b,
-		PackedBinaryField2x128b, PackedBinaryField32x8b,
 	};
 
 	fn strategy_8b_scalars() -> impl Strategy<Value = [BinaryField8b; 32]> {

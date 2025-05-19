@@ -6,10 +6,10 @@ mod arith_expr;
 mod composition_poly;
 mod deserialize_bytes;
 
-use deserialize_bytes::{parse_container_attributes, split_for_impl, GenericsSplit};
+use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
+use quote::{ToTokens, quote};
+use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
 
 use crate::{
 	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
@@ -54,12 +54,12 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 ///
 /// assert_eq!(
 ///     arith_expr!([x, y] = x + y + 1),
-///     Expr::Var(0) + Expr::Var(1) + Expr::Const(BinaryField1b::ONE)
+///     (Expr::Var(0) + Expr::Var(1) + Expr::Const(BinaryField1b::ONE)).into()
 /// );
 ///
 /// assert_eq!(
 ///     arith_expr!(BinaryField8b[x] = 3*x + 15),
-///     Expr::Const(BinaryField8b::new(3)) * Expr::var(0) + Expr::constant(BinaryField8b::new(15))
+///     (Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))).into()
 /// );
 /// ```
 #[proc_macro]
@@ -225,7 +225,6 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 ///
 /// Additionally, `eval_generics` can be used to fix multiple params:
 /// `eval_generics(F = BinaryField128b, G = binius_field::BinaryField64b)`
-///
 #[proc_macro_derive(DeserializeBytes, attributes(deserialize_bytes))]
 pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
@@ -329,9 +328,11 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 
 /// Use on an impl block for MultivariatePoly, to automatically implement erased_serialize_bytes.
 ///
-/// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data type.
+/// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data
+/// type.
 ///
-/// This prefix can be used to figure out which concrete data type it should use for deserialization later.
+/// This prefix can be used to figure out which concrete data type it should use for deserialization
+/// later.
 #[proc_macro_attribute]
 pub fn erased_serialize_bytes(_attr: TokenStream, item: TokenStream) -> TokenStream {
 	let mut item_impl: ItemImpl = parse_macro_input!(item);

@@ -45,8 +45,10 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 	pub unsafe fn get_unchecked_ref(&self, i: usize, j: usize) -> &T {
 		debug_assert!(i < self.height);
 		debug_assert!(j < self.width());
-		self.data
-			.get_unchecked(i * self.data_width + j + self.cols.start)
+		unsafe {
+			self.data
+				.get_unchecked(i * self.data_width + j + self.cols.start)
+		}
 	}
 
 	/// Returns a mutable reference to the data at the given indices without bounds checking.
@@ -55,8 +57,10 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 	pub unsafe fn get_unchecked_mut(&mut self, i: usize, j: usize) -> &mut T {
 		debug_assert!(i < self.height);
 		debug_assert!(j < self.width());
-		self.data
-			.get_unchecked_mut(i * self.data_width + j + self.cols.start)
+		unsafe {
+			self.data
+				.get_unchecked_mut(i * self.data_width + j + self.cols.start)
+		}
 	}
 
 	pub const fn height(&self) -> usize {
@@ -80,8 +84,8 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 		cols.clone().step_by(stride).map(move |start| {
 			let end = (start + stride).min(cols.end);
 			Self {
-				// Safety: different instances of StridedArray2DViewMut created with the same data slice
-				// do not access overlapping indices.
+				// Safety: different instances of StridedArray2DViewMut created with the same data
+				// slice do not access overlapping indices.
 				data: unsafe { slice::from_raw_parts_mut(data.as_mut_ptr(), data.len()) },
 				data_width,
 				height,
@@ -103,8 +107,8 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 				let end = (start + stride).min(self.cols.end);
 				// We are setting the same lifetime as `self` captures.
 				Self {
-					// Safety: different instances of StridedArray2DViewMut created with the same data slice
-					// do not access overlapping indices.
+					// Safety: different instances of StridedArray2DViewMut created with the same
+					// data slice do not access overlapping indices.
 					data: unsafe {
 						slice::from_raw_parts_mut(self.data.as_ptr() as *mut T, self.data.len())
 					},

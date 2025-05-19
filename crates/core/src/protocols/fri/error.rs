@@ -50,7 +50,9 @@ pub enum VerificationError {
 	IncorrectFold { query_round: usize, index: usize },
 	#[error("the size of the query proof is incorrect, expected {expected}")]
 	IncorrectQueryProofLength { expected: usize },
-	#[error("the number of values in round {round} of the query proof is incorrect, expected {coset_size}")]
+	#[error(
+		"the number of values in round {round} of the query proof is incorrect, expected {coset_size}"
+	)]
 	IncorrectQueryProofValuesLength { round: usize, coset_size: usize },
 	#[error("The dimension-1 codeword must contain the same values")]
 	IncorrectDegree,

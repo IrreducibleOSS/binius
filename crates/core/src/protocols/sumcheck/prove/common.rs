@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::{get_packed_slice, packed_from_fn_with_offset},
 	PackedField,
+	packed::{get_packed_slice, packed_from_fn_with_offset},
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationOrder;

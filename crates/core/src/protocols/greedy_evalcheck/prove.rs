@@ -9,8 +9,10 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		subclaims::{prove_bivariate_sumchecks_with_switchover, MemoizedData},
-		EvalcheckMultilinearClaim, EvalcheckProver,
+		ConstraintSetEqIndPoint, EvalcheckMultilinearClaim, EvalcheckProver,
+		subclaims::{
+			MemoizedData, prove_bivariate_sumchecks_with_switchover, prove_mlecheck_with_switchover,
+		},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
@@ -62,30 +64,80 @@ where
 			perfetto_category = "phase.sub"
 		)
 		.entered();
-		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints().unwrap();
-		if new_sumchecks.is_empty() {
-			break;
+
+		let new_bivariate_sumchecks =
+			evalcheck_prover.take_new_bivariate_sumchecks_constraints()?;
+
+		let new_mlechecks = evalcheck_prover.take_new_mlechecks_constraints()?;
+
+		let mut new_evalcheck_claims =
+			Vec::with_capacity(new_bivariate_sumchecks.len() + new_mlechecks.len());
+
+		if !new_bivariate_sumchecks.is_empty() {
+			// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck
+			// claims.
+			let dimensions_data =
+				RegularSumcheckDimensionsData::new(new_bivariate_sumchecks.iter());
+			let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
+				"[task] (Evalcheck) Regular Sumcheck (Small)",
+				phase = "evalcheck",
+				perfetto_category = "task.main",
+				dimensions_data = ?dimensions_data,
+			)
+			.entered();
+			let evalcheck_claims =
+				prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
+					evalcheck_prover.witness_index,
+					new_bivariate_sumchecks,
+					transcript,
+					switchover_fn.clone(),
+					domain_factory.clone(),
+					backend,
+				)?;
+
+			new_evalcheck_claims.extend(evalcheck_claims);
+			drop(evalcheck_round_mle_fold_high_span);
 		}
 
-		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let dimensions_data = RegularSumcheckDimensionsData::new(new_sumchecks.iter());
-		let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
-			"[task] (Evalcheck) Regular Sumcheck (Small)",
-			phase = "evalcheck",
-			perfetto_category = "task.main",
-			dimensions_data = ?dimensions_data,
-		)
-		.entered();
-		let new_evalcheck_claims =
-			prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
-				evalcheck_prover.witness_index,
-				new_sumchecks,
-				transcript,
-				switchover_fn.clone(),
-				domain_factory.clone(),
-				backend,
-			)?;
-		drop(evalcheck_round_mle_fold_high_span);
+		if !new_mlechecks.is_empty() {
+			// Reduce the new mle claims for virtual polynomial openings to new evalcheck claims.
+			let dimensions_data = RegularSumcheckDimensionsData::new(
+				new_mlechecks
+					.iter()
+					.map(|new_mlecheck| &new_mlecheck.constraint_set),
+			);
+			let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
+				"[task] (Evalcheck) MLE check",
+				phase = "evalcheck",
+				perfetto_category = "task.main",
+				dimensions_data = ?dimensions_data,
+			)
+			.entered();
+
+			for ConstraintSetEqIndPoint {
+				eq_ind_challenges,
+				constraint_set,
+			} in new_mlechecks
+			{
+				let evalcheck_claims = prove_mlecheck_with_switchover::<_, _, DomainField, _, _>(
+					evalcheck_prover.witness_index,
+					constraint_set,
+					eq_ind_challenges,
+					&mut evalcheck_prover.memoized_data,
+					transcript,
+					switchover_fn.clone(),
+					domain_factory.clone(),
+					backend,
+				)?;
+				new_evalcheck_claims.extend(evalcheck_claims);
+			}
+
+			drop(evalcheck_round_mle_fold_high_span);
+		}
+
+		if new_evalcheck_claims.is_empty() {
+			break;
+		}
 
 		evalcheck_prover.prove(new_evalcheck_claims, transcript)?;
 	}

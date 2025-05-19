@@ -3,15 +3,15 @@
 use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
 
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPoly};
+use binius_math::{CompositionPoly, evaluate_univariate};
 use binius_utils::sorting::is_sorted_ascending;
 use bytes::Buf;
 
 use super::{
+	RoundCoeffs, RoundProof,
 	common::batch_weighted_value,
 	error::{Error, VerificationError},
 	verify_sumcheck::compute_expected_batch_composite_evaluation_single_claim,
-	RoundCoeffs, RoundProof,
 };
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
@@ -223,7 +223,8 @@ where
 						max_degree_remaining,
 						..
 					}) => {
-						// Must finish all claims that are ready this round before receiving the round proof.
+						// Must finish all claims that are ready this round before receiving the
+						// round proof.
 						if claim.n_vars() == self.round {
 							return Err(Error::ExpectedFinishClaim);
 						}

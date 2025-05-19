@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::get_packed_slice, Field, PackedField};
+use binius_field::{Field, PackedField, packed::get_packed_slice};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -101,17 +101,19 @@ impl<P: PackedField> GrandProductWitness<P> {
 		first_packed.get(0)
 	}
 
-	/// Consume the witness, returning the vector of layer multilinears in non-ascending length order.
+	/// Consume the witness, returning the vector of layer multilinears in non-ascending length
+	/// order.
 	pub fn into_circuit_layers(self) -> Vec<Vec<P>> {
 		self.circuit_layers
 	}
 }
 
-/// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
+/// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation
+/// point
 ///
 /// Notation:
-/// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate values of the kth
-///   layer of the evaluated product circuit.
+/// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate
+///   values of the kth layer of the evaluated product circuit.
 #[derive(Debug, Clone, Default)]
 pub struct LayerClaim<F: Field> {
 	pub eval_point: Vec<F>,

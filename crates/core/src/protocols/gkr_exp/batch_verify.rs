@@ -24,7 +24,8 @@ use crate::{
 /// eval_points in [ExpClaim] into [EqIndSumcheckClaim]s. To achieve this, we use
 /// [crate::composition::IndexComposition], where eq indicator is always the last element. Since
 /// exponents can have different bit sizes, resulting in a varying number of layers, we group
-/// them starting from the first layer to maximize the opportunity to share the same evaluation point.
+/// them starting from the first layer to maximize the opportunity to share the same evaluation
+/// point.
 ///
 /// # Requirements
 /// - Claims must be sorted in descending order by `n_vars`.
@@ -113,7 +114,8 @@ where
 			if let Some(eq_ind_sumcheck_claim) = eq_ind_sumcheck_claim {
 				eq_ind_sumcheck_claims.push(eq_ind_sumcheck_claim);
 			} else {
-				// extract the last point because verifiers with this point will not participate in the sumcheck.
+				// extract the last point because verifiers with this point will not participate in
+				// the sumcheck.
 				eval_points.pop();
 			}
 
@@ -185,7 +187,8 @@ where
 	Ok(Some(EqIndSumcheckClaim::new(n_vars, composite_claims_n_multilinears, composite_sums)?))
 }
 
-/// Reduces the sumcheck output to [LayerClaim]s and updates the internal verifier [ExpClaim]s for the next layer.
+/// Reduces the sumcheck output to [LayerClaim]s and updates the internal verifier [ExpClaim]s for
+/// the next layer.
 pub fn build_layer_exponent_bit_claims<'a, F>(
 	evaluation_order: EvaluationOrder,
 	verifiers: &mut [Box<dyn ExpVerifier<F> + 'a>],

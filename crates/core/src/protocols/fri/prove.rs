@@ -6,23 +6,24 @@ use binius_compute::{
 	memory::{ComputeMemory, SizedSlice},
 };
 use binius_field::{
+	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
-	unpack_if_possible, BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
+	unpack_if_possible,
 };
 use binius_math::MultilinearQuery;
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::AdditiveNTT;
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize, SerializeBytes};
+use binius_utils::{SerializeBytes, bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{vcs_optimal_layers_depths_iter, FRIParams},
+	TerminateCodeword,
+	common::{FRIParams, vcs_optimal_layers_depths_iter},
 	error::Error,
 	logging::{MerkleTreeDimensionData, RSEncodeDimensionData, SortAndMergeDimensionData},
-	TerminateCodeword,
 };
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
@@ -96,7 +97,8 @@ pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {
 	pub codeword: Vec<P>,
 }
 
-/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of two
+/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of
+/// two
 pub fn to_par_scalar_big_chunks<P>(
 	packed_slice: &[P],
 	chunk_size: usize,
@@ -198,16 +200,27 @@ where
 	let mut encoded = zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate()));
 
 	let dimensions_data = SortAndMergeDimensionData::new::<F>(log_elems);
-	tracing::debug_span!("[task] Sort & Merge", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
-		.in_scope(|| {
-			message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
-		});
+	tracing::debug_span!(
+		"[task] Sort & Merge",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| {
+		message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
+	});
 
 	let dimensions_data = RSEncodeDimensionData::new::<F>(log_elems, log_batch_size);
-	tracing::debug_span!("[task] RS Encode", phase = "commit", perfetto_category = "task.main", dimensions_data = ?dimensions_data)
-		.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
+	tracing::debug_span!(
+		"[task] RS Encode",
+		phase = "commit",
+		perfetto_category = "task.main",
+		?dimensions_data
+	)
+	.in_scope(|| rs_code.encode_ext_batch_inplace(ntt, &mut encoded, log_batch_size))?;
 
-	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals 1 << log_inv_rate if arities is empty
+	// Take the first arity as coset_log_len, or use the value such that the number of leaves equals
+	// 1 << log_inv_rate if arities is empty
 	let coset_log_len = params.fold_arities().first().copied().unwrap_or(log_elems);
 
 	let log_len = params.log_len() - coset_log_len;
@@ -328,8 +341,9 @@ where
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
-	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
-	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead
+	/// accumulate the folding challenge for processing at a later time. This saves us from storing
+	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -342,15 +356,23 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _)) => FRIFoldData::new(log2_strict_usize(codeword.len()), 0),
-			None => FRIFoldData::new(self.params.rs_code().log_len(), self.params.log_batch_size()),
+			Some((codeword, _)) => FRIFoldData::new::<F, FA>(
+				log2_strict_usize(codeword.len()),
+				0,
+				self.unprocessed_challenges.len(),
+			),
+			None => FRIFoldData::new::<F, FA>(
+				self.params.rs_code().log_len(),
+				self.params.log_batch_size(),
+				self.unprocessed_challenges.len(),
+			),
 		};
 
 		let fri_fold_span = tracing::debug_span!(
 			"[task] FRI Fold",
 			phase = "piop_compiler",
 			perfetto_category = "task.main",
-			dimensions_data = ?dimensions_data
+			?dimensions_data
 		)
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
@@ -571,8 +593,9 @@ where
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
-	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
-	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead
+	/// accumulate the folding challenge for processing at a later time. This saves us from storing
+	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		allocator: &mut impl ComputeAllocator<'b, F, CL::DevMem>,
@@ -586,8 +609,16 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _, _)) => FRIFoldData::new(log2_strict_usize(codeword.len()), 0),
-			None => FRIFoldData::new(self.params.rs_code().log_len(), self.params.log_batch_size()),
+			Some((codeword, _, _)) => FRIFoldData::new::<F, FA>(
+				log2_strict_usize(codeword.len()),
+				0,
+				self.unprocessed_challenges.len(),
+			),
+			None => FRIFoldData::new::<F, FA>(
+				self.params.rs_code().log_len(),
+				self.params.log_batch_size(),
+				self.unprocessed_challenges.len(),
+			),
 		};
 
 		let fri_fold_span = tracing::debug_span!(
@@ -605,21 +636,19 @@ where
 
 				let mut folded_codeword =
 					allocator.alloc(prev_codeword.len() - self.unprocessed_challenges.len())?;
-				self.cl.execute(
-					|exec| {
-						self.cl.fri_fold(
-							exec,
-							self.ntt,
-							log2_strict_usize(prev_codeword.len()),
-							0,
-							&self.unprocessed_challenges,
-							CL::DevMem::as_const(prev_codeword),
-							&mut folded_codeword,
-						)?;
+				self.cl.execute(|exec| {
+					self.cl.fri_fold(
+						exec,
+						self.ntt,
+						log2_strict_usize(prev_codeword.len()),
+						0,
+						&self.unprocessed_challenges,
+						CL::DevMem::as_const(prev_codeword),
+						&mut folded_codeword,
+					)?;
 
-						Ok(vec![])
-					},
-				)?;
+					Ok(vec![])
+				})?;
 
 				folded_codeword
 			}
@@ -635,21 +664,19 @@ where
 					1 << (self.params.rs_code().log_len()
 						- (self.unprocessed_challenges.len() - self.params.log_batch_size())),
 				)?;
-				self.cl.execute(
-					|exec| {
-						self.cl.fri_fold(
-							exec,
-							self.ntt,
-							self.params.rs_code().log_len(),
-							self.params.log_batch_size(),
-							&self.unprocessed_challenges,
-							CL::DevMem::as_const(&original_codeword),
-							&mut folded_codeword,
-						)?;
+				self.cl.execute(|exec| {
+					self.cl.fri_fold(
+						exec,
+						self.ntt,
+						self.params.rs_code().log_len(),
+						self.params.log_batch_size(),
+						&self.unprocessed_challenges,
+						CL::DevMem::as_const(&original_codeword),
+						&mut folded_codeword,
+					)?;
 
-						Ok(vec![])
-					}
-				)?;
+					Ok(vec![])
+				})?;
 
 				folded_codeword
 			}

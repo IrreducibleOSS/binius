@@ -3,11 +3,11 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	arch::ArchOptimal, byte_iteration::create_partial_sums_lookup_tables, packed::PackedSlice,
-	BinaryField128b, BinaryField1b, BinaryField8b, PackedField,
+	BinaryField1b, BinaryField8b, BinaryField128b, PackedField, arch::ArchOptimal,
+	byte_iteration::create_partial_sums_lookup_tables, packed::PackedSlice,
 };
 use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 
 pub fn bench_create_partial_sums<P>(

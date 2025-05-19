@@ -13,20 +13,33 @@ use crate::{
 pub struct OddInterpolate<F: BinaryField> {
 	vandermonde_inverse: Matrix<F>,
 	ell: usize,
+	coset_bits: usize,
 }
 
 impl<F: BinaryField> OddInterpolate<F> {
-	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times 2^{\ell}$.
-	/// Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and compute its inverse.
-	/// Time complexity is $\mathcal{O}(d^3).$
-	pub fn new<TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Self, Error>
+	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times
+	/// 2^{\ell}$. Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and
+	/// compute its inverse. Time complexity is $\mathcal{O}(d^3).$
+	pub fn new<TA>(
+		d: usize,
+		ell: usize,
+		coset_bits: usize,
+		twiddle_access: &[TA],
+	) -> Result<Self, Error>
 	where
 		TA: TwiddleAccess<F>,
 	{
+		if d > (1 << coset_bits) {
+			bail!(Error::CosetIndexOutOfBounds {
+				coset: d - 1,
+				coset_bits
+			});
+		}
+
 		// TODO: This constructor should accept an `impl AdditiveNTT` instead of an
 		// `impl TwiddleAccess`. It can use `AdditiveNTT::get_subspace_eval` instead of the twiddle
 		// accessors directly. `AdditiveNTT` is a more public interface.
-		let vandermonde = novel_vandermonde(d, ell, twiddle_access)?;
+		let vandermonde = novel_vandermonde(d, ell, coset_bits, twiddle_access)?;
 
 		let mut vandermonde_inverse = Matrix::zeros(d, d);
 		vandermonde.inverse_into(&mut vandermonde_inverse)?;
@@ -34,21 +47,23 @@ impl<F: BinaryField> OddInterpolate<F> {
 		Ok(Self {
 			vandermonde_inverse,
 			ell,
+			coset_bits,
 		})
 	}
 
-	/// Let $L/\mathbb F_2$ be a binary field, and fix an $\mathbb F_2$-basis $1=:\beta_0,\ldots, \beta_{r-1}$ as usual.
-	/// Let $d\geq 1$ be an odd integer and let $\ell\geq 0$ be an integer. Let
-	/// $[a_0,\ldots, a_{d\times 2^{\ell} - 1}]$ be a list of elements of $L$. There is a unique univariate polynomial
-	/// $P(X)\in L\[X\]$ of degree less than $d\times 2^{\ell}$ such that the *evaluations* of $P$ on the "first" $d\times 2^{\ell}$
-	/// elements of $L$ (in little-Endian binary counting order with respect to the basis $\beta_0,\ldots, \beta_{r}$)
+	/// Let $L/\mathbb F_2$ be a binary field, and fix an $\mathbb F_2$-basis $1=:\beta_0,\ldots,
+	/// \beta_{r-1}$ as usual. Let $d\geq 1$ be an odd integer and let $\ell\geq 0$ be an integer.
+	/// Let $[a_0,\ldots, a_{d\times 2^{\ell} - 1}]$ be a list of elements of $L$. There is a
+	/// unique univariate polynomial $P(X)\in L\[X\]$ of degree less than $d\times 2^{\ell}$ such
+	/// that the *evaluations* of $P$ on the "first" $d\times 2^{\ell}$ elements of $L$ (in
+	/// little-Endian binary counting order with respect to the basis $\beta_0,\ldots, \beta_{r}$)
 	/// are precisely $a_0,\ldots, a_{d\times 2^{\ell} - 1}$.
 	///
-	/// We efficiently compute the coefficients of $P(X)$ with respect to the Novel Polynomial Basis (itself taken
-	/// with respect to the given ordered list $\beta_0,\ldots, \beta_{r-1}$).
+	/// We efficiently compute the coefficients of $P(X)$ with respect to the Novel Polynomial Basis
+	/// (itself taken with respect to the given ordered list $\beta_0,\ldots, \beta_{r-1}$).
 	///
-	/// Time complexity is $\mathcal{O}(d^2\times 2^{\ell} + \ell 2^{\ell})$, thus this routine is intended to be used
-	/// for small values of $d$.
+	/// Time complexity is $\mathcal{O}(d^2\times 2^{\ell} + \ell 2^{\ell})$, thus this routine is
+	/// intended to be used for small values of $d$.
 	pub fn inverse_transform<NTT>(&self, ntt: &NTT, data: &mut [F]) -> Result<(), Error>
 	where
 		// REVIEW: generalize this to any P: PackedField<Scalar=F>
@@ -63,7 +78,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		let log_required_domain_size = log2_ceil_usize(d) + ell;
+		let log_required_domain_size = self.coset_bits + ell;
 		if ntt.log_domain_size() < log_required_domain_size {
 			bail!(Error::DomainTooSmall {
 				log_required_domain_size
@@ -75,17 +90,19 @@ impl<F: BinaryField> OddInterpolate<F> {
 			..Default::default()
 		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, shape, i as u32, 0)?;
+			ntt.inverse_transform(chunk, shape, i, self.coset_bits, 0)?;
 		}
 
-		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is $d\times d$,
-		// and vector is $d\times 2^{\ell}$. For each $i$ in $0,\ldots, 2^{\ell-1}$, let $v_i$ be the subvect
-		// given by those entries whose index is congruent to $i$ mod $2^{\ell}$. Then this computes $M v_i$,
-		// and finally "interleaves" the result (which means that we treat $M v_i = w_i$ for each $i$ and then conjure
-		// up the associated vector $w$.)
+		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is
+		// $d\times d$, and vector is $d\times 2^{\ell}$. For each $i$ in $0,\ldots, 2^{\ell-1}$,
+		// let $v_i$ be the subvect given by those entries whose index is congruent to $i$ mod
+		// $2^{\ell}$. Then this computes $M v_i$, and finally "interleaves" the result (which
+		// means that we treat $M v_i = w_i$ for each $i$ and then conjure up the associated
+		// vector $w$.)
 		let mut bases = vec![F::ZERO; d];
 		let mut novel = vec![F::ZERO; d];
-		// TODO: use `Matrix::mul_into`, implement when data is a slice of type `P: PackedField<Scalar=F>`.
+		// TODO: use `Matrix::mul_into`, implement when data is a slice of type `P:
+		// PackedField<Scalar=F>`.
 		for stride in 0..1 << ell {
 			(0..d).for_each(|i| bases[i] = data[i << ell | stride]);
 			self.vandermonde_inverse.mul_vec_into(&bases, &mut novel);
@@ -96,10 +113,16 @@ impl<F: BinaryField> OddInterpolate<F> {
 	}
 }
 
-/// Compute the Vandermonde matrix: $X^{(\ell)}_i(w^{\ell}_j)$, where $w^{\ell}_j$ is the $j^{\text{th}}$ element of the field
-/// with respect to the $\beta^{(\ell)}_i$ in little Endian order. The matrix has dimensions $d\times d$.
-/// The key trick is that $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
-fn novel_vandermonde<F, TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Matrix<F>, Error>
+/// Compute the Vandermonde matrix: $X^{(\ell)}_i(w^{\ell}_j)$, where $w^{\ell}_j$ is the
+/// $j^{\text{th}}$ element of the field with respect to the $\beta^{(\ell)}_i$ in little Endian
+/// order. The matrix has dimensions $d\times d$. The key trick is that
+/// $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
+fn novel_vandermonde<F, TA>(
+	d: usize,
+	ell: usize,
+	coset_bits: usize,
+	twiddle_access: &[TA],
+) -> Result<Matrix<F>, Error>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
@@ -110,28 +133,31 @@ where
 
 	let log_d = log2_ceil_usize(d);
 
-	// This will contain the evaluations of $X^{(\ell)}_{j}(w^{(\ell)}_i)$. As usual, indexing goes from 0..d-1.
+	// This will contain the evaluations of $X^{(\ell)}_{j}(w^{(\ell)}_i)$. As usual, indexing goes
+	// from 0..d-1.
 	let mut x_ell = Matrix::zeros(d, d);
 
 	// $X_0$ is the function "1".
 	(0..d).for_each(|j| x_ell[(j, 0)] = F::ONE);
 
-	let log_required_domain_size = log_d + ell;
+	let log_required_domain_size = coset_bits + ell;
 	if twiddle_access.len() < log_required_domain_size {
 		bail!(Error::DomainTooSmall {
 			log_required_domain_size
 		});
 	}
 
-	for (j, twiddle_access_j_plus_ell) in twiddle_access[ell..ell + log_d].iter().enumerate() {
-		assert!(twiddle_access_j_plus_ell.log_n() >= log_d - 1 - j);
+	let twiddle_access = &twiddle_access[twiddle_access.len() - coset_bits..];
+	for (j, twiddle_access_j_plus_ell) in twiddle_access.iter().take(log_d).enumerate() {
+		assert!(twiddle_access_j_plus_ell.log_n() >= coset_bits - 1 - j);
 
 		for i in 0..d {
 			x_ell[(i, 1 << j)] = twiddle_access_j_plus_ell.get(i >> (j + 1))
 				+ if (i >> j) & 1 == 1 { F::ONE } else { F::ZERO };
 		}
 
-		// Note that the jth column of x_ell is the ordered list of values $X_j(w_i)$ for i = 0, ..., d-1.
+		// Note that the jth column of x_ell is the ordered list of values $X_j(w_i)$ for i = 0,
+		// ..., d-1.
 		for k in 1..(1 << j).min(d - (1 << j)) {
 			for t in 0..d {
 				x_ell[(t, k + (1 << j))] = x_ell[(t, k)] * x_ell[(t, 1 << j)];
@@ -147,7 +173,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, Field};
-	use rand::{rngs::StdRng, SeedableRng};
+	use binius_utils::checked_arithmetics::log2_ceil_usize;
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::single_threaded::SingleThreadedNTT;
@@ -176,9 +203,12 @@ mod tests {
 					log_y: next_log_n,
 					..Default::default()
 				};
-				ntt.forward_transform(&mut ntt_evals, shape, 0, 0).unwrap();
+				ntt.forward_transform(&mut ntt_evals, shape, 0, 0, 0)
+					.unwrap();
 
-				let odd_interpolate = OddInterpolate::new(d, ell, &ntt.s_evals).unwrap();
+				let coset_bits = next_log_n.saturating_sub(ell);
+				let odd_interpolate =
+					OddInterpolate::new(d, ell, coset_bits, &ntt.s_evals).unwrap();
 				odd_interpolate
 					.inverse_transform(&ntt, &mut ntt_evals[..d << ell])
 					.unwrap();

@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField128b, ExtensionField, TowerField};
-use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
-use binius_utils::{bail, DeserializeBytes};
+use binius_macros::{DeserializeBytes, SerializeBytes, erased_serialize_bytes};
+use binius_utils::{DeserializeBytes, bail};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -48,6 +48,7 @@ impl<F: TowerField> MultivariatePoly<F> for Constant<F> {
 		if query.len() != self.n_vars {
 			bail!(Error::IncorrectQuerySize {
 				expected: self.n_vars,
+				actual: query.len(),
 			});
 		}
 		Ok(self.value)

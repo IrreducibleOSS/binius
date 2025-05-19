@@ -1,17 +1,17 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 pub use crate::arch::{
-	packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_256::*, packed_32::*,
-	packed_4::*, packed_512::*, packed_64::*, packed_8::*,
+	packed_1::*, packed_2::*, packed_4::*, packed_8::*, packed_16::*, packed_32::*, packed_64::*,
+	packed_128::*, packed_256::*, packed_512::*,
 };
 
 /// Common code to test different multiply, square and invert implementations
 #[cfg(test)]
 pub mod test_utils {
 	use crate::{
-		linear_transformation::PackedTransformationFactory,
-		underlier::{WithUnderlier, U1, U2, U4},
 		BinaryField, PackedField,
+		linear_transformation::PackedTransformationFactory,
+		underlier::{U1, U2, U4, WithUnderlier},
 	};
 
 	pub struct Unit;
@@ -541,8 +541,8 @@ pub mod test_utils {
 		};
 	}
 
-	/// Test if `mul_alpha_func` operation is a valid multiply by alpha operation on the given value for
-	/// all possible packed fields.
+	/// Test if `mul_alpha_func` operation is a valid multiply by alpha operation on the given value
+	/// for all possible packed fields.
 	macro_rules! define_mul_alpha_tests {
 		($mul_alpha_func:path, $constraint:path) => {
 			$crate::packed_binary_field::test_utils::define_check_packed_mul_alpha!(
@@ -642,8 +642,8 @@ pub mod test_utils {
 		};
 	}
 
-	/// Test if `$constraint::make_packed_transformation` operation creates a valid transformation operation on the given value for
-	/// all possible packed fields.
+	/// Test if `$constraint::make_packed_transformation` operation creates a valid transformation
+	/// operation on the given value for all possible packed fields.
 	macro_rules! define_transformation_tests {
 		($constraint:path) => {
 			$crate::packed_binary_field::test_utils::define_check_packed_transformation!(
@@ -872,7 +872,7 @@ mod tests {
 	use std::{iter::repeat_with, ops::Mul, slice};
 
 	use proptest::prelude::*;
-	use rand::{rngs::StdRng, thread_rng, SeedableRng};
+	use rand::{SeedableRng, rngs::StdRng, thread_rng};
 	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
 
 	use super::{
@@ -883,15 +883,15 @@ mod tests {
 		*,
 	};
 	use crate::{
+		Field, PackedField, PackedFieldIndexable,
 		arch::{
-			packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
-			packed_aes_512::*, packed_aes_64::*,
+			packed_aes_16::*, packed_aes_32::*, packed_aes_64::*, packed_aes_128::*,
+			packed_aes_256::*, packed_aes_512::*,
 		},
 		arithmetic_traits::MulAlpha,
 		linear_transformation::PackedTransformationFactory,
 		test_utils::check_transpose_all_heights,
 		underlier::{U2, U4},
-		Field, PackedField, PackedFieldIndexable,
 	};
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {

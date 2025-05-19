@@ -176,8 +176,8 @@ where
 		r: &[P::Scalar],
 	) -> Vec<LayerClaim<P::Scalar>> {
 		let exponent_bit_claim = if self.is_last_layer(layer_no) {
-			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
-			// $a_0(x) = (V_0(x) - 1)/(g - 1)$
+			// the evaluation of the last exponent bit can be uniquely calculated from the previous
+			// exponentiation layer claim. $a_0(x) = (V_0(x) - 1)/(g - 1)$
 			let LayerClaim { eval_point, eval } = self.0.current_layer_claim.clone();
 
 			let base = match self.0.witness.base.clone() {
@@ -227,11 +227,7 @@ where
 	}
 
 	fn layer_n_claims(&self, layer_no: usize) -> usize {
-		if self.is_last_layer(layer_no) {
-			0
-		} else {
-			1
-		}
+		if self.is_last_layer(layer_no) { 0 } else { 1 }
 	}
 }
 

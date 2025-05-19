@@ -22,4 +22,6 @@ pub enum Error {
 	Sumcheck(#[from] sumcheck::Error),
 	#[error("transcript error: {0}")]
 	TranscriptError(#[from] crate::transcript::Error),
+	#[error("oracle error: {0}")]
+	Oracle(#[from] crate::oracle::Error),
 }

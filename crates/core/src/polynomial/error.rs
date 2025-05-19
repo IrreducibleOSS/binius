@@ -6,8 +6,8 @@ use binius_field::Error as FieldError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("the query must have size {expected}")]
-	IncorrectQuerySize { expected: usize },
+	#[error("the query must have size {expected}, and istead has {actual}")]
+	IncorrectQuerySize { expected: usize, actual: usize },
 	#[error("all polynomials in mixed composition should have {expected} vars")]
 	IncorrectArityInMixedComposition { expected: usize },
 	#[error("array of inner composition evaluations is of incorrect length")]
@@ -33,9 +33,13 @@ pub enum Error {
 	ArgumentRangeError { arg: String, range: Range<usize> },
 	#[error("{0}")]
 	FieldError(#[from] FieldError),
-	#[error("not enough field elements to fill a single packed field element ({length} / {packed_width})")]
+	#[error(
+		"not enough field elements to fill a single packed field element ({length} / {packed_width})"
+	)]
 	PackedFieldNotFilled { length: usize, packed_width: usize },
-	#[error("one of the defining inputs to the ring switching eq-indicator function has length {actual}, rather than {expected}")]
+	#[error(
+		"one of the defining inputs to the ring switching eq-indicator function has length {actual}, rather than {expected}"
+	)]
 	RingSwitchWrongLength { expected: usize, actual: usize },
 	#[error("{0}")]
 	MathError(#[from] binius_math::Error),

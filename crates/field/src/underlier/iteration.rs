@@ -4,9 +4,10 @@ use std::marker::PhantomData;
 
 use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
 
-use super::{Divisible, NumCast, UnderlierType, UnderlierWithBitOps, U1, U2, U4};
+use super::{Divisible, NumCast, U1, U2, U4, UnderlierType, UnderlierWithBitOps};
 
-/// The iteration strategy for the given underlier type 'U' that is treated as a packed collection of 'T's.
+/// The iteration strategy for the given underlier type 'U' that is treated as a packed collection
+/// of 'T's.
 pub trait IterationStrategy<T, U> {
 	/// Iterate over the subvalues of the given reference.
 	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + Clone + '_;
@@ -18,7 +19,8 @@ pub trait IterationStrategy<T, U> {
 	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + Clone + '_;
 }
 
-/// The iteration strategy for the given underlier type 'U' that is treated as a packed collection of bits.
+/// The iteration strategy for the given underlier type 'U' that is treated as a packed collection
+/// of bits.
 pub struct BitIterationStrategy;
 
 impl<U> IterationStrategy<U1, U> for BitIterationStrategy
@@ -44,7 +46,8 @@ where
 	}
 }
 
-/// Specialized iteration strategy for types that can be cast to an array of the elements of a smaller type 'T'.
+/// Specialized iteration strategy for types that can be cast to an array of the elements of a
+/// smaller type 'T'.
 pub struct DivisibleStrategy;
 
 impl<U: UnderlierType + Divisible<T>, T: UnderlierType> IterationStrategy<T, U>
@@ -92,7 +95,8 @@ where
 	}
 }
 
-/// `IterationMethods<T, U>` is supposed to implement an optimal strategy for the pair of types `(T, U)`.
+/// `IterationMethods<T, U>` is supposed to implement an optimal strategy for the pair of types `(T,
+/// U)`.
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct IterationMethods<T, U>(PhantomData<(T, U)>);
 

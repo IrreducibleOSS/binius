@@ -18,8 +18,8 @@ use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
 		common::{
-			equal_n_vars_check, get_nontrivial_evaluation_points,
-			interpolation_domains_for_composition_degrees, CompositeSumClaim, RoundCoeffs,
+			CompositeSumClaim, RoundCoeffs, equal_n_vars_check, get_nontrivial_evaluation_points,
+			interpolation_domains_for_composition_degrees,
 		},
 		error::Error,
 		prove::{ProverState, SumcheckInterpolator, SumcheckProver},
@@ -292,10 +292,11 @@ where
 		round_evals.insert(0, last_round_sum - round_evals[0]);
 
 		if round_evals.len() > 3 {
-			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
-			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
-			// Putting "special" evaluation points at the beginning of domain allows benefitting from
-			// faster/skipped interpolation even in case of mixed degree compositions .
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then
+			// subspace points. InterpolationDomain expects "infinity" at the last position, thus
+			// reordering is needed. Putting "special" evaluation points at the beginning of
+			// domain allows benefitting from faster/skipped interpolation even in case of mixed
+			// degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}

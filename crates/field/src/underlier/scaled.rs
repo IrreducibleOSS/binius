@@ -6,7 +6,7 @@ use std::{
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{must_cast_mut, must_cast_ref, NoUninit, Pod, Zeroable};
+use bytemuck::{NoUninit, Pod, Zeroable, must_cast_mut, must_cast_ref};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
@@ -227,7 +227,8 @@ where
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
-		// On practice, we don't use scaled underliers with underlier types that have less than 128 bits.
+		// On practice, we don't use scaled underliers with underlier types that have less than 128
+		// bits.
 		assert!(U::BITS >= 128);
 
 		Self(self.0.map(|x| x.shl_128b_lanes(rhs)))
@@ -237,7 +238,8 @@ where
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
-		// On practice, we don't use scaled underliers with underlier types that have less than 128 bits.
+		// On practice, we don't use scaled underliers with underlier types that have less than 128
+		// bits.
 		assert!(U::BITS >= 128);
 
 		Self(self.0.map(|x| x.shr_128b_lanes(rhs)))
@@ -247,7 +249,8 @@ where
 	fn unpack_lo_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
-		// On practice, we don't use scaled underliers with underlier types that have less than 128 bits.
+		// On practice, we don't use scaled underliers with underlier types that have less than 128
+		// bits.
 		assert!(U::BITS >= 128);
 
 		Self(array::from_fn(|i| self.0[i].unpack_lo_128b_lanes(other.0[i], log_block_len)))
@@ -257,7 +260,8 @@ where
 	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
-		// On practice, we don't use scaled underliers with underlier types that have less than 128 bits.
+		// On practice, we don't use scaled underliers with underlier types that have less than 128
+		// bits.
 		assert!(U::BITS >= 128);
 
 		Self(array::from_fn(|i| self.0[i].unpack_hi_128b_lanes(other.0[i], log_block_len)))

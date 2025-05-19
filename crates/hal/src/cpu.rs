@@ -4,17 +4,18 @@ use std::fmt::Debug;
 
 use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
-	eq_ind_partial_eval, CompositionPoly, EvaluationOrder, MultilinearExtension, MultilinearPoly,
-	MultilinearQueryRef,
+	CompositionPoly, EvaluationOrder, MultilinearExtension, MultilinearPoly, MultilinearQueryRef,
+	eq_ind_partial_eval,
 };
 use tracing::instrument;
 
 use crate::{
-	sumcheck_folding::fold_multilinears, sumcheck_round_calculation::calculate_round_evals,
 	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+	sumcheck_folding::fold_multilinears, sumcheck_round_calculation::calculate_round_evals,
 };
 
-/// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
+/// Implementation of ComputationBackend for the default Backend that uses the CPU for all
+/// computations.
 #[derive(Clone, Debug)]
 pub struct CpuBackend;
 

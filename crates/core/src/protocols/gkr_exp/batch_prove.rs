@@ -19,7 +19,7 @@ use super::{
 use crate::{
 	fiat_shamir::Challenger,
 	protocols::sumcheck::{
-		self, immediate_switchover_heuristic, BatchSumcheckOutput, CompositeSumClaim,
+		self, BatchSumcheckOutput, CompositeSumClaim, immediate_switchover_heuristic,
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
@@ -29,12 +29,13 @@ use crate::{
 ///
 /// The protocol can be batched over multiple instances by grouping consecutive provers over
 /// `eval_points` in internal `LayerClaims` into `GkrExpProvers`. To achieve this, we use
-/// [`crate::composition::IndexComposition`]. Since exponents can have different bit sizes, resulting
-/// in a varying number of layers, we group them starting from the first layer to maximize the
-/// opportunity to share the same evaluation point.
+/// [`crate::composition::IndexComposition`]. Since exponents can have different bit sizes,
+/// resulting in a varying number of layers, we group them starting from the first layer to maximize
+/// the opportunity to share the same evaluation point.
 ///
 /// # Requirements
-/// - Witnesses and claims must be in the same order as in [`super::batch_verify`] during proof verification.
+/// - Witnesses and claims must be in the same order as in [`super::batch_verify`] during proof
+///   verification.
 /// - Witnesses and claims must be sorted in descending order by n_vars.
 /// - Witnesses and claims must be of the same length.
 /// - The `i`th witness must correspond to the `i`th claim.
@@ -145,7 +146,8 @@ where
 			} = build_eval_point_claims::<P>(&mut provers[active_index..i], layer_no)?;
 
 			if eval_point_composite_claims.is_empty() {
-				// extract the last point because provers with this point will not participate in the sumcheck.
+				// extract the last point because provers with this point will not participate in
+				// the sumcheck.
 				eval_points.pop();
 			} else {
 				composite_claims.push(eval_point_composite_claims);
@@ -192,7 +194,8 @@ struct CompositeSumClaimsWithMultilinears<'a, P: PackedField> {
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
-/// Builds composite claims and multilinears for provers that share the same `eval_point` from their internal [LayerClaim]s.
+/// Builds composite claims and multilinears for provers that share the same `eval_point` from their
+/// internal [LayerClaim]s.
 fn build_eval_point_claims<'a, P>(
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	layer_no: usize,
@@ -240,7 +243,8 @@ where
 	})
 }
 
-/// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
+/// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [LayerClaim]s for
+/// the next layer.
 fn build_layer_exponent_bit_claims<'a, P>(
 	evaluation_order: EvaluationOrder,
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],

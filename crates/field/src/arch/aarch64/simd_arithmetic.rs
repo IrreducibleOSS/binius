@@ -6,17 +6,17 @@ use seq_macro::seq;
 
 use super::m128::M128;
 use crate::{
+	BinaryField, TowerField,
 	arch::{
+		SimdStrategy,
 		portable::packed_arithmetic::{
 			PackedTowerField, TowerConstants, UnderlierWithBitConstants,
 		},
-		SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	BinaryField, TowerField,
 };
 
 #[inline]
@@ -75,9 +75,9 @@ pub fn packed_aes_16x8b_multiply(a: M128, b: M128) -> M128 {
 		// Reduces the 16-bit output of a carryless multiplication to 8 bits using equation 22 in
 		// https://www.intel.com/content/dam/develop/external/us/en/documents/clmul-wp-rev-2-02-2014-04-20.pdf
 
-		// Since q+(x) doesn't fit into 8 bits, we right shift the polynomial (divide by x) and correct for this later.
-		// This works because q+(x) is divisible by x/the last polynomial bit is 0.
-		// q+(x)/x = (x^8 + x^4 + x^3 + x)/x = 0b100011010 >> 1 = 0b10001101 = 0x8d
+		// Since q+(x) doesn't fit into 8 bits, we right shift the polynomial (divide by x) and
+		// correct for this later. This works because q+(x) is divisible by x/the last polynomial
+		// bit is 0. q+(x)/x = (x^8 + x^4 + x^3 + x)/x = 0b100011010 >> 1 = 0b10001101 = 0x8d
 		const QPLUS_RSH1: poly8x8_t = unsafe { std::mem::transmute(0x8d8d8d8d8d8d8d8d_u64) };
 
 		// q*(x) = x^4 + x^3 + x + 1 = 0b00011011 = 0x1b

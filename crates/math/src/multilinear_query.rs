@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 
-use crate::{eq_ind_partial_eval, tensor_prod_eq_ind, Error};
+use crate::{Error, eq_ind_partial_eval, tensor_prod_eq_ind};
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -54,7 +54,8 @@ impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
 
 	/// Returns the tensor product expansion of the query
 	///
-	/// If the number of query variables is less than the packing width, return a single packed element.
+	/// If the number of query variables is less than the packing width, return a single packed
+	/// element.
 	pub fn expansion(&self) -> &[P] {
 		let expanded_query_len = 1 << self.n_vars.saturating_sub(P::LOG_WIDTH);
 		&self.expanded_query[0..expanded_query_len]
@@ -102,7 +103,8 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 
 	/// Returns the tensor product expansion of the query
 	///
-	/// If the number of query variables is less than the packing width, return a single packed element.
+	/// If the number of query variables is less than the packing width, return a single packed
+	/// element.
 	pub fn expansion(&self) -> &[P] {
 		let expanded_query_len = 1 << self.n_vars.saturating_sub(P::LOG_WIDTH);
 		&self.expanded_query[0..expanded_query_len]

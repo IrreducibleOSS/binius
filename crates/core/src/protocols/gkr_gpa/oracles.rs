@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
 use tracing::instrument;
 
-use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
+use super::{Error, GrandProductClaim, GrandProductWitness, gkr_gpa::LayerClaim};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::evalcheck::EvalcheckMultilinearClaim,

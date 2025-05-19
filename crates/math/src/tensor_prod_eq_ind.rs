@@ -9,10 +9,11 @@ use bytemuck::zeroed_vec;
 
 use crate::Error;
 
-/// Tensor Product expansion of values with partial eq indicator evaluated at extra_query_coordinates
+/// Tensor Product expansion of values with partial eq indicator evaluated at
+/// extra_query_coordinates
 ///
-/// Let $n$ be log_n_values, $p$, $k$ be the lengths of `packed_values` and `extra_query_coordinates`.
-/// Requires
+/// Let $n$ be log_n_values, $p$, $k$ be the lengths of `packed_values` and
+/// `extra_query_coordinates`. Requires
 ///     * $n \geq k$
 ///     * p = max(1, 2^{n+k} / P::WIDTH)
 /// Let $v$ be a vector corresponding to the first $2^n$ scalar values of `values`.
@@ -101,7 +102,7 @@ pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{packed::set_packed_slice, Field, PackedBinaryField4x32b};
+	use binius_field::{Field, PackedBinaryField4x32b, packed::set_packed_slice};
 	use itertools::Itertools;
 
 	use super::*;

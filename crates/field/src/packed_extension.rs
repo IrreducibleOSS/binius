@@ -1,9 +1,9 @@
 // Copyright 2023-2025 Irreducible Inc.
 
 use crate::{
+	ExtensionField, Field, PackedField,
 	as_packed_field::PackScalar,
 	underlier::{Divisible, WithUnderlier},
-	ExtensionField, Field, PackedField,
 };
 
 /// A [`PackedField`] that can be safely cast to indexable slices of scalars.
@@ -290,8 +290,8 @@ where
 	))
 }
 
-/// This trait is a shorthand for the case `PackedExtension<P::Scalar, PackedSubfield = P>` which is a
-/// quite common case in our codebase.
+/// This trait is a shorthand for the case `PackedExtension<P::Scalar, PackedSubfield = P>` which is
+/// a quite common case in our codebase.
 pub trait RepackedExtension<P: PackedField>:
 	PackedField<Scalar: ExtensionField<P::Scalar>> + PackedExtension<P::Scalar, PackedSubfield = P>
 {
@@ -304,8 +304,8 @@ where
 {
 }
 
-/// This trait adds shortcut methods for the case `PackedExtension<F, PackedSubfield: PackedFieldIndexable>` which is a
-/// quite common case in our codebase.
+/// This trait adds shortcut methods for the case `PackedExtension<F, PackedSubfield:
+/// PackedFieldIndexable>` which is a quite common case in our codebase.
 pub trait PackedExtensionIndexable<F: Field>:
 	PackedExtension<F, PackedSubfield: PackedFieldIndexable> + PackedField<Scalar: ExtensionField<F>>
 {

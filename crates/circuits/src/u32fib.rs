@@ -4,11 +4,11 @@ use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, BinaryField32b, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::{
 	arithmetic,
-	builder::{types::F, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::F},
 	transparent::step_down,
 };
 
@@ -30,10 +30,10 @@ pub fn u32fib(
 
 		let mut rng = thread_rng();
 		let current = current.as_mut_slice::<u32>();
-		current[0] = rng.gen();
-		current[1] = rng.gen();
+		current[0] = rng.r#gen();
+		current[1] = rng.r#gen();
 		for i in 2..current.len() {
-			current[i] = rng.gen();
+			current[i] = rng.r#gen();
 			(current[i], _) = current[i - 1].overflowing_add(current[i - 2]);
 		}
 		(next.as_mut_slice::<u32>(), &current[1..])

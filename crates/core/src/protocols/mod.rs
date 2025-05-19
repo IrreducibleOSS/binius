@@ -2,16 +2,18 @@
 
 //! Implementations of various virtual polynomial protocols.
 //!
-//! A virtual polynomial protocol is subprotocol of a polynomial IOP. See [DP23] Definition 4.7 for a formal
-//! definition. Each protocol has a prover-side implementation and a verifier-side implementation. These protocols are
-//! all public-coin and made non-interactive by the Fiat-Shamir transformation. Thus, the prover-side implementations
-//! all simulate a verifier in order to accurately construct the transcript.
+//! A virtual polynomial protocol is subprotocol of a polynomial IOP. See [DP23] Definition 4.7 for
+//! a formal definition. Each protocol has a prover-side implementation and a verifier-side
+//! implementation. These protocols are all public-coin and made non-interactive by the Fiat-Shamir
+//! transformation. Thus, the prover-side implementations all simulate a verifier in order to
+//! accurately construct the transcript.
 //!
-//! The protocol implementations have separate functions for each round. We model the virtual polynomial protocols this
-//! way because in many settings we want the ability to batch together multiple protocols at different rounds. For
-//! example, if we had one sumcheck claim for an $\nu$-variate polynomial and one sumcheck claim for a
-//! $\nu - 1$-variate polynomial, we would want to run one sumcheck round on the first claim, then batch the remaining
-//! rounds with the second claim.
+//! The protocol implementations have separate functions for each round. We model the virtual
+//! polynomial protocols this way because in many settings we want the ability to batch together
+//! multiple protocols at different rounds. For example, if we had one sumcheck claim for an
+//! $\nu$-variate polynomial and one sumcheck claim for a $\nu - 1$-variate polynomial, we would
+//! want to run one sumcheck round on the first claim, then batch the remaining rounds with the
+//! second claim.
 //!
 //! Each verifier round proceeds as
 //! 1) Receive the round message (ie. read it from the non-interactive proof)

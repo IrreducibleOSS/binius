@@ -2,16 +2,16 @@
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::{types::U, ConstraintSystemBuilder},
+	builder::{ConstraintSystemBuilder, types::U},
 	unconstrained::unconstrained,
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId};
-use binius_field::{tower::CanonicalTowerFamily, BinaryField1b};
+use binius_field::{BinaryField1b, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
-use clap::{value_parser, Parser};
+use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]

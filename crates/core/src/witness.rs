@@ -33,7 +33,9 @@ pub enum Error {
 	MissingWitness { id: OracleId },
 	#[error("witness for oracle id {id} does not have an explicit backing multilinear")]
 	NoExplicitBackingMultilinearExtension { id: OracleId },
-	#[error("log degree mismatch for oracle id {oracle_id}. field_log_extension_degree = {field_log_extension_degree} entry_log_extension_degree = {entry_log_extension_degree}")]
+	#[error(
+		"log degree mismatch for oracle id {oracle_id}. field_log_extension_degree = {field_log_extension_degree} entry_log_extension_degree = {entry_log_extension_degree}"
+	)]
 	OracleExtensionDegreeMismatch {
 		oracle_id: OracleId,
 		field_log_extension_degree: usize,
@@ -58,7 +60,7 @@ where
 	pub fn get_index_entry(&self, id: OracleId) -> Result<IndexEntry<'a, P>, Error> {
 		let entry = self
 			.entries
-			.get(id)
+			.get(id.index())
 			.ok_or(Error::MissingWitness { id })?
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
@@ -71,7 +73,7 @@ where
 
 	/// Whether has data for the given oracle id.
 	pub fn has(&self, id: OracleId) -> bool {
-		self.entries.get(id).is_some_and(Option::is_some)
+		self.entries.get(id.index()).is_some_and(Option::is_some)
 	}
 
 	pub fn update_multilin_poly(
@@ -91,11 +93,12 @@ where
 		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, P>, usize)>,
 	) -> Result<(), Error> {
 		for (id, multilin_poly, nonzero_scalars_prefix) in witnesses {
-			if id >= self.entries.len() {
-				self.entries.resize_with(id + 1, || None);
+			let id_index = id.index();
+			if id_index >= self.entries.len() {
+				self.entries.resize_with(id_index + 1, || None);
 			}
 			// TODO: validate nonzero_scalars_prefix
-			self.entries[id] = Some(IndexEntry {
+			self.entries[id_index] = Some(IndexEntry {
 				multilin_poly,
 				nonzero_scalars_prefix,
 			});

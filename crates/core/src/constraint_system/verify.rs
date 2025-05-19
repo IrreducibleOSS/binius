@@ -1,20 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	BinaryField, PackedField, TowerField,
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
 };
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
-use digest::{core_api::BlockSizeUser, Digest, Output};
-use itertools::{chain, Itertools};
+use digest::{Digest, Output, core_api::BlockSizeUser};
+use itertools::{Itertools, chain};
 use tracing::instrument;
 
 use super::{
+	ConstraintSystem, Proof,
 	channel::{Boundary, OracleOrConst},
 	error::{Error, VerificationError},
-	exp, ConstraintSystem, Proof,
+	exp::{self, reorder_exponents},
 };
 use crate::{
 	constraint_system::{
@@ -29,7 +30,7 @@ use crate::{
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
-		sumcheck::{self, constraint_set_zerocheck_claim, ZerocheckClaim},
+		sumcheck::{self, ZerocheckClaim, constraint_set_zerocheck_claim},
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
@@ -84,7 +85,7 @@ where
 	let commitment = reader.read::<Output<Hash>>()?;
 
 	// GKR exp multiplication
-	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	reorder_exponents(&mut exponents, &oracles);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
@@ -142,7 +143,7 @@ where
 
 	// Verify grand products
 	let final_layer_claims = gkr_gpa::batch_verify(
-		EvaluationOrder::LowToHigh,
+		EvaluationOrder::HighToLow,
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&mut transcript,
 	)?;
@@ -321,7 +322,8 @@ fn verify_channels_balance<F: TowerField>(
 }
 
 /// For each flush,
-/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r + F_0 + F_1 s + F_2 s^1 + …)$
+/// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r
+///   + F_0 + F_1 s + F_2 s^1 + …)$
 /// - otherwise the product is over the linear combination $r + F_0 + F_1 s + F_2 s^1 + …$
 pub fn make_flush_oracles<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,

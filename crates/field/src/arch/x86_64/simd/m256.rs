@@ -3,7 +3,7 @@
 use core::arch::x86_64::*;
 
 use super::simd_arithmetic::TowerSimdType;
-use crate::{arch::x86_64::m256::M256, BinaryField};
+use crate::{BinaryField, arch::x86_64::m256::M256};
 
 impl TowerSimdType for M256 {
 	#[inline(always)]
@@ -27,7 +27,8 @@ impl TowerSimdType for M256 {
 		unsafe {
 			let alpha = Self::alpha::<Scalar>();
 			let mask = Self::even_mask::<Scalar>();
-			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not a
+			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not
+			// a
 			_mm256_blendv_epi8(self.0, alpha.0, mask.0)
 		}
 		.into()

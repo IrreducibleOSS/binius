@@ -52,7 +52,7 @@ where
 			let exponent_bit = PExpBase::from_fn(|j| {
 				let ext_bit = exponent_bit_witness
 					.evaluate_on_hypercube(PExpBase::WIDTH * i + j)
-					.expect("eval on the hypercube exists");
+					.unwrap_or_else(|_| P::Scalar::zero());
 
 				if ext_bit == P::Scalar::one() {
 					PExpBase::Scalar::one()
@@ -95,7 +95,7 @@ where
 			let exponent_bit = PExpBase::from_fn(|j| {
 				let ext_bit = exponent_bit_witness
 					.evaluate_on_hypercube(PExpBase::WIDTH * i + j)
-					.expect("eval on the hypercube exists");
+					.unwrap_or_else(|_| P::Scalar::zero());
 
 				if ext_bit == P::Scalar::one() {
 					PExpBase::Scalar::one()

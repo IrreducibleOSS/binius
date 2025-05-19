@@ -4,12 +4,12 @@ use std::{array, marker::PhantomData};
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{
-	packed::set_packed_slice, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	Field, PackedExtension, PackedField, PackedFieldIndexable, packed::set_packed_slice,
 };
 use itertools::izip;
 
 use crate::{
-	builder::{column::Col, types::B1, witness::TableWitnessSegment, TableBuilder, B128},
+	builder::{B128, TableBuilder, column::Col, types::B1, witness::TableWitnessSegment},
 	gadgets::add::UnsignedAddPrimitives,
 };
 
@@ -67,6 +67,14 @@ impl U32Sub {
 		let final_borrow = flags
 			.expose_final_borrow
 			.then(|| table.add_selected("final_borrow", bout, 31));
+
+		// Check that the equation holds:
+		//
+		//     (bin + (1 - xin)) * (bin + yin) + bin = bout
+		//
+		// Note that we can't use the actual expression does `xin - B1::ONE` because of the expr
+		// builder, but in tower fields the order does not matter.
+		table.assert_zero("borrow_out", (bin + (xin - B1::ONE)) * (bin + yin) + bin - bout);
 
 		let zout = if flags.commit_zout {
 			let zout = table.add_committed("zout");
@@ -274,7 +282,7 @@ mod tests {
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
 	use bumpalo::Bump;
-	use rand::{prelude::StdRng, Rng as _, SeedableRng};
+	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
@@ -286,8 +294,8 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
 				let z: u32 = x.wrapping_sub(y);
 				// (x, y, borrow_in, zout, final_borrow)
 				(x, y, 0x00000000, z, false)
@@ -310,9 +318,9 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let test_vector: Vec<(u32, u32, u32, u32, bool)> = (0..N_ITER)
 			.map(|_| {
-				let x: u32 = rng.gen();
-				let y: u32 = rng.gen();
-				let borrow_in = rng.gen::<bool>() as u32;
+				let x: u32 = rng.r#gen();
+				let y: u32 = rng.r#gen();
+				let borrow_in = rng.r#gen::<bool>() as u32;
 				let (x_minus_y, borrow1) = x.overflowing_sub(y);
 				let (z, borrow2) = x_minus_y.overflowing_sub(borrow_in);
 				let final_borrow = borrow1 | borrow2;
@@ -336,7 +344,8 @@ mod tests {
 			(0x00000000, 0x00000001, 0x00000000, 0xFFFFFFFF, true), // 0 - 1 = max_u32 (underflow)
 			(0xFFFFFFFF, 0x00000001, 0x00000000, 0xFFFFFFFE, false), // max - 1 = max - 1
 			(0x80000000, 0x00000001, 0x00000000, 0x7FFFFFFF, false), // Sign bit transition
-			(0x00000005, 0x00000005, 0x00000001, 0xFFFFFFFF, true), // 5 - 5 - 1 = -1 (borrow_in causes underflow)
+			(0x00000005, 0x00000005, 0x00000001, 0xFFFFFFFF, true), /* 5 - 5 - 1 = -1 (borrow_in
+			                                                         * causes underflow) */
 		];
 		TestPlan {
 			dyn_borrow_in: true,

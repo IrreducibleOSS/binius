@@ -3,13 +3,13 @@
 use std::marker::PhantomData;
 
 use binius_field::{
-	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 	BinaryField, ExtensionField, PackedField,
+	packed::{get_packed_slice_unchecked, set_packed_slice_unchecked},
 };
 use binius_math::BinarySubspace;
 use binius_utils::random_access_sequence::{RandomAccessSequence, RandomAccessSequenceMut};
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, NTTShape, SingleThreadedNTT};
+use crate::{AdditiveNTT, Error, NTTShape, SingleThreadedNTT, twiddle::TwiddleAccess};
 
 /// A slice of packed field elements with an access to a batch with the given index:
 /// [batch_0_element_0, batch_1_element_0, ..., batch_0_element_1, batch_0_element_1, ...]
@@ -36,7 +36,12 @@ where
 	P: PackedField,
 {
 	unsafe fn get_unchecked(&self, index: usize) -> P::Scalar {
-		get_packed_slice_unchecked(self.data, self.batch_index + (index << self.log_batch_count))
+		unsafe {
+			get_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+			)
+		}
 	}
 
 	fn len(&self) -> usize {
@@ -49,11 +54,13 @@ where
 	P: PackedField,
 {
 	unsafe fn set_unchecked(&mut self, index: usize, value: P::Scalar) {
-		set_packed_slice_unchecked(
-			self.data,
-			self.batch_index + (index << self.log_batch_count),
-			value,
-		);
+		unsafe {
+			set_packed_slice_unchecked(
+				self.data,
+				self.batch_index + (index << self.log_batch_count),
+				value,
+			);
+		}
 	}
 }
 
@@ -62,25 +69,30 @@ fn forward_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl RandomAccessSequenceMut<FF>,
-	coset: u32,
+	coset: usize,
 	log_n: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let coset_bits = 32 - coset.leading_zeros() as usize;
+	if coset >= (1 << coset_bits) {
+		return Err(Error::CosetIndexOutOfBounds { coset, coset_bits });
+	}
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size: log_n + coset_bits,
 		});
 	}
 
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
+
 	for i in (0..(log_n - skip_rounds)).rev() {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+			let twiddle = s_evals_i.get(coset << (log_n - 1 - i) | j);
 			for k in 0..1 << i {
 				let idx0 = j << (i + 1) | k;
 				let idx1 = idx0 | 1 << i;
@@ -94,10 +106,6 @@ where
 				data.set(idx1, v);
 			}
 		}
-	}
-
-	for i in 1 << log_n..data.len() {
-		data.set(i, FF::ZERO);
 	}
 
 	Ok(())
@@ -108,26 +116,31 @@ fn inverse_transform_simple<F, FF>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl RandomAccessSequenceMut<FF>,
-	coset: u32,
+	coset: usize,
 	log_n: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let coset_bits = 32 - coset.leading_zeros() as usize;
+	if coset >= (1 << coset_bits) {
+		return Err(Error::CosetIndexOutOfBounds { coset, coset_bits });
+	}
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
 			log_required_domain_size: log_n + coset_bits,
 		});
 	}
 
+	let s_evals = &s_evals[log_domain_size - (log_n + coset_bits)..];
+
 	#[allow(clippy::needless_range_loop)]
 	for i in 0..(log_n - skip_rounds) {
 		let s_evals_i = &s_evals[i];
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+			let twiddle = s_evals_i.get(coset << (log_n - 1 - i) | j);
 			for k in 0..1 << i {
 				let idx0 = j << (i + 1) | k;
 				let idx1 = idx0 | 1 << i;
@@ -146,7 +159,8 @@ where
 	Ok(())
 }
 
-/// Simple NTT implementation that uses the reference implementation for the forward and inverse NTT.
+/// Simple NTT implementation that uses the reference implementation for the forward and inverse
+/// NTT.
 pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	s_evals: Vec<TA>,
 	_marker: PhantomData<F>,
@@ -171,7 +185,8 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
@@ -193,6 +208,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					coset_bits,
 					skip_rounds,
 				)?;
 			}
@@ -205,7 +221,8 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		let NTTShape {
@@ -227,6 +244,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 					&mut batch,
 					coset,
 					log_y,
+					coset_bits,
 					skip_rounds,
 				)?;
 			}

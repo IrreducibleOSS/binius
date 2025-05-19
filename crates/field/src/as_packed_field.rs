@@ -1,16 +1,16 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use crate::{
+	ExtensionField, Field, PackedField,
 	aes_field::*,
 	arch::{
-		packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_32::*, packed_4::*,
-		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_32::*,
-		packed_aes_64::*, packed_aes_8::*, packed_polyval_128::PackedBinaryPolyval1x128b,
+		packed_1::*, packed_2::*, packed_4::*, packed_8::*, packed_16::*, packed_32::*,
+		packed_64::*, packed_128::*, packed_aes_8::*, packed_aes_16::*, packed_aes_32::*,
+		packed_aes_64::*, packed_aes_128::*, packed_polyval_128::PackedBinaryPolyval1x128b,
 	},
 	binary_field::*,
 	polyval::BinaryField128bPolyval,
 	underlier::{UnderlierType, WithUnderlier},
-	ExtensionField, Field, PackedField,
 };
 
 /// Trait that establishes correspondence between the scalar field and a packed field of the same
@@ -18,8 +18,8 @@ use crate::{
 ///
 /// E.g. `BinaryField64b` -> `PackedBinaryField1x64b`.
 /// Note that the underlier of the packed field may be different.
-/// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s underlier
-/// may be `M128`.
+/// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s
+/// underlier may be `M128`.
 pub trait AsSinglePacked: Field {
 	type Packed: PackedField<Scalar = Self>
 		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;

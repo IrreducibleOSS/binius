@@ -2,11 +2,11 @@
 
 use std::array;
 
-use binius_field::{packed::set_packed_slice, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField, packed::set_packed_slice};
 use itertools::izip;
 
 use crate::{
-	builder::{Col, TableBuilder, TableWitnessSegment, B1, B128, B32, B64},
+	builder::{B1, B32, B64, B128, Col, TableBuilder, TableWitnessSegment},
 	gadgets::{
 		add::{U32AddFlags, WideAdd},
 		mul::{MulSS32, MulUU32, SignConverter, UnsignedMulPrimitives},
@@ -270,8 +270,8 @@ impl DivSS32 {
 			);
 		}
 
-		// Add constraint to make sure that |r| < |q| by computing s = |r| - |q| in a larger bit length.
-		// There maybe a better way to do it with channels and simpler comparator logic.
+		// Add constraint to make sure that |r| < |q| by computing s = |r| - |q| in a larger bit
+		// length. There maybe a better way to do it with channels and simpler comparator logic.
 		let r_is_negative = out_rem_bits[31];
 		let mut inner_abs_rem_table = table.with_namespace("rem_abs_value");
 		let abs_r_value =

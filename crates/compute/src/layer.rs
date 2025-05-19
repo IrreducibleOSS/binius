@@ -25,7 +25,8 @@ pub trait ComputeLayer<F: Field> {
 	/// The executor that can execute operations on the device.
 	type Exec;
 
-	/// The executor that can execute operations on a kernel-level granularity (i.e., a single core).
+	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
+	/// core).
 	type KernelExec;
 
 	/// The operation (scalar) value type.
@@ -167,14 +168,16 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements that `a_in` contains.
+	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements
+	///   that `a_in` contains.
 	/// * `a_in` - the first input slice of subfield elements.
 	/// * `b_in` - the second input slice of `F` elements.
 	///
 	/// ## Throws
 	///
 	/// * if `a_edeg` is greater than `F::LOG_BITS`
-	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of two
+	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of
+	///   two
 	///
 	/// ## Returns
 	///
@@ -248,6 +251,37 @@ pub trait ComputeLayer<F: Field> {
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
+	/// Computes right matrix-vector multiplication of a subfield matrix with a big field vector.
+	///
+	/// ## Mathematical Definition
+	///
+	/// This operation accepts
+	///
+	/// * $n \in \mathbb{N}$ (`vec.len()`),
+	/// * $m \in \mathbb{N}$ (`out.len()`),
+	/// * $M \in K^{n \times m}$ (`mat`),
+	/// * $v \in K^m$ (`vec`),
+	///
+	/// and computes the vector $((v')M)'$. The prime denotes a transpose
+	///
+	/// ## Args
+	///
+	/// * `mat` - a slice of elements from a subfield of `F`.
+	/// * `vec` - a slice of `F` elements.
+	/// * `out` - a buffer for the output vector of `F` elements.
+	///
+	/// ## Throws
+	///
+	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
+	/// * Returns an error if `mat` is not a subfield of `F`.
+	fn fold_right<'a>(
+		&'a self,
+		exec: &'a mut Self::Exec,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
 	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
 	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
 	///
@@ -277,6 +311,24 @@ pub trait ComputeLayer<F: Field> {
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
+	) -> Result<(), Error>;
+
+	/// A kernel-local operation that performs point-wise addition of two input buffers into an
+	/// output buffer.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in all three buffers.
+	/// * `src1` - the first input buffer.
+	/// * `src2` - the second input buffer.
+	/// * `dst` - the output buffer that receives the element-wise sum.
+	fn kernel_add(
+		&self,
+		exec: &mut Self::KernelExec,
+		log_len: usize,
+		src1: FSlice<'_, F, Self>,
+		src2: FSlice<'_, F, Self>,
+		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
 
 	/// FRI-fold the interleaved codeword using the given challenges.
@@ -419,8 +471,8 @@ pub type FSliceMut<'a, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{tower::CanonicalTowerFamily, BinaryField128b, Field, TowerField};
-	use rand::{prelude::StdRng, SeedableRng};
+	use binius_field::{BinaryField128b, Field, TowerField, tower::CanonicalTowerFamily};
+	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{

@@ -41,6 +41,8 @@ pub enum VerificationError {
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
+	#[error("Advised MLECheck ConstraintSet positios must has the same eval_point")]
+	MLECheckConstraintSetPositionMismatch,
 	#[error("LinearCombination must contain an eval")]
 	MissingLinearCombinationEval,
 	#[error("The referenced duplicate claim is different from expected")]

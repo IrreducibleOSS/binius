@@ -63,7 +63,7 @@ pub type ChannelId = usize;
 
 #[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes, PartialEq, Eq)]
 pub enum OracleOrConst<F: Field> {
-	Oracle(usize),
+	Oracle(OracleId),
 	Const { base: F, tower_level: usize },
 }
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
@@ -215,7 +215,7 @@ where
 			let unbalanced_flushes: Vec<_> = channel
 				.multiplicities
 				.iter()
-				.filter(|(_, &c)| c != 0i64)
+				.filter(|(_, c)| **c != 0i64)
 				.collect();
 
 			tracing::debug!("Channel {:?} unbalanced: {:?}", id, unbalanced_flushes);

@@ -4,8 +4,8 @@ use digest::Output;
 
 use super::digest::Groestl256;
 use crate::{
-	groestl::{GroestlShortImpl, GroestlShortInternal},
 	PseudoCompressionFunction,
+	groestl::{GroestlShortImpl, GroestlShortInternal},
 };
 
 /// One-way compression function that compresses two 32-byte strings into a single 32-byte string.

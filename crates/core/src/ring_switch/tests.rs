@@ -3,11 +3,11 @@
 use std::{cmp::Ordering, iter::repeat_with};
 
 use binius_field::{
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -22,7 +22,7 @@ use rand::prelude::*;
 use super::{
 	common::EvalClaimSystem,
 	prove,
-	verify::{verify, ReducedClaim},
+	verify::{ReducedClaim, verify},
 };
 use crate::{
 	fiat_shamir::HasherChallenger,
@@ -30,7 +30,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
 	protocols::{
-		evalcheck::{subclaims::MemoizedData, EvalcheckMultilinearClaim},
+		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
 		fri::CommitOutput,
 	},
 	ring_switch::prove::ReducedWitness,
@@ -68,7 +68,7 @@ where
 {
 	let mut witness_index = MultilinearExtensionIndex::new();
 
-	for oracle in oracles.iter() {
+	for oracle in oracles.polys() {
 		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			let n_vars = oracle.n_vars();
 			let witness = match oracle.binary_tower_level() {
@@ -141,7 +141,7 @@ where
 	F: TowerField,
 {
 	let max_n_vars = oracles
-		.iter()
+		.polys()
 		.filter(|oracle| matches!(oracle.variant, MultilinearPolyVariant::Committed))
 		.map(|oracle| oracle.n_vars())
 		.max()
@@ -151,7 +151,7 @@ where
 		.collect::<Vec<_>>();
 
 	let mut eval_claims = Vec::new();
-	for oracle in oracles.iter() {
+	for oracle in oracles.polys() {
 		if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			continue;
 		}

@@ -91,8 +91,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 	///
 	/// ## Throws
 	///
-	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
-	///   elements.
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
 	fn encode_batch_inplace<P: PackedField<Scalar = F>, NTT: AdditiveNTT<F> + Sync>(
 		&self,
 		ntt: &NTT,
@@ -144,7 +143,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 			log_y: self.log_len(),
 			..Default::default()
 		};
-		ntt.forward_transform(code, shape, 0, self.log_inv_rate)?;
+		ntt.forward_transform(code, shape, 0, 0, self.log_inv_rate)?;
 		Ok(())
 	}
 

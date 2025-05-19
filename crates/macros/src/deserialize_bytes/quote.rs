@@ -2,27 +2,28 @@
 
 use std::collections::{HashMap, HashSet};
 
-use quote::{quote, ToTokens};
-use syn::{punctuated::Punctuated, token::Comma, GenericParam, Generics, Type, WherePredicate};
+use quote::{ToTokens, quote};
+use syn::{GenericParam, Generics, Type, WherePredicate, punctuated::Punctuated, token::Comma};
 
 use super::parse::GenericBinding;
 
 /// Contains information about the generics used in the implementation.
-/// It is geneally used in the following way: quote! {impl #impl_generics MyStruct #type_generics #where_clause}
+/// It is geneally used in the following way: quote! {impl #impl_generics MyStruct #type_generics
+/// #where_clause}
 #[derive(Debug, Clone)]
-pub struct GenericsSplit<'gen, 'attr> {
-	pub impl_generics: ImplGenerics<'gen, 'attr>,
-	pub type_generics: TypeGenerics<'gen, 'attr>,
-	pub where_clause: WhereClause<'gen, 'attr>,
+pub struct GenericsSplit<'generics, 'attr> {
+	pub impl_generics: ImplGenerics<'generics, 'attr>,
+	pub type_generics: TypeGenerics<'generics, 'attr>,
+	pub where_clause: WhereClause<'generics, 'attr>,
 }
 
-impl<'gen, 'attr> GenericsSplit<'gen, 'attr> {
+impl<'generics, 'attr> GenericsSplit<'generics, 'attr> {
 	/// Creates a new instance of [`GenericsSplit`].
 	///
 	/// ## Arguments
 	/// * `generics`: The generics from DeriveInput.
 	/// * `eval_generics`: The generics bindings coming from the `eval_generics` attribute.
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+	pub fn new(generics: &'generics Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			impl_generics: ImplGenerics::new(generics, eval_generics),
 			type_generics: TypeGenerics::new(generics, eval_generics),
@@ -32,13 +33,13 @@ impl<'gen, 'attr> GenericsSplit<'gen, 'attr> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplGenerics<'gen, 'attr> {
-	generics: &'gen Generics,
+pub struct ImplGenerics<'generics, 'attr> {
+	generics: &'generics Generics,
 	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen, 'attr> ImplGenerics<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+impl<'generics, 'attr> ImplGenerics<'generics, 'attr> {
+	pub fn new(generics: &'generics Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -72,13 +73,13 @@ impl ToTokens for ImplGenerics<'_, '_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeGenerics<'gen, 'attr> {
-	generics: &'gen Generics,
+pub struct TypeGenerics<'generics, 'attr> {
+	generics: &'generics Generics,
 	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen, 'attr> TypeGenerics<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+impl<'generics, 'attr> TypeGenerics<'generics, 'attr> {
+	pub fn new(generics: &'generics Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -115,13 +116,13 @@ impl ToTokens for TypeGenerics<'_, '_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct WhereClause<'gen, 'attr> {
-	generics: &'gen Generics,
+pub struct WhereClause<'generics, 'attr> {
+	generics: &'generics Generics,
 	eval_generics: &'attr [GenericBinding],
 }
 
-impl<'gen, 'attr> WhereClause<'gen, 'attr> {
-	pub fn new(generics: &'gen Generics, eval_generics: &'attr [GenericBinding]) -> Self {
+impl<'generics, 'attr> WhereClause<'generics, 'attr> {
+	pub fn new(generics: &'generics Generics, eval_generics: &'attr [GenericBinding]) -> Self {
 		Self {
 			generics,
 			eval_generics,
@@ -163,7 +164,7 @@ mod tests {
 	use quote::quote;
 	use syn::ItemStruct;
 
-	use crate::deserialize_bytes::{parse::ContainerAttributes, GenericsSplit};
+	use crate::deserialize_bytes::{GenericsSplit, parse::ContainerAttributes};
 
 	#[test]
 	fn test_generics() {

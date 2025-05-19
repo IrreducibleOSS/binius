@@ -7,21 +7,21 @@
 use std::iter;
 
 use binius_field::{
-	packed::get_packed_slice_checked, Field, PackedExtension, PackedField, PackedSubfield,
+	Field, PackedExtension, PackedField, PackedSubfield, packed::get_packed_slice_checked,
 };
 use binius_math::{
-	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
-	MultilinearQueryRef, RowsBatchRef,
+	CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	RowsBatchRef, extrapolate_lines,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use itertools::{izip, Either, Itertools};
+use itertools::{Either, Itertools, izip};
 use stackalloc::stackalloc_with_iter;
 
 use crate::{
-	common::{subcube_vars_for_bits, MAX_SRC_SUBCUBE_LOG_BITS},
 	Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+	common::{MAX_SRC_SUBCUBE_LOG_BITS, subcube_vars_for_bits},
 };
 
 trait SumcheckMultilinearAccess<P: PackedField> {
@@ -47,10 +47,11 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 	/// _does not_ depend on evaluation order.
 	///
 	/// Indexed subcube evaluations are written into `evals_0` and `evals_1` slices, where scalar
-	/// order corresponds to the lower `P::LOG_WIDTH` variables of the `subcube_vars`-variate hypercube.
+	/// order corresponds to the lower `P::LOG_WIDTH` variables of the `subcube_vars`-variate
+	/// hypercube.
 	///
-	/// The method can potentially require a `&mut [P]` scratch space, whose length is given by a query
-	/// to [`scratch_space_len`] and should be uniquely determined by `subcube_vars`.
+	/// The method can potentially require a `&mut [P]` scratch space, whose length is given by a
+	/// query to [`scratch_space_len`] and should be uniquely determined by `subcube_vars`.
 	///
 	/// ## Arguments
 	///
@@ -59,8 +60,10 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 	/// * `index_vars`    - number of bits in the `subcube_index`
 	/// * `tensor_query`  - multilinear query of pre-switchover challenges (empty if all folded)
 	/// * `scratch_space` - optional scratch space
-	/// * `evals_0`       - `subcube_vars`-variate hypercube with current variables substituted for 0
-	/// * `evals_1`       - `subcube_vars`-variate hypercube with current variables substituted for 1
+	/// * `evals_0`       - `subcube_vars`-variate hypercube with current variables substituted for
+	///   0
+	/// * `evals_1`       - `subcube_vars`-variate hypercube with current variables substituted for
+	///   1
 	#[allow(clippy::too_many_arguments)]
 	fn subcube_evaluations<M: MultilinearPoly<P>>(
 		&self,
@@ -149,7 +152,8 @@ where
 		.reduce(|range1, range2| range1.start.min(range2.start)..range1.end.max(range2.end))
 		.unwrap_or(0..0);
 
-	// Check that finite evaluation points  are of correct length (accounted for 0, 1 & infinity point).
+	// Check that finite evaluation points  are of correct length (accounted for 0, 1 & infinity
+	// point).
 	if nontrivial_evaluation_points.len() != eval_point_indices.end.saturating_sub(3) {
 		bail!(Error::IncorrectNontrivialEvalPointsLength);
 	}
@@ -224,8 +228,8 @@ where
 					// The first three points are treated specially:
 					//   index 0 - z = 0   => f(z, xs) = f(0, xs)
 					//   index 1 - z = 1   => f(z, xs) = f(1, xs)
-					//   index 2 = z = inf => f(inf, xs) = high (f(0, xs) + z * (f(1, xs) - f(0, xs))) =
-					//                                   = f(1, xs) - f(0, xs)
+					//   index 2 = z = inf => f(inf, xs) = high (f(0, xs) + z * (f(1, xs) - f(0,
+					// xs))) =                                   = f(1, xs) - f(0, xs)
 					//   index 3 and above - remaining finite evaluation points
 					let evals_z_iter =
 						izip!(multilinear_evals.iter_mut(), &subcube_count_by_multilinear).map(
@@ -253,9 +257,9 @@ where
 									izip!(&mut evals.evals_z, &evals.evals_0, &evals.evals_1)
 										.for_each(|(eval_z, &eval_0, &eval_1)| {
 											// This is logically the same as calling
-											// `binius_math::univariate::extrapolate_line`, except that we do
-											// not repeat the broadcast of the subfield element to a packed
-											// subfield.
+											// `binius_math::univariate::extrapolate_line`, except
+											// that we do not repeat the broadcast of the
+											// subfield element to a packed subfield.
 											*eval_z = P::cast_ext(extrapolate_lines(
 												P::cast_base(eval_0),
 												P::cast_base(eval_1),
@@ -473,7 +477,8 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess {
 		}
 
 		// Evaluations at 0 & 1 are interleaved (the substituted variable is the lowest one), need
-		// to deinterleave them first. This requires scratch space to enable simple linear time algorithm.
+		// to deinterleave them first. This requires scratch space to enable simple linear time
+		// algorithm.
 		let zeros = P::default();
 		let interleaved_tuples = if scratch_space.len() == 1 {
 			Either::Left(iter::once((scratch_space.first().expect("len==1"), &zeros)))

@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use super::packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType};
+use super::packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height};
 use crate::{
-	arch::PairwiseStrategy, arithmetic_traits::impl_transformation_with_strategy, underlier::U1,
-	BinaryField1b,
+	BinaryField1b, arch::PairwiseStrategy, arithmetic_traits::impl_transformation_with_strategy,
+	underlier::U1,
 };
 
 // Define 1 bit packed field types

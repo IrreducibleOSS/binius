@@ -3,31 +3,97 @@
 use std::{iter::repeat_with, vec};
 
 use binius_field::{
-	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
+	BinaryField, BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField,
+	PackedBinaryField16x16b, PackedField, TowerField,
+	arch::{OptimalUnderlier128b, packed_64::PackedBinaryField4x16b},
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField,
-	PackedBinaryField16x16b, PackedField, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::MultilinearExtension;
+use binius_math::{MultilinearExtension, MultilinearQuery, fold_right};
 use binius_maybe_rayon::prelude::ParallelIterator;
-use binius_ntt::SingleThreadedNTT;
+use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use binius_utils::checked_arithmetics::log2_strict_usize;
+use bytemuck::zeroed_vec;
+use proptest::prelude::*;
 use rand::prelude::*;
 
-use super::to_par_scalar_big_chunks;
+use super::{fold_interleaved, to_par_scalar_big_chunks};
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
-		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
-		FoldRoundOutput,
+		self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput,
+		to_par_scalar_small_chunks,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::ProverTranscript,
 };
+
+proptest! {
+	#[test]
+	fn test_fri_compatible_ntt_domains(log_dim in 0..8usize, arity in 0..4usize) {
+		test_help_fri_compatible_ntt_domains(log_dim, arity);
+	}
+}
+
+fn test_help_fri_compatible_ntt_domains(log_dim: usize, arity: usize) {
+	let ntt = SingleThreadedNTT::<BinaryField32b>::new(32).unwrap();
+
+	let msg = repeat_with(|| BinaryField32b::random(&mut thread_rng()))
+		.take(1 << (log_dim + arity))
+		.collect::<Vec<_>>();
+	let challenges = repeat_with(|| BinaryField32b::random(&mut thread_rng()))
+		.take(arity)
+		.collect::<Vec<_>>();
+
+	let query = MultilinearQuery::expand(&challenges).into_expansion();
+
+	// Fold the message using regular folding.
+	let mut folded_msg = zeroed_vec(1 << log_dim);
+	fold_right::<BinaryField32b, BinaryField32b>(
+		&msg,
+		log_dim + arity,
+		&query,
+		arity,
+		&mut folded_msg,
+	)
+	.unwrap();
+
+	// Encode the message over the large domain.
+	let mut codeword = msg;
+	ntt.forward_transform(
+		&mut codeword,
+		NTTShape {
+			log_y: log_dim + arity,
+			..Default::default()
+		},
+		0,
+		0,
+		0,
+	)
+	.unwrap();
+
+	// Fold the encoded message using FRI folding.
+	let folded_codeword = fold_interleaved(&ntt, &codeword, &challenges, log_dim + arity, 0);
+
+	// Encode the folded message.
+	ntt.forward_transform(
+		&mut folded_msg,
+		NTTShape {
+			log_y: log_dim,
+			..Default::default()
+		},
+		0,
+		0,
+		0,
+	)
+	.unwrap();
+
+	// Check that folding and encoding commute.
+	assert_eq!(folded_codeword, folded_msg);
+}
 
 fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
@@ -111,7 +177,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let eval_query = backend
 		.multilinear_query::<F>(&verifier_challenges)
 		.unwrap();
-	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.
+	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean
+	// hypercube of) a multilinear polynomial.
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();
 

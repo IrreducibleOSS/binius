@@ -4,7 +4,7 @@ use binius_field::*;
 use binius_macros::arith_circuit_poly;
 use binius_math::{CompositionPoly, RowsBatchRef};
 use paste::paste;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 const BATCH_SIZE: usize = 32;
 
