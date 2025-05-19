@@ -291,7 +291,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
-		if query.len() != self.n_vars {
+		if query.len() < self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
 				actual: query.len(),
@@ -363,6 +363,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		if batch_query.n_rows() < self.n_vars {
 			bail!(Error::IncorrectQuerySize {
 				expected: self.n_vars,
+				actual: batch_query.n_rows(),
 			});
 		}
 
@@ -565,8 +566,14 @@ mod tests {
 		assert_eq!(typed_circuit.degree(), 3);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
-		let result = typed_circuit.evaluate(&[P::default(), P::default()]);
-		assert!(matches!(result, Err(Error::IncorrectQuerySize { expected: 1 })));
+		let result = typed_circuit.evaluate(&[]);
+		assert!(matches!(
+			result,
+			Err(Error::IncorrectQuerySize {
+				expected: 1,
+				actual: 0
+			})
+		));
 	}
 
 	#[test]
@@ -584,7 +591,13 @@ mod tests {
 		let row_0 = [P::default(), P::default()];
 		let rows_batch = RowsBatch::new(vec![&row_0], 2);
 		let result = typed_circuit.batch_evaluate(&rows_batch.get_ref(), &mut [P::default()]);
-		assert!(matches!(result, Err(Error::IncorrectQuerySize { expected: 2 })));
+		assert!(matches!(
+			result,
+			Err(Error::IncorrectQuerySize {
+				expected: 2,
+				actual: 1
+			})
+		));
 
 		let rows_batch = RowsBatch::new(vec![&row_0, &row_0], 2);
 		let result = typed_circuit.batch_evaluate(&rows_batch.get_ref(), &mut [P::default()]);
