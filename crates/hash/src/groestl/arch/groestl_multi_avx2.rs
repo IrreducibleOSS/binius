@@ -12,25 +12,11 @@ const BYTESLICE_PERMUTATION_ARRAY: [u8; 32] = [
 	22, 30, 7, 15, 23, 31,
 ];
 
-fn print_m256_as_hex(m256: __m256i) {
-	// Convert _m256i into a byte array by extracting the individual elements.
-	let mut hex_str = String::new();
-	for i in 0..32 {
-		let byte = unsafe { std::mem::transmute::<__m256i, [u8; 32]>(m256) }[i];
-		// write!(hex_str, "{:02x} ", byte).unwrap(); //hex
-		print!("{} ", byte); //dec
-	}
-
-	// Print the formatted string
-	println!("{}", hex_str);
-}
-
 // These getters/setters are still prototypes
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 	let mut new_state = [unsafe { _mm256_set1_epi64x(0) }; 8];
 	let byteslice_permuatation_m256 = unsafe { std::mem::transmute(BYTESLICE_PERMUTATION_ARRAY) };
-	println!("got here 1");
 
 	for i in 0..4 {
 		new_state[2 * i] =
@@ -38,13 +24,11 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 		new_state[2 * i + 1] =
 			unsafe { _mm256_loadu_si256(substate_vals[i][32..64].as_ptr() as *const __m256i) };
 	}
-	println!("got here 1");
 
 	for i in 0..8 {
 		new_state[i] =
 			unsafe { _mm256_permutexvar_epi8(byteslice_permuatation_m256, new_state[i]) };
 	}
-	println!("got here 1");
 
 	// row-align every eigth item
 	for i in 0..8 {
@@ -55,7 +39,6 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 			new_state[i + 1] = unsafe { _mm256_unpackhi_epi32(a, b) };
 		}
 	}
-	println!("got here 1");
 
 	// make every row two pairs of consecutive items
 	for i in 0..8 {
@@ -79,12 +62,9 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 
 	// swaps because the SIMD instructions operate on the 128-bit lanes as opposed to the whole
 	// 256-bit value
-	println!("got here 1");
 
 	new_state.swap(1, 2);
 	new_state.swap(5, 6);
-
-	println!("finished execution");
 
 	new_state
 }
@@ -201,13 +181,6 @@ fn permutation_p(state: &mut State) {
 		sub_bytes(state);
 		shift_bytes_p(state);
 		mix_bytes(state);
-
-		if (r == ROUNDS_PER_PERMUTATION - 1) {
-			println!("after last round p:");
-			for i in 0..8 {
-				print_m256_as_hex(state[i]);
-			}
-		}
 	}
 }
 
@@ -217,12 +190,6 @@ fn permutation_q(state: &mut State) {
 		sub_bytes(state);
 		shift_bytes_q(state);
 		mix_bytes(state);
-		if (r == ROUNDS_PER_PERMUTATION - 1) {
-			println!("after last round q:");
-			for i in 0..8 {
-				print_m256_as_hex(state[i]);
-			}
-		}
 	}
 }
 
@@ -240,10 +207,6 @@ impl Groestl256Multi {
 		for i in 0..8 {
 			p_data[i] = unsafe { _mm256_xor_si256(self.state[i], q_data[i]) };
 		}
-
-		// for i in 0..8 {
-		//     print_m256_as_hex(p_data[i]);
-		// }
 
 		permutation_p(&mut p_data);
 		permutation_q(&mut q_data);
@@ -304,7 +267,6 @@ impl MultiDigest<4> for Groestl256Multi {
 		let mut i = 0;
 
 		while i + 64 <= data[0].len() {
-			println!("ran a completely full block");
 			self.consume_single_block_parallel([
 				&data[0][i..i + 64],
 				&data[1][i..i + 64],
@@ -329,8 +291,6 @@ impl MultiDigest<4> for Groestl256Multi {
 			this_block[0..this_instance_data.len() - i]
 				.copy_from_slice(&this_instance_data[i..this_instance_data.len()]);
 
-			println!("datalen: {} i: {}", this_instance_data.len(), i);
-
 			this_block[this_instance_data.len() - i] = 0b10000000;
 
 			if no_additional_block {
@@ -341,8 +301,6 @@ impl MultiDigest<4> for Groestl256Multi {
 			}
 			this_data[parallel_idx] = this_block;
 		}
-
-		println!("{:?}", this_data[0]);
 
 		self.consume_single_block_parallel([
 			&this_data[0],
