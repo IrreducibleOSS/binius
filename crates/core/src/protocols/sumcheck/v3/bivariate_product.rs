@@ -1,13 +1,92 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::iter;
+use std::{iter, marker::PhantomData, slice};
 
-use binius_compute::{ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap};
-use binius_field::{TowerField, util::powers};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_compute::{
+	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice,
+	alloc::{BumpAllocator, ComputeAllocator},
+	cpu::CpuMemory,
+};
+use binius_field::{Field, TowerField, util::powers};
+use binius_math::{ArithExpr, EvaluationOrder, evaluate_univariate, CompositionPoly};
+use binius_utils::bail;
 
 use super::error::Error;
-use crate::composition::{BivariateProduct, IndexComposition};
+use crate::{
+	composition::{BivariateProduct, IndexComposition},
+	protocols::sumcheck::{Error as SumcheckError, RoundCoeffs, prove::SumcheckProver},
+};
+
+pub struct BivariateSumcheckProver<'a, F: Field, Hal: ComputeLayer<F>> {
+	hal: &'a Hal,
+	//dev_alloc: &'a BumpAllocator<'a, F, Hal::DevMem>,
+	host_alloc: &'a BumpAllocator<'a, F, CpuMemory>,
+	n_vars: usize,
+	multilins: Vec<FSlice<'a, F, Hal>>,
+	last_coeffs_or_sums: ProverStateCoeffsOrSums<F>,
+	_marker: PhantomData<(F, Hal)>,
+}
+
+impl<F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, F, Hal>
+where
+	F: TowerField,
+	Hal: ComputeLayer<F>,
+{
+	fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	fn evaluation_order(&self) -> EvaluationOrder {
+		EvaluationOrder::HighToLow
+	}
+
+	fn execute(&mut self, _batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
+		todo!()
+	}
+
+	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
+		if self.n_vars == 0 {
+			bail!(SumcheckError::ExpectedFinish);
+		}
+
+		// Update the stored multilinear sums.
+		match self.last_coeffs_or_sums {
+			ProverStateCoeffsOrSums::Coeffs(ref mut round_coeffs) => {
+				let new_sums = round_coeffs
+					.drain(..)
+					.into_iter()
+					.map(|coeffs| evaluate_univariate(&coeffs.0, challenge))
+					.collect();
+				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);
+			}
+			ProverStateCoeffsOrSums::Sums(_) => {
+				bail!(SumcheckError::ExpectedExecution);
+			}
+		}
+
+		self.n_vars -= 1;
+		Ok(())
+	}
+
+	fn finish(self: Box<Self>) -> Result<Vec<F>, SumcheckError> {
+		match self.last_coeffs_or_sums {
+			ProverStateCoeffsOrSums::Coeffs(_) => {
+				bail!(SumcheckError::ExpectedFold);
+			}
+			ProverStateCoeffsOrSums::Sums(_) => match self.n_vars {
+				0 => {}
+				_ => bail!(SumcheckError::ExpectedExecution),
+			},
+		};
+
+		let buffer = self.host_alloc.alloc(self.multilins.len())?;
+		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
+			debug_assert_eq!(multilin.len(), 1);
+			self.hal.copy_d2h(multilin, slice::from_mut(dst_i))?;
+		}
+		Ok(buffer.to_vec())
+	}
+}
 
 /// Calculates the evaluations of the products of pairs of partially specialized multilinear
 /// polynomials for sumcheck.
@@ -149,6 +228,12 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	})?;
 	let evals = TryInto::<[F; 2]>::try_into(evals).expect("kernel returns two values");
 	Ok(evals)
+}
+
+#[derive(Debug)]
+enum ProverStateCoeffsOrSums<F: Field> {
+	Coeffs(Vec<RoundCoeffs<F>>),
+	Sums(Vec<F>),
 }
 
 #[cfg(test)]
