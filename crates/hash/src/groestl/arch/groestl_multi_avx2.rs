@@ -225,7 +225,7 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		let mut i = 0;
 
-		while i + 64 <= data.len() {
+		while i + 64 <= data[0].len() {
 			self.consume_single_block_parallel([
 				&data[0][i..i + 64],
 				&data[1][i..i + 64],
