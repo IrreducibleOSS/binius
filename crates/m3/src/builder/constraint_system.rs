@@ -59,7 +59,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 				for flush in partition.flushes.iter() {
 					let channel = self.channels[flush.channel_id].name.clone();
 					let columns = flush
-						.column_indices
+						.columns
 						.iter()
 						.map(|i| table[*i].name.clone())
 						.collect::<Vec<_>>()
@@ -311,14 +311,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 				// Translate flushes for the compiled constraint system.
 				for Flush {
-					column_indices,
+					columns: flush_columns,
 					channel_id,
 					direction,
 					multiplicity,
 					selectors,
 				} in flushes
 				{
-					let flush_oracles = column_indices
+					let flush_oracles = flush_columns
 						.iter()
 						.map(|&column_id| OracleOrConst::Oracle(oracle_lookup[column_id]))
 						.collect::<Vec<_>>();

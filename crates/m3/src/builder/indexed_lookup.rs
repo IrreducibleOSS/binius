@@ -78,7 +78,7 @@ where
 						// TODO: This should be parallelized, which is pretty tricky.
 						let segment = table_index.full_segment();
 						let cols = flush
-							.column_indices
+							.columns
 							.iter()
 							.map(|&col_index| segment.get_dyn(col_index))
 							.collect::<Result<Vec<_>, _>>()?;

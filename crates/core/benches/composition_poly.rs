@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::iter::repeat_with;
+use std::{hint::black_box, iter::repeat_with};
 
 use binius_core::polynomial::ArithCircuitPoly;
 use binius_field::{
@@ -9,7 +9,7 @@ use binius_field::{
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
 use binius_math::{ArithExpr as Expr, CompositionPoly, RowsBatchRef};
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use rand::{RngCore, thread_rng};
 
 const BATCH_SIZE: usize = 256;
