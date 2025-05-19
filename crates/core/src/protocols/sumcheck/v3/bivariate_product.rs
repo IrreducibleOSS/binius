@@ -20,7 +20,7 @@ use crate::composition::{BivariateProduct, IndexComposition};
 /// and a description of pairs of them, and computes the hypercube sum of the evaluations of these
 /// pairs of multilinears at select points. The evaluation points are 0 and the "infinity" point.
 /// The meaning of the infinity evaluation point is described in the documentation of
-/// [`binius_math::univariate::EvaluationDomain`].
+/// [`binius_math::EvaluationDomain`].
 ///
 /// The evaluations are batched by mixing with the powers of a batch coefficient.
 ///
@@ -93,25 +93,20 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 
 				// Compute the composite evaluations at the point ONE.
 				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
-				let eval_1s = (0..multilins.len())
-					.map(|i| {
-						let KernelBuffer::Ref(buffer) = &buffers[i * 3 + 1] else {
-							panic!(
-								"exec_kernels did not create the mapped buffers struct according to the mapping"
-							)
-						};
-						*buffer
-					})
-					.collect::<Vec<_>>();
-				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					hal.sum_composition_evals(
-						local_exec,
-						log_chunk_size,
-						&eval_1s,
-						evaluator,
-						batch_coeff,
-						&mut acc_1,
-					)?;
+				{
+					let eval_1s = (0..multilins.len())
+						.map(|i| buffers[i * 3 + 1].to_ref())
+						.collect::<Vec<_>>();
+					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
+						hal.sum_composition_evals(
+							local_exec,
+							log_chunk_size,
+							&eval_1s,
+							evaluator,
+							batch_coeff,
+							&mut acc_1,
+						)?;
+					}
 				}
 
 				// Extrapolate the multilinear evaluations at the point Infinity.
