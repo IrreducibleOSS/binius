@@ -18,7 +18,6 @@ const UNBYTESLICE_PERMUTATION_ARRAY: [u8; 32] = [
     22, 30, 7, 15, 23, 31,
 ];
 
-// These getters/setters are still prototypes
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 
@@ -35,7 +34,7 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
             unsafe { _mm256_permutexvar_epi8(byteslice_permuatation_m256, new_state[i]) };
     }
 
-    // row-align every eigth item
+    // row-align every eighth item
     for i in 0..8 {
         if i % 2 == 0 {
             let a = new_state[i];
