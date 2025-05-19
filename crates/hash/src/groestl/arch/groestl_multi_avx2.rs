@@ -145,6 +145,13 @@ fn permutation_p(state: &mut State) {
         sub_bytes(state);
         shift_bytes_p(state);
         mix_bytes(state);
+
+        if (r==ROUNDS_PER_PERMUTATION-1){
+            println!("after last round p:");
+            for i in 0..8 {
+                print_m256_as_hex(state[i]);
+            }
+        }
     }
 }
 
@@ -154,6 +161,12 @@ fn permutation_q(state: &mut State) {
         sub_bytes(state);
         shift_bytes_q(state);
         mix_bytes(state);
+        if (r==ROUNDS_PER_PERMUTATION-1){
+            println!("after last round q:");
+            for i in 0..8 {
+                print_m256_as_hex(state[i]);
+            }
+        }
     }
 }
 
@@ -171,16 +184,14 @@ impl Groestl256Multi {
         }
 
         let mut p_data = [unsafe { _mm256_set1_epi64x(0) }; 8];
-        //printing test start
 
-        for i in 0..8 {
-            println!("{:?}", q_data[i]);
-            print_m256_as_hex(q_data[i]);
-        }
-        //printing test end
         for i in 0..8 {
             p_data[i] = unsafe { _mm256_xor_si256(self.state[i], q_data[i]) };
         }
+
+        // for i in 0..8 {
+        //     print_m256_as_hex(p_data[i]);
+        // }
 
         permutation_p(&mut p_data);
         permutation_q(&mut q_data);
@@ -202,7 +213,7 @@ impl Groestl256Multi {
             unsafe {
                 out[parallel_idx]
                     .as_mut_ptr()
-                    .write(*digest::Output::<Groestl256>::from_slice(&slice[..32]));
+                    .write(*digest::Output::<Groestl256>::from_slice(&slice[32..]));
             }
         }
     }
@@ -214,12 +225,12 @@ impl Default for Groestl256Multi {
         Self {
             state: [
                 unsafe { _mm256_set1_epi64x(0) },
-                unsafe { _mm256_set1_epi64x(1u64 as i64) },
                 unsafe { _mm256_set1_epi64x(0) },
                 unsafe { _mm256_set1_epi64x(0) },
                 unsafe { _mm256_set1_epi64x(0) },
                 unsafe { _mm256_set1_epi64x(0) },
                 unsafe { _mm256_set1_epi64x(0) },
+                unsafe { _mm256_set1_epi64x(0x100000000000000u64 as i64) },
                 unsafe { _mm256_set1_epi64x(0) },
             ],
         }
@@ -269,9 +280,9 @@ impl MultiDigest<4> for Groestl256Multi {
             this_block[this_instance_data.len() - i] = 0b10000000;
 
             if no_additional_block {
-                this_block[56..64].copy_from_slice(&((i / 64 + 1) as u64).to_le_bytes());
+                this_block[56..64].copy_from_slice(&((i / 64 + 1) as u64).to_be_bytes());
             } else {
-                next_block[56..64].copy_from_slice(&((i / 64 + 2) as u64).to_le_bytes());
+                next_block[56..64].copy_from_slice(&((i / 64 + 2) as u64).to_be_bytes());
                 next_data[parallel_idx] = next_block;
             }
             this_data[parallel_idx] = this_block;
