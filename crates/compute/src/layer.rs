@@ -164,8 +164,7 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `a_tower_height` - the binary logarithm of the tower height of the subfield elements that
-	///   `a_in` contains.
+	/// * `a_tower_height` - the tower height of the subfield elements that `a_in` contains.
 	/// * `a_in` - the first input slice of subfield elements.
 	/// * `b_in` - the second input slice of `F` elements.
 	///

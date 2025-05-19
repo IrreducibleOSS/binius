@@ -155,7 +155,8 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)
 		}
 
-		let result = each_tower_subfield!(a_tower_height, T, inner_product::<_, T::B128>(a_in, b_in));
+		let result =
+			each_tower_subfield!(a_tower_height, T, inner_product::<_, T::B128>(a_in, b_in));
 		Ok(result)
 	}
 
