@@ -20,7 +20,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
-use itertools::chain;
+use itertools::{chain, izip};
 use tracing::instrument;
 
 use super::{
@@ -31,6 +31,7 @@ use super::{
 };
 use crate::{
 	constraint_system::{
+		Flush,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
 	},
@@ -217,7 +218,7 @@ where
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
-	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids)?;
+	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids, &flushes)?;
 
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
@@ -479,46 +480,76 @@ fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
+	flushes: &[Flush<FExt<Tower>>],
 ) -> Result<(), Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 {
+	let ones = PackedType::<U, FExt<Tower>>::one();
 	// The function is on the critical path, parallelize.
-	let indices_to_update: Vec<(OracleId, MultilinearWitness<'a, _>)> = flush_oracle_ids
-		.par_iter()
-		.map(|&flush_oracle| match &oracles[flush_oracle].variant {
+	let indices_to_update = izip!(flush_oracle_ids, flushes)
+		.map(|(&flush_oracle, flush)| match &oracles[flush_oracle].variant {
 			MultilinearPolyVariant::Composite(composite) => {
 				let inner_polys = composite.inner();
+
+				let selectors = flush
+					.selectors
+					.iter()
+					.map(|id| witness.get_multilin_poly(*id))
+					.collect::<Result<Vec<_>, _>>()?;
+
+				let n_vars = composite.n_vars();
+
+				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+
+				let len: usize = 1 << n_vars;
+				let packed_len: usize = 1 << n_vars.saturating_sub(log_width);
+
+				let inner_c = composite.c();
+
+				let zero_suffixes = count_zero_suffixes(&selectors);
+
+				for (zero_suffix, id, poly) in izip!(&zero_suffixes, inner_polys, selectors) {
+					let nonzero_scalars_prefixes = len.saturating_sub(*zero_suffix);
+
+					witness.update_multilin_poly_with_nonzero_scalars_prefixes([(
+						*id,
+						poly,
+						nonzero_scalars_prefixes,
+					)])?;
+				}
 
 				let polys = inner_polys
 					.iter()
 					.map(|id| witness.get_multilin_poly(*id))
 					.collect::<Result<Vec<_>, _>>()?;
 
-				let n_vars = composite.n_vars();
-				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+				let max_packed_zero_suffix =
+					zero_suffixes.into_iter().max().unwrap_or(0) >> log_width;
 
-				let packed_len = 1 << n_vars.saturating_sub(log_width);
-
-				let inner_c = composite.c();
-
-				let composite_data = (0..packed_len)
+				let mut composite_data = (0..packed_len.saturating_sub(max_packed_zero_suffix))
 					.into_par_iter()
 					.map(|i| {
-						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-							let evals = polys
-								.iter()
-								.map(|poly| poly.evaluate_on_hypercube(index).unwrap_or_default())
-								.collect::<Vec<_>>();
+						let evals = polys
+							.iter()
+							.map(|poly| {
+								<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+									let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+									poly.evaluate_on_hypercube(index).unwrap_or_default()
+								})
+							})
+							.collect::<Vec<_>>();
 
-							inner_c
-								.evaluate(&evals)
-								.expect("query length is the same as poly length")
-						})
+						inner_c
+							.evaluate(&evals)
+							.expect("query length is the same as poly length")
 					})
 					.collect::<Vec<_>>();
+
+				// `ArithExpr::Const(F::ONE) + selector * arith_expr_linear` — so if selector is
+				// zero, we fill with ones.
+				composite_data.resize(packed_len, ones);
 
 				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
 					.expect("data is constructed with the correct length with respect to n_vars");
@@ -562,6 +593,28 @@ where
 
 	witness.update_multilin_poly(indices_to_update.into_iter())?;
 	Ok(())
+}
+
+fn count_zero_suffixes<P: PackedField>(polys: &[MultilinearWitness<P>]) -> Vec<usize> {
+	let zeros = P::zero();
+	polys
+		.iter()
+		.map(|poly| {
+			if let Some(packed_evals) = poly.packed_evals() {
+				let mut zero_suffix_len = 0;
+
+				for &packed_evals in packed_evals.iter().rev() {
+					if packed_evals != zeros {
+						break;
+					}
+					zero_suffix_len += 1 << (P::LOG_WIDTH + poly.log_extension_degree());
+				}
+				zero_suffix_len
+			} else {
+				0
+			}
+		})
+		.collect()
 }
 
 #[allow(clippy::type_complexity)]

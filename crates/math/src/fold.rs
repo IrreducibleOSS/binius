@@ -17,11 +17,10 @@ use binius_field::{
 	},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
-use binius_utils::bail;
+use binius_utils::{bail, mem::slice_assume_init_mut};
 use bytemuck::fill_zeroes;
 use itertools::izip;
 use lazy_static::lazy_static;
-use stackalloc::helpers::slice_assume_init_mut;
 
 use crate::Error;
 
@@ -260,7 +259,8 @@ where
 {
 	if log_evals_size < log_query_size {
 		bail!(Error::IncorrectQuerySize {
-			expected: log_evals_size
+			expected: log_evals_size,
+			actual: log_query_size,
 		});
 	}
 
@@ -325,7 +325,10 @@ where
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
 	if log_evals_size == 0 {
-		bail!(Error::IncorrectQuerySize { expected: 1 });
+		bail!(Error::IncorrectQuerySize {
+			expected: 1,
+			actual: log_evals_size,
+		});
 	}
 
 	if non_const_prefix > 1 << log_evals_size {

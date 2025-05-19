@@ -64,7 +64,10 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != 1 {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: 1 });
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: 1,
+				actual: query.len()
+			});
 		}
 		Ok(query[0])
 	}

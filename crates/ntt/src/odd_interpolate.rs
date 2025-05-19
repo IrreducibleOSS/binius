@@ -13,20 +13,33 @@ use crate::{
 pub struct OddInterpolate<F: BinaryField> {
 	vandermonde_inverse: Matrix<F>,
 	ell: usize,
+	coset_bits: usize,
 }
 
 impl<F: BinaryField> OddInterpolate<F> {
 	/// Create a new odd interpolator into novel polynomial basis for domains of size $d \times
 	/// 2^{\ell}$. Takes a reference to NTT twiddle factors to seed the "Vandermonde" matrix and
 	/// compute its inverse. Time complexity is $\mathcal{O}(d^3).$
-	pub fn new<TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Self, Error>
+	pub fn new<TA>(
+		d: usize,
+		ell: usize,
+		coset_bits: usize,
+		twiddle_access: &[TA],
+	) -> Result<Self, Error>
 	where
 		TA: TwiddleAccess<F>,
 	{
+		if d > (1 << coset_bits) {
+			bail!(Error::CosetIndexOutOfBounds {
+				coset: d - 1,
+				coset_bits
+			});
+		}
+
 		// TODO: This constructor should accept an `impl AdditiveNTT` instead of an
 		// `impl TwiddleAccess`. It can use `AdditiveNTT::get_subspace_eval` instead of the twiddle
 		// accessors directly. `AdditiveNTT` is a more public interface.
-		let vandermonde = novel_vandermonde(d, ell, twiddle_access)?;
+		let vandermonde = novel_vandermonde(d, ell, coset_bits, twiddle_access)?;
 
 		let mut vandermonde_inverse = Matrix::zeros(d, d);
 		vandermonde.inverse_into(&mut vandermonde_inverse)?;
@@ -34,6 +47,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 		Ok(Self {
 			vandermonde_inverse,
 			ell,
+			coset_bits,
 		})
 	}
 
@@ -64,7 +78,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			});
 		}
 
-		let log_required_domain_size = log2_ceil_usize(d) + ell;
+		let log_required_domain_size = self.coset_bits + ell;
 		if ntt.log_domain_size() < log_required_domain_size {
 			bail!(Error::DomainTooSmall {
 				log_required_domain_size
@@ -76,7 +90,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 			..Default::default()
 		};
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, shape, i as u32, 0)?;
+			ntt.inverse_transform(chunk, shape, i, self.coset_bits, 0)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is
@@ -103,7 +117,12 @@ impl<F: BinaryField> OddInterpolate<F> {
 /// $j^{\text{th}}$ element of the field with respect to the $\beta^{(\ell)}_i$ in little Endian
 /// order. The matrix has dimensions $d\times d$. The key trick is that
 /// $\widehat{W}^{(\ell)}_i(\beta^{\ell}_j) = $\widehat{W}_{i+\ell}(\beta_{j+\ell})$.
-fn novel_vandermonde<F, TA>(d: usize, ell: usize, twiddle_access: &[TA]) -> Result<Matrix<F>, Error>
+fn novel_vandermonde<F, TA>(
+	d: usize,
+	ell: usize,
+	coset_bits: usize,
+	twiddle_access: &[TA],
+) -> Result<Matrix<F>, Error>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
@@ -121,15 +140,16 @@ where
 	// $X_0$ is the function "1".
 	(0..d).for_each(|j| x_ell[(j, 0)] = F::ONE);
 
-	let log_required_domain_size = log_d + ell;
+	let log_required_domain_size = coset_bits + ell;
 	if twiddle_access.len() < log_required_domain_size {
 		bail!(Error::DomainTooSmall {
 			log_required_domain_size
 		});
 	}
 
-	for (j, twiddle_access_j_plus_ell) in twiddle_access[ell..ell + log_d].iter().enumerate() {
-		assert!(twiddle_access_j_plus_ell.log_n() >= log_d - 1 - j);
+	let twiddle_access = &twiddle_access[twiddle_access.len() - coset_bits..];
+	for (j, twiddle_access_j_plus_ell) in twiddle_access.iter().take(log_d).enumerate() {
+		assert!(twiddle_access_j_plus_ell.log_n() >= coset_bits - 1 - j);
 
 		for i in 0..d {
 			x_ell[(i, 1 << j)] = twiddle_access_j_plus_ell.get(i >> (j + 1))
@@ -153,6 +173,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{BinaryField32b, Field};
+	use binius_utils::checked_arithmetics::log2_ceil_usize;
 	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
@@ -182,9 +203,12 @@ mod tests {
 					log_y: next_log_n,
 					..Default::default()
 				};
-				ntt.forward_transform(&mut ntt_evals, shape, 0, 0).unwrap();
+				ntt.forward_transform(&mut ntt_evals, shape, 0, 0, 0)
+					.unwrap();
 
-				let odd_interpolate = OddInterpolate::new(d, ell, &ntt.s_evals).unwrap();
+				let coset_bits = next_log_n.saturating_sub(ell);
+				let odd_interpolate =
+					OddInterpolate::new(d, ell, coset_bits, &ntt.s_evals).unwrap();
 				odd_interpolate
 					.inverse_transform(&ntt, &mut ntt_evals[..d << ell])
 					.unwrap();

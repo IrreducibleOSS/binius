@@ -19,7 +19,7 @@ use crate::{
 			constraint_set_sumcheck_claim,
 		},
 	},
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 pub type OracleZerocheckProver<'a, P, FBase, FDomain, DomainFactory, Backend> = ZerocheckProverImpl<
@@ -172,7 +172,28 @@ where
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set::<F, P>(constraint_set, witness)?;
+	let ConstraintSet {
+		oracle_ids,
+		constraints,
+		n_vars,
+	} = constraint_set;
+
+	let mut multilinears = Vec::with_capacity(oracle_ids.len());
+	let mut const_suffixes = Vec::with_capacity(oracle_ids.len());
+
+	for id in oracle_ids {
+		let IndexEntry {
+			multilin_poly,
+			nonzero_scalars_prefix,
+		} = witness.get_index_entry(id)?;
+
+		if multilin_poly.n_vars() != n_vars {
+			bail!(Error::ConstraintSetNumberOfVariablesMismatch);
+		}
+
+		multilinears.push(multilin_poly);
+		const_suffixes.push((F::ZERO, ((1 << n_vars) - nonzero_scalars_prefix)))
+	}
 
 	let mut sums = Vec::new();
 
@@ -205,6 +226,7 @@ where
 
 	let prover = EqIndSumcheckProverBuilder::with_switchover(multilinears, switchover_fn, backend)?
 		.with_eq_ind_partial_evals(Backend::to_hal_slice(eq_ind_partial_evals))
+		.with_const_suffixes(&const_suffixes)?
 		.build(evaluation_order, eq_ind_challenges, sums, evaluation_domain_factory)?;
 
 	Ok(prover)

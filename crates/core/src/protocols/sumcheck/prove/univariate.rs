@@ -14,7 +14,9 @@ use binius_math::{
 	MultilinearPoly, RowsBatchRef,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, NTTShape, OddInterpolate, SingleThreadedNTT};
+use binius_ntt::{
+	AdditiveNTT, NTTShape, OddInterpolate, SingleThreadedNTT, twiddle::TwiddleAccess,
+};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use itertools::izip;
@@ -489,7 +491,8 @@ where
 	// So far evals of each composition are "staggered" in a sense that they are evaluated on the
 	// smallest domain which guarantees uniqueness of the round polynomial. We extrapolate them to
 	// max_domain_size to aid in Gruen section 3.2 optimization below and batch mixing.
-	let round_evals = extrapolate_round_evals(staggered_round_evals, skip_rounds, max_domain_size)?;
+	let round_evals =
+		extrapolate_round_evals(&fdomain_ntt, staggered_round_evals, skip_rounds, max_domain_size)?;
 	drop(coeffs_span);
 
 	Ok(ZerocheckUnivariateEvalsOutput {
@@ -565,15 +568,31 @@ fn spread_product<P, FBase>(
 // is not larger than the composition degree), which enables additive-NTT based subquadratic
 // techniques.
 #[instrument(skip_all, level = "debug")]
-fn extrapolate_round_evals<F: TowerField>(
+fn extrapolate_round_evals<F, FDomain, TA>(
+	ntt: &SingleThreadedNTT<FDomain, TA>,
 	mut round_evals: Vec<Vec<F>>,
 	skip_rounds: usize,
 	max_domain_size: usize,
-) -> Result<Vec<Vec<F>>, Error> {
+) -> Result<Vec<Vec<F>>, Error>
+where
+	F: BinaryField + ExtensionField<FDomain>,
+	FDomain: BinaryField,
+	TA: TwiddleAccess<FDomain>,
+{
 	// Instantiate a large enough NTT over F to be able to forward transform to full domain size.
-	// REVIEW: should be possible to use an existing FDomain NTT with striding, possibly with larger
-	// domain.
-	let ntt = SingleThreadedNTT::with_canonical_field(log2_ceil_usize(max_domain_size))?;
+	// TODO: We can't currently use the `ntt` directly because it is over FDomain. It'd be nice to
+	// have helpers that apply a subfield NTT to an extension field vector, without the
+	// PackedExtension relation that `forward_transform_ext` and `inverse_transform_ext` require.
+	let subspace_upcast = BinarySubspace::new_unchecked(
+		ntt.subspace(0)
+			.basis()
+			.iter()
+			.copied()
+			.map(F::from)
+			.collect(),
+	);
+	let ntt = SingleThreadedNTT::with_subspace(&subspace_upcast)
+		.expect("ntt provided is valid; subspace is equivalent but upcast to F");
 
 	// Cache OddInterpolate instances, which, albeit small in practice, take cubic time to create.
 	let mut odd_interpolates = HashMap::new();
@@ -589,7 +608,8 @@ fn extrapolate_round_evals<F: TowerField>(
 			let ell = n.trailing_zeros() as usize;
 			assert!(ell >= skip_rounds);
 
-			OddInterpolate::new(n >> ell, ell, ntt.twiddles())
+			let coset_bits = ntt.log_domain_size() - ell;
+			OddInterpolate::new(n >> ell, ell, coset_bits, ntt.twiddles())
 				.expect("domain large enough by construction")
 		});
 
@@ -597,14 +617,14 @@ fn extrapolate_round_evals<F: TowerField>(
 		odd_interpolate.inverse_transform(&ntt, round_evals)?;
 
 		// Use forward NTT to extrapolate novel representation to the max domain size.
-		let next_log_n = log2_ceil_usize(max_domain_size);
+		let next_log_n = ntt.log_domain_size();
 		round_evals.resize(1 << next_log_n, F::ZERO);
 
 		let shape = NTTShape {
 			log_y: next_log_n,
 			..Default::default()
 		};
-		ntt.forward_transform(round_evals, shape, 0, 0)?;
+		ntt.forward_transform(round_evals, shape, 0, 0, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(
@@ -639,17 +659,18 @@ where
 		log_z: log_batch,
 	};
 
+	let coset_bits = ntt.log_domain_size() - skip_rounds;
+
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0, 0)?;
+	ntt.inverse_transform(evals, shape, 0, coset_bits, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
-	for (coset, extrapolated_chunk) in
-		izip!(1u32.., extrapolated_evals.chunks_exact_mut(evals.len()))
+	for (coset, extrapolated_chunk) in izip!(1.., extrapolated_evals.chunks_exact_mut(evals.len()))
 	{
 		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when
 		// composition_max_degree == 2
 		extrapolated_chunk.copy_from_slice(evals);
-		ntt.forward_transform(extrapolated_chunk, shape, coset, 0)?;
+		ntt.forward_transform(extrapolated_chunk, shape, coset, coset_bits, 0)?;
 	}
 
 	Ok(())

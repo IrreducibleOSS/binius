@@ -70,7 +70,10 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for Powers<F
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		let n_vars = self.n_vars;
 		if query.len() != self.n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize {
+				expected: n_vars,
+				actual: query.len(),
+			});
 		}
 
 		let mut result = P::one();
