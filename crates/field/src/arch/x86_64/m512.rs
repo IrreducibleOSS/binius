@@ -6,6 +6,11 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	bytes::{Buf, BufMut},
+	serialization::{assert_enough_data_for, assert_enough_space_for},
+};
 use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
