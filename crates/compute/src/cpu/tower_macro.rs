@@ -2,11 +2,11 @@
 
 macro_rules! each_tower_subfield {
     (
-        $edeg:expr,
+        $tower_height:expr,
         $tower_ty:ident,
         $func:ident ::< _ $(, $type_args:ty)* >( $($args:expr),* $(,)? )
     ) => {
-        match $edeg {
+        match $tower_height {
             0 => $func::< $tower_ty::B1 $(, $type_args,)* >( $($args),* ),
             3 => $func::< $tower_ty::B8 $(, $type_args,)* >( $($args),* ),
             4 => $func::< $tower_ty::B16 $(, $type_args,)* >( $($args),* ),
@@ -19,8 +19,8 @@ macro_rules! each_tower_subfield {
                     crate::layer::Error::InputValidation(
                         format!(
                             "unsupported value of {}: {}",
-                            stringify!($edeg),
-                            $edeg
+                            stringify!($tower_height),
+                            $tower_height
                         )
                     )
                 )
