@@ -9,7 +9,7 @@ mod model {
 	use binius_m3::emulate::Channel;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
-	// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
+	/// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
 	#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 	pub struct NodeFlushToken {
 		pub root_id: u8,
@@ -18,7 +18,7 @@ mod model {
 		pub index: usize,
 	}
 
-	// Signature of the Roots channel: (Root ID, Root digest)
+	/// Signature of the Roots channel: (Root ID, Root digest)
 	#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 	pub struct RootFlushToken {
 		pub root_id: u8,
@@ -27,7 +27,14 @@ mod model {
 
 	/// A type alias for the Merkle path, which is a vector of tuples containing the root ID, index,
 	/// leaf, and the siblings on the path to the root from the leaf.
-	type MerklePath = (u8, usize, [u8; 32], Vec<[u8; 32]>);
+
+	#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+	pub struct MerklePath {
+		pub root_id: u8,
+		pub index: usize,
+		pub leaf: [u8; 32],
+		pub path: Vec<[u8; 32]>,
+	}
 
 	/// A struct whose fields contain the channels involved in the trace to verify merkle paths for
 	/// a binary merkle tree
@@ -240,7 +247,13 @@ mod model {
 			// Number of times each root is referenced in the paths.
 			let mut root_multiplicities = vec![0; roots.len()];
 
-			for (root_id, index, leaf, path) in paths.iter() {
+			for MerklePath {
+				root_id,
+				index,
+				leaf,
+				path,
+			} in paths.iter()
+			{
 				// Push the boundary values for the statement.
 				boundary_vec.push(MerkleBoundary {
 					leaf: NodeFlushToken {
@@ -356,7 +369,12 @@ mod model {
 		let path_root_id = 0;
 		let merkle_tree_trace = MerkleTreeTrace::generate(
 			vec![root],
-			&[(path_root_id, path_index, leaves[path_index], path)],
+			&[MerklePath {
+				root_id: path_root_id,
+				index: path_index,
+				leaf: leaves[path_index],
+				path,
+			}],
 		);
 		merkle_tree_trace.validate();
 	}
@@ -374,7 +392,12 @@ mod model {
 		let paths = (0..5)
 			.map(|_| {
 				let path_index = rng.gen_range(0..1 << 10);
-				(0u8, path_index, leaves[path_index], tree.merkle_path(path_index))
+				MerklePath {
+					root_id: 0u8,
+					index: path_index,
+					leaf: leaves[path_index],
+					path: tree.merkle_path(path_index),
+				}
 			})
 			.collect::<Vec<_>>();
 		let merkle_tree_trace = MerkleTreeTrace::generate(vec![root], &paths);
@@ -400,8 +423,11 @@ mod model {
 		let paths = trees
 			.iter()
 			.enumerate()
-			.map(|(i, tree)| {
-				(i as u8, path_index, leaves[i][path_index], tree.merkle_path(path_index))
+			.map(|(i, tree)| MerklePath {
+				root_id: i as u8,
+				index: path_index,
+				leaf: leaves[i][path_index],
+				path: tree.merkle_path(path_index),
 			})
 			.collect::<Vec<_>>();
 
