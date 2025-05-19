@@ -5,16 +5,18 @@ use std::fmt::Debug;
 use binius_field::PackedField;
 use binius_math::{ArithCircuit, CompositionPoly, RowsBatchRef};
 use binius_utils::bail;
+use getset::Getters;
 
 use crate::polynomial::Error;
 
 /// An adapter which allows evaluating a composition over a larger query by indexing into it.
 /// See [`index_composition`] for a factory method.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Getters)]
 pub struct IndexComposition<C, const N: usize> {
 	/// Number of variables in a larger query
 	n_vars: usize,
 	/// Mapping from the inner composition query variables to outer query variables
+	#[get = "pub"]
 	indices: [usize; N],
 	/// Inner composition
 	composition: C,

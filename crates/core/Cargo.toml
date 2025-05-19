@@ -11,6 +11,7 @@ workspace = true
 assert_matches.workspace = true
 auto_impl.workspace = true
 binius_macros = { path = "../macros", default-features = false }
+binius_compute = { path = "../compute", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_hal = { path = "../hal", default-features = false }
 binius_hash = { path = "../hash", default-features = false }
