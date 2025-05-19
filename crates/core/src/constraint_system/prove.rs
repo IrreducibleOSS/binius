@@ -2,6 +2,7 @@
 
 use std::{env, marker::PhantomData};
 
+use binius_compute::{alloc::ComputeAllocator, layer::ComputeLayer};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -411,6 +412,386 @@ where
 		&piop_sumcheck_claims,
 		&mut transcript,
 		&backend,
+	)?;
+	drop(piop_compiler_span);
+
+	let proof = Proof {
+		transcript: transcript.finalize(),
+	};
+
+	tracing::event!(
+		name: "proof_size",
+		tracing::Level::INFO,
+		counter = true,
+		value = proof.get_proof_size() as u64,
+		unit = "bytes",
+	);
+
+	Ok(proof)
+}
+
+// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
+#[instrument("constraint_system::prove", skip_all, level = "debug")]
+pub fn prove_compute_layer<'a, U, Tower, Hash, Compress, Challenger_, Backend, CL>(
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
+	log_inv_rate: usize,
+	security_bits: usize,
+	boundaries: &[Boundary<FExt<Tower>>],
+	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
+	backend: &Backend,
+	cl: &'a CL,
+	allocator: &mut impl ComputeAllocator<'a, Tower::B128, CL::DevMem>,
+) -> Result<Proof, Error>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+	Tower::B128: PackedTop<Tower>,
+	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
+	Challenger_: Challenger + Default,
+	Backend: ComputationBackend,
+	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
+	PackedType<U, Tower::B128>: PackedTop<Tower>
+		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
+		+ RepackedExtension<PackedType<U, Tower::B8>>
+		+ RepackedExtension<PackedType<U, Tower::B16>>
+		+ RepackedExtension<PackedType<U, Tower::B32>>
+		+ RepackedExtension<PackedType<U, Tower::B64>>
+		+ RepackedExtension<PackedType<U, Tower::B128>>
+		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
+	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+	CL: ComputeLayer<Tower::B128>,
+{
+	tracing::debug!(
+		arch = env::consts::ARCH,
+		rayon_threads = binius_maybe_rayon::current_num_threads(),
+		"using computation backend: {backend:?}"
+	);
+
+	let domain_factory = DefaultEvaluationDomainFactory::<FDomain<Tower>>::default();
+	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
+
+	let mut transcript = ProverTranscript::<Challenger_>::new();
+	transcript.observe().write_slice(boundaries);
+
+	let ConstraintSystem {
+		mut oracles,
+		mut table_constraints,
+		mut flushes,
+		mut exponents,
+		non_zero_oracle_ids,
+		max_channel_id,
+	} = constraint_system.clone();
+
+	reorder_exponents(&mut exponents, &oracles);
+
+	// We must generate multiplication witnesses before committing, as this function
+	// adds the committed witnesses for exponentiation results to the witness index.
+	let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
+
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
+
+	// Commit polynomials
+	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
+	let merkle_scheme = merkle_prover.scheme();
+
+	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	let committed_multilins = piop::collect_committed_witnesses::<U, _>(
+		&commit_meta,
+		&oracle_to_commit_index,
+		&oracles,
+		&witness,
+	)?;
+
+	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
+		&commit_meta,
+		merkle_scheme,
+		security_bits,
+		log_inv_rate,
+	)?;
+	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())?
+		.precompute_twiddles()
+		.multithreaded();
+
+	let commit_span =
+		tracing::info_span!("[phase] Commit", phase = "commit", perfetto_category = "phase.main")
+			.entered();
+	let CommitOutput {
+		commitment,
+		committed,
+		codeword,
+	} = piop::commit(&fri_params, &ntt, &merkle_prover, &committed_multilins)?;
+	drop(commit_span);
+
+	// Observe polynomial commitment
+	let mut writer = transcript.message();
+	writer.write(&commitment);
+
+	// GKR exp
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
+
+	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let mut writer = transcript.message();
+	writer.write_scalar_slice(&exp_evals);
+
+	let exp_challenge = exp_challenge
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
+		.into_iter()
+		.map(|claim| claim.isomorphic())
+		.collect::<Vec<_>>();
+
+	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
+		EvaluationOrder::HighToLow,
+		exp_witnesses,
+		&exp_claims,
+		fast_domain_factory.clone(),
+		&mut transcript,
+		backend,
+	)?
+	.isomorphic();
+
+	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+
+	// Grand product arguments
+	// Grand products for non-zero checking
+	let non_zero_fast_witnesses =
+		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
+		.into_par_iter()
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+		.collect::<Result<Vec<_>, _>>()?;
+
+	let non_zero_products =
+		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
+	if non_zero_products
+		.iter()
+		.any(|count| *count == Tower::B128::zero())
+	{
+		bail!(Error::Zeros);
+	}
+
+	let mut writer = transcript.message();
+
+	writer.write_scalar_slice(&non_zero_products);
+
+	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+		&non_zero_oracle_ids,
+		&oracles,
+		&non_zero_products,
+	)?;
+
+	// Grand products for flushing
+	let mixing_challenge = transcript.sample();
+	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+
+	flushes.sort_by_key(|flush| flush.channel_id);
+	let flush_oracle_ids =
+		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
+
+	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids, &flushes)?;
+
+	// there are no oracle ids associated with these flush_witnesses
+	let flush_witnesses =
+		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+
+	// This is important to do in parallel.
+	let flush_prodcheck_witnesses = flush_witnesses
+		.into_par_iter()
+		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+		.collect::<Result<Vec<_>, _>>()?;
+	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
+
+	transcript.message().write_scalar_slice(&flush_products);
+
+	let flush_prodcheck_claims =
+		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
+
+	// Prove grand products
+	let all_gpa_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
+	let all_gpa_claims = chain!(flush_prodcheck_claims, non_zero_prodcheck_claims)
+		.map(|claim| claim.isomorphic())
+		.collect::<Vec<_>>();
+
+	let GrandProductBatchProveOutput { final_layer_claims } =
+		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+			EvaluationOrder::HighToLow,
+			all_gpa_witnesses,
+			&all_gpa_claims,
+			&fast_domain_factory,
+			&mut transcript,
+			backend,
+		)?;
+
+	// Apply isomorphism to the layer claims
+	let final_layer_claims = final_layer_claims
+		.into_iter()
+		.map(|layer_claim| layer_claim.isomorphic())
+		.collect::<Vec<_>>();
+
+	// Reduce non_zero_final_layer_claims to evalcheck claims
+	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
+		chain!(flush_oracle_ids, non_zero_oracle_ids),
+		final_layer_claims,
+	)?;
+
+	// Zerocheck
+	let zerocheck_span = tracing::info_span!(
+		"[phase] Zerocheck",
+		phase = "zerocheck",
+		perfetto_category = "phase.main",
+	)
+	.entered();
+
+	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
+		.iter()
+		.cloned()
+		.map(constraint_set_zerocheck_claim)
+		.collect::<Result<Vec<_>, _>>()?
+		.into_iter()
+		.unzip::<_, _, Vec<_>, Vec<_>>();
+
+	let (max_n_vars, skip_rounds) =
+		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
+
+	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
+
+	let mut zerocheck_provers = Vec::with_capacity(table_constraints.len());
+
+	for constraint_set in table_constraints {
+		let n_vars = constraint_set.n_vars;
+		let (constraints, multilinears) =
+			sumcheck::prove::split_constraint_set(constraint_set, &witness)?;
+
+		let base_tower_level = chain!(
+			multilinears
+				.iter()
+				.map(|multilinear| 7 - multilinear.log_extension_degree()),
+			constraints
+				.iter()
+				.map(|constraint| constraint.composition.binary_tower_level())
+		)
+		.max()
+		.unwrap_or(0);
+
+		// Per prover zerocheck challenges are justified on the high indexed variables
+		let zerocheck_challenges = &zerocheck_challenges[max_n_vars - n_vars.max(skip_rounds)..];
+		let domain_factory = domain_factory.clone();
+
+		let constructor =
+			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _> {
+				constraints,
+				multilinears,
+				zerocheck_challenges,
+				domain_factory,
+				backend,
+				_fdomain_marker: PhantomData,
+			};
+
+		let zerocheck_prover = match base_tower_level {
+			0..=3 => constructor.create::<Tower::B8>()?,
+			4 => constructor.create::<Tower::B16>()?,
+			5 => constructor.create::<Tower::B32>()?,
+			6 => constructor.create::<Tower::B64>()?,
+			7 => constructor.create::<Tower::B128>()?,
+			_ => unreachable!(),
+		};
+
+		zerocheck_provers.push(zerocheck_prover);
+	}
+
+	let zerocheck_output = sumcheck::prove::batch_prove_zerocheck::<
+		FExt<Tower>,
+		FDomain<Tower>,
+		PackedType<U, FExt<Tower>>,
+		_,
+		_,
+	>(zerocheck_provers, skip_rounds, &mut transcript)?;
+
+	let zerocheck_eval_claims =
+		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
+
+	drop(zerocheck_span);
+
+	let evalcheck_span = tracing::info_span!(
+		"[phase] Evalcheck",
+		phase = "evalcheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+
+	// Prove evaluation claims
+	let GreedyEvalcheckProveOutput {
+		eval_claims,
+		memoized_data,
+	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
+		&mut oracles,
+		&mut witness,
+		chain!(prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
+		standard_switchover_heuristic(-2),
+		&mut transcript,
+		&domain_factory,
+		backend,
+	)?;
+
+	// Reduce committed evaluation claims to PIOP sumcheck claims
+	let system = ring_switch::EvalClaimSystem::new(
+		&oracles,
+		&commit_meta,
+		&oracle_to_commit_index,
+		&eval_claims,
+	)?;
+
+	drop(evalcheck_span);
+
+	let ring_switch_span = tracing::info_span!(
+		"[phase] Ring Switch",
+		phase = "ring_switch",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+	let ring_switch::ReducedWitness {
+		transparents: transparent_multilins,
+		sumcheck_claims: piop_sumcheck_claims,
+	} = ring_switch::prove::<_, _, _, Tower, _, _>(
+		&system,
+		&committed_multilins,
+		&mut transcript,
+		memoized_data,
+		backend,
+	)?;
+	drop(ring_switch_span);
+
+	// Prove evaluation claims using PIOP compiler
+	let piop_compiler_span = tracing::info_span!(
+		"[phase] PIOP Compiler",
+		phase = "piop_compiler",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+	piop::prove_compute_layer::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _, _>(
+		&fri_params,
+		&ntt,
+		&merkle_prover,
+		domain_factory,
+		&commit_meta,
+		committed,
+		&codeword,
+		&committed_multilins,
+		&transparent_multilins,
+		&piop_sumcheck_claims,
+		&mut transcript,
+		&backend,
+		cl,
+		allocator,
 	)?;
 	drop(piop_compiler_span);
 

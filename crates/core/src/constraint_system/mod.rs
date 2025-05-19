@@ -12,7 +12,7 @@ use binius_field::{BinaryField128b, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use channel::{ChannelId, Flush};
 use exp::Exp;
-pub use prove::prove;
+pub use prove::{prove, prove_compute_layer};
 pub use verify::verify;
 
 use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};

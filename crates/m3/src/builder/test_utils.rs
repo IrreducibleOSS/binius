@@ -3,6 +3,7 @@
 //! Utilities for testing M3 constraint systems and gadgets.
 
 use anyhow::Result;
+use binius_compute::{alloc::BumpAllocator, cpu::CpuLayer};
 use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
 use binius_field::{
 	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
@@ -13,6 +14,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
+use bytemuck::zeroed_vec;
 
 use super::{
 	B1, B8, B16, B32, B64,
@@ -85,19 +87,37 @@ pub fn validate_system_witness<U>(
 	PackedType<U, BinaryField128bPolyval>: PackedTransformationFactory<PackedType<U, B128>>,
 {
 	const TEST_PROVE_VERIFY_ENV_NAME: &str = "BINIUS_M3_TEST_PROVE_VERIFY";
-	validate_system_witness_with_prove_verify::<U>(
-		cs,
-		witness,
-		boundaries,
-		boolean_env_flag_set(TEST_PROVE_VERIFY_ENV_NAME),
-	)
+	let need_prove_verify = boolean_env_flag_set(TEST_PROVE_VERIFY_ENV_NAME);
+	let prove_verify = if need_prove_verify {
+		if boolean_env_flag_set("BINIUS_M3_TEST_PROVE_VERIFY_WITH_COMPUTE_LAYER") {
+			ProveVerify::WithComputeLayer
+		} else {
+			ProveVerify::WithoutComputeLayer
+		}
+	} else {
+		ProveVerify::Disabled
+	};
+
+	validate_system_witness_with_prove_verify::<U>(cs, witness, boundaries, prove_verify)
 }
 
-pub fn validate_system_witness_with_prove_verify<U>(
+enum ProveVerify {
+	Disabled,
+	WithoutComputeLayer,
+	WithComputeLayer,
+}
+
+impl ProveVerify {
+	fn enabled(&self) -> bool {
+		!matches!(self, ProveVerify::Disabled)
+	}
+}
+
+fn validate_system_witness_with_prove_verify<U>(
 	cs: &ConstraintSystem<B128>,
 	witness: WitnessIndex<PackedType<U, B128>>,
 	boundaries: Vec<Boundary<B128>>,
-	prove_verify: bool,
+	prove_verify: ProveVerify,
 ) where
 	U: UnderlierType
 		+ PackScalar<B1>
@@ -125,26 +145,53 @@ pub fn validate_system_witness_with_prove_verify<U>(
 	)
 	.unwrap();
 
-	if prove_verify {
+	if prove_verify.enabled() {
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
 
-		let proof = binius_core::constraint_system::prove::<
-			U,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(
-			&ccs,
-			LOG_INV_RATE,
-			SECURITY_BITS,
-			&statement.boundaries,
-			witness,
-			&binius_hal::make_portable_backend(),
-		)
-		.unwrap();
+		let proof = match prove_verify {
+			ProveVerify::WithoutComputeLayer => binius_core::constraint_system::prove::<
+				U,
+				CanonicalTowerFamily,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+				_,
+			>(
+				&ccs,
+				LOG_INV_RATE,
+				SECURITY_BITS,
+				&statement.boundaries,
+				witness,
+				&binius_hal::make_portable_backend(),
+			)
+			.unwrap(),
+			ProveVerify::WithComputeLayer => {
+				let cl = CpuLayer::<CanonicalTowerFamily>::default();
+				let mut memory_buffer = zeroed_vec(1 << 15);
+				let mut allocator = BumpAllocator::new(memory_buffer.as_mut_slice());
+				binius_core::constraint_system::prove_compute_layer::<
+					U,
+					CanonicalTowerFamily,
+					Groestl256,
+					Groestl256ByteCompression,
+					HasherChallenger<Groestl256>,
+					_,
+					_,
+				>(
+					&ccs,
+					LOG_INV_RATE,
+					SECURITY_BITS,
+					&statement.boundaries,
+					witness,
+					&binius_hal::make_portable_backend(),
+					&cl,
+					&mut allocator,
+				)
+				.unwrap()
+			}
+			ProveVerify::Disabled => unreachable!(),
+		};
 
 		binius_core::constraint_system::verify::<
 			U,
