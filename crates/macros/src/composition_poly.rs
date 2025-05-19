@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use quote::{ToTokens, quote};
-use syn::{Token, bracketed, parse::Parse, parse_quote, spanned::Spanned};
+use quote::{quote, ToTokens};
+use syn::{bracketed, parse::Parse, parse_quote, spanned::Spanned, Token};
 
 #[derive(Debug)]
 pub(crate) struct CompositionPolyItem {
@@ -75,7 +75,7 @@ impl ToTokens for CompositionPolyItem {
 					batch_query: &binius_math::RowsBatchRef<P>,
 					evals: &mut [P],
 				) -> Result<(), binius_math::Error> {
-					if batch_query.n_rows() != #n_vars {
+					if batch_query.n_rows() < #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 

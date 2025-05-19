@@ -4,7 +4,7 @@ use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithCircuit, ArithCircuitStep, CompositionPoly, Error, RowsBatchRef};
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail};
+use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
@@ -359,6 +359,12 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 	}
 
 	fn batch_evaluate(&self, batch_query: &RowsBatchRef<P>, evals: &mut [P]) -> Result<(), Error> {
+		if batch_query.n_rows() < self.n_vars {
+			bail!(Error::IncorrectQuerySize {
+				expected: self.n_vars,
+			});
+		}
+
 		let row_len = evals.len();
 		if batch_query.row_len() != row_len {
 			bail!(Error::BatchEvaluateSizeMismatch {
@@ -539,12 +545,56 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 #[cfg(test)]
 mod tests {
 	use binius_field::{
-		BinaryField8b, BinaryField16b, PackedBinaryField8x16b, PackedField, TowerField,
+		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
 	use binius_math::{ArithExpr, CompositionPoly, RowsBatch};
 	use binius_utils::felts;
 
 	use super::*;
+
+	#[test]
+	fn test_evaluate_error() {
+		type F = BinaryField8b;
+		type P = PackedBinaryField8x16b;
+
+		let expr = ArithExpr::Var(0).pow(3);
+		let circuit = ArithCircuitPoly::<F>::new(expr.into());
+
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
+		assert_eq!(typed_circuit.degree(), 3);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
+		let result = typed_circuit.evaluate(&[P::default(), P::default()]);
+		assert!(matches!(result, Err(Error::IncorrectQuerySize { expected: 1 })));
+	}
+
+	#[test]
+	fn test_batch_evaluate_error() {
+		type F = BinaryField8b;
+		type P = PackedBinaryField8x16b;
+
+		let expr = ArithExpr::Var(1).pow(3);
+		let circuit = ArithCircuitPoly::<F>::new(expr.into());
+
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
+		assert_eq!(typed_circuit.degree(), 3);
+		assert_eq!(typed_circuit.n_vars(), 2);
+
+		let row_0 = [P::default(), P::default()];
+		let rows_batch = RowsBatch::new(vec![&row_0], 2);
+		let result = typed_circuit.batch_evaluate(&rows_batch.get_ref(), &mut [P::default()]);
+		assert!(matches!(result, Err(Error::IncorrectQuerySize { expected: 2 })));
+
+		let rows_batch = RowsBatch::new(vec![&row_0, &row_0], 2);
+		let result = typed_circuit.batch_evaluate(&rows_batch.get_ref(), &mut [P::default()]);
+		assert!(matches!(
+			result,
+			Err(Error::BatchEvaluateSizeMismatch {
+				expected: 1,
+				actual: 2
+			})
+		));
+	}
 
 	#[test]
 	fn test_constant() {
