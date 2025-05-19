@@ -247,7 +247,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				.copied()
 				.collect::<Vec<_>>();
 
-				let inner_eval = if subclaim_eval_point.is_empty() && eval.is_zero() {
+				let inner_eval = if false {
 					transcript.message().read_scalar()?
 				} else {
 					let zs = &eval_point

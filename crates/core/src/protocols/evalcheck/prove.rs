@@ -572,9 +572,10 @@ where
 					.get(padded.id(), &inner_eval_point)
 					.expect("precomputed above");
 
-				if inner_eval_point.is_empty() && eval.is_zero() {
-					transcript.message().write_scalar(inner_eval);
-				}
+				// if inner_eval_point.is_empty() && eval.is_zero() {
+				// 	// println!("!!!!!!!!!!!!!!!!!!!!!!!");
+				// 	transcript.message().write_scalar(inner_eval);
+				// }
 
 				self.prove_multilinear(
 					EvalcheckMultilinearClaim {
