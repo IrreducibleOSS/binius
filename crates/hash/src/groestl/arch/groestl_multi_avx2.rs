@@ -174,7 +174,7 @@ fn shift_bytes_q(state: &mut State) {
 	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 3) };
 	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 5) };
 	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 7) };
-	state[4] = unsafe { _mm256_ror_epi64(state[4], 8 * 0) };
+	// state[4] = unsafe { _mm256_ror_epi64(state[4], 8 * 0) };
 	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 2) };
 	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 4) };
 	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 6) };
@@ -377,5 +377,48 @@ impl MultiDigest<4> for Groestl256Multi {
 		let mut digest = Self::default();
 		digest.update(data);
 		digest.finalize_into(out);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{array, mem::MaybeUninit};
+
+	use digest::{generic_array::GenericArray, Digest};
+	use proptest::prelude::*;
+
+	use super::Groestl256Multi;
+	use crate::{groestl::digest::digest::consts::U32, multi_digest::MultiDigest};
+
+	proptest! {
+		#[test]
+		fn test_multi_groestl_vs_reference(
+			inputs in proptest::collection::vec(proptest::collection::vec(0u8..255u8, 10..10000), 4)
+		) {
+			let input_lengths: [_; 4] = array::from_fn(|i|{inputs[i].len()});
+			let Some(&min_length) = input_lengths.iter().min() else { todo!() };
+			let inputs  = (0..4).into_iter().map(|i|{&inputs[i][0..min_length]}).collect::<Vec<_>>();
+
+			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+
+			Groestl256Multi::digest(array::from_fn(|i|{inputs[i]}), &mut multi_digest);
+			for i in 0..4{
+				let single_digest = groestl_crypto::Groestl256::digest(&inputs[i]);
+
+				let fully_initialized_multi: [u8; 32] = unsafe {
+					let ptr = multi_digest[i].assume_init_ref();
+					let generic_array = ptr.clone();  // Clone the GenericArray
+
+					// Convert the GenericArray<u8, U32> into [u8; 32]
+					let mut arr: [u8; 32] = [0; 32];
+					arr.copy_from_slice(&generic_array);
+					arr
+				};
+
+				for byte in 0..32{
+					assert_eq!(single_digest[byte], fully_initialized_multi[byte]);
+				}
+			}
+		}
 	}
 }
