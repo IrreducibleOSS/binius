@@ -369,6 +369,16 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 		Ok(())
 	}
+
+	fn extrapolate_line(
+		&self,
+		exec: &mut Self::Exec,
+		evals_0: &mut &mut [T::B128],
+		evals_1: &[T::B128],
+		z: T::B128,
+	) -> Result<(), Error> {
+		todo!()
+	}
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in
