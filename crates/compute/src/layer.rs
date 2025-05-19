@@ -368,6 +368,33 @@ pub trait ComputeLayer<F: Field>: 'static {
 	where
 		FSub: BinaryField,
 		F: ExtensionField<FSub>;
+
+	/// Extrapolates a line between a vector of evaluations at 0 and evaluations at 1.
+	///
+	/// Given two values $y_0, y_1$, this operation computes the value $y_z = y_0 + (y_1 - y_0) z$,
+	/// which is the value of the line that interpolates $(0, y_0), (1, y_1)$ at $z$. This computes
+	/// this operation in parallel over two vectors of big field elements of equal sizes.
+	///
+	/// The operation writes the result back in-place into the `evals_0` buffer.
+	///
+	/// ## Args
+	///
+	/// * `evals_0` - this is both an input and output buffer. As in input, it is populated with the
+	///   values $y_0$, which are the line's values at 0.
+	/// * `evals_1` - an input buffer with the values $y_1$, which are the line's values at 1.
+	/// * `z` - the scalar evaluation point.
+	///
+	/// ## Throws
+	///
+	/// * if `evals_0` and `evals_1` are not equal sizes.
+	/// * if the sizes of `evals_0` and `evals_1` are not powers of two.
+	fn extrapolate_line(
+		&self,
+		exec: &mut Self::Exec,
+		evals_0: &mut FSliceMut<F, Self>,
+		evals_1: FSlice<F, Self>,
+		z: F,
+	) -> Result<(), Error>;
 }
 
 /// A memory mapping specification for a kernel execution.
