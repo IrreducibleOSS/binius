@@ -1,8 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
+use cfg_if::cfg_if;
+
 mod arch;
 mod compression;
-pub mod digest;
+mod digest;
 #[cfg(test)]
 mod tests;
 
@@ -34,6 +36,11 @@ pub trait GroestlShortInternal {
 	}
 }
 
+cfg_if! {
+	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
+		pub use arch::Groestl256Multi;
+	}
+}
 pub use arch::GroestlShortImpl;
 pub use compression::*;
 pub use digest::Groestl256;
