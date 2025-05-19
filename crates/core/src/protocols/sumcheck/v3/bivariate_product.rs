@@ -64,6 +64,9 @@ where
 			}
 		}
 
+		// Fold the multilinears
+		let _ = self.hal.execute(|exec| {})?;
+
 		self.n_vars -= 1;
 		Ok(())
 	}
