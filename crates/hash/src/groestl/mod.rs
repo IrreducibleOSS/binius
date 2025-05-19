@@ -2,7 +2,7 @@
 
 mod arch;
 mod compression;
-pub mod digest;
+mod digest;
 #[cfg(test)]
 mod tests;
 

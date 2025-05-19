@@ -6,11 +6,16 @@ use cfg_if::cfg_if;
 // machines
 
 cfg_if! {
+	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
+		mod groestl_multi_avx2;
+		pub use groestl_multi_avx2::Groestl256Multi;
+	}
+}
+
+cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64",target_feature = "avx512bw",target_feature = "avx512vbmi",target_feature = "avx512f",target_feature = "gfni",))] {
 		mod groestl_avx512;
 		pub use groestl_avx512::GroestlShortImpl;
-		mod groestl_multi_avx2;
-		pub use groestl_multi_avx2::Groestl256Multi;
 	} else {
 		mod portable;
 		pub use portable::GroestlShortImpl;
