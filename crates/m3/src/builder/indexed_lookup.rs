@@ -125,6 +125,7 @@ mod tests {
 		ext_basis,
 		packed::{get_packed_slice, set_packed_slice},
 	};
+	use binius_math::{ArithCircuit, ArithExpr};
 	use bumpalo::Bump;
 	use itertools::Itertools;
 	use rand::prelude::{Rng, SeedableRng, StdRng};
@@ -266,6 +267,37 @@ mod tests {
 			| input as u32
 	}
 
+	/// Returns a circuit that describes the carry-in for the i_th bit of incrementing an 8-bit
+	/// number by a carry-in bit. We describe the following polynomials
+	pub fn carry_in_circuit(i: usize) -> ArithExpr<B128> {
+		// The circuit is a lookup table for the increment operation, which takes an 8-bit input and
+		// returns an 8-bit output and a carry bit. The circuit is defined as follows:
+		let mut circuit = ArithExpr::Var(8);
+		for var in 0..i {
+			circuit *= ArithExpr::Var(var)
+		}
+		circuit
+	}
+
+	/// Returns a circuit that describes the increment operation for an 8-bit addition.
+	/// We describe the following polynomials
+	pub fn incr_circuit() -> ArithCircuit<B128> {
+		// The circuit is a lookup table for the increment operation, which takes an 8-bit input and
+		// returns an 8-bit output and a carry bit. The circuit is defined as follows:
+		let mut circuit = ArithExpr::zero();
+		for i in 0..8 {
+			circuit += ArithExpr::Var(i) * ArithExpr::Const(B128::from(1 << i));
+
+			let carry = carry_in_circuit(i);
+			circuit +=
+				(ArithExpr::Var(i) + carry.clone()) * ArithExpr::Const(B128::from(1 << (i + 8)));
+		}
+		circuit += ArithExpr::Var(8) * ArithExpr::Const(B128::from(1 << 16));
+		let carry_out = carry_in_circuit(8);
+		circuit += carry_out * ArithExpr::Const(B128::from(1 << 17));
+		circuit.into()
+	}
+
 	struct Incr {
 		pub input: Col<B8>,
 		pub carry_in: Col<B1>,
@@ -386,8 +418,9 @@ mod tests {
 			n_multiplicity_bits: usize,
 		) -> Self {
 			table.require_fixed_size(IncrIndexedLookup.log_size());
-			// TODO: Create the arithmetic circuit for this and define it as a fixed column.
-			let entries_ordered = table.add_committed::<B32, 1>("entries_ordered");
+
+			// The entries_ordered column is the one that is filled with the lookup table entries.
+			let entries_ordered = table.add_fixed("incr_lookup", incr_circuit());
 			let entries_sorted = table.add_committed::<B32, 1>("entries_sorted");
 
 			// Use flush to check that entries_sorted is a permutation of entries_ordered.
