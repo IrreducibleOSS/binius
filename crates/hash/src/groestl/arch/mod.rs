@@ -6,7 +6,6 @@ use cfg_if::cfg_if;
 // extensions, otherwise defaults to the portable implementation which was found to be fast in most
 // machines
 
-
 cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64",target_feature = "avx512bw",target_feature = "avx512vbmi",target_feature = "avx512f",target_feature = "gfni",))] {
 		mod groestl_avx512;
