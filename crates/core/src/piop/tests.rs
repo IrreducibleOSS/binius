@@ -286,7 +286,7 @@ fn test_commit_prove_verify_small() {
 
 #[test]
 fn test_commit_prove_verify() {
-	let commit_meta = CommitMeta::with_vars([6, 6, 8, 13]);
+	let commit_meta = CommitMeta::with_vars([6, 6, 8, 9]);
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 1;
