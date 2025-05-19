@@ -608,7 +608,8 @@ where
 			let ell = n.trailing_zeros() as usize;
 			assert!(ell >= skip_rounds);
 
-			OddInterpolate::new(n >> ell, ell, ntt.twiddles())
+			let coset_bits = ntt.log_domain_size() - ell;
+			OddInterpolate::new(n >> ell, ell, coset_bits, ntt.twiddles())
 				.expect("domain large enough by construction")
 		});
 
@@ -623,7 +624,7 @@ where
 			log_y: next_log_n,
 			..Default::default()
 		};
-		ntt.forward_transform(round_evals, shape, 0, 0)?;
+		ntt.forward_transform(round_evals, shape, 0, 0, 0)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(
@@ -658,17 +659,18 @@ where
 		log_z: log_batch,
 	};
 
+	let coset_bits = ntt.log_domain_size() - skip_rounds;
+
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(evals, shape, 0, 0)?;
+	ntt.inverse_transform(evals, shape, 0, coset_bits, 0)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
-	for (coset, extrapolated_chunk) in
-		izip!(1u32.., extrapolated_evals.chunks_exact_mut(evals.len()))
+	for (coset, extrapolated_chunk) in izip!(1.., extrapolated_evals.chunks_exact_mut(evals.len()))
 	{
 		// REVIEW: can avoid that copy (and extrapolated_evals scratchpad) when
 		// composition_max_degree == 2
 		extrapolated_chunk.copy_from_slice(evals);
-		ntt.forward_transform(extrapolated_chunk, shape, coset, 0)?;
+		ntt.forward_transform(extrapolated_chunk, shape, coset, coset_bits, 0)?;
 	}
 
 	Ok(())
