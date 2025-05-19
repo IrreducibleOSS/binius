@@ -18,7 +18,6 @@ const UNBYTESLICE_PERMUTATION_ARRAY: [u8; 32] = [
     22, 30, 7, 15, 23, 31,
 ];
 
-// These getters/setters are still prototypes
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	let mut new_state = [unsafe { _mm256_setzero_si256() }; 8];
