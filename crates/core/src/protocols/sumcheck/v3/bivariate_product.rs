@@ -18,6 +18,12 @@ use crate::{
 	},
 };
 
+/// Sumcheck prover implementation for the special case of bivariate product compositions over
+/// large-field multilinears.
+///
+/// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
+/// instance for expensive operations and the input multilinears are provided as device memory
+/// slices.
 pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
@@ -26,7 +32,7 @@ pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	n_vars_remaining: usize,
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
-	last_coeffs_or_sums: ProverStateCoeffsOrSums<F>,
+	last_coeffs_or_sums: PhaseState<F>,
 }
 
 impl<'a, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'alloc, F, Hal>
@@ -75,7 +81,7 @@ where
 			n_vars_remaining: n_vars,
 			multilins,
 			compositions,
-			last_coeffs_or_sums: ProverStateCoeffsOrSums::InitialSums(sums),
+			last_coeffs_or_sums: PhaseState::InitialSums(sums),
 		})
 	}
 
@@ -126,16 +132,14 @@ where
 		)?;
 
 		let batched_sum = match self.last_coeffs_or_sums {
-			ProverStateCoeffsOrSums::Coeffs(_) => {
+			PhaseState::Coeffs(_) => {
 				bail!(Error::ExpectedFold);
 			}
-			ProverStateCoeffsOrSums::InitialSums(ref sums) => {
-				evaluate_univariate(sums, batch_coeff)
-			}
-			ProverStateCoeffsOrSums::BatchedSum(sum) => sum,
+			PhaseState::InitialSums(ref sums) => evaluate_univariate(sums, batch_coeff),
+			PhaseState::BatchedSum(sum) => sum,
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
-		self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Coeffs(round_coeffs.clone());
+		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
 		Ok(round_coeffs)
 	}
 
@@ -146,11 +150,11 @@ where
 
 		// Update the stored multilinear sums.
 		match self.last_coeffs_or_sums {
-			ProverStateCoeffsOrSums::Coeffs(ref coeffs) => {
+			PhaseState::Coeffs(ref coeffs) => {
 				let new_sum = evaluate_univariate(&coeffs.0, challenge);
-				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::BatchedSum(new_sum);
+				self.last_coeffs_or_sums = PhaseState::BatchedSum(new_sum);
 			}
-			ProverStateCoeffsOrSums::InitialSums(_) | ProverStateCoeffsOrSums::BatchedSum(_) => {
+			PhaseState::InitialSums(_) | PhaseState::BatchedSum(_) => {
 				bail!(Error::ExpectedExecution);
 			}
 		}
@@ -207,7 +211,7 @@ where
 
 	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
 		match self.last_coeffs_or_sums {
-			ProverStateCoeffsOrSums::Coeffs(_) => {
+			PhaseState::Coeffs(_) => {
 				bail!(Error::ExpectedFold);
 			}
 			_ => match self.n_vars_remaining {
@@ -250,7 +254,7 @@ impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
 /// products of multilinear polynomials, defined over the same field as the sumcheck challenges,
 /// using high-to-low variable binding order.
 ///
-/// In more details, this function takes a slice of multilinear polynomials over a large field `F`
+/// In more detail, this function takes a slice of multilinear polynomials over a large field `F`
 /// and a description of pairs of them, and computes the hypercube sum of the evaluations of these
 /// pairs of multilinears at select points. The evaluation points are 0 and the "infinity" point.
 /// The meaning of the infinity evaluation point is described in the documentation of
@@ -400,7 +404,7 @@ fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2]) -> RoundCo
 }
 
 #[derive(Debug)]
-enum ProverStateCoeffsOrSums<F: Field> {
+enum PhaseState<F: Field> {
 	Coeffs(RoundCoeffs<F>),
 	InitialSums(Vec<F>),
 	BatchedSum(F),
