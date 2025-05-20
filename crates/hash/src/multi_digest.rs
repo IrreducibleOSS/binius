@@ -5,6 +5,7 @@ use std::{array, mem::MaybeUninit};
 use binius_field::TowerField;
 use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+	prelude::IntoParallelRefIterator,
 	slice::ParallelSliceMut,
 };
 use binius_utils::{SerializationMode, SerializeBytes};
@@ -172,6 +173,60 @@ impl<D: Digest + Send + Sync + Clone> ParallelDigest for D {
 	}
 }
 
+#[derive(Clone)]
+pub struct MultipleDigests<D: Digest, const N: usize>([D; N]);
+
+impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDigest<N>
+	for MultipleDigests<D, N>
+{
+	type Digest = D;
+
+	fn new() -> Self {
+		Self(array::from_fn(|_| D::new()))
+	}
+
+	fn update(&mut self, data: [&[u8]; N]) {
+		self.0.par_iter_mut().enumerate().for_each(|(i, hasher)| {
+			hasher.update(data[i]);
+		});
+	}
+
+	fn finalize_into(self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
+		let mut out_each_mut = out.each_mut();
+		self.0
+			.par_iter()
+			.zip(out_each_mut.par_iter_mut())
+			.for_each(|(hasher, out_buffer)| {
+				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
+				hasher.clone().finalize_into(assumed_init_buffer);
+			});
+	}
+
+	fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
+		let mut out_each_mut = out.each_mut();
+		self.0
+			.par_iter_mut()
+			.zip(out_each_mut.par_iter_mut())
+			.for_each(|(hasher, out_buffer)| {
+				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
+				hasher.clone().finalize_into(assumed_init_buffer);
+				Digest::reset(hasher);
+			});
+	}
+
+	fn reset(&mut self) {
+		self.0.par_iter_mut().for_each(|hasher| {
+			Digest::reset(hasher);
+		});
+	}
+
+	fn digest(data: [&[u8]; N], out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
+		let mut multi_hasher = Self::new();
+		multi_hasher.update(data);
+		multi_hasher.finalize_into(out);
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use std::iter::repeat_with;
@@ -182,6 +237,7 @@ mod tests {
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 	use super::*;
+	use crate::groestl::Groestl256;
 
 	#[derive(Clone, Default)]
 	struct MockDigest {
@@ -305,6 +361,25 @@ mod tests {
 		}
 	}
 
+	fn check_multiple_digest_consistency<
+		const N: usize,
+		D: MultiDigest<N, Digest: Send + Sync + Clone>,
+	>(
+		data: Vec<DataWrapper>,
+	) {
+		let mut multi_results = array::from_fn(|_| MaybeUninit::<Output<D::Digest>>::uninit());
+
+		let input_arr = array::from_fn(|i| &data[i].0[..]);
+		<D as MultiDigest<N>>::digest(input_arr, &mut multi_results);
+
+		for (data_slice, multi_output_buffer) in izip!(input_arr, multi_results) {
+			assert_eq!(
+				unsafe { multi_output_buffer.assume_init() },
+				<D::Digest as Digest>::digest(data_slice)
+			);
+		}
+	}
+
 	#[test]
 	fn test_empty_data() {
 		let data = generate_mock_data(0, 16);
@@ -317,5 +392,11 @@ mod tests {
 			let data = generate_mock_data(n_hashes, 16);
 			check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
 		}
+	}
+
+	#[test]
+	fn test_multi() {
+		let data = generate_mock_data(4, 16);
+		check_multiple_digest_consistency::<4, MultipleDigests<Groestl256, 4>>(data);
 	}
 }
