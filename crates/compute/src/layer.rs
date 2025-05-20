@@ -164,14 +164,12 @@ pub trait ComputeLayer<F: Field> {
 	///
 	/// ## Arguments
 	///
-	/// * `a_edeg` - the binary logarithm of the extension degree of `F` over the subfield elements
-	///   that `a_in` contains.
 	/// * `a_in` - the first input slice of subfield elements.
 	/// * `b_in` - the second input slice of `F` elements.
 	///
 	/// ## Throws
 	///
-	/// * if `a_edeg` is greater than `F::LOG_BITS`
+	/// * if `tower_level` or `a_in` is greater than `F::TOWER_LEVEL`
 	/// * unless `a_in` and `b_in` contain the same number of elements, and the number is a power of
 	///   two
 	///
@@ -181,8 +179,7 @@ pub trait ComputeLayer<F: Field> {
 	fn inner_product(
 		&self,
 		exec: &mut Self::Exec,
-		a_edeg: usize,
-		a_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		a_in: SubfieldSlice<'_, F, Self::DevMem>,
 		b_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 	) -> Result<Self::OpValue, Error>;
 
