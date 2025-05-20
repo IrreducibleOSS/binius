@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::arch::x86_64::*;
+use std::{arch::x86_64::*, array};
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
@@ -9,22 +9,16 @@ use std::mem::MaybeUninit;
 
 use crate::{groestl::Groestl256, multi_digest::MultiDigest};
 
-const BYTESLICE_PERMUTATION_ARRAY: [u8; 32] = [
-	0, 8, 16, 24, 1, 9, 17, 25, 2, 10, 18, 26, 3, 11, 19, 27, 4, 12, 20, 28, 5, 13, 21, 29, 6, 14,
-	22, 30, 7, 15, 23, 31,
-];
-
-const UNBYTESLICE_PERMUTATION_ARRAY: [u8; 32] = [
-	0, 8, 16, 24, 1, 9, 17, 25, 4, 12, 20, 28, 5, 13, 21, 29, 2, 10, 18, 26, 3, 11, 19, 27, 6, 14,
-	22, 30, 7, 15, 23, 31,
-];
-
 // These getters/setters are still prototypes
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
-	let mut new_state = [unsafe { _mm256_set1_epi64x(0) }; 8];
-	let byteslice_permuatation_m256 =
-		unsafe { std::mem::transmute::<[u8; 32], __m256i>(BYTESLICE_PERMUTATION_ARRAY) };
+	let mut new_state = [unsafe { _mm256_setzero_si256() }; 8];
+	let byteslice_permuatation_m256 = unsafe {
+		_mm256_setr_epi8(
+			0, 8, 16, 24, 1, 9, 17, 25, 2, 10, 18, 26, 3, 11, 19, 27, 4, 12, 20, 28, 5, 13, 21, 29,
+			6, 14, 22, 30, 7, 15, 23, 31,
+		)
+	};
 
 	for i in 0..4 {
 		new_state[2 * i] =
@@ -41,30 +35,36 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 	// row-align every eigth item
 	for i in 0..8 {
 		if i % 2 == 0 {
-			let a = new_state[i];
-			let b = new_state[i + 1];
-			new_state[i] = unsafe { _mm256_unpacklo_epi32(a, b) };
-			new_state[i + 1] = unsafe { _mm256_unpackhi_epi32(a, b) };
+			(new_state[i], new_state[i + 1]) = unsafe {
+				(
+					_mm256_unpacklo_epi32(new_state[i], new_state[i + 1]),
+					_mm256_unpackhi_epi32(new_state[i], new_state[i + 1]),
+				)
+			};
 		}
 	}
 
 	// make every row two pairs of consecutive items
 	for i in 0..8 {
 		if i % 4 < 2 {
-			let a = new_state[i];
-			let b = new_state[i + 2];
-			new_state[i] = unsafe { _mm256_unpacklo_epi64(a, b) };
-			new_state[i + 2] = unsafe { _mm256_unpackhi_epi64(a, b) };
+			(new_state[i], new_state[i + 2]) = unsafe {
+				(
+					_mm256_unpacklo_epi64(new_state[i], new_state[i + 2]),
+					_mm256_unpackhi_epi64(new_state[i], new_state[i + 2]),
+				)
+			};
 		}
 	}
 
 	// make every row a row in the final state
 	for i in 0..8 {
 		if i % 8 < 4 {
-			let a = new_state[i];
-			let b = new_state[i + 4];
-			new_state[i] = unsafe { _mm256_permute2x128_si256(a, b, 0x20) };
-			new_state[i + 4] = unsafe { _mm256_permute2x128_si256(a, b, 0x31) };
+			(new_state[i], new_state[i + 4]) = unsafe {
+				(
+					_mm256_permute2x128_si256(new_state[i], new_state[i + 4], 0x20),
+					_mm256_permute2x128_si256(new_state[i], new_state[i + 4], 0x31),
+				)
+			};
 		}
 	}
 
@@ -80,24 +80,32 @@ fn set_substates_par(substate_vals: [&[u8]; 4]) -> State {
 #[inline]
 fn get_substates_par_better(mut state: State) -> [[u8; 64]; 4] {
 	let mut new_substates = [[0; 64]; 4];
-	let unbyteslice_permuatation_m256 =
-		unsafe { std::mem::transmute::<[u8; 32], __m256i>(UNBYTESLICE_PERMUTATION_ARRAY) };
+	let unbyteslice_permuatation_m256 = unsafe {
+		_mm256_setr_epi8(
+			0, 8, 16, 24, 1, 9, 17, 25, 4, 12, 20, 28, 5, 13, 21, 29, 2, 10, 18, 26, 3, 11, 19, 27,
+			6, 14, 22, 30, 7, 15, 23, 31,
+		)
+	};
 
 	for i in 0..8 {
 		if i % 8 < 4 {
-			let a = state[i];
-			let b = state[i + 4];
-			state[i] = unsafe { _mm256_permute2x128_si256(a, b, 0x20) };
-			state[i + 4] = unsafe { _mm256_permute2x128_si256(a, b, 0x31) };
+			(state[i], state[i + 4]) = unsafe {
+				(
+					_mm256_permute2x128_si256(state[i], state[i + 4], 0x20),
+					_mm256_permute2x128_si256(state[i], state[i + 4], 0x31),
+				)
+			};
 		}
 	}
 
 	for i in 0..8 {
 		if i % 4 < 2 {
-			let a = state[i];
-			let b = state[i + 2];
-			state[i] = unsafe { _mm256_unpacklo_epi64(a, b) };
-			state[i + 2] = unsafe { _mm256_unpackhi_epi64(a, b) };
+			(state[i], state[i + 2]) = unsafe {
+				(
+					_mm256_unpacklo_epi64(state[i], state[i + 2]),
+					_mm256_unpackhi_epi64(state[i], state[i + 2]),
+				)
+			};
 		}
 	}
 
@@ -107,10 +115,12 @@ fn get_substates_par_better(mut state: State) -> [[u8; 64]; 4] {
 
 	for i in 0..8 {
 		if i % 2 == 0 {
-			let a = state[i];
-			let b = state[i + 1];
-			state[i] = unsafe { _mm256_unpacklo_epi8(a, b) };
-			state[i + 1] = unsafe { _mm256_unpackhi_epi8(a, b) };
+			(state[i], state[i + 1]) = unsafe {
+				(
+					_mm256_unpacklo_epi8(state[i], state[i + 1]),
+					_mm256_unpackhi_epi8(state[i], state[i + 1]),
+				)
+			};
 		}
 	}
 
@@ -189,9 +199,9 @@ fn shift_bytes_q(state: &mut State) {
 
 #[inline]
 fn mix_bytes(state: &mut State) {
-	let mut x = [unsafe { _mm256_set1_epi64x(0) }; 8];
-	let mut y = [unsafe { _mm256_set1_epi64x(0) }; 8];
-	let mut z = [unsafe { _mm256_set1_epi64x(0) }; 8];
+	let mut x = [unsafe { _mm256_setzero_si256() }; 8];
+	let mut y = [unsafe { _mm256_setzero_si256() }; 8];
+	let mut z = [unsafe { _mm256_setzero_si256() }; 8];
 
 	let gf2p8_2: __m256i = unsafe { _mm256_set1_epi8(2) };
 
@@ -242,13 +252,16 @@ fn permutation_q(state: &mut State) {
 #[derive(Clone)]
 pub struct Groestl256Multi {
 	state: State,
+	unfinished_block: [[u8; 64]; 4],
+	num_unfinished_bytes: usize,
+	num_blocks_consumed: usize,
 }
 
 impl Groestl256Multi {
 	fn consume_single_block_parallel(&mut self, data: [&[u8]; 4]) {
 		let mut q_data = set_substates_par(data);
 
-		let mut p_data = [unsafe { _mm256_set1_epi64x(0) }; 8];
+		let mut p_data = [unsafe { _mm256_setzero_si256() }; 8];
 
 		for i in 0..8 {
 			p_data[i] = unsafe { _mm256_xor_si256(self.state[i], q_data[i]) };
@@ -261,9 +274,45 @@ impl Groestl256Multi {
 			self.state[i] =
 				unsafe { _mm256_xor_si256(_mm256_xor_si256(self.state[i], q_data[i]), p_data[i]) };
 		}
+
+		self.num_blocks_consumed += 1;
 	}
 
 	fn finalize(&mut self, out: &mut [MaybeUninit<digest::Output<Groestl256>>; 4]) {
+		// Now we're at the first non-completely-full block
+		let mut this_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
+		let mut next_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
+
+		let data = self.unfinished_block;
+		let no_additional_block = self.num_unfinished_bytes < 56;
+
+		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
+			let this_instance_data = data[parallel_idx];
+			let mut this_block: [u8; 64] = [0; 64];
+			let mut next_block: [u8; 64] = [0; 64];
+
+			this_block[0..self.num_unfinished_bytes]
+				.copy_from_slice(&this_instance_data[0..self.num_unfinished_bytes]);
+
+			this_block[self.num_unfinished_bytes] = 0b10000000;
+
+			if no_additional_block {
+				this_block[56..64]
+					.copy_from_slice(&((self.num_blocks_consumed + 1) as u64).to_be_bytes());
+			} else {
+				next_block[56..64]
+					.copy_from_slice(&((self.num_blocks_consumed + 2) as u64).to_be_bytes());
+				next_data[parallel_idx] = next_block;
+			}
+			this_data[parallel_idx] = this_block;
+		}
+
+		self.consume_single_block_parallel(array::from_fn(|i| &this_data[i][..]));
+		if !no_additional_block {
+			self.consume_single_block_parallel(array::from_fn(|i| &next_data[i][..]));
+		}
+
+		// Now the padding had been loaded into the state, and we run the special last round
 		let state_copy = self.state;
 		permutation_p(&mut self.state);
 		for (i, state_copy_row) in state_copy.iter().enumerate() {
@@ -288,15 +337,18 @@ impl Default for Groestl256Multi {
 		// seeding initial states with the 512b representation of 256
 		Self {
 			state: [
-				unsafe { _mm256_set1_epi64x(0) },
-				unsafe { _mm256_set1_epi64x(0) },
-				unsafe { _mm256_set1_epi64x(0) },
-				unsafe { _mm256_set1_epi64x(0) },
-				unsafe { _mm256_set1_epi64x(0) },
-				unsafe { _mm256_set1_epi64x(0) },
+				unsafe { _mm256_setzero_si256() },
+				unsafe { _mm256_setzero_si256() },
+				unsafe { _mm256_setzero_si256() },
+				unsafe { _mm256_setzero_si256() },
+				unsafe { _mm256_setzero_si256() },
+				unsafe { _mm256_setzero_si256() },
 				unsafe { _mm256_set1_epi64x(0x100000000000000u64 as i64) },
-				unsafe { _mm256_set1_epi64x(0) },
+				unsafe { _mm256_setzero_si256() },
 			],
+			unfinished_block: [[0; 64]; 4],
+			num_unfinished_bytes: 0,
+			num_blocks_consumed: 0,
 		}
 	}
 }
@@ -315,6 +367,32 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		let mut i = 0;
 
+		let new_num_unfinished_bytes = (data[0].len() + self.num_unfinished_bytes) % 64;
+
+		if data[0].len() + self.num_unfinished_bytes < 64 {
+			for i in 0..4 {
+				self.unfinished_block[i][self.num_unfinished_bytes..new_num_unfinished_bytes]
+					.copy_from_slice(data[i]);
+			}
+			self.num_unfinished_bytes = new_num_unfinished_bytes;
+			return;
+		}
+
+		if self.num_unfinished_bytes != 0 {
+			let mut initial_block = self.unfinished_block;
+			for parallel_idx in 0..4 {
+				initial_block[parallel_idx][self.num_unfinished_bytes..]
+					.copy_from_slice(&data[parallel_idx][..(64 - self.num_unfinished_bytes)]);
+			}
+
+			let unfinished_block_as_input = array::from_fn(|i| &initial_block[i][..]);
+
+			self.consume_single_block_parallel(unfinished_block_as_input);
+
+			// start normal processing from an incremented position
+			i = 64 - self.num_unfinished_bytes;
+		}
+
 		while i + 64 <= data[0].len() {
 			self.consume_single_block_parallel([
 				&data[0][i..i + 64],
@@ -326,45 +404,12 @@ impl MultiDigest<4> for Groestl256Multi {
 			i += 64;
 		}
 
-		// now we're at the first non-completely-full block
-		let mut this_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
-		let mut next_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
-
-		let no_additional_block = data[0].len() % 64 < 56;
-
-		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
-			let this_instance_data = data[parallel_idx];
-			let mut this_block: [u8; 64] = [0; 64];
-			let mut next_block: [u8; 64] = [0; 64];
-
-			this_block[0..this_instance_data.len() - i]
-				.copy_from_slice(&this_instance_data[i..this_instance_data.len()]);
-
-			this_block[this_instance_data.len() - i] = 0b10000000;
-
-			if no_additional_block {
-				this_block[56..64].copy_from_slice(&((i / 64 + 1) as u64).to_be_bytes());
-			} else {
-				next_block[56..64].copy_from_slice(&((i / 64 + 2) as u64).to_be_bytes());
-				next_data[parallel_idx] = next_block;
-			}
-			this_data[parallel_idx] = this_block;
+		for parallel_idx in 0..4 {
+			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
+				.copy_from_slice(&data[parallel_idx][i..]);
 		}
 
-		self.consume_single_block_parallel([
-			&this_data[0],
-			&this_data[1],
-			&this_data[2],
-			&this_data[3],
-		]);
-		if !no_additional_block {
-			self.consume_single_block_parallel([
-				&next_data[0],
-				&next_data[1],
-				&next_data[2],
-				&next_data[3],
-			]);
-		}
+		self.num_unfinished_bytes = new_num_unfinished_bytes;
 	}
 
 	fn finalize_into(mut self, out: &mut [MaybeUninit<digest::Output<Self::Digest>>; 4]) {
@@ -391,7 +436,7 @@ impl MultiDigest<4> for Groestl256Multi {
 mod tests {
 	use std::{array, mem::MaybeUninit};
 
-	use digest::{Digest, generic_array::GenericArray};
+	use digest::{generic_array::GenericArray, Digest};
 	use proptest::prelude::*;
 
 	use super::Groestl256Multi;
@@ -411,6 +456,49 @@ mod tests {
 			Groestl256Multi::digest(array::from_fn(|i|{inputs[i]}), &mut multi_digest);
 			for i in 0..4{
 				let single_digest = groestl_crypto::Groestl256::digest(inputs[i]);
+
+				let fully_initialized_multi: [u8; 32] = unsafe {
+					let ptr = multi_digest[i].assume_init_ref();
+					let generic_array = *ptr;  // Clone the GenericArray
+
+					// Convert the GenericArray<u8, U32> into [u8; 32]
+					let mut arr: [u8; 32] = [0; 32];
+					arr.copy_from_slice(&generic_array);
+					arr
+				};
+
+				for byte in 0..32{
+					assert_eq!(single_digest[byte], fully_initialized_multi[byte]);
+				}
+			}
+		}
+
+		#[test]
+		fn test_multi_groestl_multi_update_vs_reference(
+			inputs in proptest::collection::vec(proptest::collection::vec(0u8..255u8, 11..100), 4),
+			middle_pause_idx in 1..10
+		) {
+			let input_lengths: [_; 4] = array::from_fn(|i|{inputs[i].len()});
+			let Some(&min_length) = input_lengths.iter().min() else { todo!() };
+
+			let middle_pause_idx = (middle_pause_idx as usize) % min_length;
+
+			let first_inputs  = array::from_fn(|i|{&inputs[i][0..middle_pause_idx]});
+
+			let second_inputs  = array::from_fn(|i|{&inputs[i][middle_pause_idx..min_length]});
+
+			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+
+			let mut hasher = Groestl256Multi::new();
+
+			hasher.update(first_inputs);
+
+			hasher.update(second_inputs);
+
+			hasher.finalize_into(&mut multi_digest);
+
+			for i in 0..4{
+				let single_digest = groestl_crypto::Groestl256::digest(&inputs[i][..min_length]);
 
 				let fully_initialized_multi: [u8; 32] = unsafe {
 					let ptr = multi_digest[i].assume_init_ref();
