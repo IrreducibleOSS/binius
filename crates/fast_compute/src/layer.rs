@@ -58,11 +58,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		src: &[T::B128],
 		dst: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
-		debug_assert_eq!(
-			src.len(),
-			dst.len(),
-			"precondition: src and dst buffers must have the same length"
-		);
+		if src.len() != dst.len() {
+			return Err(Error::InputValidation(
+				"precondition: src and dst buffers must have the same length".to_string(),
+			));
+		}
 
 		unpack_if_possible_mut(
 			dst.data,
@@ -81,11 +81,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	}
 
 	fn copy_d2h(&self, src: FSlice<'_, T::B128, Self>, dst: &mut [T::B128]) -> Result<(), Error> {
-		debug_assert_eq!(
-			src.len(),
-			dst.len(),
-			"precondition: src and dst buffers must have the same length"
-		);
+		if src.len() != dst.len() {
+			return Err(Error::InputValidation(
+				"precondition: src and dst buffers must have the same length".to_string(),
+			));
+		}
 
 		let dst = RefCell::new(dst);
 		unpack_if_possible(
@@ -110,11 +110,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		src: FSlice<'_, T::B128, Self>,
 		dst: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
-		debug_assert_eq!(
-			src.len(),
-			dst.len(),
-			"precondition: src and dst buffers must have the same length"
-		);
+		if src.len() != dst.len() {
+			return Err(Error::InputValidation(
+				"precondition: src and dst buffers must have the same length".to_string(),
+			));
+		}
 
 		dst.data.copy_from_slice(src.data);
 
@@ -134,19 +134,34 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		b_in: FSlice<'_, T::B128, Self>,
 	) -> Result<Self::OpValue, Error> {
-		debug_assert_eq!(
-			a_in.slice.len() << (<T::B128 as ExtensionField<T::B1>>::LOG_DEGREE - a_in.tower_level),
-			b_in.len(),
-			"precondition: a_in and b_in must have the same length"
-		);
+		if a_in.slice.len() << (<T::B128 as ExtensionField<T::B1>>::LOG_DEGREE - a_in.tower_level)
+			!= b_in.len()
+		{
+			return Err(Error::InputValidation(
+				"precondition: a_in and b_in must have the same length".to_string(),
+			));
+		}
 
 		let result = match a_in.tower_level {
-			0 => inner_product_par(b_in.data, PackedExtension::<T::B1>::cast_bases(a_in.slice.data)),
-			3 => inner_product_par(b_in.data, PackedExtension::<T::B8>::cast_bases(a_in.slice.data)),
-			4 => inner_product_par(b_in.data, PackedExtension::<T::B16>::cast_bases(a_in.slice.data)),
-			5 => inner_product_par(b_in.data, PackedExtension::<T::B32>::cast_bases(a_in.slice.data)),
-			6 => inner_product_par(b_in.data, PackedExtension::<T::B64>::cast_bases(a_in.slice.data)),
-			7 => inner_product_par(b_in.data, PackedExtension::<T::B128>::cast_bases(a_in.slice.data)),
+			0 => {
+				inner_product_par(b_in.data, PackedExtension::<T::B1>::cast_bases(a_in.slice.data))
+			}
+			3 => {
+				inner_product_par(b_in.data, PackedExtension::<T::B8>::cast_bases(a_in.slice.data))
+			}
+			4 => {
+				inner_product_par(b_in.data, PackedExtension::<T::B16>::cast_bases(a_in.slice.data))
+			}
+			5 => {
+				inner_product_par(b_in.data, PackedExtension::<T::B32>::cast_bases(a_in.slice.data))
+			}
+			6 => {
+				inner_product_par(b_in.data, PackedExtension::<T::B64>::cast_bases(a_in.slice.data))
+			}
+			7 => inner_product_par(
+				b_in.data,
+				PackedExtension::<T::B128>::cast_bases(a_in.slice.data),
+			),
 			_ => {
 				return Err(Error::InputValidation(format!(
 					"invalid a_in.tower_level: {}",
@@ -195,7 +210,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
-			.expect("Many variant must have at least one entry");
+			.ok_or_else(|| Error::InputValidation("no chunks range found".to_string()))?;
 
 		// Choose the number of chnks based on the range and the number of threads available.
 		let log_chunks = (get_log_max_threads() + 1)
@@ -445,9 +460,21 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		src2: FSlice<'_, T::B128, Self>,
 		dst: &mut FSliceMut<'_, T::B128, Self>,
 	) -> Result<(), Error> {
-		assert_eq!(src1.len(), 1 << log_len);
-		assert_eq!(src2.len(), 1 << log_len);
-		assert_eq!(dst.len(), 1 << log_len);
+		if src1.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"src1 length must be equal to 2^log_len".to_string(),
+			));
+		}
+		if src2.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"src2 length must be equal to 2^log_len".to_string(),
+			));
+		}
+		if dst.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"dst length must be equal to 2^log_len".to_string(),
+			));
+		}
 
 		for (dst_i, &src1_i, &src2_i) in izip!(dst.data.iter_mut(), src1.data, src2.data) {
 			*dst_i = src1_i + src2_i;

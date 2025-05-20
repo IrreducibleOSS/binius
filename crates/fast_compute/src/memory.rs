@@ -1,6 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{
+	marker::PhantomData,
+	ops::{Bound, RangeBounds},
+};
 
 use binius_compute::memory::{ComputeMemory, SizedSlice};
 use binius_field::PackedField;
@@ -67,16 +70,16 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 }
 
 impl<P: PackedField> PackedMemory<P> {
-	fn to_packed_range(len: usize, range: impl std::ops::RangeBounds<usize>) -> (usize, usize) {
+	fn to_packed_range(len: usize, range: impl RangeBounds<usize>) -> (usize, usize) {
 		let start = match range.start_bound() {
-			std::ops::Bound::Included(&start) => start,
-			std::ops::Bound::Excluded(&start) => start + 1,
-			std::ops::Bound::Unbounded => 0,
+			Bound::Included(&start) => start,
+			Bound::Excluded(&start) => start + P::WIDTH,
+			Bound::Unbounded => 0,
 		};
 		let end = match range.end_bound() {
-			std::ops::Bound::Included(&end) => end + 1,
-			std::ops::Bound::Excluded(&end) => end,
-			std::ops::Bound::Unbounded => len,
+			Bound::Included(&end) => end + P::WIDTH,
+			Bound::Excluded(&end) => end,
+			Bound::Unbounded => len,
 		};
 
 		assert_eq!(start % P::WIDTH, 0, "start must be a multiple of {}", P::WIDTH);
