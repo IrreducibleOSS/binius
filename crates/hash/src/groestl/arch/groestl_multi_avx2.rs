@@ -449,7 +449,7 @@ impl MultiDigest<4> for Groestl256Multi {
 mod tests {
 	use std::{array, mem::MaybeUninit};
 
-	use digest::{generic_array::GenericArray, Digest};
+	use digest::{Digest, generic_array::GenericArray};
 	use proptest::prelude::*;
 
 	use super::Groestl256Multi;
