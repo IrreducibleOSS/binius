@@ -2,7 +2,7 @@
 use cfg_if::cfg_if;
 
 use super::Groestl256;
-use crate::multi_digest::{MultipleDigests, ParallelDigest, ParallelMulidigestImpl};
+use crate::multi_digest::MultipleDigests;
 
 // We will choose the AVX512 Implementation of Grøstl if our machine supports the various AVX512
 // extensions, otherwise defaults to the portable implementation which was found to be fast in most
