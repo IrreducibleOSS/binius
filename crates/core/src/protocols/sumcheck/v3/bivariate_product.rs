@@ -40,13 +40,15 @@ where
 		host_alloc: BumpAllocator<'a, F, CpuMemory>,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
-	) -> Self {
+	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
 
 		// Check shape of multilinear witness inputs.
 		assert_eq!(claim.n_multilinears(), multilins.len());
 		for multilin in &multilins {
-			assert_eq!(multilin.len(), 1 << n_vars);
+			if multilin.len() != 1 << n_vars {
+				bail!(Error::NumberOfVariablesMismatch);
+			}
 		}
 
 		// Wrap multilinear witness inputs as SumcheckMultilinears.
@@ -61,15 +63,15 @@ where
 			.map(|CompositeSumClaim { composition, sum }| (composition.clone(), *sum))
 			.unzip();
 
-		Self {
+		Ok(Self {
 			hal,
 			dev_alloc,
 			host_alloc,
 			n_vars,
 			multilins,
 			compositions,
-			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(sums),
-		}
+			last_coeffs_or_sums: ProverStateCoeffsOrSums::InitialSums(sums),
+		})
 	}
 }
 
@@ -92,8 +94,26 @@ where
 			.iter()
 			.map(|multilin| multilin.const_slice())
 			.collect::<Vec<_>>();
-		calculate_round_evals(self.hal, self.n_vars, batch_coeff, &multilins, &self.compositions)?;
-		todo!()
+		let round_evals = calculate_round_evals(
+			self.hal,
+			self.n_vars,
+			batch_coeff,
+			&multilins,
+			&self.compositions,
+		)?;
+
+		let batched_sum = match self.last_coeffs_or_sums {
+			ProverStateCoeffsOrSums::Coeffs(_) => {
+				bail!(Error::ExpectedFold);
+			}
+			ProverStateCoeffsOrSums::InitialSums(ref sums) => {
+				evaluate_univariate(sums, batch_coeff)
+			}
+			ProverStateCoeffsOrSums::BatchedSum(sum) => sum,
+		};
+		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
+		self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Coeffs(round_coeffs.clone());
+		Ok(round_coeffs)
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
@@ -103,15 +123,11 @@ where
 
 		// Update the stored multilinear sums.
 		match self.last_coeffs_or_sums {
-			ProverStateCoeffsOrSums::Coeffs(ref mut round_coeffs) => {
-				let new_sums = round_coeffs
-					.drain(..)
-					.into_iter()
-					.map(|coeffs| evaluate_univariate(&coeffs.0, challenge))
-					.collect();
-				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);
+			ProverStateCoeffsOrSums::Coeffs(ref coeffs) => {
+				let new_sum = evaluate_univariate(&coeffs.0, challenge);
+				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::BatchedSum(new_sum);
 			}
-			ProverStateCoeffsOrSums::Sums(_) => {
+			ProverStateCoeffsOrSums::InitialSums(_) | ProverStateCoeffsOrSums::BatchedSum(_) => {
 				bail!(Error::ExpectedExecution);
 			}
 		}
@@ -170,7 +186,7 @@ where
 			ProverStateCoeffsOrSums::Coeffs(_) => {
 				bail!(Error::ExpectedFold);
 			}
-			ProverStateCoeffsOrSums::Sums(_) => match self.n_vars {
+			_ => match self.n_vars {
 				0 => {}
 				_ => bail!(Error::ExpectedExecution),
 			},
@@ -344,10 +360,27 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	Ok(evals)
 }
 
+fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2]) -> RoundCoeffs<F> {
+	let [y_1, y_inf] = evals;
+	let y_0 = sum - y_1;
+
+	// P(X) = c_2 x² + c_1 x + c_0
+	//
+	// P(0) =                  c_0
+	// P(1) = c_2    + c_1   + c_0
+	// P(∞) = c_2
+
+	let c_0 = y_0;
+	let c_2 = y_inf;
+	let c_1 = y_1 - c_0 - c_2;
+	RoundCoeffs(vec![c_0, c_1, c_2])
+}
+
 #[derive(Debug)]
 enum ProverStateCoeffsOrSums<F: Field> {
-	Coeffs(Vec<RoundCoeffs<F>>),
-	Sums(Vec<F>),
+	Coeffs(RoundCoeffs<F>),
+	InitialSums(Vec<F>),
+	BatchedSum(F),
 }
 
 #[cfg(test)]
