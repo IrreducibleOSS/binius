@@ -17,6 +17,10 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 		data
 	}
 
+	fn narrow_mut<'a, 'b: 'a>(data: Self::FSliceMut<'b>) -> Self::FSliceMut<'a> {
+		data
+	}
+
 	fn as_const<'a>(data: &'a &mut [F]) -> &'a [F] {
 		data
 	}

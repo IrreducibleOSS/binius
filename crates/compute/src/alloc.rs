@@ -5,7 +5,7 @@ use std::cell::Cell;
 use super::memory::{ComputeMemory, SizedSlice};
 use crate::cpu::CpuMemory;
 
-pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
+pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	/// Allocates a slice of elements.
 	///
 	/// This method operates on an immutable self reference so that multiple allocator references
@@ -15,7 +15,7 @@ pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
 	/// ## Pre-conditions
 	///
 	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
-	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error>;
+	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error>;
 
 	/// Returns the remaining number of elements that can be allocated.
 	fn capacity(&self) -> usize;
@@ -46,8 +46,8 @@ where
 	}
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocator<'a, F, Mem> {
-	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'a>, Error> {
+impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
+	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error> {
 		let buffer = self
 			.buffer
 			.take()
@@ -61,7 +61,7 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocato
 			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::MIN_SLICE_LEN));
 			self.buffer.set(Some(rhs));
 			// buffer contains Some, invariant restored
-			Ok(lhs)
+			Ok(Mem::narrow_mut(lhs))
 		}
 	}
 
