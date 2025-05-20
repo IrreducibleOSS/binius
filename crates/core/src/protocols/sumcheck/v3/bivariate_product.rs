@@ -3,7 +3,8 @@
 use std::{iter, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice,
+	ComputeLayer, ComputeMemory, Error as ComputeError, FSlice, KernelBuffer, KernelMemMap,
+	SizedSlice,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 };
@@ -112,7 +113,49 @@ where
 		}
 
 		// Fold the multilinears
-		//let _ = self.hal.execute(|exec| {})?;
+		let _ = self.hal.execute(|exec| {
+			// TODO: Parallelize hal operations with hal.map
+			self.multilins = self
+				.multilins
+				.drain(..)
+				.map(|multilin| {
+					let folded_evals = match multilin {
+						SumcheckMultilinear::PreFold(evals) => {
+							debug_assert_eq!(evals.len(), 1 << self.n_vars);
+							let (evals_0, evals_1) =
+								Hal::DevMem::split_at(evals, 1 << (self.n_vars - 1));
+
+							// Allocate new buffer for the folded evaluations and copy in evals_0.
+							let mut folded_evals = self.dev_alloc.alloc(1 << (self.n_vars - 1))?;
+							// This is kind of sketchy to do a copy without an execution context.
+							self.hal.copy_d2d(evals_0, &mut folded_evals)?;
+
+							self.hal.extrapolate_line(
+								exec,
+								&mut folded_evals,
+								evals_1,
+								challenge,
+							)?;
+							folded_evals
+						}
+						SumcheckMultilinear::PostFold(evals) => {
+							debug_assert_eq!(evals.len(), 1 << self.n_vars);
+							let (mut evals_0, evals_1) =
+								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars - 1));
+							self.hal.extrapolate_line(
+								exec,
+								&mut evals_0,
+								Hal::DevMem::as_const(&evals_1),
+								challenge,
+							)?;
+							evals_0
+						}
+					};
+					Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
+				})
+				.collect::<Result<_, ComputeError>>()?;
+			Ok(Vec::new())
+		})?;
 
 		self.n_vars -= 1;
 		Ok(())
