@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{iter, marker::PhantomData, slice};
+use std::{iter, slice};
 
 use binius_compute::{
 	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice,
@@ -14,17 +14,64 @@ use binius_utils::bail;
 use super::error::Error;
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	protocols::sumcheck::{Error as SumcheckError, RoundCoeffs, prove::SumcheckProver},
+	protocols::sumcheck::{
+		CompositeSumClaim, Error as SumcheckError, RoundCoeffs, SumcheckClaim,
+		prove::SumcheckProver,
+	},
 };
 
 pub struct BivariateSumcheckProver<'a, F: Field, Hal: ComputeLayer<F>> {
 	hal: &'a Hal,
-	//dev_alloc: &'a BumpAllocator<'a, F, Hal::DevMem>,
-	host_alloc: &'a BumpAllocator<'a, F, CpuMemory>,
+	dev_alloc: BumpAllocator<'a, F, Hal::DevMem>,
+	host_alloc: BumpAllocator<'a, F, CpuMemory>,
 	n_vars: usize,
-	multilins: Vec<FSlice<'a, F, Hal>>,
+	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
+	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<F>,
-	_marker: PhantomData<(F, Hal)>,
+}
+
+impl<'a, F, Hal> BivariateSumcheckProver<'a, F, Hal>
+where
+	F: TowerField,
+	Hal: ComputeLayer<F>,
+{
+	pub fn new(
+		hal: &'a Hal,
+		dev_alloc: BumpAllocator<'a, F, Hal::DevMem>,
+		host_alloc: BumpAllocator<'a, F, CpuMemory>,
+		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		multilins: Vec<FSlice<'a, F, Hal>>,
+	) -> Self {
+		let n_vars = claim.n_vars();
+
+		// Check shape of multilinear witness inputs.
+		assert_eq!(claim.n_multilinears(), multilins.len());
+		for multilin in &multilins {
+			assert_eq!(multilin.len(), 1 << n_vars);
+		}
+
+		// Wrap multilinear witness inputs as SumcheckMultilinears.
+		let multilins = multilins
+			.into_iter()
+			.map(SumcheckMultilinear::PreFold)
+			.collect();
+
+		let (compositions, sums) = claim
+			.composite_sums()
+			.iter()
+			.map(|CompositeSumClaim { composition, sum }| (composition.clone(), *sum))
+			.unzip();
+
+		Self {
+			hal,
+			dev_alloc,
+			host_alloc,
+			n_vars,
+			multilins,
+			compositions,
+			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(sums),
+		}
+	}
 }
 
 impl<F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, F, Hal>
@@ -65,7 +112,7 @@ where
 		}
 
 		// Fold the multilinears
-		let _ = self.hal.execute(|exec| {})?;
+		//let _ = self.hal.execute(|exec| {})?;
 
 		self.n_vars -= 1;
 		Ok(())
@@ -84,11 +131,22 @@ where
 
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
 		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
-			debug_assert_eq!(multilin.len(), 1);
-			self.hal.copy_d2h(multilin, slice::from_mut(dst_i))?;
+			let vals = match &multilin {
+				SumcheckMultilinear::PreFold(vals) => Hal::DevMem::narrow(vals),
+				SumcheckMultilinear::PostFold(vals) => Hal::DevMem::as_const(vals),
+			};
+			debug_assert_eq!(vals.len(), 1);
+			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
 		}
 		Ok(buffer.to_vec())
 	}
+}
+
+/// A multilinear polynomial that is being processed by a sumcheck prover.
+#[derive(Debug, Clone)]
+enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
+	PreFold(Mem::FSlice<'a>),
+	PostFold(Mem::FSliceMut<'a>),
 }
 
 /// Calculates the evaluations of the products of pairs of partially specialized multilinear
