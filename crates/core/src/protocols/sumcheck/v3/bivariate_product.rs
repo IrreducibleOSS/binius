@@ -418,6 +418,7 @@ mod tests {
 		tower::CanonicalTowerFamily, util::inner_product_unchecked,
 	};
 	use binius_hal::make_portable_backend;
+	use binius_hash::groestl::Groestl256;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain, EvaluationOrder,
 		InterpolationDomain, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
@@ -428,11 +429,15 @@ mod tests {
 	use super::*;
 	use crate::{
 		composition::BivariateProduct,
+		fiat_shamir::HasherChallenger,
 		polynomial::MultilinearComposite,
 		protocols::sumcheck::{
-			CompositeSumClaim, immediate_switchover_heuristic,
-			prove::{RegularSumcheckProver, SumcheckProver},
+			BatchSumcheckOutput, CompositeSumClaim,
+			front_loaded::BatchVerifier,
+			immediate_switchover_heuristic,
+			prove::{RegularSumcheckProver, SumcheckProver, front_loaded::BatchProver},
 		},
+		transcript::ProverTranscript,
 	};
 
 	fn compute_composite_sum<P, M, Composition>(
@@ -573,7 +578,7 @@ mod tests {
 		generic_test_calculate_round_evals(&hal, &mut dev_mem)
 	}
 
-	fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(hal: &Hal, dev_mem: FSliceMut<F, Hal>)
+	fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(hal: &'_ Hal, dev_mem: FSliceMut<'_, F, Hal>)
 	where
 		F: TowerField,
 		Hal: ComputeLayer<F>,
@@ -623,9 +628,68 @@ mod tests {
 				.collect(),
 		)
 		.unwrap();
+
 		let mut host_mem =
 			hal.host_alloc(<BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim));
+
 		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+		let dev_alloc = BumpAllocator::new(dev_mem);
+
+		let dev_multilins = evals
+			.iter()
+			.map(|evals_i| {
+				let mut dev_multilin = dev_alloc.alloc(evals_i.len()).unwrap();
+				hal.copy_h2d(evals_i, &mut dev_multilin).unwrap();
+				dev_multilin
+			})
+			.collect::<Vec<_>>();
+		// TODO: into_const would be useful here
+		let dev_multilins = dev_multilins
+			.iter()
+			.map(Hal::DevMem::as_const)
+			.collect::<Vec<_>>();
+
+		assert!(
+			dev_alloc.capacity()
+				>= <BivariateSumcheckProver<F, Hal>>::required_device_memory(&claim)
+		);
+
+		let prover =
+			BivariateSumcheckProver::new(hal, dev_alloc, host_alloc, &claim, dev_multilins)
+				.unwrap();
+
+		let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+
+		let batch_prover = BatchProver::new(vec![prover], &mut transcript).unwrap();
+		let _batch_prover_output = batch_prover.run(&mut transcript).unwrap();
+
+		let mut transcript = transcript.into_verifier();
+		let verifier = BatchVerifier::new(slice::from_ref(&claim), &mut transcript).unwrap();
+
+		let BatchSumcheckOutput {
+			challenges,
+			multilinear_evals,
+		} = verifier.run(&mut transcript).unwrap();
+
+		/*
+		for (claim_shape, mles_i, multilinear_evals_i) in
+			izip!(claim_shapes, mles, multilinear_evals)
+		{
+			let crate::protocols::sumcheck::tests::TestSumcheckClaimShape { n_vars, .. } =
+				claim_shape.clone();
+			let mle_challenges = match evaluation_order {
+				EvaluationOrder::LowToHigh => challenges[..n_vars].to_vec(),
+				EvaluationOrder::HighToLow => challenges[..n_vars].iter().copied().rev().collect(),
+			};
+			let query =
+				MultilinearQuery::<crate::protocols::sumcheck::IntellijRustImportsMock::PE>::expand(
+					&mle_challenges,
+				);
+			for (mle, eval) in iter::zip(mles_i, multilinear_evals_i) {
+				assert_eq!(mle.evaluate(&query).unwrap(), eval);
+			}
+		}
+		 */
 	}
 
 	#[test]
