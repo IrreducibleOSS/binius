@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use std::arch::x86_64::*;
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
