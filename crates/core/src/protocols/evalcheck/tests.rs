@@ -12,7 +12,8 @@ use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{
-	CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery, extrapolate_line,
+	CompositionPoly, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	extrapolate_line,
 };
 use bytemuck::{Pod, cast_slice_mut};
 use itertools::Either;
@@ -667,4 +668,73 @@ fn test_evalcheck_serialization() {
 	assert_eq!(out_2, EvalcheckHint::DuplicateClaim(6));
 
 	transcript.finalize().unwrap()
+}
+
+#[test]
+pub fn tets_zero_vars_zeropadding() {
+	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
+	let mut witness_index = MultilinearExtensionIndex::<BinaryField128b>::new();
+
+	let committed = oracles.add_committed(0, BinaryField128b::TOWER_LEVEL);
+	let mut values = vec![BinaryField128b::from(32)];
+	let committed_mle = MultilinearExtension::from_values(values.clone()).unwrap();
+	let committed_poly = MLEDirectAdapter::from(committed_mle);
+
+	witness_index
+		.update_multilin_poly([(committed, committed_poly.upcast_arc_dyn())])
+		.unwrap();
+
+	let zero_padded = oracles.add_zero_padded(committed, 3, 0, 0).unwrap();
+
+	values.resize(1 << 3, BinaryField128b::ZERO);
+
+	let zero_padded_mle = MultilinearExtension::from_values(values).unwrap();
+	let zero_padded_poly = MLEDirectAdapter::from(zero_padded_mle);
+
+	let backend = make_portable_backend();
+
+	let eval_point = vec![
+		BinaryField128b::from(3),
+		BinaryField128b::from(2),
+		BinaryField128b::ONE,
+	];
+
+	let query = backend.multilinear_query(&eval_point).unwrap();
+	let eval = zero_padded_poly.evaluate(query.to_ref()).unwrap();
+	assert_eq!(eval, BinaryField128b::zero());
+
+	let zero_eval_claim = EvalcheckMultilinearClaim {
+		id: zero_padded,
+		eval_point: eval_point.into(),
+		eval,
+	};
+
+	let eval_point = vec![
+		BinaryField128b::from(3),
+		BinaryField128b::from(2),
+		BinaryField128b::ZERO,
+	];
+
+	let query = backend.multilinear_query(&eval_point).unwrap();
+	let eval = zero_padded_poly.evaluate(query.to_ref()).unwrap();
+
+	assert_ne!(eval, BinaryField128b::zero());
+
+	let non_zero_eval_claim = EvalcheckMultilinearClaim {
+		id: zero_padded,
+		eval_point: eval_point.into(),
+		eval,
+	};
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	prover_state
+		.prove(vec![zero_eval_claim.clone(), non_zero_eval_claim.clone()], &mut transcript)
+		.unwrap();
+
+	let mut transcript = transcript.into_verifier();
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state
+		.verify(vec![zero_eval_claim, non_zero_eval_claim], &mut transcript)
+		.unwrap();
 }
