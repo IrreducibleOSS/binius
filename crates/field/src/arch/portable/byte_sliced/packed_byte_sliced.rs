@@ -36,13 +36,16 @@ pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
 /// Byte-sliced packed field with a fixed size (16x$packed_storage).
 /// For example for 32-bit scalar the data layout is the following:
+///
+/// ```plain
 /// [ element_0[0], element_4[0], ... ]
 /// [ element_0[1], element_4[1], ... ]
 /// [ element_0[2], element_4[2], ... ]
 /// [ element_0[3], element_4[3], ... ]
 /// [ element_1[0], element_5[0], ... ]
 /// [ element_1[1], element_5[1], ... ]
-///  ...
+/// ...
+/// ```
 macro_rules! define_byte_sliced_3d {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $scalar_tower_level: ty, $storage_tower_level: ty) => {
 		#[derive(Clone, Copy, PartialEq, Eq, Pod, Zeroable)]

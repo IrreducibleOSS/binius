@@ -10,7 +10,7 @@ use crate::builder::{B1, B128, Col, FlushOpts, TableBuilder, TableWitnessSegment
 /// A lookup producer gadget is used to create a lookup table.
 ///
 /// The lookup producer pushes the value columns to a channel with prover-chosen multiplicities.
-/// This allows consumers of the channel can read any value in the table an arbitrary number of
+/// This allows consumers of the channel to read any value in the table an arbitrary number of
 /// times. Table values are given as tuples of column entries.
 #[derive(Debug)]
 pub struct LookupProducer {

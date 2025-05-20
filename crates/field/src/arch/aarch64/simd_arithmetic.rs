@@ -65,7 +65,7 @@ pub fn packed_aes_16x8b_mul_alpha(x: M128) -> M128 {
 #[inline]
 pub fn packed_aes_16x8b_multiply(a: M128, b: M128) -> M128 {
 	//! Performs a multiplication in GF(2^8) on the packed bytes.
-	//! See https://doc.rust-lang.org/beta/core/arch/x86_64/fn._mm_gf2p8mul_epi8.html
+	//! See <https://doc.rust-lang.org/beta/core/arch/x86_64/fn._mm_gf2p8mul_epi8.html>
 	unsafe {
 		let a = vreinterpretq_p8_p128(a.into());
 		let b = vreinterpretq_p8_p128(b.into());
