@@ -33,7 +33,6 @@ serde_json_any_key.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-transpose.workspace = true
 
 [dev-dependencies]
 binius_macros = { path = "../macros", default-features = false }

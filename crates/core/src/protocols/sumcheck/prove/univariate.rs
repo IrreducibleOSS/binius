@@ -609,12 +609,12 @@ where
 			assert!(ell >= skip_rounds);
 
 			let coset_bits = ntt.log_domain_size() - ell;
-			OddInterpolate::new(n >> ell, ell, coset_bits, ntt.twiddles())
+			OddInterpolate::new(&ntt, n >> ell, ell, coset_bits)
 				.expect("domain large enough by construction")
 		});
 
 		// Obtain novel polynomial basis representation of round evaluations.
-		odd_interpolate.inverse_transform(&ntt, round_evals)?;
+		odd_interpolate.inverse_transform(round_evals)?;
 
 		// Use forward NTT to extrapolate novel representation to the max domain size.
 		let next_log_n = ntt.log_domain_size();

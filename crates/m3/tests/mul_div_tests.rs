@@ -191,7 +191,7 @@ impl TableFiller for MulDiv32TestTable {
 
 impl MulDivTestSuiteHelper for MulDiv32TestTable {
 	fn generate_inputs(&self, table_size: usize) -> Vec<(B32, B32)> {
-		// Just to be sure we are not resuing seed for the same inputs.
+		// Just to be sure we are not reusing seed for the same inputs.
 		let seed = match &self.mul_div {
 			MulDivEnum::MulUU32(_) => 0xdeadbeef,
 			MulDivEnum::MulSU32(_) => 0xc0ffee,

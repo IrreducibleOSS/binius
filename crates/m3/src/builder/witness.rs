@@ -1393,8 +1393,8 @@ mod tests {
 		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
 		let mut table = TableBuilder::new(&mut inner_table);
 		let col0 = table.add_committed::<B8, 2>("col0");
-		let col1 = table.add_committed::<B8, 2>("col0");
-		let col2 = table.add_committed::<B8, 2>("col0");
+		let col1 = table.add_committed::<B8, 2>("col1");
+		let col2 = table.add_committed::<B8, 2>("col2");
 
 		let allocator = bumpalo::Bump::new();
 		let table_size = 1 << 6;

@@ -129,7 +129,7 @@ fn montgomery_multiply(a: u128, b: u128) -> u128 {
 	v2 as u128 | (v3 as u128) << 64
 }
 
-/// Multiplication in GF(2)[X], truncated to the low 64-bits, with “holes”
+/// Multiplication in `GF(2)[X]`, truncated to the low 64-bits, with “holes”
 /// (sequences of zeroes) to avoid carry spilling.
 ///
 /// When carries do occur, they wind up in a "hole" and are subsequently masked
@@ -191,7 +191,7 @@ fn pow_2_2_n(value: BinaryField128bPolyval, n: usize) -> BinaryField128bPolyval 
 	}
 }
 
-/// Table where value[i][k][j] = BinaryField128bPolyval(j << 4 * k) ^ (2^(i+1))
+/// Table where `value[i][k][j] = BinaryField128bPolyval(j << 4 * k) ^ (2^(i+1))`
 static POLYVAL_NIBBLE_POW_2_N_TABLE: [[[u128; 16]; 32]; 6] = [
 	[
 		[

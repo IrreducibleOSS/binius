@@ -4,4 +4,7 @@
 /.idea
 **/.DS_Store
 /*.perfetto-trace
+benchmark_results/
 **/rustc-ice-*.txt
+/*.bin
+.last_perfetto_trace_path
