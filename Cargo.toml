@@ -143,3 +143,6 @@ debug = true
 debug-assertions = true
 overflow-checks = true
 lto = "off"
+
+[workspace.metadata.typos]
+default.extend-words = { "typ" = "typ" }
