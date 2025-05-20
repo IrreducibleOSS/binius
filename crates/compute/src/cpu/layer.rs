@@ -129,16 +129,16 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn inner_product<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		a_tower_height: usize,
-		a_in: &'a [T::B128],
+		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		b_in: &'a [T::B128],
 	) -> Result<T::B128, Error> {
-		if a_tower_height > T::B128::TOWER_LEVEL
-			|| a_in.len() << (T::B128::TOWER_LEVEL - a_tower_height) != b_in.len()
+		if a_in.tower_level > T::B128::TOWER_LEVEL
+			|| a_in.slice.len() << (T::B128::TOWER_LEVEL - a_in.tower_level) != b_in.len()
 		{
 			return Err(Error::InputValidation(format!(
-				"invalid input: a_edeg={a_tower_height} |a|={} |b|={}",
-				a_in.len(),
+				"invalid input: a_edeg={} |a|={} |b|={}",
+				a_in.tower_level,
+				a_in.slice.len(),
 				b_in.len()
 			)));
 		}
@@ -155,8 +155,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)
 		}
 
-		let result =
-			each_tower_subfield!(a_tower_height, T, inner_product::<_, T::B128>(a_in, b_in));
+		let result = each_tower_subfield!(
+			a_in.tower_level,
+			T,
+			inner_product::<_, T::B128>(a_in.slice, b_in)
+		);
 		Ok(result)
 	}
 

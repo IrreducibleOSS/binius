@@ -93,8 +93,9 @@ pub fn test_generic_single_inner_product<
 	let b_slice = C::DevMem::as_const(&b_slice);
 
 	// Run the HAL operation to compute the inner product
+	let a_subslice = SubfieldSlice::new(a_slice, F2::TOWER_LEVEL);
 	let actual = compute
-		.execute(|exec| Ok(vec![compute.inner_product(exec, F2::TOWER_LEVEL, a_slice, b_slice)?]))
+		.execute(|exec| Ok(vec![compute.inner_product(exec, a_subslice, b_slice)?]))
 		.unwrap()
 		.remove(0);
 
@@ -175,8 +176,20 @@ pub fn test_generic_multiple_multilinear_evaluations<
 			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
 			let (eval1, eval2) = compute.join(
 				exec,
-				|exec| compute.inner_product(exec, F1::TOWER_LEVEL, mle1_slice, eq_ind),
-				|exec| compute.inner_product(exec, F2::TOWER_LEVEL, mle2_slice, eq_ind),
+				|exec| {
+					compute.inner_product(
+						exec,
+						SubfieldSlice::new(mle1_slice, F1::TOWER_LEVEL),
+						eq_ind,
+					)
+				},
+				|exec| {
+					compute.inner_product(
+						exec,
+						SubfieldSlice::new(mle2_slice, F2::TOWER_LEVEL),
+						eq_ind,
+					)
+				},
 			)?;
 			Ok(vec![eval1, eval2])
 		})
