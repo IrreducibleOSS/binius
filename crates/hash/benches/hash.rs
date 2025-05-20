@@ -58,6 +58,29 @@ fn bench_groestl(c: &mut Criterion) {
 	group.finish()
 }
 
+fn bench_groestl_multi(c: &mut Criterion) {
+	let mut group = c.benchmark_group("Grøstl");
+
+	let mut rng = thread_rng();
+
+	const N: usize = 1 << 16;
+	let mut data = [[0u8; N]; 4];
+	for data_lane in &mut data {
+		rng.fill_bytes(data_lane);
+	}
+
+	let input_as_borrowed_slices = array::from_fn(|i| &data[i][..]);
+	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
+		unsafe { MaybeUninit::uninit().assume_init() };
+
+	group.throughput(Throughput::Bytes(4 * N as u64));
+	group.bench_function("Groestl256Multi", |bench| {
+		bench.iter(|| Groestl256Multi::digest(input_as_borrowed_slices, &mut multi_digest));
+	});
+
+	group.finish()
+}
+
 fn bench_vision32(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Vision Mark-32");
 
@@ -87,5 +110,5 @@ fn bench_vision32(c: &mut Criterion) {
 	group.finish()
 }
 
-criterion_group!(hash, bench_groestl, bench_vision32);
+criterion_group!(hash, bench_groestl, bench_groestl_multi, bench_vision32);
 criterion_main!(hash);

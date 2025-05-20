@@ -34,6 +34,6 @@ pub trait GroestlShortInternal {
 	}
 }
 
-pub use arch::{Groestl256Parallel, GroestlShortImpl};
+pub use arch::{Groestl256Multi, GroestlShortImpl};
 pub use compression::*;
 pub use digest::Groestl256;
