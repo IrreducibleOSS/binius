@@ -5,7 +5,7 @@ use binius_compute_test_utils::layer::{
 	test_generic_fri_fold, test_generic_kernel_add, test_generic_multiple_multilinear_evaluations,
 	test_generic_single_inner_product, test_generic_single_inner_product_using_kernel_accumulator,
 	test_generic_single_left_fold, test_generic_single_right_fold,
-	test_generic_single_tensor_expand,
+	test_generic_single_tensor_expand, test_generic_map_with_multilinear_evaluations,
 };
 use binius_field::{
 	BinaryField16b, BinaryField32b, BinaryField128b, Field, tower::CanonicalTowerFamily,
@@ -69,6 +69,19 @@ fn test_exec_multiple_multilinear_evaluations() {
 	let compute = <CpuLayer<CanonicalTowerFamily>>::default();
 	let mut device_memory = vec![F::ZERO; 1 << (n_vars + 1)];
 	test_generic_multiple_multilinear_evaluations::<F1, F2, _, _>(
+		compute,
+		&mut device_memory,
+		n_vars,
+	);
+}
+
+#[test]
+fn test_exec_map_with_mle_evaluations() {
+	type F = BinaryField128b;
+	let n_vars = 8;
+	let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut device_memory = vec![F::ZERO; 3 << n_vars];
+	test_generic_map_with_multilinear_evaluations(
 		compute,
 		&mut device_memory,
 		n_vars,
