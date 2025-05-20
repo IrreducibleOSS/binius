@@ -134,7 +134,7 @@ where
 	let cap_height = log2_ceil_usize(n_test_queries);
 	let fold_arities = std::iter::repeat_n(
 		arity,
-		(commit_meta.total_vars + log_inv_rate).saturating_sub(cap_height) / arity,
+		(commit_meta.total_vars).saturating_sub(cap_height.saturating_sub(log_inv_rate)) / arity,
 	)
 	.collect::<Vec<_>>();
 	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's

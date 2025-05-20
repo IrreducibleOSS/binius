@@ -8,8 +8,7 @@ use crate::builder::{B1, Col};
 /// A flushing rule within a table.
 #[derive(Debug)]
 pub struct Flush {
-	// TODO: rename to columns.
-	pub column_indices: Vec<ColumnId>,
+	pub columns: Vec<ColumnId>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	/// The number of times the values are flushed to the channel.

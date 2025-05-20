@@ -14,7 +14,6 @@ binius_macros = { path = "../macros", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
-bytes.workspace = true
 either.workspace = true
 getset.workspace = true
 itertools.workspace = true

@@ -682,7 +682,7 @@ impl<F: TowerField> TablePartition<F> {
 		cols: impl IntoIterator<Item = Col<F>>,
 		opts: FlushOpts,
 	) {
-		let column_indices = cols
+		let columns = cols
 			.into_iter()
 			.map(|col| {
 				assert_eq!(col.table_id, self.table_id);
@@ -698,7 +698,7 @@ impl<F: TowerField> TablePartition<F> {
 			})
 			.collect::<Vec<_>>();
 		self.flushes.push(Flush {
-			column_indices,
+			columns,
 			channel_id,
 			direction,
 			multiplicity: opts.multiplicity,

@@ -437,10 +437,6 @@ where
 		return false;
 	}
 
-	if P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH {
-		return false;
-	}
-
 	let cached_tables =
 		create_partial_sums_lookup_tables(PackedSlice::new_with_len(query, 1 << LOG_QUERY_SIZE));
 

@@ -1,7 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::hint::black_box;
+
 use binius_field::{PackedField, arch::byte_sliced::*};
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use rand::thread_rng;
 
 macro_rules! bench_transform_to_byte_sliced {

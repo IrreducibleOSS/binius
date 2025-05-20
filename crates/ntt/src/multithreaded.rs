@@ -8,7 +8,7 @@ use binius_utils::rayon::get_log_max_threads;
 use super::{
 	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
-	single_threaded::{self, SingleThreadedNTT, check_batch_transform_inputs_and_params},
+	single_threaded::{SingleThreadedNTT, check_batch_transform_inputs_and_params},
 	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
 };
@@ -62,15 +62,16 @@ where
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		forward_transform(
-			self.log_domain_size(),
-			self.single_threaded.twiddles(),
+			&self.single_threaded,
 			data,
 			shape,
 			coset,
+			coset_bits,
 			skip_rounds,
 			self.log_max_threads,
 		)
@@ -80,15 +81,16 @@ where
 		&self,
 		data: &mut [P],
 		shape: NTTShape,
-		coset: u32,
+		coset: usize,
+		coset_bits: usize,
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
-			self.log_domain_size(),
-			self.single_threaded.twiddles(),
+			&self.single_threaded,
 			data,
 			shape,
 			coset,
+			coset_bits,
 			skip_rounds,
 			self.log_max_threads,
 		)
@@ -96,30 +98,35 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
-	log_domain_size: usize,
-	s_evals: &[impl TwiddleAccess<F> + Sync],
+fn forward_transform<F, P, TA>(
+	subntt: &SingleThreadedNTT<F, TA>,
 	data: &mut [P],
 	shape: NTTShape,
-	coset: u32,
+	coset: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 	log_max_threads: usize,
-) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
+) -> Result<(), Error>
+where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+	TA: TwiddleAccess<F> + Sync,
+{
+	check_batch_transform_inputs_and_params(
+		subntt.log_domain_size(),
+		data,
+		shape,
+		coset,
+		coset_bits,
+		skip_rounds,
+	)?;
 
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::forward_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					shape,
-					coset,
-					skip_rounds,
-				),
+				_ => subntt.forward_transform(data, shape, coset, coset_bits, skip_rounds),
 			};
 		}
 		_ => {}
@@ -161,13 +168,16 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		let log_strides = log_max_threads.min(log_width);
 		let log_stride_len = log_width - log_strides;
 
+		let log_domain_size = subntt.log_domain_size();
+		let s_evals = &subntt.twiddles()[log_domain_size - (par_rounds + coset_bits)..];
+
 		matrix
 			.into_par_strides(1 << log_stride_len)
 			.for_each(|mut stride| {
 				// i indexes the layer of the NTT network, also the binary subspace.
 				for i in (0..par_rounds.saturating_sub(skip_rounds)).rev() {
-					let s_evals_par_i = &s_evals[log_y - par_rounds + i];
-					let coset_offset = (coset as usize) << (par_rounds - 1 - i);
+					let s_evals_par_i = &s_evals[i];
+					let coset_offset = coset << (par_rounds - 1 - i);
 
 					// j indexes the outer Z tensor axis.
 					for j in 0..1 << log_z {
@@ -201,16 +211,15 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data.par_chunks_mut(1 << (log_width + par_rounds))
 		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
-			single_threaded::forward_transform(
-				log_domain_size,
-				&s_evals[0..log_y - par_rounds],
+			subntt.forward_transform(
 				chunk,
 				NTTShape {
 					log_x,
 					log_y: single_thread_log_y,
 					log_z: log_row_z,
 				},
-				coset << par_rounds | inner_coset as u32,
+				coset << par_rounds | inner_coset,
+				coset_bits + par_rounds,
 				skip_rounds.saturating_sub(par_rounds),
 			)
 		})?;
@@ -219,30 +228,35 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
-	log_domain_size: usize,
-	s_evals: &[impl TwiddleAccess<F> + Sync],
+fn inverse_transform<F, P, TA>(
+	subntt: &SingleThreadedNTT<F, TA>,
 	data: &mut [P],
 	shape: NTTShape,
-	coset: u32,
+	coset: usize,
+	coset_bits: usize,
 	skip_rounds: usize,
 	log_max_threads: usize,
-) -> Result<(), Error> {
-	check_batch_transform_inputs_and_params(log_domain_size, data, shape, coset, skip_rounds)?;
+) -> Result<(), Error>
+where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+	TA: TwiddleAccess<F> + Sync,
+{
+	check_batch_transform_inputs_and_params(
+		subntt.log_domain_size(),
+		data,
+		shape,
+		coset,
+		coset_bits,
+		skip_rounds,
+	)?;
 
 	match data.len() {
 		0 => return Ok(()),
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::inverse_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					shape,
-					coset,
-					skip_rounds,
-				),
+				_ => subntt.inverse_transform(data, shape, coset, coset_bits, skip_rounds),
 			};
 		}
 		_ => {}
@@ -282,16 +296,15 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data.par_chunks_mut(1 << (log_width + par_rounds))
 		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
-			single_threaded::inverse_transform(
-				log_domain_size,
-				&s_evals[0..log_y - par_rounds],
+			subntt.inverse_transform(
 				chunk,
 				NTTShape {
 					log_x,
 					log_y: single_thread_log_y,
 					log_z: log_row_z,
 				},
-				coset << par_rounds | inner_coset as u32,
+				coset << par_rounds | inner_coset,
+				coset_bits + par_rounds,
 				skip_rounds.saturating_sub(par_rounds),
 			)
 		})?;
@@ -303,13 +316,17 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let log_strides = log_max_threads.min(log_width);
 	let log_stride_len = log_width - log_strides;
 
+	let log_domain_size = subntt.log_domain_size();
+	let s_evals = &subntt.twiddles()[log_domain_size - (par_rounds + coset_bits)..];
+
 	matrix
 		.into_par_strides(1 << log_stride_len)
 		.for_each(|mut stride| {
 			// i indexes the layer of the NTT network, also the binary subspace.
+			#[allow(clippy::needless_range_loop)]
 			for i in 0..par_rounds.saturating_sub(skip_rounds) {
-				let s_evals_par_i = &s_evals[log_y - par_rounds + i];
-				let coset_offset = (coset as usize) << (par_rounds - 1 - i);
+				let s_evals_par_i = &s_evals[i];
+				let coset_offset = coset << (par_rounds - 1 - i);
 
 				// j indexes the outer Z tensor axis.
 				for j in 0..1 << log_z {

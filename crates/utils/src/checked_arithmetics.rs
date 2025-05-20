@@ -17,10 +17,20 @@ pub const fn checked_log_2(val: usize) -> usize {
 	result as _
 }
 
-/// Computes `ceil(log_2(n))`.
+/// Computes the binary logarithm of $n$ rounded up to the nearest integer.
+///
+/// When $n$ is 0, this function returns 0. Otherwise, it returns $\lceil \log_2 n \rceil$.
 #[must_use]
 pub const fn log2_ceil_usize(n: usize) -> usize {
-	(usize::BITS - n.saturating_sub(1).leading_zeros()) as usize
+	min_bits(n.saturating_sub(1))
+}
+
+/// Returns the number of bits needed to represent $n$.
+///
+/// When $n$ is 0, this function returns 0. Otherwise, it returns $\lfloor \log_2 n \rfloor + 1$.
+#[must_use]
+pub const fn min_bits(n: usize) -> usize {
+	(usize::BITS - n.leading_zeros()) as usize
 }
 
 /// Computes `log_2(n)`
