@@ -383,9 +383,10 @@ impl MultiDigest<4> for Groestl256Multi {
 		let new_num_unfinished_bytes = (data[0].len() + self.num_unfinished_bytes) % 64;
 
 		if data[0].len() + self.num_unfinished_bytes < 64 {
-			for i in 0..4 {
-				self.unfinished_block[i][self.num_unfinished_bytes..new_num_unfinished_bytes]
-					.copy_from_slice(data[i]);
+			for (parallel_idx, data_lane) in data.iter().enumerate() {
+				self.unfinished_block[parallel_idx]
+					[self.num_unfinished_bytes..new_num_unfinished_bytes]
+					.copy_from_slice(data[parallel_idx]);
 			}
 			self.num_unfinished_bytes = new_num_unfinished_bytes;
 			return;
@@ -417,9 +418,9 @@ impl MultiDigest<4> for Groestl256Multi {
 			i += 64;
 		}
 
-		for parallel_idx in 0..4 {
+		for (parallel_idx, data_lane) in data.iter().enumerate() {
 			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
-				.copy_from_slice(&data[parallel_idx][i..]);
+				.copy_from_slice(&data_lane[i..]);
 		}
 
 		self.num_unfinished_bytes = new_num_unfinished_bytes;
