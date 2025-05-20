@@ -373,7 +373,7 @@ impl MultiDigest<4> for Groestl256Multi {
 			for (parallel_idx, data_lane) in data.iter().enumerate() {
 				self.unfinished_block[parallel_idx]
 					[self.num_unfinished_bytes..new_num_unfinished_bytes]
-					.copy_from_slice(data[parallel_idx]);
+					.copy_from_slice(data_lane);
 			}
 			self.num_unfinished_bytes = new_num_unfinished_bytes;
 			return;
