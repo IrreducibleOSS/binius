@@ -433,17 +433,17 @@ mod tests {
 		) {
 			let input_lengths: [_; 4] = array::from_fn(|i|{inputs[i].len()});
 			let Some(&min_length) = input_lengths.iter().min() else { todo!() };
-			let inputs  = (0..4).into_iter().map(|i|{&inputs[i][0..min_length]}).collect::<Vec<_>>();
+			let inputs  = (0..4).map(|i|{&inputs[i][0..min_length]}).collect::<Vec<_>>();
 
 			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
 
 			Groestl256Multi::digest(array::from_fn(|i|{inputs[i]}), &mut multi_digest);
 			for i in 0..4{
-				let single_digest = groestl_crypto::Groestl256::digest(&inputs[i]);
+				let single_digest = groestl_crypto::Groestl256::digest(inputs[i]);
 
 				let fully_initialized_multi: [u8; 32] = unsafe {
 					let ptr = multi_digest[i].assume_init_ref();
-					let generic_array = ptr.clone();  // Clone the GenericArray
+					let generic_array = *ptr;  // Clone the GenericArray
 
 					// Convert the GenericArray<u8, U32> into [u8; 32]
 					let mut arr: [u8; 32] = [0; 32];
