@@ -671,7 +671,7 @@ fn test_evalcheck_serialization() {
 }
 
 #[test]
-pub fn tets_zero_vars_zeropadding() {
+pub fn test_zero_padded_zero_vars() {
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let mut witness_index = MultilinearExtensionIndex::<BinaryField128b>::new();
 
