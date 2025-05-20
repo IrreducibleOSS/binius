@@ -226,9 +226,7 @@ pub fn test_generic_multiple_multilinear_evaluations<
 }
 
 pub fn test_generic_map_with_multilinear_evaluations<
-	F: Field
-		+ TowerField
-		+ PackedField<Scalar = F>,
+	F: Field + TowerField + PackedField<Scalar = F>,
 	C: ComputeLayer<F>,
 >(
 	compute: C,
@@ -291,7 +289,7 @@ pub fn test_generic_map_with_multilinear_evaluations<
 			let res = compute.map(
 				exec,
 				|exec, iter_item| compute.inner_product(exec, F::TOWER_LEVEL, *iter_item, eq_ind),
-				[mle1_slice,mle2_slice].iter(),
+				[mle1_slice, mle2_slice].iter(),
 			)?;
 			Ok(res)
 		})
@@ -302,16 +300,14 @@ pub fn test_generic_map_with_multilinear_evaluations<
 
 	// Compute the expected value
 	let query = MultilinearQuery::<F>::expand(&coordinates);
-	let expected_eval1 =
-		MultilinearExtension::new(n_vars, mle1)
-			.unwrap()
-			.evaluate(&query)
-			.unwrap();
-	let expected_eval2 =
-		MultilinearExtension::new(n_vars, mle2)
-			.unwrap()
-			.evaluate(&query)
-			.unwrap();
+	let expected_eval1 = MultilinearExtension::new(n_vars, mle1)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
+	let expected_eval2 = MultilinearExtension::new(n_vars, mle2)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
 
 	// Copy eq_ind back from the device
 	let eq_ind_slice = C::DevMem::as_const(&eq_ind_slice);
