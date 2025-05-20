@@ -41,6 +41,10 @@ where
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
+		if Hal::DevMem::MIN_SLICE_LEN != 1 {
+			todo!("support non-trivial minimum slice lengths");
+		}
+
 		let n_vars = claim.n_vars();
 
 		// Check shape of multilinear witness inputs.
@@ -72,6 +76,24 @@ where
 			compositions,
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::InitialSums(sums),
 		})
+	}
+
+	/// Returns the amount of host memory this sumcheck requires.
+	pub fn required_host_memory(
+		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+	) -> usize {
+		// In `finish()`, prover allocates a temporary host buffer for each of the fully folded
+		// multilinear evaluations.
+		claim.n_multilinears()
+	}
+
+	/// Returns the amount of device memory this sumcheck requires.
+	pub fn required_device_memory(
+		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+	) -> usize {
+		// In `fold()`, prover allocates device buffers for each of the folded multilinears. They
+		// are each half of the size of the original multilinears.
+		claim.n_multilinears() * (1 << (claim.n_vars() - 1))
 	}
 }
 
@@ -192,6 +214,7 @@ where
 			},
 		};
 
+		// Copy the fully folded multilinear evaluations to the host.
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
 		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
 			let vals = multilin.const_slice();
@@ -548,5 +571,67 @@ mod tests {
 		let hal = Hal::default();
 		let mut dev_mem = vec![F::ZERO; 1 << 10];
 		generic_test_calculate_round_evals(&hal, &mut dev_mem)
+	}
+
+	fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(hal: &Hal, dev_mem: FSliceMut<F, Hal>)
+	where
+		F: TowerField,
+		Hal: ComputeLayer<F>,
+	{
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let evals = repeat_with(|| {
+			repeat_with(|| F::random(&mut rng))
+				.take(1 << n_vars)
+				.collect::<Vec<_>>()
+		})
+		.take(n_multilins)
+		.collect::<Vec<_>>();
+		let compositions = repeat_with(|| {
+			// Choose 2 distinct indices at random
+			let idx0 = rng.gen_range(0..n_multilins);
+			let idx1 = (idx0 + rng.gen_range(0..n_multilins - 1)) % n_multilins;
+			IndexComposition::new(n_multilins, [idx0, idx1], BivariateProduct::default()).unwrap()
+		})
+		.take(n_compositions)
+		.collect::<Vec<_>>();
+
+		let multilins = evals
+			.iter()
+			.map(|evals| {
+				let mle = MultilinearExtension::new(n_vars, evals.as_slice()).unwrap();
+				MLEDirectAdapter::from(mle)
+			})
+			.collect::<Vec<_>>();
+		let sums = compositions
+			.iter()
+			.map(|composition| compute_composite_sum(&multilins, composition))
+			.collect::<Vec<_>>();
+
+		let batch_coeff = <F as Field>::random(&mut rng);
+		//let sum = inner_product_unchecked(powers(batch_coeff), sums.iter().copied());
+
+		let claim = SumcheckClaim::new(
+			n_vars,
+			n_multilins,
+			iter::zip(compositions, sums)
+				.map(|(composition, sum)| CompositeSumClaim { composition, sum })
+				.collect(),
+		)
+		.unwrap();
+		let mut host_mem =
+			hal.host_alloc(<BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim));
+		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	}
+
+	#[test]
+	fn test_bivariate_sumcheck_prove_verify() {
+		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut dev_mem = zeroed_vec(1 << 12);
+		generic_test_bivariate_sumcheck_prove_verify(&hal, &mut dev_mem)
 	}
 }
