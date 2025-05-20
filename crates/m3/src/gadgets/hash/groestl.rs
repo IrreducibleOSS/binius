@@ -50,7 +50,7 @@ const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 ///
 /// The state is represented as an array of 64 B8 elements, which is  isomorphic to the
 /// standard representation of bytes in a Grøstl state. This isomorphic representation is
-/// cheaper to verify with a Binius M3 constrant system.
+/// cheaper to verify with a Binius M3 constraint system.
 #[derive(Debug, Clone)]
 pub struct Permutation {
 	rounds: [PermutationRound; 10],

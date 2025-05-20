@@ -24,7 +24,7 @@ pub struct Flush {
 pub struct FlushOpts {
 	/// The number of times the values are flushed to the channel.
 	pub multiplicity: u32,
-	/// Selector columns that determine which row events are flushed..
+	/// Selector columns that determine which row events are flushed.
 	///
 	/// The referenced selector columns must hold 1-bit values and contain only zeros after the
 	/// index that is the height of the table. If the selectors is empty, all values up to the

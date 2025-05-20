@@ -737,7 +737,7 @@ pub struct SignConverter<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: us
 impl<UPrimitive: UnsignedAddPrimitives, const BIT_LENGTH: usize>
 	SignConverter<UPrimitive, BIT_LENGTH>
 {
-	/// Used to conditionally select bit representation based on the MSB bit (sign bit)
+	/// Used to conditionally select bit representation based on the MSB (sign bit)
 	///
 	/// ## Parameters
 	/// * `in_bits`: The input bits from MSB to LSB
