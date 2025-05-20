@@ -42,13 +42,13 @@ impl<'a, T> RowsBatch<'a, T> {
 	}
 }
 
-/// This struct is similar to `RowsBatch`, but it holds a reference to the slice of rows
-/// and an offset.
+/// This struct is similar to `RowsBatch`, but it holds a reference to a slice of rows
+/// (instead of an owned vector) and an offset in each row.
 ///
-/// It is guaranteed that all rows have the length at least `row_len + offset`
-///
-/// Unfortunately due to liftime issues we can't have a single generic struct which is
-/// parameterized by a container type.
+/// It is guaranteed that all rows in `self.rows` have a length of at least `row_len + offset`. The
+/// effective row returned by `row` method is `&self.rows[index][self.offset..self.offset +
+/// self.row_len]`. Unfortunately, due to lifetime issues, we can't unify `RowsBatch` and
+/// `RowsBatchRef` into a single generic struct parameterized by the container type.
 pub struct RowsBatchRef<'a, T> {
 	rows: &'a [&'a [T]],
 	row_len: usize,
