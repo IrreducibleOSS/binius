@@ -178,17 +178,15 @@ mod model {
 	impl MerklePathEvent {
 		/// Method to fire the event, pushing the parent digest if the parent flag is set and
 		/// pulling the left or right child depending on the flush flags.
-		pub fn fire(&self, node_channel: &mut Channel<NodeFlushToken>, parent_flag: bool) {
+		pub fn fire(&self, node_channel: &mut Channel<NodeFlushToken>) {
 			// Push the parent digest to the nodes channel and optionally pull the left or right
 			// child depending on the flush flags.
-			if parent_flag {
-				node_channel.push(NodeFlushToken {
-					root_id: self.root_id,
-					data: self.parent,
-					depth: self.parent_depth,
-					index: self.parent_index,
-				});
-			}
+			node_channel.push(NodeFlushToken {
+				root_id: self.root_id,
+				data: self.parent,
+				depth: self.parent_depth,
+				index: self.parent_index,
+			});
 
 			if self.flush_left {
 				node_channel.pull(NodeFlushToken {
@@ -197,7 +195,8 @@ mod model {
 					depth: self.parent_depth + 1,
 					index: 2 * self.parent_index,
 				});
-			} else if self.flush_right {
+			}
+			if self.flush_right {
 				node_channel.pull(NodeFlushToken {
 					root_id: self.root_id,
 					data: self.right,
@@ -271,6 +270,7 @@ mod model {
 			// referenced in the paths.
 
 			//tracks the filled nodes in the tree
+			let mut filled_nodes = HashSet::new();
 			for MerklePath {
 				root_id,
 				index,
@@ -295,32 +295,92 @@ mod model {
 				root_nodes.insert(MerkleRootEvent::new(*root_id, roots[*root_id as usize]));
 
 				let mut leaf = *leaf;
+
+				// Iterate through the path and push the nodes to the nodes channel. If the sibling
+				// node has already been seen in another path, we instead replace its value and
+				// set both the pull flags to true.
 				for (i, node) in path.iter().enumerate() {
+					let current_index = *index >> i;
+					let sibling_index = current_index ^ 1;
+					let current_index_is_even = current_index & 1 == 0;
+					filled_nodes.insert((*root_id, path.len() - i, current_index));
 					let mut parent = [0u8; 32];
-					if (index >> i) & 1 == 0 {
+
+					// If the node is not already filled, push it to the nodes channel.
+					if current_index_is_even {
+						// Compress the nodes in orde
 						compress(&leaf, node, &mut parent);
-						path_nodes.insert(MerklePathEvent {
-							root_id: *root_id,
-							left: leaf,
-							right: *node,
-							parent,
-							parent_depth: path.len() - i - 1,
-							parent_index: index >> (i + 1),
-							flush_left: true,
-							flush_right: false,
-						});
+
+						if filled_nodes.contains(&(*root_id, path.len() - i, sibling_index)) {
+							path_nodes.remove(&MerklePathEvent {
+								root_id: *root_id,
+								left: leaf,
+								right: *node,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: false,
+								flush_right: true,
+							});
+
+							path_nodes.insert(MerklePathEvent {
+								root_id: *root_id,
+								left: leaf,
+								right: *node,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: true,
+								flush_right: true,
+							});
+						} else {
+							path_nodes.insert(MerklePathEvent {
+								root_id: *root_id,
+								left: leaf,
+								right: *node,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: true,
+								flush_right: false,
+							});
+						}
 					} else {
 						compress(node, &leaf, &mut parent);
-						path_nodes.insert(MerklePathEvent {
-							root_id: *root_id,
-							left: *node,
-							right: leaf,
-							parent,
-							parent_depth: path.len() - i - 1,
-							parent_index: index >> (i + 1),
-							flush_left: false,
-							flush_right: true,
-						});
+						if filled_nodes.contains(&(*root_id, path.len() - i, sibling_index)) {
+							path_nodes.remove(&MerklePathEvent {
+								root_id: *root_id,
+								left: *node,
+								right: leaf,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: true,
+								flush_right: false,
+							});
+
+							path_nodes.insert(MerklePathEvent {
+								root_id: *root_id,
+								left: *node,
+								right: leaf,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: true,
+								flush_right: true,
+							});
+						} else {
+							path_nodes.insert(MerklePathEvent {
+								root_id: *root_id,
+								left: *node,
+								right: leaf,
+								parent,
+								parent_depth: path.len() - i - 1,
+								parent_index: index >> (i + 1),
+								flush_left: false,
+								flush_right: true,
+							});
+						}
 					}
 					leaf = parent;
 				}
@@ -349,18 +409,9 @@ mod model {
 				root.fire(&mut channels.nodes, &mut channels.roots);
 			}
 
-			let mut parent_nodes_hashset = HashSet::new();
 			// Push the nodes to the nodes channel.
 			for node in &self.nodes {
-				let MerklePathEvent {
-					root_id,
-					parent_depth,
-					parent_index,
-					..
-				} = *node;
-				let parent_flag =
-					parent_nodes_hashset.insert((root_id, parent_depth, parent_index));
-				node.fire(&mut channels.nodes, parent_flag);
+				node.fire(&mut channels.nodes);
 			}
 
 			// Assert that the nodes and roots channels are balanced.
