@@ -164,10 +164,19 @@ pub fn test_generic_multiple_multilinear_evaluations<
 	let results = compute
 		.execute(|exec| {
 			{
-				// Swap first element on the device buffer
-				let mut first_elt =
-					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
-				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				// Swap first element (by copying the whole slice)
+				let mut tmp_eq_ind_buffer = compute.host_alloc(1 << n_vars);
+				let tmp_eq_ind_buffer = tmp_eq_ind_buffer.as_mut();
+				compute
+					.copy_d2h(
+						<C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice),
+						tmp_eq_ind_buffer,
+					)
+					.unwrap();
+				tmp_eq_ind_buffer[0] = F::ONE;
+				compute
+					.copy_h2d(tmp_eq_ind_buffer, &mut eq_ind_slice)
+					.unwrap();
 			}
 
 			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
