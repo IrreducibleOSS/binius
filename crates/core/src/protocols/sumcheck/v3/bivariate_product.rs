@@ -153,18 +153,21 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 
 #[cfg(test)]
 mod tests {
-	use std::iter::repeat_with;
-
-	use binius_compute::cpu::CpuLayer;
+	use binius_compute::{
+		FSliceMut,
+		alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+		cpu::CpuLayer,
+	};
 	use binius_field::{
 		BinaryField1b, BinaryField128b, Field, PackedBinaryField1x128b, PackedField,
-		PackedFieldIndexable, tower::CanonicalTowerFamily, util::inner_product_unchecked,
+		tower::CanonicalTowerFamily, util::inner_product_unchecked,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain, EvaluationOrder,
 		InterpolationDomain, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 	};
+	use bytemuck::must_cast_slice;
 	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
@@ -201,29 +204,56 @@ mod tests {
 			.sum()
 	}
 
-	#[test]
-	fn test_calculate_round_evals() {
-		type Hal = CpuLayer<CanonicalTowerFamily>;
+	fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
+		hal: &Hal,
+		dev_mem: FSliceMut<BinaryField128b, Hal>,
+	) {
 		type F = BinaryField128b;
 
-		let hal = Hal::default();
 		let n_vars = 8;
 		let mut rng = StdRng::seed_from_u64(0);
-		let evals_1 = repeat_with(|| PackedBinaryField1x128b::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<_>>();
-		let evals_2 = repeat_with(|| PackedBinaryField1x128b::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<_>>();
-		let evals_3 = repeat_with(|| PackedBinaryField1x128b::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<_>>();
-		let mle_1 = MultilinearExtension::new(n_vars, evals_1.as_slice()).unwrap();
-		let mle_2 = MultilinearExtension::new(n_vars, evals_2.as_slice()).unwrap();
-		let mle_3 = MultilinearExtension::new(n_vars, evals_3.as_slice()).unwrap();
-		let multilins = [mle_1, mle_2, mle_3].map(MLEDirectAdapter::from).to_vec();
 
-		let batch_coeff = <F as Field>::random(&mut rng);
+		let mut host_mem = hal.host_alloc(3 * (1 << n_vars));
+		let host_alloc = HostBumpAllocator::<F>::new(host_mem.as_mut());
+
+		let evals_1 = host_alloc.alloc(1 << n_vars).unwrap();
+		let evals_2 = host_alloc.alloc(1 << n_vars).unwrap();
+		let evals_3 = host_alloc.alloc(1 << n_vars).unwrap();
+
+		evals_1.fill_with(|| <F as Field>::random(&mut rng));
+		evals_2.fill_with(|| <F as Field>::random(&mut rng));
+		evals_3.fill_with(|| <F as Field>::random(&mut rng));
+
+		let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
+		let mut evals_1_dev = dev_alloc.alloc(1 << n_vars).unwrap();
+		let mut evals_2_dev = dev_alloc.alloc(1 << n_vars).unwrap();
+		let mut evals_3_dev = dev_alloc.alloc(1 << n_vars).unwrap();
+		hal.copy_h2d(evals_1, &mut evals_1_dev).unwrap();
+		hal.copy_h2d(evals_2, &mut evals_2_dev).unwrap();
+		hal.copy_h2d(evals_3, &mut evals_3_dev).unwrap();
+
+		let mle_1 = MultilinearExtension::new(
+			n_vars,
+			must_cast_slice::<_, PackedBinaryField1x128b>(evals_1),
+		)
+		.unwrap();
+		let mle_2 = MultilinearExtension::new(
+			n_vars,
+			must_cast_slice::<_, PackedBinaryField1x128b>(evals_2),
+		)
+		.unwrap();
+		let mle_3 = MultilinearExtension::new(
+			n_vars,
+			must_cast_slice::<_, PackedBinaryField1x128b>(evals_3),
+		)
+		.unwrap();
+
+		let multilins = [mle_1, mle_2, mle_3]
+			.into_iter()
+			.map(MLEDirectAdapter::from)
+			.collect::<Vec<_>>();
+
+		let batch_coeff = <BinaryField128b as Field>::random(&mut rng);
 
 		let indexed_compositions = [
 			IndexComposition::new(3, [0, 1], BivariateProduct::default()).unwrap(),
@@ -237,13 +267,13 @@ mod tests {
 		let sum = inner_product_unchecked(powers(batch_coeff), sums.iter().copied());
 
 		let result = calculate_round_evals(
-			&hal,
+			hal,
 			n_vars,
 			batch_coeff,
 			&[
-				PackedFieldIndexable::unpack_scalars(&evals_1),
-				PackedFieldIndexable::unpack_scalars(&evals_2),
-				PackedFieldIndexable::unpack_scalars(&evals_3),
+				Hal::DevMem::as_const(&evals_1_dev),
+				Hal::DevMem::as_const(&evals_2_dev),
+				Hal::DevMem::as_const(&evals_3_dev),
 			],
 			&indexed_compositions,
 		);
@@ -276,5 +306,15 @@ mod tests {
 		let expected_coeffs = prover.execute(batch_coeff).unwrap();
 
 		assert_eq!(coeffs, expected_coeffs.0);
+	}
+
+	#[test]
+	fn test_calculate_round_evals() {
+		type Hal = CpuLayer<CanonicalTowerFamily>;
+		type F = BinaryField128b;
+
+		let hal = Hal::default();
+		let mut dev_mem = vec![F::ZERO; 1 << 10];
+		generic_test_calculate_round_evals(&hal, &mut dev_mem)
 	}
 }
