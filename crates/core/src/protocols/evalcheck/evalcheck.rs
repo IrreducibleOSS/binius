@@ -95,6 +95,7 @@ pub fn deserialize_evalcheck_proof<B: Buf>(
 /// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the
 /// data. This data structure is more memory efficient for small number of evaluation points and
 /// OracleIds which are grouped together.
+#[derive(Clone, Debug)]
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
