@@ -8,6 +8,3 @@
 //! the current V2 prover will be removed.
 
 pub mod bivariate_product;
-mod error;
-
-pub use error::Error;

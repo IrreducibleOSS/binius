@@ -23,7 +23,7 @@ pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: HostBumpAllocator<'a, F>,
 	n_vars_initial: usize,
-	n_vars: usize,
+	n_vars_remaining: usize,
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<F>,
@@ -72,7 +72,7 @@ where
 			dev_alloc,
 			host_alloc,
 			n_vars_initial: n_vars,
-			n_vars,
+			n_vars_remaining: n_vars,
 			multilins,
 			compositions,
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::InitialSums(sums),
@@ -119,7 +119,7 @@ where
 			.collect::<Vec<_>>();
 		let round_evals = calculate_round_evals(
 			self.hal,
-			self.n_vars,
+			self.n_vars_remaining,
 			batch_coeff,
 			&multilins,
 			&self.compositions,
@@ -140,7 +140,7 @@ where
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
-		if self.n_vars == 0 {
+		if self.n_vars_remaining == 0 {
 			bail!(Error::ExpectedFinish);
 		}
 
@@ -164,12 +164,13 @@ where
 				.map(|multilin| {
 					let folded_evals = match multilin {
 						SumcheckMultilinear::PreFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars);
+							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
 							let (evals_0, evals_1) =
-								Hal::DevMem::split_at(evals, 1 << (self.n_vars - 1));
+								Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
 
 							// Allocate new buffer for the folded evaluations and copy in evals_0.
-							let mut folded_evals = self.dev_alloc.alloc(1 << (self.n_vars - 1))?;
+							let mut folded_evals =
+								self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
 							// This is kind of sketchy to do a copy without an execution context.
 							self.hal.copy_d2d(evals_0, &mut folded_evals)?;
 
@@ -182,9 +183,9 @@ where
 							folded_evals
 						}
 						SumcheckMultilinear::PostFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars);
+							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
 							let (mut evals_0, evals_1) =
-								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars - 1));
+								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars_remaining - 1));
 							self.hal.extrapolate_line(
 								exec,
 								&mut evals_0,
@@ -200,7 +201,7 @@ where
 			Ok(Vec::new())
 		})?;
 
-		self.n_vars -= 1;
+		self.n_vars_remaining -= 1;
 		Ok(())
 	}
 
@@ -209,7 +210,7 @@ where
 			ProverStateCoeffsOrSums::Coeffs(_) => {
 				bail!(Error::ExpectedFold);
 			}
-			_ => match self.n_vars {
+			_ => match self.n_vars_remaining {
 				0 => {}
 				_ => bail!(Error::ExpectedExecution),
 			},
@@ -280,8 +281,6 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	multilins: &[FSlice<'a, F, HAL>],
 	compositions: &[IndexComposition<BivariateProduct, 2>],
 ) -> Result<[F; 2], Error> {
-	// TODO: if n_vars is too small, transfer data and fall back to the CPU impl
-
 	let prod_evaluators = compositions
 		.iter()
 		.map(|composition| {
