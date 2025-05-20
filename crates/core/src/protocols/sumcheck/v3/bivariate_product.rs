@@ -12,12 +12,10 @@ use binius_field::{Field, TowerField, util::powers};
 use binius_math::{ArithExpr, EvaluationOrder, evaluate_univariate, CompositionPoly};
 use binius_utils::bail;
 
-use super::error::Error;
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		CompositeSumClaim, Error as SumcheckError, RoundCoeffs, SumcheckClaim,
-		prove::SumcheckProver,
+		CompositeSumClaim, Error, RoundCoeffs, SumcheckClaim, prove::SumcheckProver,
 	},
 };
 
@@ -88,13 +86,19 @@ where
 		EvaluationOrder::HighToLow
 	}
 
-	fn execute(&mut self, _batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
+	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		let multilins = self
+			.multilins
+			.iter()
+			.map(|multilin| multilin.const_slice())
+			.collect::<Vec<_>>();
+		calculate_round_evals(self.hal, self.n_vars, batch_coeff, &multilins, &self.compositions)?;
 		todo!()
 	}
 
-	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
+	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		if self.n_vars == 0 {
-			bail!(SumcheckError::ExpectedFinish);
+			bail!(Error::ExpectedFinish);
 		}
 
 		// Update the stored multilinear sums.
@@ -108,7 +112,7 @@ where
 				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);
 			}
 			ProverStateCoeffsOrSums::Sums(_) => {
-				bail!(SumcheckError::ExpectedExecution);
+				bail!(Error::ExpectedExecution);
 			}
 		}
 
@@ -161,23 +165,20 @@ where
 		Ok(())
 	}
 
-	fn finish(self: Box<Self>) -> Result<Vec<F>, SumcheckError> {
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
 		match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
-				bail!(SumcheckError::ExpectedFold);
+				bail!(Error::ExpectedFold);
 			}
 			ProverStateCoeffsOrSums::Sums(_) => match self.n_vars {
 				0 => {}
-				_ => bail!(SumcheckError::ExpectedExecution),
+				_ => bail!(Error::ExpectedExecution),
 			},
 		};
 
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
 		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
-			let vals = match &multilin {
-				SumcheckMultilinear::PreFold(vals) => Hal::DevMem::narrow(vals),
-				SumcheckMultilinear::PostFold(vals) => Hal::DevMem::as_const(vals),
-			};
+			let vals = multilin.const_slice();
 			debug_assert_eq!(vals.len(), 1);
 			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
 		}
@@ -190,6 +191,15 @@ where
 enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
 	PreFold(Mem::FSlice<'a>),
 	PostFold(Mem::FSliceMut<'a>),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
+	fn const_slice(&self) -> Mem::FSlice<'_> {
+		match self {
+			Self::PreFold(slice) => Mem::narrow(slice),
+			Self::PostFold(slice) => Mem::as_const(slice),
+		}
+	}
 }
 
 /// Calculates the evaluations of the products of pairs of partially specialized multilinear
