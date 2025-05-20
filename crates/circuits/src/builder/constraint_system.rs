@@ -87,7 +87,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		Option::take(&mut self.witness)
 			.ok_or_else(|| {
 				anyhow!(
-					"Witness is missing. Are you in verifier mode, or have you already extraced the witness?"
+					"Witness is missing. Are you in verifier mode, or have you already extracted the witness?"
 				)
 			})?
 			.build()

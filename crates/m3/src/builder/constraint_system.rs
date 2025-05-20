@@ -675,8 +675,8 @@ fn translate_constraint_set<F: TowerField>(
 	// actually referenced in every zero constraint expressions.
 	let mut oracle_appears_in_expr = vec![false; partition_oracle_ids.len()];
 	let mut n_used_oracles = 0usize;
-	for zero_contraint in zero_constraints {
-		let vars_usage = zero_contraint.expr.vars_usage();
+	for zero_constraint in zero_constraints {
+		let vars_usage = zero_constraint.expr.vars_usage();
 		for (oracle_index, used) in vars_usage.iter().enumerate() {
 			if *used && !oracle_appears_in_expr[oracle_index] {
 				oracle_appears_in_expr[oracle_index] = true;

@@ -70,7 +70,7 @@ domain, and `FEncode` is used as the field of an encoding matrix.
 
 #### Use namespacing
 
-If an identifier is defined in a module and is unambigious in the context of that module, it does _not_ need to
+If an identifier is defined in a module and is unambiguous in the context of that module, it does _not_ need to
 duplicate the module name into the identifier. For example, we have many protocols defined in `binius_core::protocols`
 that expose a `prove` and `verify` method. Because they are namespaced within the protocol modules, for example the
 `sumcheck` module, these identifiers do not need to be named `sumcheck_verify` and `sumcheck_prove`. The caller has the

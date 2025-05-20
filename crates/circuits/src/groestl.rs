@@ -6,9 +6,9 @@ use anyhow::Result;
 use array_util::ArrayExt;
 use binius_core::oracle::OracleId;
 use binius_field::{
+	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, PackedField, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, PackedField, TowerField,
 };
 use binius_math::ArithExpr;
 use binius_maybe_rayon::prelude::*;
@@ -383,7 +383,7 @@ fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 #[cfg(test)]
 mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, AESTowerField16b};
+	use binius_field::{AESTowerField16b, arch::OptimalUnderlier};
 
 	use super::groestl_p_permutation;
 	use crate::builder::ConstraintSystemBuilder;

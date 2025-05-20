@@ -29,7 +29,7 @@ impl_broadcast!(u128, AESTowerField32b);
 impl_broadcast!(u128, AESTowerField64b);
 impl_broadcast!(u128, AESTowerField128b);
 
-// Define contants
+// Define constants
 // 0xD3 corresponds to 0x10 after isomorphism from BinaryField8b to AESField
 impl_tower_constants!(AESTowerField8b, u128, 0x00d300d300d300d300d300d300d300d3);
 impl_tower_constants!(AESTowerField16b, u128, { alphas!(u128, 4) });

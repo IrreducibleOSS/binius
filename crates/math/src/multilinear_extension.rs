@@ -180,10 +180,10 @@ where
 			let evals = PackedField::iter_slice(self.evals())
 				.take(self.size())
 				.collect::<Vec<P::Scalar>>();
-			let querys = PackedField::iter_slice(query.expansion())
+			let queries = PackedField::iter_slice(query.expansion())
 				.take(1 << query.n_vars())
 				.collect::<Vec<PE::Scalar>>();
-			Ok(inner_product_par(&querys, &evals))
+			Ok(inner_product_par(&queries, &evals))
 		} else {
 			Ok(inner_product_par(query.expansion(), &self.evals))
 		}

@@ -142,7 +142,7 @@ pub struct BatchZerocheckOutput<F: Field> {
 	/// Sumcheck challenges corresponding to low indexed variables "skipped" by the univariate
 	/// round. Assigned by the univariatizing reduction sumcheck.
 	pub skipped_challenges: Vec<F>,
-	/// Sumcheck challenges correspending to high indexed variables that are not "skipped" and are
+	/// Sumcheck challenges corresponding to high indexed variables that are not "skipped" and are
 	/// reduced via follow up multilinear eq-ind sumcheck.
 	pub unskipped_challenges: Vec<F>,
 	/// Multilinear evals of all batched claims, concatenated in the non-descending `n_vars` order.

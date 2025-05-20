@@ -483,9 +483,9 @@ mod model {
 		exercise_hash(16, 24, [0x01u8; 1024]);
 		// Exercise it once more. This will overwrite the memory for hash and message and add
 		// a hash call. The former is idempotent but the latter is not, which we are after.
-		// Specifically, we want to test multiplicites.
+		// Specifically, we want to test multiplicities.
 		exercise_hash(16, 24, [0x01u8; 1024]);
-		// Exercise endianess.
+		// Exercise endianness.
 		exercise_hash(1048, 1080, array::from_fn(|i| (i % 255) as u8));
 		// Close to the end of heap.
 		exercise_hash(u32::MAX - 1024 - 32, u32::MAX - 1024, [0u8; 1024]);

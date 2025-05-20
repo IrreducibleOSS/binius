@@ -80,7 +80,7 @@ where
 
 /// Execute the right fold operation.
 ///
-/// Every consequent `1 << log_query_size` scalar values are dot-producted with the corresponding
+/// Every consequent `1 << log_query_size` scalar values are dot-produced with the corresponding
 /// query elements. The result is stored in the `output` slice of packed values.
 ///
 /// Please note that this method is single threaded. Currently we always have some
@@ -121,7 +121,7 @@ where
 
 /// Execute the left fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` rows and each column is dot-produced
 /// with the corresponding query element. The results is written to the `output` slice of packed
 /// values. If the function returns `Ok(())`, then `out` can be safely interpreted as initialized.
 ///
@@ -181,7 +181,7 @@ where
 /// Execute the middle fold operation.
 ///
 /// Every consequent `1 << start_index` scalar values are considered as a row. Then each column
-/// is dot-producted in chunks (of size `1 << log_query_size`) with the `query` slice.
+/// is dot-produced in chunks (of size `1 << log_query_size`) with the `query` slice.
 /// The results are written to the `output`.
 ///
 /// Please note that this method is single threaded. Currently we always have some

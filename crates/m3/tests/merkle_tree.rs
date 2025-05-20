@@ -89,13 +89,13 @@ mod model {
 	impl MerkleTree {
 		/// Constructs a Merkle tree from the given leaf nodes that uses the Groestl output
 		/// transformation (Groestl-P permutation + XOR) as a digest compression function.
-		pub fn new(leafs: &[[u8; 32]]) -> Self {
-			assert!(leafs.len().is_power_of_two(), "Length of leafs needs to be a power of 2.");
-			let depth = leafs.len().ilog2() as usize;
-			let mut nodes = vec![[0u8; 32]; 2 * leafs.len() - 1];
+		pub fn new(leaves: &[[u8; 32]]) -> Self {
+			assert!(leaves.len().is_power_of_two(), "Length of leaves needs to be a power of 2.");
+			let depth = leaves.len().ilog2() as usize;
+			let mut nodes = vec![[0u8; 32]; 2 * leaves.len() - 1];
 
 			// Fill the leaves in the flattened tree.
-			nodes[0..leafs.len()].copy_from_slice(leafs);
+			nodes[0..leaves.len()].copy_from_slice(leaves);
 
 			// Marks the beginning of the layer in the flattened tree.
 			let mut current_depth_marker = 0;
