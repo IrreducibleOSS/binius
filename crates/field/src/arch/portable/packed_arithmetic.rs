@@ -353,7 +353,7 @@ where
 	}
 }
 
-/// Broadcast lowest field for each element, e.g. [<0001><0000>] -> [<1111><0000>]
+/// Broadcast lowest field for each element, e.g. `[<0001><0000>] -> [<1111><0000>]`
 fn broadcast_lowest_bit<U: UnderlierWithBitOps>(mut data: U, log_packed_bits: usize) -> U {
 	for i in 0..log_packed_bits {
 		data |= data << (1 << i)
