@@ -8,7 +8,7 @@ use binius_utils::rayon::get_log_max_threads;
 use super::{
 	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
-	single_threaded::{self, SingleThreadedNTT, check_batch_transform_inputs_and_params},
+	single_threaded::{SingleThreadedNTT, check_batch_transform_inputs_and_params},
 	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
 };
@@ -67,8 +67,7 @@ where
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		forward_transform(
-			self.log_domain_size(),
-			self.single_threaded.twiddles(),
+			&self.single_threaded,
 			data,
 			shape,
 			coset,
@@ -87,8 +86,7 @@ where
 		skip_rounds: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
-			self.log_domain_size(),
-			self.single_threaded.twiddles(),
+			&self.single_threaded,
 			data,
 			shape,
 			coset,
@@ -100,18 +98,22 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
-	log_domain_size: usize,
-	s_evals: &[impl TwiddleAccess<F> + Sync],
+fn forward_transform<F, P, TA>(
+	subntt: &SingleThreadedNTT<F, TA>,
 	data: &mut [P],
 	shape: NTTShape,
 	coset: usize,
 	coset_bits: usize,
 	skip_rounds: usize,
 	log_max_threads: usize,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+	TA: TwiddleAccess<F> + Sync,
+{
 	check_batch_transform_inputs_and_params(
-		log_domain_size,
+		subntt.log_domain_size(),
 		data,
 		shape,
 		coset,
@@ -124,15 +126,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::forward_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					shape,
-					coset,
-					coset_bits,
-					skip_rounds,
-				),
+				_ => subntt.forward_transform(data, shape, coset, coset_bits, skip_rounds),
 			};
 		}
 		_ => {}
@@ -174,7 +168,8 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		let log_strides = log_max_threads.min(log_width);
 		let log_stride_len = log_width - log_strides;
 
-		let s_evals = &s_evals[log_domain_size - (par_rounds + coset_bits)..];
+		let log_domain_size = subntt.log_domain_size();
+		let s_evals = &subntt.twiddles()[log_domain_size - (par_rounds + coset_bits)..];
 
 		matrix
 			.into_par_strides(1 << log_stride_len)
@@ -216,9 +211,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data.par_chunks_mut(1 << (log_width + par_rounds))
 		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
-			single_threaded::forward_transform(
-				log_domain_size,
-				s_evals,
+			subntt.forward_transform(
 				chunk,
 				NTTShape {
 					log_x,
@@ -235,18 +228,22 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
-	log_domain_size: usize,
-	s_evals: &[impl TwiddleAccess<F> + Sync],
+fn inverse_transform<F, P, TA>(
+	subntt: &SingleThreadedNTT<F, TA>,
 	data: &mut [P],
 	shape: NTTShape,
 	coset: usize,
 	coset_bits: usize,
 	skip_rounds: usize,
 	log_max_threads: usize,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+	TA: TwiddleAccess<F> + Sync,
+{
 	check_batch_transform_inputs_and_params(
-		log_domain_size,
+		subntt.log_domain_size(),
 		data,
 		shape,
 		coset,
@@ -259,15 +256,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		1 => {
 			return match P::WIDTH {
 				1 => Ok(()),
-				_ => single_threaded::inverse_transform(
-					log_domain_size,
-					s_evals,
-					data,
-					shape,
-					coset,
-					coset_bits,
-					skip_rounds,
-				),
+				_ => subntt.inverse_transform(data, shape, coset, coset_bits, skip_rounds),
 			};
 		}
 		_ => {}
@@ -307,9 +296,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data.par_chunks_mut(1 << (log_width + par_rounds))
 		.flat_map(|large_chunk| large_chunk.par_chunks_mut(1 << log_width).enumerate())
 		.try_for_each(|(inner_coset, chunk)| {
-			single_threaded::inverse_transform(
-				log_domain_size,
-				s_evals,
+			subntt.inverse_transform(
 				chunk,
 				NTTShape {
 					log_x,
@@ -329,7 +316,8 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let log_strides = log_max_threads.min(log_width);
 	let log_stride_len = log_width - log_strides;
 
-	let s_evals = &s_evals[log_domain_size - (par_rounds + coset_bits)..];
+	let log_domain_size = subntt.log_domain_size();
+	let s_evals = &subntt.twiddles()[log_domain_size - (par_rounds + coset_bits)..];
 
 	matrix
 		.into_par_strides(1 << log_stride_len)
