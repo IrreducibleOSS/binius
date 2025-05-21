@@ -31,14 +31,15 @@ use crate::composition::{BivariateProduct, IndexComposition};
 /// values:
 ///
 /// $$
-/// z_1 = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || 0) P_{t_{1,i}}(v || 0)
-/// \\\\ z_\infty = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || \infty)
-/// P_{t_{1,i}}(v || \infty) \\
+/// z_1 = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || 1) P_{t_{1,i}}(v || 1)
+/// \\\\
+/// z_\infty = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || \infty)
+/// P_{t_{1,i}}(v || \infty)
 /// $$
 ///
 /// ## Returns
 ///
-/// Returns the batched, summed evaluations at 0 and infinity.
+/// Returns the batched, summed evaluations at 1 and infinity.
 pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	hal: &HAL,
 	n_vars: usize,
