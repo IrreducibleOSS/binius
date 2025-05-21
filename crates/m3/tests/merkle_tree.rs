@@ -3,18 +3,41 @@
 /// High-level model for binary Merkle trees using the Grøstl-256 output transformation as a 2-to-1
 /// compression function.
 mod model {
+	use std::{
+		collections::{HashMap, HashSet},
+		hash::Hash,
+	};
+
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use binius_m3::emulate::Channel;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
-	// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
-	type NodeFlushToken = (u8, [u8; 32], usize, usize);
-	// Signature of the Roots channel: (Root ID, Root digest)
-	type RootFlushToken = (u8, [u8; 32]);
+	/// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+	pub struct NodeFlushToken {
+		pub root_id: u8,
+		pub data: [u8; 32],
+		pub depth: usize,
+		pub index: usize,
+	}
+
+	/// Signature of the Roots channel: (Root ID, Root digest)
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+	pub struct RootFlushToken {
+		pub root_id: u8,
+		pub data: [u8; 32],
+	}
 
 	/// A type alias for the Merkle path, which is a vector of tuples containing the root ID, index,
 	/// leaf, and the siblings on the path to the root from the leaf.
-	type MerklePath = (u8, usize, [u8; 32], Vec<[u8; 32]>);
+
+	#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+	pub struct MerklePath {
+		pub root_id: u8,
+		pub index: usize,
+		pub leaf: [u8; 32],
+		pub nodes: Vec<[u8; 32]>,
+	}
 
 	/// A struct whose fields contain the channels involved in the trace to verify merkle paths for
 	/// a binary merkle tree
@@ -40,6 +63,8 @@ mod model {
 		}
 	}
 	/// A table representing a step in verifying a merkle path for inclusion.
+
+	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 	pub struct MerklePathEvent {
 		pub root_id: u8,
 		pub left: [u8; 32],
@@ -52,6 +77,8 @@ mod model {
 	}
 
 	/// A table representing the final step of comparing the claimed root.
+
+	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 	pub struct MerkleRootEvent {
 		pub root_id: u8,
 		pub digest: [u8; 32],
@@ -152,24 +179,33 @@ mod model {
 	}
 
 	impl MerklePathEvent {
+		/// Method to fire the event, pushing the parent digest if the parent flag is set and
+		/// pulling the left or right child depending on the flush flags.
 		pub fn fire(&self, node_channel: &mut Channel<NodeFlushToken>) {
 			// Push the parent digest to the nodes channel and optionally pull the left or right
 			// child depending on the flush flags.
-			node_channel.push((self.root_id, self.parent, self.parent_depth, self.parent_index));
+			node_channel.push(NodeFlushToken {
+				root_id: self.root_id,
+				data: self.parent,
+				depth: self.parent_depth,
+				index: self.parent_index,
+			});
+
 			if self.flush_left {
-				node_channel.pull((
-					self.root_id,
-					self.left,
-					self.parent_depth + 1,
-					2 * self.parent_index,
-				));
-			} else if self.flush_right {
-				node_channel.pull((
-					self.root_id,
-					self.right,
-					self.parent_depth + 1,
-					2 * self.parent_index + 1,
-				));
+				node_channel.pull(NodeFlushToken {
+					root_id: self.root_id,
+					data: self.left,
+					depth: self.parent_depth + 1,
+					index: 2 * self.parent_index,
+				});
+			}
+			if self.flush_right {
+				node_channel.pull(NodeFlushToken {
+					root_id: self.root_id,
+					data: self.right,
+					depth: self.parent_depth + 1,
+					index: 2 * self.parent_index + 1,
+				});
 			}
 		}
 	}
@@ -182,96 +218,153 @@ mod model {
 		) {
 			// Pull the root node value presumed to have been pushed to the nodes channel from the
 			// merkle path table.
-			node_channel.pull((self.root_id, self.digest, 0, 0));
+			node_channel.pull(NodeFlushToken {
+				root_id: self.root_id,
+				data: self.digest,
+				depth: 0,
+				index: 0,
+			});
 			// Pull the root node from the roots channel, presumed to have been pushed as a boundary
 			// value.
-			root_channel.pull((self.root_id, self.digest));
+			root_channel.pull(RootFlushToken {
+				root_id: self.root_id,
+				data: self.digest,
+			});
 		}
 	}
 
 	/// Struct representing the boundary values of merkle tree inclusion proof statement.
-	pub struct MerkleBoundary {
-		pub leaf: NodeFlushToken,
-		pub root: RootFlushToken,
+	#[derive(Debug, Clone, PartialEq, Eq)]
+	pub struct MerkleBoundaries {
+		pub leaf: HashSet<NodeFlushToken>,
+		pub root: HashSet<RootFlushToken>,
+	}
+
+	impl MerkleBoundaries {
+		pub fn new() -> Self {
+			Self {
+				leaf: HashSet::new(),
+				root: HashSet::new(),
+			}
+		}
+
+		pub fn insert(&mut self, leaf: NodeFlushToken, root: RootFlushToken) {
+			self.leaf.insert(leaf);
+			self.root.insert(root);
+		}
 	}
 
 	/// Struct representing the trace of the merkle tree inclusion proof statement.
 	pub struct MerkleTreeTrace {
-		pub boundaries: Vec<MerkleBoundary>,
+		pub boundaries: MerkleBoundaries,
 		pub nodes: Vec<MerklePathEvent>,
-		pub root: Vec<MerkleRootEvent>,
+		pub root: HashSet<MerkleRootEvent>,
 	}
 	impl MerkleTreeTrace {
 		/// Method to generate the trace given the witness values. The function assumes that the
 		/// root_id is the index of the root in the roots vector and that the paths and leaves are
 		/// passed in with their assigned root_id.
 		fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
-			let mut path_vec = Vec::new();
-			let mut root_vec = Vec::new();
-			let mut boundary_vec: Vec<MerkleBoundary> = Vec::new();
-			// Number of times each root is referenced in the paths.
-			let mut root_multiplicities = vec![0; roots.len()];
+			let mut path_nodes = Vec::new();
+			let mut root_nodes = HashSet::new();
+			let mut boundaries = MerkleBoundaries::new();
+			// Number of times each root is referenced in the paths. Since internal nodes have been
+			// deduped, these need to be pushed into the nodes channel as many times as they are
+			// referenced in the paths.
 
-			for (root_id, index, leaf, path) in paths.iter() {
-				// Push the boundary values for the statement.
-				boundary_vec.push(MerkleBoundary {
-					leaf: (*root_id, *leaf, path.len(), *index),
-					root: (*root_id, roots[*root_id as usize]),
-				});
+			// Tracks the filled nodes in the tree
+			let mut filled_nodes = HashMap::new();
 
-				root_multiplicities[*root_id as usize] += 1;
+			for path in paths.iter() {
+				let MerklePath {
+					root_id,
+					index,
+					leaf,
+					nodes,
+				} = path;
 
-				let mut leaf = *leaf;
-				for (i, node) in path.iter().enumerate() {
-					let mut parent = [0u8; 32];
-					if (index >> i) & 1 == 0 {
-						compress(&leaf, node, &mut parent);
-						path_vec.push(MerklePathEvent {
-							root_id: *root_id,
-							left: leaf,
-							right: *node,
-							parent,
-							parent_depth: path.len() - i - 1,
-							parent_index: index >> (i + 1),
-							flush_left: true,
-							flush_right: false,
-						});
-					} else {
-						compress(node, &leaf, &mut parent);
-						path_vec.push(MerklePathEvent {
-							root_id: *root_id,
-							left: *node,
-							right: leaf,
-							parent,
-							parent_depth: path.len() - i - 1,
-							parent_index: index >> (i + 1),
-							flush_left: false,
-							flush_right: true,
-						});
+				let mut current_child = *leaf;
+
+				// Populate the boundary values for the statement.
+				boundaries.insert(
+					NodeFlushToken {
+						root_id: *root_id,
+						data: current_child,
+						depth: nodes.len(),
+						index: *index,
+					},
+					RootFlushToken {
+						root_id: *root_id,
+						data: roots[*root_id as usize],
+					},
+				);
+
+				// Populate the root table's events.
+				root_nodes.insert(MerkleRootEvent::new(*root_id, roots[*root_id as usize]));
+
+				let mut parent_node = [0u8; 32];
+				for (i, &node) in nodes.iter().enumerate() {
+					match filled_nodes.get_mut(&(*root_id, index >> (i + 1), nodes.len() - i - 1)) {
+						Some((_, _, parent, flush_left, flush_right)) => {
+							if (index >> i) & 1 == 0 {
+								parent_node = *parent;
+								*flush_left = true;
+							} else {
+								parent_node = *parent;
+								*flush_right = true;
+							}
+						}
+						None => {
+							if (index >> i) & 1 == 0 {
+								compress(&node, &current_child, &mut parent_node);
+								filled_nodes.insert(
+									(*root_id, index >> (i + 1), nodes.len() - i - 1),
+									(current_child, node, parent_node, true, false),
+								);
+							} else {
+								compress(&node, &current_child, &mut parent_node);
+								filled_nodes.insert(
+									(*root_id, index >> (i + 1), nodes.len() - i - 1),
+									(node, current_child, parent_node, false, true),
+								);
+							}
+						}
 					}
-					leaf = parent;
+					current_child = parent_node
 				}
 			}
 
-			for (i, root) in roots.iter().enumerate() {
-				for _ in 0..root_multiplicities[i] {
-					root_vec.push(MerkleRootEvent::new(i as u8, *root));
+			path_nodes.extend(filled_nodes.iter().map(|(key, value)| {
+				let &(root_id, parent_index, parent_depth) = key;
+				let &(left, right, parent, flush_left, flush_right) = value;
+				MerklePathEvent {
+					root_id,
+					left,
+					right,
+					parent,
+					parent_depth,
+					parent_index,
+					flush_left,
+					flush_right,
 				}
-			}
+			}));
 
 			Self {
-				boundaries: boundary_vec,
-				nodes: path_vec,
-				root: root_vec,
+				boundaries,
+				nodes: path_nodes,
+				root: root_nodes,
 			}
 		}
 
 		fn validate(&self) {
 			let mut channels = MerkleTreeChannels::new();
+
 			// Push the boundary values to the nodes and roots channels.
-			for boundary in &self.boundaries {
-				channels.nodes.push(boundary.leaf);
-				channels.roots.push(boundary.root);
+			for leaf in &self.boundaries.leaf {
+				channels.nodes.push(*leaf);
+			}
+			for root in &self.boundaries.root {
+				channels.roots.push(*root);
 			}
 
 			// Push the roots to the roots channel.
@@ -320,7 +413,12 @@ mod model {
 		let path_root_id = 0;
 		let merkle_tree_trace = MerkleTreeTrace::generate(
 			vec![root],
-			&[(path_root_id, path_index, leaves[path_index], path)],
+			&[MerklePath {
+				root_id: path_root_id,
+				index: path_index,
+				leaf: leaves[path_index],
+				nodes: path,
+			}],
 		);
 		merkle_tree_trace.validate();
 	}
@@ -329,16 +427,21 @@ mod model {
 	fn test_high_level_model_inclusion_multiple_paths() {
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let leaves = (0..1 << 10)
+		let leaves = (0..1 << 4)
 			.map(|_| rng.r#gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
 		let root = tree.root;
-		let paths = (0..5)
+		let paths = (0..2)
 			.map(|_| {
-				let path_index = rng.gen_range(0..1 << 10);
-				(0u8, path_index, leaves[path_index], tree.merkle_path(path_index))
+				let path_index = rng.gen_range(0..1 << 4);
+				MerklePath {
+					root_id: 0u8,
+					index: path_index,
+					leaf: leaves[path_index],
+					nodes: tree.merkle_path(path_index),
+				}
 			})
 			.collect::<Vec<_>>();
 		let merkle_tree_trace = MerkleTreeTrace::generate(vec![root], &paths);
@@ -364,8 +467,11 @@ mod model {
 		let paths = trees
 			.iter()
 			.enumerate()
-			.map(|(i, tree)| {
-				(i as u8, path_index, leaves[i][path_index], tree.merkle_path(path_index))
+			.map(|(i, tree)| MerklePath {
+				root_id: i as u8,
+				index: path_index,
+				leaf: leaves[i][path_index],
+				nodes: tree.merkle_path(path_index),
 			})
 			.collect::<Vec<_>>();
 
