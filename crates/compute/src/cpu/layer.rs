@@ -277,7 +277,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
-		ntt: &impl AdditiveNTT<FSub>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[T::B128],
