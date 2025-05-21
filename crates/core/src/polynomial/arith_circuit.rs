@@ -545,19 +545,16 @@ fn alloc_scratch_space<T, U, F>(size: usize, callback: F) -> U
 where
 	F: FnOnce(&mut [MaybeUninit<T>]) -> U,
 {
+	use std::mem;
+	// We don't want to deal with running destructors.
+	assert!(!mem::needs_drop::<T>());
+
 	#[cfg(miri)]
 	{
-		use std::mem;
-		// We don't want to deal with running destructors.
-		assert!(!mem::needs_drop::<T>());
 		let mut scratch_space = Vec::<T>::with_capacity(size);
-		unsafe {
-			scratch_space.set_len(size);
-			let out =
-				callback(mem::transmute::<&mut [T], &mut [MaybeUninit<T>]>(scratch_space.as_mut()));
-			drop(scratch_space);
-			out
-		}
+		let out = callback(scratch_space.spare_capacity_mut());
+		drop(scratch_space);
+		out
 	}
 	#[cfg(not(miri))]
 	{
