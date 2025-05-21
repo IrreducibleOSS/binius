@@ -3,7 +3,7 @@
 use binius_compute_test_utils::layer::{
 	test_generic_kernel_add, test_generic_single_inner_product,
 	test_generic_single_inner_product_using_kernel_accumulator, test_generic_single_left_fold,
-	test_generic_single_tensor_expand,
+	test_generic_single_right_fold, test_generic_single_tensor_expand,
 };
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -33,6 +33,22 @@ fn test_exec_single_left_fold() {
 	let mut device_memory = vec![P::zero(); 1 << (n_vars - P::LOG_WIDTH)];
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	test_generic_single_left_fold::<F, F2, _>(
+		&compute,
+		PackedMemorySliceMut::new(&mut device_memory),
+		n_vars / 2,
+		n_vars / 8,
+	);
+}
+
+#[test]
+fn test_exec_single_right_fold() {
+	type F = BinaryField16b;
+	type F2 = BinaryField128b;
+	type P = PackedBinaryField2x128b;
+	let n_vars = 8;
+	let mut device_memory = vec![P::zero(); 1 << (n_vars - P::LOG_WIDTH)];
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	test_generic_single_right_fold::<F, F2, _>(
 		&compute,
 		PackedMemorySliceMut::new(&mut device_memory),
 		n_vars / 2,
