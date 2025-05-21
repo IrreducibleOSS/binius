@@ -2,6 +2,8 @@
 
 use std::ops::RangeBounds;
 
+use binius_utils::checked_arithmetics::checked_int_div;
+
 pub trait SizedSlice {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
@@ -22,12 +24,52 @@ impl<T> SizedSlice for &mut [T] {
 	}
 }
 
+/// A batch of slices of the same length.
+pub struct SlicesBatch<Slice: SizedSlice> {
+	rows: Vec<Slice>,
+	row_len: usize,
+}
+
+impl<Slice: SizedSlice> SlicesBatch<Slice> {
+	/// Creates a new batch of slices with the given length.
+	///
+	/// # Panics
+	/// If any of the slices in `rows` does not have the specified `row_len`.
+	pub fn new(rows: Vec<Slice>, row_len: usize) -> Self {
+		for row in &rows {
+			assert_eq!(row.len(), row_len);
+		}
+
+		Self { rows, row_len }
+	}
+
+	/// Number of memory slices
+	pub fn n_rows(&self) -> usize {
+		self.rows.len()
+	}
+
+	/// Length of each memory slice
+	pub fn row_len(&self) -> usize {
+		self.row_len
+	}
+
+	/// Returns a slice of the batch at the given index.
+	pub fn row(&self, index: usize) -> &Slice {
+		&self.rows[index]
+	}
+
+	/// Returns iterator over the slices in the batch.
+	pub fn iter(&self) -> impl Iterator<Item = &Slice> {
+		self.rows.iter()
+	}
+}
+
 /// Interface for manipulating handles to memory in a compute device.
 pub trait ComputeMemory<F> {
 	const MIN_SLICE_LEN: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
-	type FSlice<'a>: Copy + SizedSlice;
+	type FSlice<'a>: Copy + SizedSlice + Sync;
 
 	/// An opaque handle to a mutable slice of elements stored in a compute memory.
 	type FSliceMut<'a>: SizedSlice;
@@ -91,6 +133,31 @@ pub trait ComputeMemory<F> {
 		let borrowed = Self::slice_mut(data, ..);
 		Self::split_at_mut(borrowed, mid)
 	}
+
+	/// Splits slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks<'a>(
+		data: Self::FSlice<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSlice<'a>> {
+		let n_chunks = checked_int_div(data.len(), chunk_len);
+		(0..n_chunks).map(move |i| Self::slice(data, i * chunk_len..(i + 1) * chunk_len))
+	}
+
+	/// Splits a mutable slice into equal chunks.
+	///
+	/// ## Preconditions
+	///
+	/// - the length of the slice must be a multiple of `chunk_len`
+	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>>;
 }
 
 /// `SubfieldSlice` is a structure that represents a slice of elements stored in a compute memory,

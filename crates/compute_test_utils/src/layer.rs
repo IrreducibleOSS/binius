@@ -7,7 +7,7 @@ use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_core::protocols::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
@@ -369,17 +369,11 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 						.iter()
 						.map(|buf| buf.to_ref())
 						.collect::<Vec<_>>();
+					let row_len = kernel_data[0].len();
+					let slice_batch = SlicesBatch::new(kernel_data, row_len);
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-					let log_len = checked_log_2(kernel_data[0].len());
 					compute
-						.sum_composition_evals(
-							kernel_exec,
-							log_len,
-							&kernel_data,
-							&eval,
-							F::ONE,
-							&mut res,
-						)
+						.sum_composition_evals(kernel_exec, &slice_batch, &eval, F::ONE, &mut res)
 						.unwrap();
 					Ok(vec![res])
 				},
@@ -468,8 +462,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 					compute.sum_composition_evals(
 						kernel_exec,
-						log_len,
-						&[c],
+						&SlicesBatch::new(vec![c], c.len()),
 						&eval,
 						F::ONE,
 						&mut res,
