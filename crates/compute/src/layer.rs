@@ -5,16 +5,17 @@ use std::ops::Range;
 use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::ArithExpr;
 use binius_ntt::AdditiveNTT;
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
+use itertools::Either;
 
 use super::{
 	alloc::Error as AllocError,
 	memory::{ComputeMemory, SubfieldSlice},
 };
-use crate::memory::SizedSlice;
+use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static {
+pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
@@ -32,7 +33,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	type KernelValue;
 
 	/// The evaluator for arithmetic expressions (polynomials).
-	type ExprEval;
+	type ExprEval: Sync;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
@@ -152,7 +153,8 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
-		map: impl for<'a> Fn(
+		map: impl Sync
+		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
@@ -299,8 +301,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn sum_composition_evals(
 		&self,
 		exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, F, Self>],
+		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
@@ -443,6 +444,41 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 				Self::Local { log_size } => 0..*log_size,
 			})
 			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
+	}
+
+	// Split the memory mapping into chunks of the specified length.
+	pub fn chunks(self, chunks: usize) -> impl Iterator<Item = KernelMemMapChunk<'a, F, Mem>> {
+		match self {
+			Self::Chunked { data, .. } => Either::Left(Either::Left(
+				Mem::slice_chunks(data, checked_int_div(data.len(), chunks))
+					.map(KernelMemMapChunk::Slice),
+			)),
+			Self::ChunkedMut { data, .. } => {
+				let chunks_count = checked_int_div(data.len(), chunks);
+				Either::Left(Either::Right(
+					Mem::slice_chunks_mut(data, chunks_count).map(KernelMemMapChunk::SliceMut),
+				))
+			}
+			Self::Local { log_size } => Either::Right(
+				std::iter::repeat_with(move || {
+					KernelMemMapChunk::Local(checked_int_div(1 << log_size, chunks))
+				})
+				.take(chunks),
+			),
+		}
+	}
+}
+
+/// A single chunk from [`KernelMemMap`].
+pub enum KernelMemMapChunk<'a, F, Mem: ComputeMemory<F>> {
+	Slice(Mem::FSlice<'a>),
+	SliceMut(Mem::FSliceMut<'a>),
+	Local(usize),
+}
+
+impl<'a, F, Mem: ComputeMemory<F>> Default for KernelMemMapChunk<'a, F, Mem> {
+	fn default() -> Self {
+		Self::Local(0)
 	}
 }
 
