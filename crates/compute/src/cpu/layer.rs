@@ -251,7 +251,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let ret = (0..1 << log_len)
 			.map(|i| {
 				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
-				composition.evaluate(&row).expect("Evalutation to succeed")
+				composition.evaluate(&row).expect("Evaluation to succeed")
 			})
 			.sum::<T::B128>();
 		*accumulator += ret * batch_coeff;
@@ -429,7 +429,7 @@ impl<T: TowerFamily> CpuLayer<T> {
 
 /// Compute the left fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
@@ -486,7 +486,7 @@ where
 
 /// Compute the right fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_right_fold<EvalType: TowerField, T: TowerFamily>(

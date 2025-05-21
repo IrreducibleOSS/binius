@@ -235,7 +235,7 @@ impl Not for M256 {
 impl Shr<usize> for M256 {
 	type Output = Self;
 
-	/// TODO: this is unefficient implementation
+	/// TODO: this is inefficient implementation
 	#[inline(always)]
 	fn shr(self, rhs: usize) -> Self::Output {
 		match rhs {
@@ -258,7 +258,7 @@ impl Shr<usize> for M256 {
 impl Shl<usize> for M256 {
 	type Output = Self;
 
-	/// TODO: this is unefficient implementation
+	/// TODO: this is inefficient implementation
 	#[inline(always)]
 	fn shl(self, rhs: usize) -> Self::Output {
 		match rhs {

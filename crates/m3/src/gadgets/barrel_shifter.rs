@@ -37,7 +37,7 @@ pub struct BarrelShifter {
 	partial_shift: [Col<B1, 32>; MAX_SHIFT_BITS],
 
 	/// The output column representing the result of the shift operation. This column is
-	/// virtual or commited, depending on the flags
+	/// virtual or committed, depending on the flags
 	pub output: Col<B1, 32>,
 
 	/// The variant of the shift operation: logical left, logical right or

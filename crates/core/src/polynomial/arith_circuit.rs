@@ -350,7 +350,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 				};
 			}
 
-			// Some slots in `evals` might be empty, but we're guaranted that
+			// Some slots in `evals` might be empty, but we're guaranteed that
 			// if `self.retval` points to a slot, that this slot is initialized.
 			unsafe {
 				let evals = slice_assume_init_ref(evals);

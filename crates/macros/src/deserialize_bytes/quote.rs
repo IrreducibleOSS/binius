@@ -170,7 +170,7 @@ mod tests {
 	fn test_generics() {
 		struct Case {
 			struct_def: TokenStream,
-			attrubutes_def: TokenStream,
+			attributes_def: TokenStream,
 			expected_impl_def: TokenStream,
 		}
 		let cases = vec![
@@ -180,7 +180,7 @@ mod tests {
 						oracles: Vec<MultilinearPolyOracle<F>>
 					}
 				},
-				attrubutes_def: quote! {
+				attributes_def: quote! {
 					eval_generics(F = BinaryField128b)
 				},
 				expected_impl_def: quote! {
@@ -195,7 +195,7 @@ mod tests {
 							field: T,
 						}
 				},
-				attrubutes_def: quote! {
+				attributes_def: quote! {
 					eval_generics(T = B128)
 				},
 				expected_impl_def: quote! {
@@ -211,7 +211,7 @@ mod tests {
 							field: T,
 						}
 				},
-				attrubutes_def: quote! {
+				attributes_def: quote! {
 					eval_generics(T = B128, V = B256)
 				},
 				expected_impl_def: quote! {
@@ -227,7 +227,7 @@ mod tests {
 							field: T,
 						}
 				},
-				attrubutes_def: quote! {
+				attributes_def: quote! {
 					eval_generics(U = B128)
 				},
 				expected_impl_def: quote! {
@@ -241,7 +241,7 @@ mod tests {
 				syn::parse2::<ItemStruct>(case.struct_def).expect("Failed to parse struct");
 			let struct_name = struct_def.ident;
 			let container_attributes =
-				syn::parse2::<ContainerAttributes>(case.attrubutes_def).unwrap();
+				syn::parse2::<ContainerAttributes>(case.attributes_def).unwrap();
 			let GenericsSplit {
 				impl_generics,
 				type_generics,

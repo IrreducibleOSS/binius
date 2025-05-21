@@ -35,7 +35,7 @@ pub type PackedAESBinaryField4x32b = PackedPrimitiveType<M128, AESTowerField32b>
 pub type PackedAESBinaryField2x64b = PackedPrimitiveType<M128, AESTowerField64b>;
 pub type PackedAESBinaryField1x128b = PackedPrimitiveType<M128, AESTowerField128b>;
 
-// Define contants
+// Define constants
 // 0xD3 corresponds to 0x10 after isomorphism from BinaryField8b to AESField
 impl_tower_constants!(AESTowerField8b, M128, { M128(0x00d300d300d300d300d300d300d300d3) });
 impl_tower_constants!(AESTowerField16b, M128, { M128(alphas!(u128, 4)) });
