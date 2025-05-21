@@ -330,11 +330,7 @@ impl Groestl256Multi {
 
 		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			let slice = slices[parallel_idx];
-			unsafe {
-				out[parallel_idx]
-					.as_mut_ptr()
-					.write(*digest::Output::<Groestl256>::from_slice(&slice[32..]));
-			}
+			out[parallel_idx].write(*digest::Output::<Groestl256>::from_slice(&slice[32..]));
 		}
 	}
 }
