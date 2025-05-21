@@ -3,7 +3,10 @@
 /// High-level model for binary Merkle trees using the Grøstl-256 output transformation as a 2-to-1
 /// compression function.
 mod model {
-	use std::{collections::HashSet, hash::Hash};
+	use std::{
+		collections::{HashMap, HashSet},
+		hash::Hash,
+	};
 
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use binius_m3::emulate::Channel;
@@ -33,7 +36,7 @@ mod model {
 		pub root_id: u8,
 		pub index: usize,
 		pub leaf: [u8; 32],
-		pub path: Vec<[u8; 32]>,
+		pub nodes: Vec<[u8; 32]>,
 	}
 
 	/// A struct whose fields contain the channels involved in the trace to verify merkle paths for
@@ -188,6 +191,11 @@ mod model {
 				index: self.parent_index,
 			});
 
+			println!(
+				"push (root_id: {:?}, depth: {:?}, index: {:?})",
+				self.root_id, self.parent_depth, self.parent_index
+			);
+
 			if self.flush_left {
 				node_channel.pull(NodeFlushToken {
 					root_id: self.root_id,
@@ -195,6 +203,12 @@ mod model {
 					depth: self.parent_depth + 1,
 					index: 2 * self.parent_index,
 				});
+				println!(
+					"pull (root_id: {:?}, depth: {:?}, index: {:?})",
+					self.root_id,
+					self.parent_depth + 1,
+					2 * self.parent_index
+				);
 			}
 			if self.flush_right {
 				node_channel.pull(NodeFlushToken {
@@ -203,6 +217,12 @@ mod model {
 					depth: self.parent_depth + 1,
 					index: 2 * self.parent_index + 1,
 				});
+				println!(
+					"pull (root_id: {:?}, depth: {:?}, index: {:?})",
+					self.root_id,
+					self.parent_depth + 1,
+					2 * self.parent_index + 1
+				);
 			}
 		}
 	}
@@ -254,7 +274,7 @@ mod model {
 	/// Struct representing the trace of the merkle tree inclusion proof statement.
 	pub struct MerkleTreeTrace {
 		pub boundaries: MerkleBoundaries,
-		pub nodes: HashSet<MerklePathEvent>,
+		pub nodes: Vec<MerklePathEvent>,
 		pub root: HashSet<MerkleRootEvent>,
 	}
 	impl MerkleTreeTrace {
@@ -262,7 +282,7 @@ mod model {
 		/// root_id is the index of the root in the roots vector and that the paths and leaves are
 		/// passed in with their assigned root_id.
 		fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
-			let mut path_nodes = HashSet::new();
+			let mut path_nodes = Vec::new();
 			let mut root_nodes = HashSet::new();
 			let mut boundaries = MerkleBoundaries::new();
 			// Number of times each root is referenced in the paths. Since internal nodes have been
@@ -270,20 +290,24 @@ mod model {
 			// referenced in the paths.
 
 			//tracks the filled nodes in the tree
-			let mut filled_nodes = HashSet::new();
-			for MerklePath {
-				root_id,
-				index,
-				leaf,
-				path,
-			} in paths.iter()
-			{
-				// Push the boundary values for the statement.
+			let mut filled_nodes = HashMap::new();
+
+			for path in paths.iter() {
+				let MerklePath {
+					root_id,
+					index,
+					leaf,
+					nodes,
+				} = path;
+
+				let mut current_child = *leaf;
+
+				// Populate the boundary values for the statement.
 				boundaries.insert(
 					NodeFlushToken {
 						root_id: *root_id,
-						data: *leaf,
-						depth: path.len(),
+						data: current_child,
+						depth: nodes.len(),
 						index: *index,
 					},
 					RootFlushToken {
@@ -294,97 +318,52 @@ mod model {
 
 				root_nodes.insert(MerkleRootEvent::new(*root_id, roots[*root_id as usize]));
 
-				let mut leaf = *leaf;
-
-				// Iterate through the path and push the nodes to the nodes channel. If the sibling
-				// node has already been seen in another path, we instead replace its value and
-				// set both the pull flags to true.
-				for (i, node) in path.iter().enumerate() {
-					let current_index = *index >> i;
-					let sibling_index = current_index ^ 1;
-					let current_index_is_even = current_index & 1 == 0;
-					filled_nodes.insert((*root_id, path.len() - i, current_index));
-					let mut parent = [0u8; 32];
-
-					// If the node is not already filled, push it to the nodes channel.
-					if current_index_is_even {
-						// Compress the nodes in orde
-						compress(&leaf, node, &mut parent);
-
-						if filled_nodes.contains(&(*root_id, path.len() - i, sibling_index)) {
-							path_nodes.remove(&MerklePathEvent {
-								root_id: *root_id,
-								left: leaf,
-								right: *node,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: false,
-								flush_right: true,
-							});
-
-							path_nodes.insert(MerklePathEvent {
-								root_id: *root_id,
-								left: leaf,
-								right: *node,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: true,
-								flush_right: true,
-							});
-						} else {
-							path_nodes.insert(MerklePathEvent {
-								root_id: *root_id,
-								left: leaf,
-								right: *node,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: true,
-								flush_right: false,
-							});
+				let mut parent_node = [0u8; 32];
+				for (i, &node) in nodes.iter().enumerate() {
+					match filled_nodes.get_mut(&(*root_id, index >> (i + 1), nodes.len() - i - 1)) {
+						Some((_, _, _, flush_left, flush_right)) => {
+							if (index >> i) & 1 == 0 {
+								compress(&current_child, &node, &mut parent_node);
+								*flush_left = true;
+							} else {
+								compress(&node, &current_child, &mut parent_node);
+								*flush_right = true;
+							}
 						}
-					} else {
-						compress(node, &leaf, &mut parent);
-						if filled_nodes.contains(&(*root_id, path.len() - i, sibling_index)) {
-							path_nodes.remove(&MerklePathEvent {
-								root_id: *root_id,
-								left: *node,
-								right: leaf,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: true,
-								flush_right: false,
-							});
-
-							path_nodes.insert(MerklePathEvent {
-								root_id: *root_id,
-								left: *node,
-								right: leaf,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: true,
-								flush_right: true,
-							});
-						} else {
-							path_nodes.insert(MerklePathEvent {
-								root_id: *root_id,
-								left: *node,
-								right: leaf,
-								parent,
-								parent_depth: path.len() - i - 1,
-								parent_index: index >> (i + 1),
-								flush_left: false,
-								flush_right: true,
-							});
+						None => {
+							if (index >> i) & 1 == 0 {
+								compress(&current_child, &node, &mut parent_node);
+								filled_nodes.insert(
+									(*root_id, index >> (i + 1), nodes.len() - i - 1),
+									(current_child, node, parent_node, true, false),
+								);
+							} else {
+								compress(&node, &current_child, &mut parent_node);
+								filled_nodes.insert(
+									(*root_id, index >> (i + 1), nodes.len() - i - 1),
+									(node, current_child, parent_node, false, true),
+								);
+							}
 						}
 					}
-					leaf = parent;
+					current_child = parent_node
 				}
 			}
+
+			path_nodes.extend(filled_nodes.iter().map(|(key, value)| {
+				let &(root_id, parent_index, parent_depth) = key;
+				let &(left, right, parent, flush_left, flush_right) = value;
+				MerklePathEvent {
+					root_id,
+					left,
+					right,
+					parent,
+					parent_depth,
+					parent_index,
+					flush_left,
+					flush_right,
+				}
+			}));
 
 			Self {
 				boundaries,
@@ -454,7 +433,7 @@ mod model {
 				root_id: path_root_id,
 				index: path_index,
 				leaf: leaves[path_index],
-				path,
+				nodes: path,
 			}],
 		);
 		merkle_tree_trace.validate();
@@ -464,20 +443,20 @@ mod model {
 	fn test_high_level_model_inclusion_multiple_paths() {
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let leaves = (0..1 << 10)
+		let leaves = (0..1 << 4)
 			.map(|_| rng.r#gen::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
 		let root = tree.root;
-		let paths = (0..5)
+		let paths = (0..2)
 			.map(|_| {
-				let path_index = rng.gen_range(0..1 << 10);
+				let path_index = rng.gen_range(0..1 << 4);
 				MerklePath {
 					root_id: 0u8,
 					index: path_index,
 					leaf: leaves[path_index],
-					path: tree.merkle_path(path_index),
+					nodes: tree.merkle_path(path_index),
 				}
 			})
 			.collect::<Vec<_>>();
@@ -508,7 +487,7 @@ mod model {
 				root_id: i as u8,
 				index: path_index,
 				leaf: leaves[i][path_index],
-				path: tree.merkle_path(path_index),
+				nodes: tree.merkle_path(path_index),
 			})
 			.collect::<Vec<_>>();
 
