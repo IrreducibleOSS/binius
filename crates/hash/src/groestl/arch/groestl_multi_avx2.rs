@@ -383,10 +383,10 @@ impl MultiDigest<4> for Groestl256Multi {
 		let new_num_unfinished_bytes = (data[0].len() + self.num_unfinished_bytes) % STATE_SIZE;
 
 		if data[0].len() + self.num_unfinished_bytes < STATE_SIZE {
-			for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
+			for (parallel_idx, data_lane) in data.iter().enumerate() {
 				self.unfinished_block[parallel_idx]
 					[self.num_unfinished_bytes..new_num_unfinished_bytes]
-					.copy_from_slice(data[parallel_idx]);
+					.copy_from_slice(data_lane);
 			}
 			self.num_unfinished_bytes = new_num_unfinished_bytes;
 			return;
@@ -394,10 +394,9 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		if self.num_unfinished_bytes != 0 {
 			let mut initial_block = self.unfinished_block;
-			for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
-				initial_block[parallel_idx][self.num_unfinished_bytes..].copy_from_slice(
-					&data[parallel_idx][..(STATE_SIZE - self.num_unfinished_bytes)],
-				);
+			for (parallel_idx, data_lane) in data.iter().enumerate() {
+				initial_block[parallel_idx][self.num_unfinished_bytes..]
+					.copy_from_slice(&data_lane[..(STATE_SIZE - self.num_unfinished_bytes)]);
 			}
 
 			let unfinished_block_as_input = array::from_fn(|i| &initial_block[i][..]);
@@ -419,9 +418,9 @@ impl MultiDigest<4> for Groestl256Multi {
 			i += STATE_SIZE;
 		}
 
-		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
+		for (parallel_idx, data_lane) in data.iter().enumerate() {
 			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
-				.copy_from_slice(&data[parallel_idx][i..]);
+				.copy_from_slice(&data_lane[i..]);
 		}
 
 		self.num_unfinished_bytes = new_num_unfinished_bytes;
