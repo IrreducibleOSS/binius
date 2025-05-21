@@ -321,18 +321,17 @@ mod model {
 				let mut parent_node = [0u8; 32];
 				for (i, &node) in nodes.iter().enumerate() {
 					match filled_nodes.get_mut(&(*root_id, index >> (i + 1), nodes.len() - i - 1)) {
-						Some((_, _, _, flush_left, flush_right)) => {
+						Some((_, _, parent, flush_left, flush_right)) => {
 							if (index >> i) & 1 == 0 {
-								compress(&current_child, &node, &mut parent_node);
+								parent_node = *parent;
 								*flush_left = true;
 							} else {
-								compress(&node, &current_child, &mut parent_node);
+								parent_node = *parent;
 								*flush_right = true;
 							}
 						}
 						None => {
 							if (index >> i) & 1 == 0 {
-								compress(&current_child, &node, &mut parent_node);
 								filled_nodes.insert(
 									(*root_id, index >> (i + 1), nodes.len() - i - 1),
 									(current_child, node, parent_node, true, false),
