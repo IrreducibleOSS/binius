@@ -14,7 +14,7 @@ use super::{
 use crate::memory::SizedSlice;
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field> {
+pub trait ComputeLayer<F: Field>: 'static {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 

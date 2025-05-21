@@ -14,6 +14,7 @@ mod oracles;
 pub mod prove;
 #[cfg(test)]
 mod tests;
+pub mod v3;
 pub mod verify_sumcheck;
 pub mod verify_zerocheck;
 pub mod zerocheck;
