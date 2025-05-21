@@ -479,3 +479,73 @@ mod model {
 		merkle_tree_trace.validate();
 	}
 }
+
+mod arithmetisation {
+	use std::array;
+
+	use binius_core::constraint_system::channel::ChannelId;
+	use binius_hash::compression;
+	use binius_m3::{
+		builder::{B8, B32, Col, ConstraintSystem, Table, TableBuilder, TableId},
+		gadgets::hash::groestl::{Permutation, PermutationVariant},
+	};
+
+	use super::*;
+
+	pub struct CompressionTable {
+		pub input: [Col<B8, 8>; 8],
+		permutation: Permutation,
+		pub output: [Col<B8, 8>; 4],
+	}
+
+	impl CompressionTable {
+		pub fn new(table: &mut TableBuilder, input: [Col<B8, 8>; 8]) -> Self {
+			let permutation = Permutation::new(table, PermutationVariant::P, input);
+			let output = array::from_fn(|i| {
+				table.add_computed::<B8, 8>(
+					&format!("compression_output_lane_{}", i),
+					input[i + 4] + permutation.state_out()[i + 4],
+				)
+			});
+			Self {
+				input,
+				permutation,
+				output,
+			}
+		}
+	}
+
+	/// We need to implement tables for the different cases of Merkle path pulls based on aggregated
+	/// inclusion proofs. Which is, given a set of indexes to open, we may need to pull the left
+	/// child, the right child, or both.
+	pub struct MerkleTreeTables {
+		pull_left: MerklePathTable,
+		pull_right: MerklePathTable,
+		pull_both: MerklePathTable,
+	}
+
+	pub enum MerklePathPull {
+		Left,
+		Right,
+		Both,
+	}
+
+	pub struct MerklePathTable {
+		pub pull: MerklePathPull,
+		pub root_id: Col<B8, 8>,
+		pub left: [Col<B8, 8>; 4],
+		pub right: [Col<B8, 8>; 4],
+		pub parent: [Col<B8, 8>; 4],
+		pub parent_depth: Col<B32, 32>,
+		pub parent_index: Col<B32, 32>,
+		pub compression_channel: ChannelId,
+		pub nodes_channel: ChannelId,
+	}
+
+	pub struct RootTable {
+		pub root_id: Col<B8, 8>,
+		pub digest: [Col<B8, 8>; 4],
+		pub nodes_channel: ChannelId,
+		pub roots_channel: ChannelId,
+	}
+}
