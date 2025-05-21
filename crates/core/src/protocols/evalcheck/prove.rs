@@ -1,9 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{
-	collections::HashSet,
-	sync::{Arc, RwLock},
-};
+use std::collections::HashSet;
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
@@ -27,7 +24,7 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
+		MultilinearPolyVariant, OracleId,
 	},
 	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
@@ -65,8 +62,12 @@ where
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	// Internally used to collect subclaims without evaluations for future query and memoization
-	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
+	// Claim that we need to evaluate
+	claims_that_must_be_evaluated: HashSet<(OracleId, EvalPoint<F>)>,
+
+	// Claims that we can evaluate using internal_eval's
+	claims_without_evals: HashSet<(OracleId, EvalPoint<F>)>,
+
 	// The list of claims that reduces to a bivariate sumcheck in a round.
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
@@ -109,7 +110,8 @@ where
 			committed_eval_claims: Vec::new(),
 			new_bivariate_sumchecks_constraints: Vec::new(),
 			new_mlechecks_constraints: Vec::new(),
-			claims_without_evals: Vec::new(),
+			claims_without_evals: HashSet::new(),
+			claims_that_must_be_evaluated: HashSet::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
@@ -183,8 +185,7 @@ where
 		)
 		.entered();
 
-		// Step 1: Use DFS to collect all claims that need to be evaluated, then process them in
-		// parallel after deduplication
+		// Step 1: Precompute claims that require additional evaluations.
 		for claim in &evalcheck_claims {
 			self.collect_subclaims_for_memoization(
 				claim.id,
@@ -193,112 +194,36 @@ where
 			);
 		}
 
-		let mut seen = HashSet::new();
-		let mut deduplicated_claims_without_evals = Vec::new();
-
-		for (poly, eval_point) in std::mem::take(&mut self.claims_without_evals) {
-			let key = (poly.id(), eval_point.clone());
-
-			if self.evals_memoization.get(poly.id(), &eval_point).is_some() {
-				continue;
-			}
-
-			if seen.insert(key.clone()) {
-				deduplicated_claims_without_evals.push(key);
-			}
-		}
-
-		deduplicated_claims_without_evals.sort_unstable_by_key(|(id, _)| *id);
-
-		let deduplicated_eval_points = deduplicated_claims_without_evals
+		let eval_points = self
+			.claims_that_must_be_evaluated
 			.iter()
 			.map(|(_, eval_point)| eval_point.as_ref())
 			.collect::<Vec<_>>();
 
 		self.memoized_data
-			.memoize_query_par(deduplicated_eval_points, self.backend)?;
+			.memoize_query_par(eval_points, self.backend)?;
 
-		let evals_memoization = Arc::new(RwLock::new(std::mem::take(&mut self.evals_memoization)));
-
-		deduplicated_claims_without_evals
+		let subclaims = std::mem::take(&mut self.claims_that_must_be_evaluated)
 			.into_par_iter()
 			.map(|(id, eval_point)| {
-				let eval = match &self.oracles[id].variant {
-					MultilinearPolyVariant::LinearCombination(linear_combination) => {
-						let ids = linear_combination.polys().collect::<Vec<_>>();
-						let mut evals = Vec::with_capacity(ids.len());
-
-						{
-							let evals_memoization = evals_memoization
-								.read()
-								.expect("evals_memoization can be read");
-
-							for id in &ids {
-								if let Some(eval) = evals_memoization.get(*id, &eval_point) {
-									evals.push(*eval);
-								} else {
-									break;
-								}
-							}
-						}
-
-						(evals.len() == ids.len()).then(|| {
-							izip!(evals, linear_combination.coefficients()).fold(
-								linear_combination.offset(),
-								|acc, (eval, coeff)| {
-									if coeff.is_zero() {
-										return acc;
-									}
-									acc + eval * coeff
-								},
-							)
-						})
-					}
-					MultilinearPolyVariant::ZeroPadded(padded) => {
-						if let Some(eval) = evals_memoization
-							.read()
-							.expect("evals_memoization can be read")
-							.get(padded.id(), &eval_point)
-						{
-							let zs = &eval_point
-								[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
-							let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
-							let select_row_term = select_row.evaluate(zs)?;
-							Some(*eval * select_row_term)
-						} else {
-							None
-						}
-					}
-					_ => None,
-				};
-
-				let subclaim = if let Some(eval) = eval {
-					EvalcheckMultilinearClaim {
-						id,
-						eval_point,
-						eval,
-					}
-				} else {
-					Self::make_new_eval_claim(
-						id,
-						eval_point,
-						self.witness_index,
-						&self.memoized_data,
-					)?
-				};
-
-				evals_memoization
-					.write()
-					.expect("evals_memoization can be written")
-					.insert(subclaim.id, subclaim.eval_point.clone(), subclaim.eval);
-				Ok(())
+				Self::make_new_eval_claim(id, eval_point, self.witness_index, &self.memoized_data)
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		self.evals_memoization = Arc::try_unwrap(evals_memoization)
-			.expect("Arc has exactly one strong reference")
-			.into_inner()
-			.expect("evals_memoization can be written");
+		for subclaim in &subclaims {
+			self.evals_memoization
+				.insert(subclaim.id, subclaim.eval_point.clone(), subclaim.eval);
+		}
+
+		let mut claims_without_evals = std::mem::take(&mut self.claims_without_evals)
+			.into_iter()
+			.collect::<Vec<_>>();
+
+		claims_without_evals.sort_unstable_by_key(|(id, _)| *id);
+
+		for (id, eval_point) in claims_without_evals {
+			self.collect_evals(id, &eval_point);
+		}
 
 		drop(mle_fold_full_span);
 
@@ -362,7 +287,7 @@ where
 
 	#[instrument(
 		skip_all,
-		name = "EvalcheckProverState::collect_subclaims_for_precompute",
+		name = "EvalcheckProverState::collect_subclaims_for_memoization",
 		level = "debug"
 	)]
 	fn collect_subclaims_for_memoization(
@@ -446,7 +371,8 @@ where
 					_ => {
 						for suboracle_id in linear_combination.polys() {
 							self.claims_without_evals
-								.push((self.oracles.oracle(suboracle_id), eval_point.clone()));
+								.insert((suboracle_id, eval_point.clone()));
+
 							self.collect_subclaims_for_memoization(
 								suboracle_id,
 								eval_point.clone(),
@@ -459,7 +385,6 @@ where
 
 			MultilinearPolyVariant::ZeroPadded(padded) => {
 				let id = padded.id();
-				let inner = self.oracles.oracle(id);
 				let inner_eval_point = chain!(
 					&eval_point[..padded.start_index()],
 					&eval_point[padded.start_index() + padded.n_pad_vars()..],
@@ -469,11 +394,20 @@ where
 				let inner_eval_point = EvalPoint::from(inner_eval_point);
 
 				self.claims_without_evals
-					.push((inner, inner_eval_point.clone()));
+					.insert((id, inner_eval_point.clone()));
 
 				self.collect_subclaims_for_memoization(id, inner_eval_point, None);
 			}
-			_ => return,
+			_ => {
+				if self
+					.evals_memoization
+					.get(multilinear_id, &eval_point)
+					.is_none()
+				{
+					self.claims_that_must_be_evaluated
+						.insert((multilinear_id, eval_point));
+				}
+			}
 		};
 	}
 
@@ -653,6 +587,73 @@ where
 			}
 		}
 		Ok(())
+	}
+
+	pub fn collect_evals(&mut self, oracle_id: OracleId, eval_point: &EvalPoint<F>) -> F {
+		if let Some(eval) = self.evals_memoization.get(oracle_id, eval_point) {
+			return *eval;
+		}
+
+		let eval = match &self.oracles[oracle_id].variant {
+			MultilinearPolyVariant::Repeating { id, log_count } => {
+				let n_vars = eval_point.len() - log_count;
+				self.collect_evals(*id, &eval_point.slice(0..n_vars))
+			}
+			MultilinearPolyVariant::Projected(projected) => {
+				let new_eval_point = {
+					let (lo, hi) = eval_point.split_at(projected.start_index());
+					chain!(lo, projected.values(), hi)
+						.copied()
+						.collect::<Vec<_>>()
+				};
+				self.collect_evals(projected.id(), &new_eval_point.into())
+			}
+			MultilinearPolyVariant::LinearCombination(linear_combination) => {
+				let ids = linear_combination.polys().collect::<Vec<_>>();
+
+				let coeffs = linear_combination.coefficients().collect::<Vec<_>>();
+				let offset = linear_combination.offset();
+
+				let mut evals = Vec::with_capacity(ids.len());
+
+				for id in &ids {
+					evals.push(self.collect_evals(*id, eval_point));
+				}
+
+				izip!(evals, coeffs).fold(offset, |acc, (eval, coeff)| {
+					if coeff.is_zero() {
+						return acc;
+					}
+
+					acc + eval * coeff
+				})
+			}
+			MultilinearPolyVariant::ZeroPadded(padded) => {
+				let subclaim_eval_point = chain!(
+					&eval_point[..padded.start_index()],
+					&eval_point[padded.start_index() + padded.n_pad_vars()..],
+				)
+				.copied()
+				.collect::<Vec<_>>();
+
+				let zs =
+					&eval_point[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
+				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())
+					.expect("SelectRow receives the correct parameters");
+				let select_row_term = select_row
+					.evaluate(zs)
+					.expect("select_row is constructor with zs.len() variables");
+
+				let eval = self.collect_evals(padded.id(), &subclaim_eval_point.into());
+
+				eval * select_row_term
+			}
+			_ => unreachable!(),
+		};
+
+		self.evals_memoization
+			.insert(oracle_id, eval_point.clone(), eval);
+		eval
 	}
 
 	fn projected_bivariate_meta(
