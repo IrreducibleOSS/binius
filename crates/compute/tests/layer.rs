@@ -132,3 +132,12 @@ fn test_exec_kernel_add() {
 	let mut device_memory = vec![F::ZERO; 1 << (log_len + 3)];
 	test_generic_kernel_add::<F, _>(compute, &mut device_memory, log_len);
 }
+
+#[test]
+fn test_extrapolate_line() {
+	type F = BinaryField128b;
+	let log_len = 10;
+	let compute = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut device_memory = vec![F::ZERO; 1 << (log_len + 3)];
+	binius_compute_test_utils::layer::test_extrapolate_line(&compute, &mut device_memory, log_len);
+}

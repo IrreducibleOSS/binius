@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use binius_field::{
 	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
@@ -367,6 +367,24 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			*out = values[0];
 		}
 
+		Ok(())
+	}
+
+	fn extrapolate_line(
+		&self,
+		_exec: &mut Self::Exec,
+		evals_0: &mut &mut [T::B128],
+		evals_1: &[T::B128],
+		z: T::B128,
+	) -> Result<(), Error> {
+		if evals_0.len() != evals_1.len() {
+			return Err(Error::InputValidation(
+				"evals_0 and evals_1 must be the same length".into(),
+			));
+		}
+		for (x0, x1) in iter::zip(&mut **evals_0, evals_1) {
+			*x0 += (*x1 - *x0) * z
+		}
 		Ok(())
 	}
 }
