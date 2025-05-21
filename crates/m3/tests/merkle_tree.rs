@@ -316,7 +316,7 @@ mod model {
 						}
 						None => {
 							if (index >> i) & 1 == 0 {
-								compress(&node, &current_child, &mut parent_node);
+								compress(&current_child, &node, &mut parent_node);
 								filled_nodes.insert(
 									(*root_id, index >> (i + 1), nodes.len() - i - 1),
 									(current_child, node, parent_node, true, false),
