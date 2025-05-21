@@ -253,11 +253,15 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					.evaluate(zs)
 					.expect("select_row is constructor with zs.len() variables");
 
-				if eval.is_zero() && select_row_term.is_zero() {
-					return Ok(());
-				}
-
-				let inner_eval = eval * select_row_term.invert_or_zero();
+				let inner_eval = match select_row_term.invert() {
+					Some(invert) => eval * invert,
+					None if eval.is_zero() => return Ok(()),
+					None => {
+						return Err(
+							VerificationError::IncorrectEvaluation(multilinear_label).into()
+						);
+					}
+				};
 
 				self.verify_multilinear(
 					EvalcheckMultilinearClaim {
