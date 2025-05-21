@@ -4,7 +4,7 @@ use std::iter;
 
 use binius_compute::{ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap};
 use binius_field::{TowerField, util::powers};
-use binius_math::ArithExpr;
+use binius_math::{ArithExpr, CompositionPoly};
 
 use super::error::Error;
 use crate::composition::{BivariateProduct, IndexComposition};
@@ -51,9 +51,8 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	let prod_evaluators = compositions
 		.iter()
 		.map(|composition| {
-			let [idx0, idx1] = composition.indices();
-			let prod_expr = composition.expression();
-			hal.compile_expr(&prod_expr)
+			let prod_expr = CompositionPoly::<F>::expression(&composition);
+			hal.compile_expr(&ArithExpr::from(prod_expr))
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
