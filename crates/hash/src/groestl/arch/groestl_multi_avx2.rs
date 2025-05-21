@@ -4,6 +4,8 @@ use std::{arch::x86_64::*, array};
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
+const STATE_SIZE: usize = 64;
+const HALF_STATE_SIZE: usize = STATE_SIZE / 2;
 
 use std::mem::MaybeUninit;
 
@@ -187,7 +189,6 @@ fn sub_bytes(state: &mut State) {
 #[inline]
 #[allow(clippy::identity_op)]
 fn shift_bytes_p(state: &mut State) {
-	// state[0] = unsafe { _mm256_ror_epi64(state[0], 8 * 0) };
 	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 1) };
 	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 2) };
 	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 3) };
@@ -204,7 +205,6 @@ fn shift_bytes_q(state: &mut State) {
 	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 3) };
 	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 5) };
 	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 7) };
-	// state[4] = unsafe { _mm256_ror_epi64(state[4], 8 * 0) };
 	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 2) };
 	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 4) };
 	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 6) };
@@ -265,13 +265,13 @@ fn permutation_q(state: &mut State) {
 #[derive(Clone)]
 pub struct Groestl256Multi {
 	state: State,
-	unfinished_block: [[u8; 64]; 4],
+	unfinished_block: [[u8; STATE_SIZE]; 4],
 	num_unfinished_bytes: usize,
 	num_blocks_consumed: usize,
 }
 
 impl Groestl256Multi {
-	fn consume_single_block_parallel(&mut self, data: [&[u8]; 4]) {
+	fn consume_single_block_parallel(&mut self, data: [&[u8]; NUM_PARALLEL_SUBSTATES]) {
 		let mut q_data = set_substates_par(data);
 
 		let mut p_data = [unsafe { _mm256_setzero_si256() }; 8];
@@ -293,16 +293,16 @@ impl Groestl256Multi {
 
 	fn finalize(&mut self, out: &mut [MaybeUninit<digest::Output<Groestl256>>; 4]) {
 		// Now we're at the first non-completely-full block
-		let mut this_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
-		let mut next_data: [[u8; 64]; 4] = [[0u8; 64]; 4];
+		let mut this_data: [[u8; STATE_SIZE]; 4] = [[0u8; STATE_SIZE]; 4];
+		let mut next_data: [[u8; STATE_SIZE]; 4] = [[0u8; STATE_SIZE]; 4];
 
 		let data = self.unfinished_block;
 		let no_additional_block = self.num_unfinished_bytes < 56;
 
 		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			let this_instance_data = data[parallel_idx];
-			let mut this_block: [u8; 64] = [0; 64];
-			let mut next_block: [u8; 64] = [0; 64];
+			let mut this_block: [u8; STATE_SIZE] = [0; STATE_SIZE];
+			let mut next_block: [u8; STATE_SIZE] = [0; STATE_SIZE];
 
 			this_block[0..self.num_unfinished_bytes]
 				.copy_from_slice(&this_instance_data[0..self.num_unfinished_bytes]);
@@ -310,10 +310,10 @@ impl Groestl256Multi {
 			this_block[self.num_unfinished_bytes] = 0b10000000;
 
 			if no_additional_block {
-				this_block[56..64]
+				this_block[56..]
 					.copy_from_slice(&((self.num_blocks_consumed + 1) as u64).to_be_bytes());
 			} else {
-				next_block[56..64]
+				next_block[56..]
 					.copy_from_slice(&((self.num_blocks_consumed + 2) as u64).to_be_bytes());
 				next_data[parallel_idx] = next_block;
 			}
@@ -359,7 +359,7 @@ impl Default for Groestl256Multi {
 				unsafe { _mm256_set1_epi64x(0x100000000000000u64 as i64) },
 				unsafe { _mm256_setzero_si256() },
 			],
-			unfinished_block: [[0; 64]; 4],
+			unfinished_block: [[0; STATE_SIZE]; NUM_PARALLEL_SUBSTATES],
 			num_unfinished_bytes: 0,
 			num_blocks_consumed: 0,
 		}
@@ -373,20 +373,20 @@ impl MultiDigest<4> for Groestl256Multi {
 		Self::default()
 	}
 
-	fn update(&mut self, data: [&[u8]; 4]) {
+	fn update(&mut self, data: [&[u8]; NUM_PARALLEL_SUBSTATES]) {
 		for parallel_idx in 1..NUM_PARALLEL_SUBSTATES {
 			assert_eq!(data[parallel_idx].len(), data[0].len());
 		}
 
 		let mut i = 0;
 
-		let new_num_unfinished_bytes = (data[0].len() + self.num_unfinished_bytes) % 64;
+		let new_num_unfinished_bytes = (data[0].len() + self.num_unfinished_bytes) % STATE_SIZE;
 
-		if data[0].len() + self.num_unfinished_bytes < 64 {
-			for (parallel_idx, data_lane) in data.iter().enumerate() {
+		if data[0].len() + self.num_unfinished_bytes < STATE_SIZE {
+			for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 				self.unfinished_block[parallel_idx]
 					[self.num_unfinished_bytes..new_num_unfinished_bytes]
-					.copy_from_slice(data_lane);
+					.copy_from_slice(data[parallel_idx]);
 			}
 			self.num_unfinished_bytes = new_num_unfinished_bytes;
 			return;
@@ -394,9 +394,10 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		if self.num_unfinished_bytes != 0 {
 			let mut initial_block = self.unfinished_block;
-			for parallel_idx in 0..4 {
-				initial_block[parallel_idx][self.num_unfinished_bytes..]
-					.copy_from_slice(&data[parallel_idx][..(64 - self.num_unfinished_bytes)]);
+			for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
+				initial_block[parallel_idx][self.num_unfinished_bytes..].copy_from_slice(
+					&data[parallel_idx][..(STATE_SIZE - self.num_unfinished_bytes)],
+				);
 			}
 
 			let unfinished_block_as_input = array::from_fn(|i| &initial_block[i][..]);
@@ -404,23 +405,23 @@ impl MultiDigest<4> for Groestl256Multi {
 			self.consume_single_block_parallel(unfinished_block_as_input);
 
 			// start normal processing from an incremented position
-			i = 64 - self.num_unfinished_bytes;
+			i = STATE_SIZE - self.num_unfinished_bytes;
 		}
 
-		while i + 64 <= data[0].len() {
+		while i + STATE_SIZE <= data[0].len() {
 			self.consume_single_block_parallel([
-				&data[0][i..i + 64],
-				&data[1][i..i + 64],
-				&data[2][i..i + 64],
-				&data[3][i..i + 64],
+				&data[0][i..i + STATE_SIZE],
+				&data[1][i..i + STATE_SIZE],
+				&data[2][i..i + STATE_SIZE],
+				&data[3][i..i + STATE_SIZE],
 			]);
 
-			i += 64;
+			i += STATE_SIZE;
 		}
 
-		for (parallel_idx, data_lane) in data.iter().enumerate() {
+		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
-				.copy_from_slice(&data_lane[i..]);
+				.copy_from_slice(&data[parallel_idx][i..]);
 		}
 
 		self.num_unfinished_bytes = new_num_unfinished_bytes;
