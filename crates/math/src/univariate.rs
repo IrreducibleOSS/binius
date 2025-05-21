@@ -20,7 +20,7 @@ use crate::Matrix;
 /// A domain may optionally include a Karatsuba "infinity" point, "evaluating" a polynomial at which
 /// results in taking the coefficient at the highest degree term. This point requires special
 /// treatment but sometimes unlocks optimization opportunities. The "Evaluation" section of the
-/// Wikipedia article on [Tomb-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) gives
+/// Wikipedia article on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) gives
 /// a great explanation of the concept.
 #[derive(Debug, Clone)]
 pub struct EvaluationDomain<F: Field> {
@@ -47,7 +47,7 @@ pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
 	/// additional assumption $\beta_0 = 1$ means that first two points of the basis are always 0
 	/// and 1 of the field $K$. The last point of the domain is Karatsuba "infinity" (denoted
 	/// $\infty$), which is the coefficient of the highest power in the interpolated polynomial
-	/// (see the "Evaluation" section of the Wikipedia article on [Tomb-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) for
+	/// (see the "Evaluation" section of the Wikipedia article on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) for
 	/// an introduction).
 	///
 	/// "Infinity" point is not included when `size <= 2`.
