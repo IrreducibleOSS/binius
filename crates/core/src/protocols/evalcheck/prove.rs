@@ -62,10 +62,10 @@ where
 	#[getset(get = "pub", get_mut = "pub")]
 	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
-	// Claim that we need to evaluate
-	claims_that_must_be_evaluated: HashSet<(OracleId, EvalPoint<F>)>,
+	// Claims that need to be evaluated.
+	claims_to_be_evaluated: HashSet<(OracleId, EvalPoint<F>)>,
 
-	// Claims that we can evaluate using internal_eval's
+	// Claims that can be evaluated using internal_evals.
 	claims_without_evals: HashSet<(OracleId, EvalPoint<F>)>,
 
 	// The list of claims that reduces to a bivariate sumcheck in a round.
@@ -111,7 +111,7 @@ where
 			new_bivariate_sumchecks_constraints: Vec::new(),
 			new_mlechecks_constraints: Vec::new(),
 			claims_without_evals: HashSet::new(),
-			claims_that_must_be_evaluated: HashSet::new(),
+			claims_to_be_evaluated: HashSet::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
 			backend,
@@ -195,7 +195,7 @@ where
 		}
 
 		let eval_points = self
-			.claims_that_must_be_evaluated
+			.claims_to_be_evaluated
 			.iter()
 			.map(|(_, eval_point)| eval_point.as_ref())
 			.collect::<Vec<_>>();
@@ -203,7 +203,7 @@ where
 		self.memoized_data
 			.memoize_query_par(eval_points, self.backend)?;
 
-		let subclaims = std::mem::take(&mut self.claims_that_must_be_evaluated)
+		let subclaims = std::mem::take(&mut self.claims_to_be_evaluated)
 			.into_par_iter()
 			.map(|(id, eval_point)| {
 				Self::make_new_eval_claim(id, eval_point, self.witness_index, &self.memoized_data)
@@ -404,7 +404,7 @@ where
 					.get(multilinear_id, &eval_point)
 					.is_none()
 				{
-					self.claims_that_must_be_evaluated
+					self.claims_to_be_evaluated
 						.insert((multilinear_id, eval_point));
 				}
 			}
