@@ -414,7 +414,7 @@ where
 	Ok(())
 }
 
-/// Creates a multilinear extension of the packed evalations of a small-field multilinear.
+/// Creates a multilinear extension of the packed evaluations of a small-field multilinear.
 ///
 /// Given a multilinear $P \in T_{\iota}[X_0, \ldots, X_{n-1}]$, this creates the multilinear
 /// extension $\hat{P} \in T_{\tau}[X_0, \ldots, X_{n - \kappa - 1}]$. In the case where

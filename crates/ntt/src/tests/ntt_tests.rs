@@ -71,7 +71,7 @@ fn check_roundtrip_with_reference<F, P>(
 	}
 }
 
-/// Check tht all NTTs have the same behavior.
+/// Check the all NTTs have the same behavior.
 fn check_roundtrip_all_ntts<P>(
 	log_domain_size: usize,
 	log_data_size: usize,

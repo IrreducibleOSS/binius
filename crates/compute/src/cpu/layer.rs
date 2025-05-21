@@ -426,7 +426,7 @@ pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
 
 /// Compute the left fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
@@ -483,7 +483,7 @@ where
 
 /// Compute the right fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_right_fold<EvalType: TowerField, T: TowerFamily>(

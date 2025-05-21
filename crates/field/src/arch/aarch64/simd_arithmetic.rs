@@ -89,7 +89,7 @@ pub fn packed_aes_16x8b_multiply(a: M128, b: M128) -> M128 {
 		let tmp0 = vmull_p8(vget_low_p8(ch), QPLUS_RSH1);
 		let tmp1 = vmull_p8(vget_high_p8(ch), QPLUS_RSH1);
 
-		// Correct for q+(x) having beed divided by x
+		// Correct for q+(x) having been divided by x
 		let tmp0 = vreinterpretq_p8_u16(vshlq_n_u16(vreinterpretq_u16_p16(tmp0), 1));
 		let tmp1 = vreinterpretq_p8_u16(vshlq_n_u16(vreinterpretq_u16_p16(tmp1), 1));
 

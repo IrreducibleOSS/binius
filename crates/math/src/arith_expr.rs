@@ -1362,7 +1362,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize_bytes_rountrip_with_duplicates() {
+	fn test_serialize_bytes_roundtrip_with_duplicates() {
 		type F = BinaryField128b;
 		let expr = (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
 			* (ArithCircuit::var(0) + ArithCircuit::constant(F::ONE))
@@ -1403,11 +1403,11 @@ mod tests {
 			+ (ArithCircuit::var(5) + ArithCircuit::var(5));
 		circuit.optimize_constants();
 
-		let expected_ciruit = ArithCircuit::var(0) * ArithCircuit::var(1)
+		let expected_circuit = ArithCircuit::var(0) * ArithCircuit::var(1)
 			+ ArithCircuit::var(2)
 			+ ArithCircuit::constant(F::ONE);
 
-		assert_eq!(circuit, expected_ciruit);
+		assert_eq!(circuit, expected_circuit);
 	}
 
 	#[test]

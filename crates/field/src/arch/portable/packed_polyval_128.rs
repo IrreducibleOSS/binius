@@ -56,22 +56,22 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 
 		// Contains sel raised to the power whose binary representation is 2^k ones followed by 2^k
 		// zeros
-		let mut selt_pow_2_pow_k1s_to_k0s = res;
+		let mut self_pow_2_pow_k1s_to_k0s = res;
 
 		// Loop invariant
 		// res contains z raised to the power whose binary representation is 2^{k+1}-1 ones followed
 		// by a single zero self_pow_2_pow_k1s contains z raised to the power whose binary
-		// representation is 2^k ones selt_pow_2_pow_k1s_to_k0s contains z raised to the power
+		// representation is 2^k ones self_pow_2_pow_k1s_to_k0s contains z raised to the power
 		// whose binary representation is 2^k ones followed by 2^k zeros
 		for k in 1..7 {
-			// Fill in the zeros in the exponent of selt_pow_2_pow_k1s_to_k0s with ones
-			self_pow_2_pow_k1s *= selt_pow_2_pow_k1s_to_k0s;
+			// Fill in the zeros in the exponent of self_pow_2_pow_k1s_to_k0s with ones
+			self_pow_2_pow_k1s *= self_pow_2_pow_k1s_to_k0s;
 
-			// selt_pow_2_pow_k1s_to_k0s = pow_2_2_n with 2^k zeros appended to the exponent
-			selt_pow_2_pow_k1s_to_k0s = pow_2_2_n(self_pow_2_pow_k1s, k);
+			// self_pow_2_pow_k1s_to_k0s = pow_2_2_n with 2^k zeros appended to the exponent
+			self_pow_2_pow_k1s_to_k0s = pow_2_2_n(self_pow_2_pow_k1s, k);
 
 			// prepend 2^k ones to res
-			res *= selt_pow_2_pow_k1s_to_k0s;
+			res *= self_pow_2_pow_k1s_to_k0s;
 		}
 
 		Self::set_single(res)

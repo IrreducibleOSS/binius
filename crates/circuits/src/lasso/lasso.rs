@@ -115,7 +115,7 @@ where
 			for i in 0..packed_lookups {
 				let offset = i << PackedType::<U, FC>::LOG_WIDTH;
 
-				// Since indicees may repeat withing the same packed field item, we need to
+				// Since indices may repeat within the same packed field item, we need to
 				// process them one by one and use the result only after that.
 				for (j, scalar) in scalars.iter_mut().enumerate() {
 					let index = u_to_t_mapping.as_ref()[offset + j];

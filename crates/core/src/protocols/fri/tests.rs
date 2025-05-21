@@ -296,7 +296,7 @@ fn test_commit_prove_verify_success_without_folding() {
 
 #[test]
 fn test_parallel_iterator_for_commitments() {
-	// Compare results for small and large chunk sizes to ensure that theyre identical
+	// Compare results for small and large chunk sizes to ensure that they're identical
 	let data: Vec<_> = (0..64).map(BinaryField16b::from).collect();
 
 	let mut data_packed_4 = vec![];

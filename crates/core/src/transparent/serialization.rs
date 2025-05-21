@@ -40,7 +40,7 @@ impl DeserializeBytes for Box<dyn MultivariatePoly<BinaryField128b>> {
 		match REGISTRY.get(name.as_str()) {
 			Some(Some(erased_deserialize)) => erased_deserialize(&mut read_buf, mode),
 			Some(None) => Err(SerializationError::DeserializerNameConflict { name }),
-			None => Err(SerializationError::DeserializerNotImplented),
+			None => Err(SerializationError::DeserializerNotImplemented),
 		}
 	}
 }
