@@ -191,11 +191,6 @@ mod model {
 				index: self.parent_index,
 			});
 
-			println!(
-				"push (root_id: {:?}, depth: {:?}, index: {:?})",
-				self.root_id, self.parent_depth, self.parent_index
-			);
-
 			if self.flush_left {
 				node_channel.pull(NodeFlushToken {
 					root_id: self.root_id,
@@ -203,12 +198,6 @@ mod model {
 					depth: self.parent_depth + 1,
 					index: 2 * self.parent_index,
 				});
-				println!(
-					"pull (root_id: {:?}, depth: {:?}, index: {:?})",
-					self.root_id,
-					self.parent_depth + 1,
-					2 * self.parent_index
-				);
 			}
 			if self.flush_right {
 				node_channel.pull(NodeFlushToken {
@@ -217,12 +206,6 @@ mod model {
 					depth: self.parent_depth + 1,
 					index: 2 * self.parent_index + 1,
 				});
-				println!(
-					"pull (root_id: {:?}, depth: {:?}, index: {:?})",
-					self.root_id,
-					self.parent_depth + 1,
-					2 * self.parent_index + 1
-				);
 			}
 		}
 	}
@@ -316,6 +299,7 @@ mod model {
 					},
 				);
 
+				// Populate the root table's events.
 				root_nodes.insert(MerkleRootEvent::new(*root_id, roots[*root_id as usize]));
 
 				let mut parent_node = [0u8; 32];
