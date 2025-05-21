@@ -26,6 +26,7 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, MultilinearPolyVariant, OracleId,
 	},
+	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
 		logging::MLEFoldHighDimensionsData,
 		subclaims::{
@@ -34,6 +35,7 @@ use crate::{
 		},
 	},
 	transcript::ProverTranscript,
+	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
 };
 
@@ -567,14 +569,21 @@ where
 				.copied()
 				.collect::<Vec<_>>();
 
+				let zs =
+					&eval_point[padded.start_index()..padded.start_index() + padded.n_pad_vars()];
+				let select_row = SelectRow::new(zs.len(), padded.nonzero_index())?;
+				let select_row_term = select_row
+					.evaluate(zs)
+					.expect("select_row is constructor with zs.len() variables");
+
+				if eval.is_zero() && select_row_term.is_zero() {
+					return Ok(());
+				}
+
 				let inner_eval = *self
 					.evals_memoization
 					.get(padded.id(), &inner_eval_point)
 					.expect("precomputed above");
-
-				if inner_eval_point.is_empty() && eval.is_zero() {
-					transcript.message().write_scalar(inner_eval);
-				}
 
 				self.prove_multilinear(
 					EvalcheckMultilinearClaim {
