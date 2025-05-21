@@ -9,7 +9,10 @@ use crate::{
 	arch::{
 		PackedStrategy, SimdStrategy,
 		portable::{
-			packed::{PackedPrimitiveType, impl_ops_for_zero_height},
+			packed::{
+				PackedPrimitiveType, impl_ops_for_zero_height,
+				impl_serialize_deserialize_for_packed_binary_field,
+			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 	},
@@ -28,6 +31,16 @@ pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
 pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
 pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
 pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
+
+// Define (de)serialize
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x2b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x4b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x8b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x16b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x32b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x64b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x128b);
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField128x1b);

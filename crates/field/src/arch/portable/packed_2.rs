@@ -7,7 +7,10 @@ use super::{
 };
 use crate::{
 	BinaryField1b, BinaryField2b,
-	arch::{PackedStrategy, PairwiseStrategy, PairwiseTableStrategy, ReuseMultiplyStrategy},
+	arch::{
+		PackedStrategy, PairwiseStrategy, PairwiseTableStrategy, ReuseMultiplyStrategy,
+		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -18,6 +21,10 @@ use crate::{
 // Define 2 bit packed field types
 pub type PackedBinaryField2x1b = PackedPrimitiveType<U2, BinaryField1b>;
 pub type PackedBinaryField1x2b = PackedPrimitiveType<U2, BinaryField2b>;
+
+// Define (de)serialize
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x1b);
+impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x2b);
 
 // Define broadcast
 impl_broadcast!(U2, BinaryField1b);

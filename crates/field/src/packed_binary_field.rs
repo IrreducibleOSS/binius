@@ -871,6 +871,7 @@ pub mod test_utils {
 mod tests {
 	use std::{iter::repeat_with, ops::Mul, slice};
 
+	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::prelude::*;
 	use rand::{SeedableRng, rngs::StdRng, thread_rng};
 	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
@@ -939,6 +940,18 @@ mod tests {
 		}
 	}
 
+	fn test_serialize_then_deserialize<P: PackedField + DeserializeBytes + SerializeBytes>() {
+		let mode = SerializationMode::Native;
+		let mut buffer = BytesMut::new();
+		let mut rng = StdRng::seed_from_u64(0);
+		let packed = P::random(&mut rng);
+		packed.serialize(&mut buffer, mode).unwrap();
+
+		let mut read_buffer = buffer.freeze();
+
+		assert_eq!(P::deserialize(&mut read_buffer, mode).unwrap(), packed);
+	}
+
 	#[test]
 	fn test_set_then_get_4b() {
 		test_set_then_get::<PackedBinaryField32x4b>();
@@ -947,14 +960,32 @@ mod tests {
 	}
 
 	#[test]
+	fn test_serialize_then_deserialize_4b() {
+		test_serialize_then_deserialize::<PackedBinaryField32x4b>();
+		test_serialize_then_deserialize::<PackedBinaryField64x4b>();
+		test_serialize_then_deserialize::<PackedBinaryField128x4b>();
+		test_serialize_then_deserialize::<PackedBinaryField8x4b>();
+	}
+
+	#[test]
 	fn test_set_then_get_32b() {
 		test_set_then_get::<PackedBinaryField4x32b>();
 		test_set_then_get::<PackedBinaryField8x32b>();
 		test_set_then_get::<PackedBinaryField16x32b>();
+	}
 
+	#[test]
+	fn test_elements_order_32b() {
 		test_elements_order::<PackedBinaryField4x32b>();
 		test_elements_order::<PackedBinaryField8x32b>();
 		test_elements_order::<PackedBinaryField16x32b>();
+	}
+
+	#[test]
+	fn test_serialize_then_deserialize_32b() {
+		test_serialize_then_deserialize::<PackedBinaryField4x32b>();
+		test_serialize_then_deserialize::<PackedBinaryField8x32b>();
+		test_serialize_then_deserialize::<PackedBinaryField16x32b>();
 	}
 
 	#[test]
@@ -962,10 +993,20 @@ mod tests {
 		test_set_then_get::<PackedBinaryField2x64b>();
 		test_set_then_get::<PackedBinaryField4x64b>();
 		test_set_then_get::<PackedBinaryField8x64b>();
+	}
 
+	#[test]
+	fn test_elements_order_64b() {
 		test_elements_order::<PackedBinaryField2x64b>();
 		test_elements_order::<PackedBinaryField4x64b>();
 		test_elements_order::<PackedBinaryField8x64b>();
+	}
+
+	#[test]
+	fn test_serialize_then_deserialize_64b() {
+		test_serialize_then_deserialize::<PackedBinaryField2x64b>();
+		test_serialize_then_deserialize::<PackedBinaryField4x64b>();
+		test_serialize_then_deserialize::<PackedBinaryField8x64b>();
 	}
 
 	#[test]
@@ -973,10 +1014,43 @@ mod tests {
 		test_set_then_get::<PackedBinaryField1x128b>();
 		test_set_then_get::<PackedBinaryField2x128b>();
 		test_set_then_get::<PackedBinaryField4x128b>();
+	}
 
+	#[test]
+	fn test_elements_order_128b() {
 		test_elements_order::<PackedBinaryField1x128b>();
 		test_elements_order::<PackedBinaryField2x128b>();
 		test_elements_order::<PackedBinaryField4x128b>();
+	}
+
+	#[test]
+	fn test_serialize_then_deserialize_128b() {
+		test_serialize_then_deserialize::<PackedBinaryField1x128b>();
+		test_serialize_then_deserialize::<PackedBinaryField2x128b>();
+		test_serialize_then_deserialize::<PackedBinaryField4x128b>();
+	}
+
+	#[test]
+	fn test_serialize_deserialize_different_packing_width() {
+		let mode = SerializationMode::Native;
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let packed0 = PackedBinaryField1x128b::random(&mut rng);
+		let packed1 = PackedBinaryField1x128b::random(&mut rng);
+
+		let mut buffer = BytesMut::new();
+		packed0.serialize(&mut buffer, mode).unwrap();
+		packed1.serialize(&mut buffer, mode).unwrap();
+
+		let mut read_buffer = buffer.freeze();
+		let packed01 = PackedBinaryField2x128b::deserialize(&mut read_buffer, mode).unwrap();
+
+		assert!(
+			packed01
+				.iter()
+				.zip([packed0, packed1])
+				.all(|(x, y)| x == y.get(0))
+		);
 	}
 
 	// TODO: Generate lots more proptests using macros
