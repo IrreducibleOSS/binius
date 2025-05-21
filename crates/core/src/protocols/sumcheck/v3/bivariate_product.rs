@@ -8,7 +8,7 @@ use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
-use binius_math::{ArithExpr, EvaluationOrder, evaluate_univariate, CompositionPoly};
+use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::bail;
 
 use crate::{
@@ -412,6 +412,8 @@ enum PhaseState<F: Field> {
 
 #[cfg(test)]
 mod tests {
+	use std::iter::repeat_with;
+
 	use binius_compute::{
 		FSliceMut,
 		alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
@@ -428,8 +430,8 @@ mod tests {
 		InterpolationDomain, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 		MultilinearQuery,
 	};
-	use bytemuck::must_cast_slice;
-	use rand::{SeedableRng, rngs::StdRng};
+	use bytemuck::{must_cast_slice, zeroed_vec};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::{
