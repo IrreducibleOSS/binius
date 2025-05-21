@@ -36,7 +36,9 @@ use crate::{
 ///
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
 pub trait SumcheckProver<F: Field> {
-	/// The number of variables in the multivariate polynomial.
+	/// The number of variables remaining in the multivariate polynomial.
+	///
+	/// This value decrements each time [`Self::fold`] is called on the instance.
 	fn n_vars(&self) -> usize;
 
 	/// Sumcheck evaluation order assumed by this specific prover.

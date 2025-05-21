@@ -119,6 +119,10 @@ pub enum Error {
 	MathError(#[from] binius_math::Error),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("compute error: {0}")]
+	Compute(#[from] binius_compute::Error),
+	#[error("allocation error: {0}")]
+	Allocation(#[from] binius_compute::alloc::Error),
 	#[error("Transcript error: {0}")]
 	TranscriptError(#[from] crate::transcript::Error),
 }
