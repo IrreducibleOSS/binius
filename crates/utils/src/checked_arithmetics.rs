@@ -9,12 +9,28 @@ pub const fn checked_int_div(a: usize, b: usize) -> usize {
 	result
 }
 
-/// log2 implementation that fails when `val` is not a power of 2.
-pub const fn checked_log_2(val: usize) -> usize {
-	let result = val.ilog2();
-	assert!(2usize.pow(result) == val);
+/// Computes binary logarithm of `val`.
+/// If `val` is not a power of 2, returns `None`.
+#[inline]
+#[must_use]
+pub const fn strict_log_2(val: usize) -> Option<usize> {
+	if val == 0 {
+		return None;
+	}
 
-	result as _
+	let pow = val.trailing_zeros();
+	if val.wrapping_shr(pow) == 1 {
+		Some(pow as usize)
+	} else {
+		None
+	}
+}
+
+/// log2 implementation that fails when `val` is not a power of 2.
+#[inline]
+#[must_use]
+pub const fn checked_log_2(val: usize) -> usize {
+	strict_log_2(val).expect("Value is not a power of 2")
 }
 
 /// Computes the binary logarithm of $n$ rounded up to the nearest integer.
