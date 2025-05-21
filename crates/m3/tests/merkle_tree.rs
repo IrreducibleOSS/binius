@@ -272,7 +272,7 @@ mod model {
 			// deduped, these need to be pushed into the nodes channel as many times as they are
 			// referenced in the paths.
 
-			//tracks the filled nodes in the tree
+			// Tracks the filled nodes in the tree
 			let mut filled_nodes = HashMap::new();
 
 			for path in paths.iter() {
