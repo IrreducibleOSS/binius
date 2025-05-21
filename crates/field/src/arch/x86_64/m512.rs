@@ -141,9 +141,9 @@ impl SerializeBytes for M512 {
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
 
-		let raw_values: [u128; 4] = self.clone().into();
+		let raw_values: [u128; 4] = (*self).into();
 
-		for &val in raw_values.iter() {
+		for &val in &raw_values {
 			write_buf.put_u128_le(val);
 		}
 
@@ -394,7 +394,7 @@ impl std::fmt::Display for M512 {
 
 impl std::fmt::Debug for M512 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "M512({})", self)
+		write!(f, "M512({self})")
 	}
 }
 
@@ -735,7 +735,7 @@ impl UnderlierWithBitOps for M512 {
 			64 => as_array_mut::<_, u64, 8>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
-			128 => as_array_mut::<_, u128, 4>(self, |array| {
+			128 => as_array_mut::<_, u128, 4>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
