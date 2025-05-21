@@ -52,7 +52,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 		.iter()
 		.map(|composition| {
 			let [idx0, idx1] = composition.indices();
-			let prod_expr = ArithExpr::Var(*idx0) * ArithExpr::Var(*idx1);
+			let prod_expr = composition.expression();
 			hal.compile_expr(&prod_expr)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
