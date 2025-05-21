@@ -10,6 +10,7 @@
 mod additive_ntt;
 mod dynamic_dispatch;
 mod error;
+pub mod fri;
 mod multithreaded;
 mod odd_interpolate;
 mod single_threaded;

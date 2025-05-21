@@ -12,8 +12,10 @@ binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
+bytemuck.workspace = true
 rand.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
