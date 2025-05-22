@@ -26,7 +26,7 @@ use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
 		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, MultilinearPolyVariant, OracleId, Packed, Shifted,
+		MultilinearOracleSet, OracleId, Packed, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -427,9 +427,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			.zip(metas)
 			.for_each(|(claim, meta)| {
 				let inner_id = meta.inner_id;
-				if matches!(oracles.oracle(inner_id).variant, MultilinearPolyVariant::Committed)
-					&& meta.projected_id.is_some()
-				{
+				if oracles.oracle(inner_id).variant.is_committed() && meta.projected_id.is_some() {
 					let eval_point = claim.eval_point[meta.projected_n_vars..].to_vec().into();
 
 					let projected_id = meta.projected_id.expect("checked above");

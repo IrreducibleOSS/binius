@@ -27,7 +27,7 @@ use super::{
 use crate::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
-	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
+	oracle::{MultilinearOracleSet, OracleId},
 	piop,
 	protocols::{
 		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
@@ -69,7 +69,7 @@ where
 	let mut witness_index = MultilinearExtensionIndex::new();
 
 	for oracle in oracles.polys() {
-		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+		if oracle.variant.is_committed() {
 			let n_vars = oracle.n_vars();
 			let witness = match oracle.binary_tower_level() {
 				0 => generate_multilinear::<U, Tower::B1, FExt<Tower>>(&mut rng, n_vars),
@@ -142,7 +142,7 @@ where
 {
 	let max_n_vars = oracles
 		.polys()
-		.filter(|oracle| matches!(oracle.variant, MultilinearPolyVariant::Committed))
+		.filter(|oracle| oracle.variant.is_committed())
 		.map(|oracle| oracle.n_vars())
 		.max()
 		.unwrap();
@@ -152,7 +152,7 @@ where
 
 	let mut eval_claims = Vec::new();
 	for oracle in oracles.polys() {
-		if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+		if !oracle.variant.is_committed() {
 			continue;
 		}
 
