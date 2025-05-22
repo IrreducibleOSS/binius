@@ -7,6 +7,9 @@
 //!
 //! [Vision Mark-32]: https://eprint.iacr.org/2024/633
 
+// Uses binius_circuits which is being phased out.
+#![allow(deprecated)]
+
 use std::array;
 
 use anyhow::Result;

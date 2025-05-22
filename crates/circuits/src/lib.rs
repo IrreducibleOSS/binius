@@ -6,6 +6,10 @@
 //! [`crate::builder`] module. Most other modules contain circuit gadgets that can be used to build
 //! more complex constraint systems.
 
+#![deprecated = "use binius_m3 instead"]
+// This is because there are quite some arith_expr! in this codebase and it's acceptable to blanket
+// allow(deprecated) here since it's going away anyway.
+#![allow(deprecated)]
 #![allow(clippy::module_inception)]
 
 pub mod arithmetic;

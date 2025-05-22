@@ -1,5 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+// Uses binius_circuits which is being phased out.
+#![allow(deprecated)]
+
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::Result;

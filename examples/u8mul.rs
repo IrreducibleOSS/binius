@@ -1,5 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+// Uses binius_circuits which is being phased out.
+#![allow(deprecated)]
+
 use anyhow::Result;
 use binius_circuits::{
 	builder::{ConstraintSystemBuilder, types::U},
