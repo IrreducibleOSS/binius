@@ -156,6 +156,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// Creates and allocates the witness index.
 	///
 	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
+	#[deprecated]
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
