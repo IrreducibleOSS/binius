@@ -319,7 +319,7 @@ pub fn make_sumcheck_claim_descs<F: Field>(
 /// * `transparents` - a slice of transparent polynomials in ascending order by number of variables
 /// * `claims` - a batch of sumcheck claims referencing committed polynomials in the batch described
 ///   by `commit_meta` and the transparent polynomials in `transparents`
-/// * `proof` - the proof reader
+/// * `transcript` - the verifier transcript.
 #[instrument("piop::verify", skip_all)]
 pub fn verify<'a, F, FEncode, Challenger_, MTScheme>(
 	commit_meta: &CommitMeta,
