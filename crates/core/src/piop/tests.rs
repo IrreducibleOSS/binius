@@ -156,13 +156,14 @@ where
 		ComputeLayerType::Cpu => {
 			let compute_layer = CpuLayer::<T>::default();
 			let mut slice = zeroed_vec(1 << 16);
-			let mut allocator = BumpAllocator::new(&mut slice[..]);
+			let dev_allocator = BumpAllocator::new(&mut slice[..]);
+			let mut slice = zeroed_vec(1 << 16);
+			let host_allocator = BumpAllocator::new(&mut slice[..]);
 
 			prove_compute_layer(
 				fri_params,
 				ntt,
 				merkle_prover,
-				domain_factory,
 				commit_meta,
 				committed,
 				codeword,
@@ -170,9 +171,9 @@ where
 				transparent_multilins,
 				claims,
 				transcript,
-				&backend,
 				&compute_layer,
-				&mut allocator,
+				&dev_allocator,
+				&host_allocator,
 			)
 		}
 	}

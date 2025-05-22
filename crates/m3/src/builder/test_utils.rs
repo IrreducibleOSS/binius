@@ -169,7 +169,9 @@ fn validate_system_witness_with_prove_verify<U>(
 			ProveVerify::WithComputeLayer => {
 				let cl = CpuLayer::<CanonicalTowerFamily>::default();
 				let mut memory_buffer = zeroed_vec(1 << 15);
-				let mut allocator = BumpAllocator::new(memory_buffer.as_mut_slice());
+				let dev_allocator = BumpAllocator::new(memory_buffer.as_mut_slice());
+				let mut memory_buffer = zeroed_vec(1 << 15);
+				let host_allocator = BumpAllocator::new(memory_buffer.as_mut_slice());
 				binius_core::constraint_system::prove_compute_layer::<
 					U,
 					CanonicalTowerFamily,
@@ -186,7 +188,8 @@ fn validate_system_witness_with_prove_verify<U>(
 					witness,
 					&binius_hal::make_portable_backend(),
 					&cl,
-					&mut allocator,
+					&dev_allocator,
+					&host_allocator,
 				)
 				.unwrap()
 			}

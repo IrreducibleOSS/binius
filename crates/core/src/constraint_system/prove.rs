@@ -2,7 +2,10 @@
 
 use std::{env, marker::PhantomData};
 
-use binius_compute::{alloc::ComputeAllocator, layer::ComputeLayer};
+use binius_compute::{
+	alloc::{BumpAllocator, HostBumpAllocator},
+	layer::ComputeLayer,
+};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -440,7 +443,8 @@ pub fn prove_compute_layer<'a, U, Tower, Hash, Compress, Challenger_, Backend, C
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
 	cl: &'a CL,
-	allocator: &mut impl ComputeAllocator<Tower::B128, CL::DevMem>,
+	dev_allocator: &'a BumpAllocator<'a, Tower::B128, CL::DevMem>,
+	host_allocator: &'a HostBumpAllocator<'a, Tower::B128>,
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
@@ -777,11 +781,10 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove_compute_layer::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _, _>(
+	piop::prove_compute_layer::<_, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&ntt,
 		&merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -789,9 +792,9 @@ where
 		&transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
-		&backend,
 		cl,
-		allocator,
+		dev_allocator,
+		host_allocator,
 	)?;
 	drop(piop_compiler_span);
 

@@ -2,9 +2,14 @@
 
 use std::{borrow::Cow, ops::Deref};
 
-use binius_compute::{alloc::ComputeAllocator, layer::ComputeLayer};
+use binius_compute::{
+	ComputeMemory,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	layer::ComputeLayer,
+};
 use binius_field::{
 	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
+	unpack_if_possible,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -37,11 +42,12 @@ use crate::{
 	protocols::{
 		fri::{self, FRIFolder, FRIFolderCL, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			self, immediate_switchover_heuristic,
+			self, SumcheckClaim, immediate_switchover_heuristic,
 			prove::{
 				RegularSumcheckProver, SumcheckProver,
 				front_loaded::BatchProver as SumcheckBatchProver,
 			},
+			v3::bivariate_product::BivariateSumcheckProver,
 		},
 	},
 	transcript::ProverTranscript,
@@ -276,25 +282,10 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn prove_compute_layer<
-	'a,
-	F,
-	FDomain,
-	FEncode,
-	P,
-	M,
-	NTT,
-	DomainFactory,
-	MTScheme,
-	MTProver,
-	Challenger_,
-	Backend,
-	CL,
->(
+pub fn prove_compute_layer<'a, F, FEncode, P, M, NTT, MTScheme, MTProver, Challenger_, CL>(
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
 	merkle_prover: &MTProver,
-	domain_factory: DomainFactory,
 	commit_meta: &CommitMeta,
 	committed: MTProver::Committed,
 	codeword: &[P],
@@ -302,25 +293,19 @@ pub fn prove_compute_layer<
 	transparent_multilins: &[M],
 	claims: &[PIOPSumcheckClaim<F>],
 	transcript: &mut ProverTranscript<Challenger_>,
-	backend: &Backend,
 	cl: &'a CL,
-	allocator: &mut impl ComputeAllocator<F, CL::DevMem>,
+	dev_allocator: &'a BumpAllocator<'a, F, CL::DevMem>,
+	host_allocator: &'a HostBumpAllocator<'a, F>,
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	FDomain: Field,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>
-		+ PackedExtension<FEncode>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	NTT: AdditiveNTT<FEncode> + Sync,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
-	Backend: ComputationBackend,
 	CL: ComputeLayer<F>,
 {
 	// Map of n_vars to sumcheck claim descriptions
@@ -350,29 +335,44 @@ where
 		// sumcheck prover in order to derive the final FRI value.
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
 	let sumcheck_provers = non_empty_sumcheck_descs
-		.map(|(_n_vars, desc)| {
+		.map(|(n_vars, desc)| {
 			let multilins = chain!(
 				packed_committed_multilins[desc.committed_indices.clone()]
 					.iter()
-					.map(Either::Left),
+					.map(|m| {
+						m.packed_evals()
+							.expect("guaranteed by function precondition")
+					}),
 				transparent_multilins[desc.transparent_indices.clone()]
 					.iter()
-					.map(Either::Right),
+					.map(|m| {
+						m.packed_evals()
+							.expect("guaranteed by function precondition")
+					}),
 			)
+			.map(|packed_values| {
+				unpack_if_possible(
+					packed_values,
+					|scalars| {
+						let mut dev_slice = dev_allocator
+							.alloc(scalars.len())
+							.expect("failed to allocate");
+						cl.copy_h2d(scalars, &mut dev_slice)
+							.expect("failed to copy");
+
+						CL::DevMem::to_const(dev_slice)
+					},
+					|_packed| unimplemented!(),
+				)
+			})
 			.collect::<Vec<_>>();
-			RegularSumcheckProver::new(
-				EvaluationOrder::HighToLow,
-				multilins,
-				desc.composite_sums.iter().cloned(),
-				&domain_factory,
-				immediate_switchover_heuristic,
-				backend,
-			)
+			let claim = SumcheckClaim::new(n_vars, multilins.len(), desc.composite_sums.clone())?;
+			BivariateSumcheckProver::new(cl, dev_allocator, host_allocator, &claim, multilins)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	prove_interleaved_fri_sumcheck_compute_layer(
-		allocator,
+		dev_allocator,
 		cl,
 		commit_meta.total_vars(),
 		fri_params,
