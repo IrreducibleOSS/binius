@@ -49,9 +49,9 @@ where
 
 	// Prove the initial evalcheck claims
 	let initial_evalcheck_round_span = tracing::debug_span!(
-		"[phase] Initial Evalcheck Round",
+		"[step] Initial Evalcheck Round",
 		phase = "evalcheck",
-		perfetto_category = "task.main"
+		perfetto_category = "phase.sub"
 	)
 	.entered();
 	evalcheck_prover.prove(claims, transcript)?;

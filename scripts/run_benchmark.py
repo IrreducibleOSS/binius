@@ -112,6 +112,11 @@ LABEL_TO_METRIC = {
     "generating trace":          "trace-gen-time",
     "constraint_system::prove":  "prove-time",
     "constraint_system::verify": "verify-time",
+    "[phase] Commit":            "phase-commit-time",
+    "[phase] Zerocheck":         "phase-zerocheck-time",
+    "[phase] Evalcheck":         "phase-evalcheck-time",
+    "[phase] Ring Switch":       "phase-ring-switch-time",
+    "[phase] PIOP Compiler":     "phase-piop-compiler-time",
 }
 
 

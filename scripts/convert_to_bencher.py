@@ -27,14 +27,23 @@ def value_to_bencher(metric_name: str, value: Union[list[float], int]) -> dict:
     }
 
 
+METRIC_BASE_KEYS = [
+    "trace-gen-time",
+    "prove-time",
+    "verify-time",
+    "phase-commit-time",
+    "phase-zerocheck-time",
+    "phase-evalcheck-time",
+    "phase-ring-switch-time",
+    "phase-piop-compiler-time",
+]
+
 METRIC_KEYS = [
-    "trace-gen-time-multi-thread",
-    "trace-gen-time-single-thread",
-    "prove-time-multi-thread",
-    "prove-time-single-thread",
-    "verify-time-multi-thread",
-    "verify-time-single-thread",
     "proof-size",
+] + [
+    f"{base}-{thread}"
+    for base in METRIC_BASE_KEYS
+    for thread in ["multi-thread", "single-thread"]
 ]
 
 
