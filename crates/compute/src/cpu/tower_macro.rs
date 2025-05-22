@@ -1,5 +1,5 @@
 // Copyright 2025 Irreducible Inc.
-
+#[macro_export]
 macro_rules! each_tower_subfield {
     (
         $tower_height:expr,
@@ -16,7 +16,7 @@ macro_rules! each_tower_subfield {
 
             _ => {
                 return Err(
-                    crate::layer::Error::InputValidation(
+                    $crate::layer::Error::InputValidation(
                         format!(
                             "unsupported value of {}: {}",
                             stringify!($tower_height),

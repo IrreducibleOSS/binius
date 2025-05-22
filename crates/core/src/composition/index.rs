@@ -177,11 +177,11 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 
 #[cfg(test)]
 mod tests {
+	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{BinaryField1b, Field};
 	use binius_math::ArithExpr;
 
 	use super::*;
-	use crate::polynomial::ArithCircuitPoly;
 
 	#[test]
 	fn tests_expr() {
