@@ -161,11 +161,9 @@ where
 
 		// Fold the multilinears
 		let _ = self.hal.execute(|exec| {
-			// TODO: Parallelize hal operations with hal.map
 			self.multilins = self
-				.multilins
-				.drain(..)
-				.map(|multilin| {
+				.hal
+				.map(exec, self.multilins.drain(..), |exec, multilin| {
 					let folded_evals = match multilin {
 						SumcheckMultilinear::PreFold(evals) => {
 							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
@@ -200,8 +198,8 @@ where
 						}
 					};
 					Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
-				})
-				.collect::<Result<_, ComputeError>>()?;
+				})?;
+
 			Ok(Vec::new())
 		})?;
 
