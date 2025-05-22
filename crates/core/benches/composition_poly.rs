@@ -83,6 +83,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_128x1b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			evaluate_arith_circuit_poly(&query128x1b, &poly);
@@ -100,6 +101,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_16x8b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			evaluate_arith_circuit_poly(&query16x8b, &poly);
@@ -117,6 +119,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_1x128b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			evaluate_arith_circuit_poly(&query1x128b, &poly);
@@ -141,6 +144,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_128x1b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			poly.batch_evaluate(&batch_query128x1b, &mut results128x1b)
@@ -163,6 +167,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_16x8b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			poly.batch_evaluate(&batch_query16x8b, &mut results16x8b)
@@ -185,6 +190,7 @@ fn benchmark_evaluate(c: &mut Criterion) {
 		});
 	});
 	group.bench_function("composition_poly_1x128b", |bench| {
+		#[allow(deprecated)]
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
 			poly.batch_evaluate(&batch_query1x128b, &mut results1x128b)
