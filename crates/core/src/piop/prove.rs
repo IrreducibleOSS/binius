@@ -2,8 +2,13 @@
 
 use std::{borrow::Cow, ops::Deref};
 
+use binius_compute::{
+	ComputeLayer, ComputeMemory,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+};
 use binius_field::{
-	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
+	BinaryField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	packed::PackedSliceMut, tower::CanonicalTowerFamily,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -18,6 +23,7 @@ use binius_utils::{
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
 };
+use bytemuck::zeroed_vec;
 use either::Either;
 use itertools::{Itertools, chain};
 
@@ -36,11 +42,12 @@ use crate::{
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			self, immediate_switchover_heuristic,
+			self, SumcheckClaim, immediate_switchover_heuristic,
 			prove::{
 				RegularSumcheckProver, SumcheckProver,
 				front_loaded::BatchProver as SumcheckBatchProver,
 			},
+			v3::bivariate_product::BivariateSumcheckProver,
 		},
 	},
 	transcript::ProverTranscript,
@@ -171,6 +178,7 @@ where
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
 pub fn prove<
+	Hal,
 	F,
 	FDomain,
 	FEncode,
@@ -183,6 +191,8 @@ pub fn prove<
 	Challenger_,
 	Backend,
 >(
+	hal: &Hal,
+	dev_mem: <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
 	merkle_prover: &MTProver,
@@ -203,7 +213,8 @@ where
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>
-		+ PackedExtension<FEncode>,
+		+ PackedExtension<FEncode>
+		+ PackedFieldIndexable<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
 	NTT: AdditiveNTT<FEncode> + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
@@ -211,7 +222,12 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
+	Hal: ComputeLayer<F> + Default,
 {
+	let hal = Hal::default();
+
+	let dev_alloc = BumpAllocator::new(dev_mem);
+
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
 		commit_meta,
@@ -240,6 +256,10 @@ where
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
 	let sumcheck_provers = non_empty_sumcheck_descs
 		.map(|(_n_vars, desc)| {
+			let mut host_mem = hal.host_alloc(1 << 20);
+
+			let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+
 			let multilins = chain!(
 				packed_committed_multilins[desc.committed_indices.clone()]
 					.iter()
@@ -249,14 +269,35 @@ where
 					.map(Either::Right),
 			)
 			.collect::<Vec<_>>();
-			RegularSumcheckProver::new(
-				EvaluationOrder::HighToLow,
-				multilins,
-				desc.composite_sums.iter().cloned(),
-				&domain_factory,
-				immediate_switchover_heuristic,
-				backend,
-			)
+			// RegularSumcheckProver::new(
+			// 	EvaluationOrder::HighToLow,
+			// 	multilins,
+			// 	desc.composite_sums.iter().cloned(),
+			// 	&domain_factory,
+			// 	immediate_switchover_heuristic,
+			// 	backend,
+			// )
+
+			let claim = SumcheckClaim::new(
+				_n_vars,
+				multilins.len(),
+				desc.composite_sums.iter().cloned().collect(),
+			)?;
+
+			// let f_vecs = multilins.iter().map(|multilin|{
+			// 	P::unpack_scalars(multilin.packed_evals().unwrap())
+			// }).collect();
+
+			let fslices_mut = multilins
+				.iter()
+				.map(|_| dev_alloc.alloc(1 << 20).unwrap())
+				.collect::<Vec<_>>();
+			let fslices_const = fslices_mut
+				.iter()
+				.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
+				.collect();
+
+			BivariateSumcheckProver::new(&hal, &dev_alloc, host_alloc, &claim, fslices_const)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
