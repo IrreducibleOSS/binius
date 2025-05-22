@@ -2,6 +2,7 @@
 
 use std::{env, marker::PhantomData};
 
+use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -66,7 +67,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
+	Tower: ProverTowerFamily + Default,
 	Tower::B128: PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
@@ -457,7 +458,12 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+
+	let hal = CpuLayer::<Tower>::default();
+	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
+	piop::prove::<_, _, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+		&hal,
+		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		&merkle_prover,
