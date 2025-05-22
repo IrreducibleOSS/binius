@@ -143,7 +143,7 @@ jobs:
   #
   publish_to_gh_pages:
     name: Publish Results to Github Page
-    if: ${{ always() && github.ref_name == 'main' && needs.prepare.outputs.publish_results == 'true' }}
+    if: ${{ github.ref_name == 'main' && needs.prepare.outputs.publish_results == 'true' }}
     permissions:
       contents: write
     needs: [ prepare, publish_to_bencher ]
@@ -162,3 +162,76 @@ jobs:
           build_dir: ./
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  #
+  # Upload perfetto traces to s3
+  #
+  upload_perfetto_traces:
+    name: Upload Perfetto Traces to S3
+    permissions:
+      contents: read # allow reading repository contents
+      checks: write  # allow creating/updating check runs
+      id-token: write # Required to get AWS credentials with OIDC
+    needs: [ benchmark, prepare ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Prefetto Traces
+        uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: benchmark_results  # directory for artifacts
+      - name: List results
+        run: ls -lah benchmark_results/*
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+            aws-region: us-west-2
+            role-to-assume: ${{ secrets.AWS_UPLOAD_ROLE }}
+      - name: Upload Perfetto Traces
+        run: |
+          python3 - <<'EOF'
+          import os, glob, subprocess, urllib.parse, datetime
+
+          perfetto_host = "https://perfetto.irreducible.com"
+          s3_bucket     = "${{ secrets.PERFETTO_BUCKET }}"
+          repo          = "${{ github.repository }}".split("/",1)[1]
+          branch        = "${{ github.ref_name }}".replace("/", "-")
+          sha           = "${{ github.sha }}"[:7]
+          run_dir       = f"{datetime.datetime.now(datetime.UTC):%Y-%m-%d_%H-%M-%S}-{sha}"
+          summary_path  = os.environ["GITHUB_STEP_SUMMARY"]
+
+          traces_by_benchmark = {}
+
+          # find & upload
+          for fp in sorted(glob.glob("benchmark_results/**/*.perfetto-trace", recursive=True)):
+              fn = os.path.basename(fp)
+              machine = os.path.basename(os.path.dirname(fp)).removeprefix("results-")
+              parts = fn.split("-", 4)
+              bm, mode, _, run_id, _ = parts
+              thread = mode + "-thread"
+
+              s3_key = f"traces/{repo}/{branch}/{bm}/{thread}/{machine}/{run_dir}/{machine}-{fn}"
+              subprocess.run(["aws", "s3", "cp", fp, f"{s3_bucket}/{s3_key}"], check=True)
+
+              trace_url       = f"{perfetto_host}/{s3_key}"
+              perfetto_ui_url = f"{perfetto_host}/#!/?url={urllib.parse.quote_plus(trace_url)}"
+
+              traces_by_benchmark.setdefault(bm, {}).setdefault(f"{bm} ({thread}) on {machine}", []).append(
+                f"<a href='{perfetto_ui_url}' target='_blank'>#{run_id}</a>"
+              )
+
+          # Write Summary to GitHub
+          with open(summary_path, "a") as summary:
+            summary.write("## 📊 Perfetto Traces\n")
+            for bm, traces_by_group in traces_by_benchmark.items():
+              summary.write(f"<details><summary>{bm}</summary>\n<ul>\n")
+              for group_name, traces in traces_by_group.items():
+                summary.write(f"<li>{group_name} ")
+                summary.write(", ".join(traces))
+                summary.write("</li>\n")
+              summary.write("</ul>\n</details>\n")
+          EOF
