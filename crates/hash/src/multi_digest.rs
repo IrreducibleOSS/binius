@@ -5,7 +5,6 @@ use std::{array, mem::MaybeUninit};
 use binius_field::TowerField;
 use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
-	prelude::IntoParallelRefIterator,
 	slice::ParallelSliceMut,
 };
 use binius_utils::{SerializationMode, SerializeBytes};
@@ -186,7 +185,7 @@ impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDiges
 	}
 
 	fn update(&mut self, data: [&[u8]; N]) {
-		self.0.par_iter_mut().enumerate().for_each(|(i, hasher)| {
+		self.0.iter_mut().enumerate().for_each(|(i, hasher)| {
 			hasher.update(data[i]);
 		});
 	}
@@ -194,8 +193,8 @@ impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDiges
 	fn finalize_into(self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
 		let mut out_each_mut = out.each_mut();
 		self.0
-			.par_iter()
-			.zip(out_each_mut.par_iter_mut())
+			.iter()
+			.zip(out_each_mut.iter_mut())
 			.for_each(|(hasher, out_buffer)| {
 				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
 				hasher.clone().finalize_into(assumed_init_buffer);
@@ -205,8 +204,8 @@ impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDiges
 	fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
 		let mut out_each_mut = out.each_mut();
 		self.0
-			.par_iter_mut()
-			.zip(out_each_mut.par_iter_mut())
+			.iter_mut()
+			.zip(out_each_mut.iter_mut())
 			.for_each(|(hasher, out_buffer)| {
 				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
 				hasher.clone().finalize_into(assumed_init_buffer);
@@ -215,7 +214,7 @@ impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDiges
 	}
 
 	fn reset(&mut self) {
-		self.0.par_iter_mut().for_each(|hasher| {
+		self.0.iter_mut().for_each(|hasher| {
 			Digest::reset(hasher);
 		});
 	}
@@ -232,7 +231,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Update, consts::U32};
+	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::U32};
 	use itertools::izip;
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
@@ -254,6 +253,12 @@ mod tests {
 		}
 	}
 
+	impl Reset for MockDigest {
+		fn reset(&mut self) {
+			self.state = 0;
+		}
+	}
+
 	impl OutputSizeUser for MockDigest {
 		type OutputSize = U32;
 	}
@@ -267,53 +272,7 @@ mod tests {
 		}
 	}
 
-	#[derive(Clone, Default)]
-	struct MockMultiDigest {
-		digests: [MockDigest; 4],
-	}
-
-	impl MultiDigest<4> for MockMultiDigest {
-		type Digest = MockDigest;
-
-		fn new() -> Self {
-			Self::default()
-		}
-
-		fn update(&mut self, data: [&[u8]; 4]) {
-			for (digest, &chunk) in self.digests.iter_mut().zip(data.iter()) {
-				digest::Digest::update(digest, chunk);
-			}
-		}
-
-		fn finalize_into(self, out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
-			for (digest, out) in self.digests.into_iter().zip(out.iter_mut()) {
-				let mut output = digest::Output::<Self::Digest>::default();
-				digest::Digest::finalize_into(digest, &mut output);
-				*out = MaybeUninit::new(output);
-			}
-		}
-
-		fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
-			for (digest, out) in self.digests.iter_mut().zip(out.iter_mut()) {
-				let mut digest_copy = MockDigest::default();
-				std::mem::swap(digest, &mut digest_copy);
-				*out = MaybeUninit::new(digest_copy.finalize());
-			}
-			self.reset();
-		}
-
-		fn reset(&mut self) {
-			for digest in &mut self.digests {
-				*digest = MockDigest::default();
-			}
-		}
-
-		fn digest(data: [&[u8]; 4], out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
-			let mut hasher = Self::default();
-			hasher.update(data);
-			hasher.finalize_into(out);
-		}
-	}
+	type MockMultiDigest = MultipleDigests<MockDigest, 4>;
 
 	struct DataWrapper(Vec<u8>);
 
