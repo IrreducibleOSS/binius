@@ -10,98 +10,58 @@ use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy,
-		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
+		portable::packed::packed_binary_field_macros::*,
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
 };
+#[cfg(all(
+	target_arch = "x86_64",
+	target_feature = "sse2",
+	target_feature = "gfni",
+	feature = "nightly_features"
+))]
+use crate::{PackedBinaryField4x32b, PackedBinaryField8x16b, PackedBinaryField16x8b};
 
-// Define 32 bit packed field types
-pub type PackedBinaryField32x1b = PackedPrimitiveType<u32, BinaryField1b>;
-pub type PackedBinaryField16x2b = PackedPrimitiveType<u32, BinaryField2b>;
-pub type PackedBinaryField8x4b = PackedPrimitiveType<u32, BinaryField4b>;
-pub type PackedBinaryField4x8b = PackedPrimitiveType<u32, BinaryField8b>;
-pub type PackedBinaryField2x16b = PackedPrimitiveType<u32, BinaryField16b>;
-pub type PackedBinaryField1x32b = PackedPrimitiveType<u32, BinaryField32b>;
+define_all_packed_binary_fields!(
+	PackedBinaryField32x1b,
+		BinaryField1b, u32, 0,
+		(None), (None), (None), (None),
+		(PackedStrategy);
 
-// Define (de)serialize
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x1b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x2b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x4b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x8b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x16b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x32b);
+	PackedBinaryField16x2b,
+		BinaryField2b, u32, 1,
+		(PackedStrategy), (PackedStrategy), (PairwiseRecursiveStrategy), (PackedStrategy),
+		(PackedStrategy);
 
-// Define broadcast
-impl_broadcast!(u32, BinaryField1b);
-impl_broadcast!(u32, BinaryField2b);
-impl_broadcast!(u32, BinaryField4b);
-impl_broadcast!(u32, BinaryField8b);
-impl_broadcast!(u32, BinaryField16b);
-impl_broadcast!(u32, BinaryField32b);
+	PackedBinaryField8x4b,
+		BinaryField4b, u32, 2,
+		(PackedStrategy), (PackedStrategy), (PairwiseRecursiveStrategy), (PackedStrategy),
+		(PackedStrategy);
 
-// Define operations for height 0
-impl_ops_for_zero_height!(PackedBinaryField32x1b);
+	PackedBinaryField4x8b,
+		BinaryField8b, u32, 3,
+		(CfgSwitchPortable, PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
+		(CfgSwitchPortable, PackedBinaryField16x8b, PackedStrategy),
+		(CfgSwitchPortable, PackedBinaryField16x8b, PairwiseStrategy),
+		(PackedStrategy),
+		(PackedStrategy);
 
-// Define constants
-impl_tower_constants!(BinaryField1b, u32, { alphas!(u32, 0) });
-impl_tower_constants!(BinaryField2b, u32, { alphas!(u32, 1) });
-impl_tower_constants!(BinaryField4b, u32, { alphas!(u32, 2) });
-impl_tower_constants!(BinaryField8b, u32, { alphas!(u32, 3) });
-impl_tower_constants!(BinaryField16b, u32, { alphas!(u32, 4) });
+	PackedBinaryField2x16b,
+		BinaryField16b, u32, 4,
+		(CfgSwitchPortable, PackedBinaryField8x16b, crate::arch::HybridRecursiveStrategy),
+		(CfgSwitchPortable, PackedBinaryField8x16b, PackedStrategy),
+		(CfgSwitchPortable, PackedBinaryField8x16b, PackedStrategy),
+		(PackedStrategy),
+		(PackedStrategy);
 
-// Define multiplication
-impl_mul_with!(PackedBinaryField16x2b @ PackedStrategy);
-impl_mul_with!(PackedBinaryField8x4b @ PackedStrategy);
-cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
-		impl_mul_with!(PackedBinaryField4x8b => crate::PackedBinaryField16x8b);
-		impl_mul_with!(PackedBinaryField2x16b => crate::PackedBinaryField8x16b);
-		impl_mul_with!(PackedBinaryField1x32b => crate::PackedBinaryField4x32b);
-	} else {
-		use crate::arch::{HybridRecursiveStrategy, PairwiseTableStrategy};
-
-		impl_mul_with!(PackedBinaryField4x8b @ PairwiseTableStrategy);
-		impl_mul_with!(PackedBinaryField2x16b @ HybridRecursiveStrategy);
-		impl_mul_with!(PackedBinaryField1x32b @ HybridRecursiveStrategy);
-	}
-}
-
-// Define square
-impl_square_with!(PackedBinaryField16x2b @ PackedStrategy);
-impl_square_with!(PackedBinaryField8x4b @ PackedStrategy);
-impl_square_with!(PackedBinaryField4x8b @ PackedStrategy);
-impl_square_with!(PackedBinaryField2x16b @ PackedStrategy);
-impl_square_with!(PackedBinaryField1x32b @ PairwiseRecursiveStrategy);
-
-// Define invert
-impl_invert_with!(PackedBinaryField16x2b @ PairwiseRecursiveStrategy);
-impl_invert_with!(PackedBinaryField8x4b @ PairwiseRecursiveStrategy);
-cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
-		impl_invert_with!(PackedBinaryField4x8b => crate::PackedBinaryField16x8b);
-		impl_invert_with!(PackedBinaryField2x16b => crate::PackedBinaryField8x16b);
-		impl_invert_with!(PackedBinaryField1x32b => crate::PackedBinaryField4x32b);
-	} else {
-		impl_invert_with!(PackedBinaryField4x8b @ PairwiseTableStrategy);
-		impl_invert_with!(PackedBinaryField2x16b @ PackedStrategy);
-		impl_invert_with!(PackedBinaryField1x32b @ PackedStrategy);
-	}
-}
-
-// Define multiply by alpha
-impl_mul_alpha_with!(PackedBinaryField16x2b @ PackedStrategy);
-impl_mul_alpha_with!(PackedBinaryField8x4b @ PackedStrategy);
-impl_mul_alpha_with!(PackedBinaryField4x8b @ PackedStrategy);
-impl_mul_alpha_with!(PackedBinaryField2x16b @ PackedStrategy);
-impl_mul_alpha_with!(PackedBinaryField1x32b @ PairwiseRecursiveStrategy);
-
-// Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryField32x1b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField16x2b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField8x4b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField4x8b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField2x16b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField1x32b, PairwiseStrategy);
+	PackedBinaryField1x32b,
+		BinaryField32b, u32, _,
+		(CfgSwitchPortable, PackedBinaryField4x32b, crate::arch::HybridRecursiveStrategy),
+		(CfgSwitchPortable, PackedBinaryField4x32b, PairwiseRecursiveStrategy),
+		(CfgSwitchPortable, PackedBinaryField4x32b, PackedStrategy),
+		(PairwiseRecursiveStrategy),
+		(PairwiseStrategy);
+);
