@@ -155,7 +155,7 @@ where
 		),
 		ComputeLayerType::Cpu => {
 			let compute_layer = CpuLayer::<T>::default();
-			let mut slice = zeroed_vec(1 << 15);
+			let mut slice = zeroed_vec(1 << 16);
 			let mut allocator = BumpAllocator::new(&mut slice[..]);
 
 			prove_compute_layer(
@@ -366,12 +366,20 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -404,12 +412,20 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]

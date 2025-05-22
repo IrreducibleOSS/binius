@@ -460,6 +460,47 @@ macro_rules! impl_ops_for_zero_height {
 
 pub(crate) use impl_ops_for_zero_height;
 
+macro_rules! impl_serialize_deserialize_for_packed_binary_field {
+	($bin_type:ty) => {
+		macro_rules! assert_scalar_matches_canonical {
+			() => {
+				use std::any::TypeId;
+				type PackedFieldScalar = <$bin_type as crate::PackedField>::Scalar;
+				debug_assert_eq!(
+					TypeId::of::<PackedFieldScalar>(),
+					TypeId::of::<<PackedFieldScalar as crate::TowerField>::Canonical>()
+				);
+			};
+		}
+
+		impl binius_utils::SerializeBytes for $bin_type {
+			fn serialize(
+				&self,
+				write_buf: impl binius_utils::bytes::BufMut,
+				mode: binius_utils::SerializationMode,
+			) -> Result<(), binius_utils::SerializationError> {
+				assert_scalar_matches_canonical!();
+				self.0.serialize(write_buf, mode)
+			}
+		}
+
+		impl binius_utils::DeserializeBytes for $bin_type {
+			fn deserialize(
+				read_buf: impl binius_utils::bytes::Buf,
+				mode: binius_utils::SerializationMode,
+			) -> Result<Self, binius_utils::SerializationError> {
+				assert_scalar_matches_canonical!();
+				Ok(Self(
+					binius_utils::DeserializeBytes::deserialize(read_buf, mode)?,
+					std::marker::PhantomData,
+				))
+			}
+		}
+	};
+}
+
+pub(crate) use impl_serialize_deserialize_for_packed_binary_field;
+
 /// Multiply `PT1` values by upcasting to wider `PT2` type with the same scalar.
 /// This is useful for the cases when SIMD multiplication is faster.
 #[allow(dead_code)]

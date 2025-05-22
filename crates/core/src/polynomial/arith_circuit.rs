@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
+use std::{mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithCircuit, ArithCircuitStep, CompositionPoly, Error, RowsBatchRef};
@@ -8,7 +8,6 @@ use binius_utils::{
 	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail,
 	mem::{slice_assume_init_mut, slice_assume_init_ref},
 };
-use stackalloc::stackalloc_uninit;
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn convert_circuit_steps<F: Field>(
@@ -306,8 +305,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			}
 		}
 
-		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
-		stackalloc_uninit::<P, _, _>(self.steps.len().max(1), |evals| {
+		alloc_scratch_space::<P, _, _>(self.steps.len(), |evals| {
 			let get_argument_value = |input: CircuitStepArgument<F>, evals: &[P]| match input {
 				// Safety: The index is guaranteed to be within bounds by the construction of the
 				// circuit
@@ -350,7 +348,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 				};
 			}
 
-			// Some slots in `evals` might be empty, but we're guaranted that
+			// Some slots in `evals` might be empty, but we're guaranteed that
 			// if `self.retval` points to a slot, that this slot is initialized.
 			unsafe {
 				let evals = slice_assume_init_ref(evals);
@@ -375,8 +373,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 			});
 		}
 
-		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
-		stackalloc_uninit::<P, (), _>((self.steps.len() * row_len).max(1), |sparse_evals| {
+		alloc_scratch_space::<P, (), _>(self.steps.len() * row_len, |sparse_evals| {
 			for (i, expr) in self.steps.iter().enumerate() {
 				let (before, current) = sparse_evals.split_at_mut(i * row_len);
 
@@ -437,12 +434,12 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 						}
 					}
 					CircuitStep::AddMul(target, left, right) => {
-						let target = &before[row_len * target..(target + 1) * row_len];
+						let target = &mut before[row_len * target..(target + 1) * row_len];
 						// Safety: by construction of steps and evaluation order we know
 						// that `target` is not borrowed elsewhere.
 						let target: &mut [MaybeUninit<P>] = unsafe {
 							std::slice::from_raw_parts_mut(
-								target.as_ptr() as *mut MaybeUninit<P>,
+								target.as_mut_ptr() as *mut MaybeUninit<P>,
 								target.len(),
 							)
 						};
@@ -541,6 +538,29 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 				}
 			}
 		}
+	}
+}
+
+fn alloc_scratch_space<T, U, F>(size: usize, callback: F) -> U
+where
+	F: FnOnce(&mut [MaybeUninit<T>]) -> U,
+{
+	use std::mem;
+	// We don't want to deal with running destructors.
+	assert!(!mem::needs_drop::<T>());
+
+	#[cfg(miri)]
+	{
+		let mut scratch_space = Vec::<T>::with_capacity(size);
+		let out = callback(scratch_space.spare_capacity_mut());
+		drop(scratch_space);
+		out
+	}
+	#[cfg(not(miri))]
+	{
+		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
+		let size = size.max(1);
+		stackalloc::stackalloc_uninit(size, callback)
 	}
 }
 
@@ -789,6 +809,32 @@ mod tests {
 		CompositionPoly::batch_evaluate(&circuit, &batch_query.get_ref(), &mut batch_result)
 			.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
+	}
+
+	#[test]
+	fn batch_evaluate_add_mul() {
+		// This test is focused on exposing the the currently present stacked borrows violation. It
+		// passes but still triggers `miri`.
+
+		type F = BinaryField8b;
+		type P = PackedBinaryField8x16b;
+
+		let expr = (ArithExpr::<F>::Var(0) * ArithExpr::Var(0))
+			+ (ArithExpr::Const(F::ONE) - ArithExpr::Var(0)) * ArithExpr::Var(0)
+			- ArithExpr::Var(0);
+		let circuit = ArithCircuitPoly::<F>::new(expr.into());
+
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), 0);
+		assert_eq!(typed_circuit.degree(), 2);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
+		let mut evals = [P::default(); 1];
+		let batch_query = [[P::broadcast(F::new(1).into())]; 1];
+		let batch_query = RowsBatch::new_from_iter(batch_query.iter().map(|x| x.as_slice()), 1);
+		typed_circuit
+			.batch_evaluate(&batch_query.get_ref(), &mut evals)
+			.unwrap();
 	}
 
 	#[test]

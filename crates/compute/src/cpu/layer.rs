@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use binius_field::{
 	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
@@ -136,16 +136,16 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn inner_product<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		a_edeg: usize,
-		a_in: &'a [T::B128],
+		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		b_in: &'a [T::B128],
 	) -> Result<T::B128, Error> {
-		if a_edeg > T::B128::TOWER_LEVEL
-			|| a_in.len() << (T::B128::TOWER_LEVEL - a_edeg) != b_in.len()
+		if a_in.tower_level > T::B128::TOWER_LEVEL
+			|| a_in.slice.len() << (T::B128::TOWER_LEVEL - a_in.tower_level) != b_in.len()
 		{
 			return Err(Error::InputValidation(format!(
-				"invalid input: a_edeg={a_edeg} |a|={} |b|={}",
-				a_in.len(),
+				"invalid input: a_edeg={} |a|={} |b|={}",
+				a_in.tower_level,
+				a_in.slice.len(),
 				b_in.len()
 			)));
 		}
@@ -162,7 +162,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			)
 		}
 
-		let result = each_tower_subfield!(a_edeg, T, inner_product::<_, T::B128>(a_in, b_in));
+		let result = each_tower_subfield!(
+			a_in.tower_level,
+			T,
+			inner_product::<_, T::B128>(a_in.slice, b_in)
+		);
 		Ok(result)
 	}
 
@@ -254,7 +258,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		let ret = (0..1 << log_len)
 			.map(|i| {
 				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
-				composition.evaluate(&row).expect("Evalutation to succeed")
+				composition.evaluate(&row).expect("Evaluation to succeed")
 			})
 			.sum::<T::B128>();
 		*accumulator += ret * batch_coeff;
@@ -372,6 +376,24 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 		Ok(())
 	}
+
+	fn extrapolate_line(
+		&self,
+		_exec: &mut Self::Exec,
+		evals_0: &mut &mut [T::B128],
+		evals_1: &[T::B128],
+		z: T::B128,
+	) -> Result<(), Error> {
+		if evals_0.len() != evals_1.len() {
+			return Err(Error::InputValidation(
+				"evals_0 and evals_1 must be the same length".into(),
+			));
+		}
+		for (x0, x1) in iter::zip(&mut **evals_0, evals_1) {
+			*x0 += (*x1 - *x0) * z
+		}
+		Ok(())
+	}
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in
@@ -432,7 +454,7 @@ impl<T: TowerFamily> CpuLayer<T> {
 
 /// Compute the left fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
@@ -489,7 +511,7 @@ where
 
 /// Compute the right fold operation.
 ///
-/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-producted
+/// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
 fn compute_right_fold<EvalType: TowerField, T: TowerFamily>(

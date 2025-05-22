@@ -1,15 +1,19 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{iter::repeat_with, mem::MaybeUninit};
+use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
+	FSliceMut,
 	alloc::{BumpAllocator, ComputeAllocator},
+	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
 };
 use binius_core::protocols::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_math::{ArithExpr, MultilinearExtension, MultilinearQuery, tensor_prod_eq_ind};
+use binius_math::{
+	ArithExpr, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar, tensor_prod_eq_ind,
+};
 use binius_utils::checked_arithmetics::checked_log_2;
 use rand::{SeedableRng, prelude::StdRng};
 
@@ -59,7 +63,7 @@ pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 
 pub fn test_generic_single_inner_product<
 	F2: TowerField,
-	F: Field + PackedExtension<F2> + ExtensionField<F2>,
+	F: TowerField + PackedExtension<F2> + ExtensionField<F2>,
 	C: ComputeLayer<F>,
 >(
 	compute: C,
@@ -69,7 +73,7 @@ pub fn test_generic_single_inner_product<
 	let mut rng = StdRng::seed_from_u64(0);
 
 	// Allocate buffers a and b to be device mapped
-	let mut a_buffer = compute.host_alloc(1 << (n_vars - F::LOG_DEGREE));
+	let mut a_buffer = compute.host_alloc(1 << (n_vars - <F as ExtensionField<F2>>::LOG_DEGREE));
 	let a_buffer = a_buffer.as_mut();
 	for x_i in a_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
@@ -93,8 +97,9 @@ pub fn test_generic_single_inner_product<
 	let b_slice = C::DevMem::as_const(&b_slice);
 
 	// Run the HAL operation to compute the inner product
+	let a_subslice = SubfieldSlice::new(a_slice, F2::TOWER_LEVEL);
 	let actual = compute
-		.execute(|exec| Ok(vec![compute.inner_product(exec, F2::TOWER_LEVEL, a_slice, b_slice)?]))
+		.execute(|exec| Ok(vec![compute.inner_product(exec, a_subslice, b_slice)?]))
 		.unwrap()
 		.remove(0);
 
@@ -108,7 +113,7 @@ pub fn test_generic_single_inner_product<
 pub fn test_generic_multiple_multilinear_evaluations<
 	F1: TowerField,
 	F2: TowerField,
-	F: Field
+	F: TowerField
 		+ PackedField<Scalar = F>
 		+ PackedExtension<F1>
 		+ ExtensionField<F1>
@@ -175,8 +180,20 @@ pub fn test_generic_multiple_multilinear_evaluations<
 			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
 			let (eval1, eval2) = compute.join(
 				exec,
-				|exec| compute.inner_product(exec, F1::TOWER_LEVEL, mle1_slice, eq_ind),
-				|exec| compute.inner_product(exec, F2::TOWER_LEVEL, mle2_slice, eq_ind),
+				|exec| {
+					compute.inner_product(
+						exec,
+						SubfieldSlice::new(mle1_slice, F1::TOWER_LEVEL),
+						eq_ind,
+					)
+				},
+				|exec| {
+					compute.inner_product(
+						exec,
+						SubfieldSlice::new(mle2_slice, F2::TOWER_LEVEL),
+						eq_ind,
+					)
+				},
 			)?;
 			Ok(vec![eval1, eval2])
 		})
@@ -613,4 +630,45 @@ pub fn test_generic_single_right_fold<
 	.unwrap();
 	assert_eq!(out.len(), expected_out.len());
 	assert_eq!(out, expected_out);
+}
+
+pub fn test_extrapolate_line<'a, F: Field, Hal: ComputeLayer<F>>(
+	hal: &Hal,
+	dev_mem: FSliceMut<'a, F, Hal>,
+	log_len: usize,
+) {
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let mut host_mem = hal.host_alloc(3 * (1 << log_len));
+	let host_alloc = BumpAllocator::<F, CpuMemory>::new(host_mem.as_mut());
+
+	let evals_0_host = host_alloc.alloc(1 << log_len).unwrap();
+	let evals_1_host = host_alloc.alloc(1 << log_len).unwrap();
+	let result_host = host_alloc.alloc(1 << log_len).unwrap();
+
+	evals_0_host.fill_with(|| F::random(&mut rng));
+	evals_1_host.fill_with(|| F::random(&mut rng));
+
+	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
+	let mut evals_0_dev = dev_alloc.alloc(1 << log_len).unwrap();
+	let mut evals_1_dev = dev_alloc.alloc(1 << log_len).unwrap();
+	hal.copy_h2d(evals_0_host, &mut evals_0_dev).unwrap();
+	hal.copy_h2d(evals_1_host, &mut evals_1_dev).unwrap();
+
+	let z = F::random(&mut rng);
+
+	let _ = hal
+		.execute(|exec| {
+			hal.extrapolate_line(exec, &mut evals_0_dev, Hal::DevMem::as_const(&evals_1_dev), z)?;
+			Ok(Vec::new())
+		})
+		.unwrap();
+
+	hal.copy_d2h(Hal::DevMem::as_const(&evals_0_dev), result_host)
+		.unwrap();
+
+	let expected_result = iter::zip(evals_0_host, evals_1_host)
+		.map(|(x0, x1)| extrapolate_line_scalar(*x0, *x1, z))
+		.collect::<Vec<_>>();
+	assert_eq!(result_host, &expected_result);
 }

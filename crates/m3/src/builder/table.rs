@@ -205,7 +205,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		let expr_circuit = ArithCircuit::from(expr.expr());
-		// Indicies within the partition.
+		// Indices within the partition.
 		let indices_within_partition = expr_circuit
 			.vars_usage()
 			.iter()
@@ -226,7 +226,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		let remapped_expr = expr_circuit
 			.convert_field()
 			.remap_vars(&var_remapping)
-			.expect("var_remapping should be large enought");
+			.expect("var_remapping should be large enough");
 
 		self.table.new_column(
 			self.namespaced_name(name),

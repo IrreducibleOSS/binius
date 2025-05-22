@@ -450,7 +450,7 @@ type CompositionsAndSums<F, Composition> = (Vec<(Composition, ConstEvalSuffix<F>
 //  * sort multilinears by non-increasing const suffix length
 //  * processing multilinears in this order, symbolically substitute suffix eval for the current
 //    variable and optimize
-//  * if the remaning expressions at finite points and Karatsuba infinity are constant, assume this
+//  * if the remaining expressions at finite points and Karatsuba infinity are constant, assume this
 //    suffix
 fn determine_const_eval_suffixes<F, P, Composition>(
 	composite_claims: Vec<CompositeSumClaim<F, Composition>>,

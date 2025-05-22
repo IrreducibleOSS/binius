@@ -529,7 +529,7 @@ mod tests {
 	use crate::fiat_shamir::HasherChallenger;
 
 	#[test]
-	fn test_transcripting() {
+	fn test_transcript_interactions() {
 		let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let mut writable = prover_transcript.message();
 
@@ -591,7 +591,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_advicing() {
+	fn test_advising() {
 		let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let mut advice_writer = prover_transcript.decommitment();
 

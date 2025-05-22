@@ -440,7 +440,7 @@ pub fn prove_compute_layer<'a, U, Tower, Hash, Compress, Challenger_, Backend, C
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
 	cl: &'a CL,
-	allocator: &mut impl ComputeAllocator<'a, Tower::B128, CL::DevMem>,
+	allocator: &mut impl ComputeAllocator<Tower::B128, CL::DevMem>,
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,

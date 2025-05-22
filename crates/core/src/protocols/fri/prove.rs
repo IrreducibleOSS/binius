@@ -598,7 +598,7 @@ where
 	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
-		allocator: &mut impl ComputeAllocator<'b, F, CL::DevMem>,
+		allocator: &'b impl ComputeAllocator<F, CL::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
@@ -658,7 +658,7 @@ where
 				unpack_if_possible(
 					self.codeword,
 					|scalars| self.cl.copy_h2d(scalars, &mut original_codeword),
-					|_packed| unimplemented!("non-dense packed fields not suported"),
+					|_packed| unimplemented!("non-dense packed fields not supported"),
 				)?;
 				let mut folded_codeword = allocator.alloc(
 					1 << (self.params.rs_code().log_len()

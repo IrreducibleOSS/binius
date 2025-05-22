@@ -6,6 +6,11 @@ use std::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+	bytes::{Buf, BufMut},
+	serialization::{assert_enough_data_for, assert_enough_space_for},
+};
 use bytemuck::{Pod, Zeroable, must_cast};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
@@ -125,6 +130,40 @@ impl<U: NumCast<u128>> NumCast<M512> for U {
 	fn num_cast_from(val: M512) -> Self {
 		let [low, _, _, _] = val.into();
 		Self::num_cast_from(low)
+	}
+}
+
+impl SerializeBytes for M512 {
+	fn serialize(
+		&self,
+		mut write_buf: impl BufMut,
+		_mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
+
+		let raw_values: [u128; 4] = (*self).into();
+
+		for &val in &raw_values {
+			write_buf.put_u128_le(val);
+		}
+
+		Ok(())
+	}
+}
+
+impl DeserializeBytes for M512 {
+	fn deserialize(
+		mut read_buf: impl Buf,
+		_mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		assert_enough_data_for(&read_buf, size_of::<Self>())?;
+
+		let raw_values = core::array::from_fn(|_| read_buf.get_u128_le());
+
+		Ok(Self::from(raw_values))
 	}
 }
 
@@ -355,7 +394,7 @@ impl std::fmt::Display for M512 {
 
 impl std::fmt::Debug for M512 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "M512({})", self)
+		write!(f, "M512({self})")
 	}
 }
 
@@ -696,7 +735,7 @@ impl UnderlierWithBitOps for M512 {
 			64 => as_array_mut::<_, u64, 8>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
-			128 => as_array_mut::<_, u128, 4>(self, |array| {
+			128 => as_array_mut::<_, u128, 4>(self, |array| unsafe {
 				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
@@ -1507,7 +1546,9 @@ impl_iteration!(M512,
 
 #[cfg(test)]
 mod tests {
+	use binius_utils::bytes::BytesMut;
 	use proptest::{arbitrary::any, proptest};
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::underlier::single_element_mask_bits;
@@ -1699,5 +1740,21 @@ mod tests {
 		assert_ne!(b, c);
 		assert_ne!(b, d);
 		assert_ne!(c, d);
+	}
+
+	#[test]
+	fn test_serialize_and_deserialize_m512() {
+		let mode = SerializationMode::Native;
+
+		let mut rng = StdRng::from_seed([0; 32]);
+
+		let original_value = M512::from(core::array::from_fn(|_| rng.r#gen::<u128>()));
+
+		let mut buf = BytesMut::new();
+		original_value.serialize(&mut buf, mode).unwrap();
+
+		let deserialized_value = M512::deserialize(buf.freeze(), mode).unwrap();
+
+		assert_eq!(original_value, deserialized_value);
 	}
 }

@@ -40,7 +40,7 @@ impl<'a, T> RowsBatch<'a, T> {
 }
 
 /// This struct is similar to `RowsBatch`, but it holds a reference to the slice of rows.
-/// Unfortunately due to liftime issues we can't have a single generic struct which is
+/// Unfortunately due to lifetime issues we can't have a single generic struct which is
 /// parameterized by a container type.
 pub struct RowsBatchRef<'a, T> {
 	rows: &'a [&'a [T]],
