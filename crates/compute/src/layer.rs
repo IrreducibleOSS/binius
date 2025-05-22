@@ -101,8 +101,8 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn map<Out, I: ExactSizeIterator>(
 		&self,
 		exec: &mut Self::Exec,
-		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
 		iter: I,
+		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
 	) -> Result<Vec<Out>, Error> {
 		iter.map(|item| map(exec, item)).collect()
 	}
