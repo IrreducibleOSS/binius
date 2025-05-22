@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_compute_test_utils::layer::{
-	test_generic_kernel_add, test_generic_single_inner_product,
+	test_generic_fri_fold, test_generic_kernel_add, test_generic_single_inner_product,
 	test_generic_single_inner_product_using_kernel_accumulator, test_generic_single_left_fold,
 	test_generic_single_right_fold, test_generic_single_tensor_expand,
 };
@@ -81,6 +81,44 @@ fn test_exec_single_inner_product_using_kernel_accumulator() {
 		compute,
 		PackedMemorySliceMut::new(&mut device_memory),
 		n_vars,
+	);
+}
+
+#[test]
+fn test_exec_fri_fold_non_zero_log_batch() {
+	type F = BinaryField128b;
+	type FSub = BinaryField16b;
+	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	let log_batch_size = 4;
+	let log_fold_challenges = 2;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
+	test_generic_fri_fold::<F, FSub, _>(
+		compute,
+		PackedMemorySliceMut::new(&mut device_memory),
+		log_len,
+		log_batch_size,
+		log_fold_challenges,
+	);
+}
+
+#[test]
+fn test_exec_fri_fold_zero_log_batch() {
+	type F = BinaryField128b;
+	type FSub = BinaryField16b;
+	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	let log_batch_size = 0;
+	let log_fold_challenges = 2;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
+	test_generic_fri_fold::<F, FSub, _>(
+		compute,
+		PackedMemorySliceMut::new(&mut device_memory),
+		log_len,
+		log_batch_size,
+		log_fold_challenges,
 	);
 }
 

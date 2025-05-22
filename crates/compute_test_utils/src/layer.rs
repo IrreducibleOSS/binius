@@ -9,7 +9,7 @@ use binius_compute::{
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
-use binius_core::protocols::fri::fold_interleaved;
+use binius_fast_compute::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{
 	ArithExpr, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar, tensor_prod_eq_ind,
