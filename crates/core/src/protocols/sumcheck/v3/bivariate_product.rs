@@ -3,8 +3,7 @@
 use std::{iter, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap,
-	SizedSlice,
+	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
