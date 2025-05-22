@@ -22,93 +22,113 @@ use crate::{
 	},
 };
 
-define_packed_binary_field!(
-	PackedBinaryField512x1b,
-		BinaryField1b, M512, 0,
-		(None), (None), (None), (None),
-		(SimdStrategy);
-
-	PackedBinaryField256x2b,
-		BinaryField2b, M512, 1,
-		(PackedStrategy), (PackedStrategy), (PackedStrategy), (PackedStrategy),
-		(SimdStrategy);
-
-	PackedBinaryField128x4b,
-		BinaryField4b, M512, 2,
-		(PackedStrategy), (PackedStrategy), (PackedStrategy), (PackedStrategy),
-		(SimdStrategy);
-
-	PackedBinaryField64x8b,
-		BinaryField8b, M512, 3,
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			crate::arch::PairwiseTableStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::ReuseMultiplyStrategy,
-			crate::arch::PairwiseTableStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::GfniStrategy,
-			crate::arch::PairwiseTableStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::ReuseMultiplyStrategy,
-			crate::arch::PairwiseTableStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::GfniStrategy,
-			SimdStrategy);
-
-	PackedBinaryField32x16b,
-		BinaryField16b, M512, 4,
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(SimdStrategy),
-		(CfgSwitchx86_64, 2, SimdStrategy);
-
-	PackedBinaryField16x32b,
-		BinaryField32b, M512, 5,
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(SimdStrategy),
-		(CfgSwitchx86_64, 4, SimdStrategy);
-
-	PackedBinaryField8x64b,
-		BinaryField64b, M512, 6,
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(SimdStrategy),
-		(CfgSwitchx86_64, 8, SimdStrategy);
-
-	PackedBinaryField4x128b,
-		BinaryField128b, M512, _,
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(CfgSwitchx86_64,
-			crate::arch::AESIsomorphicStrategy,
-			SimdStrategy),
-		(SimdStrategy),
-		(CfgSwitchx86_64, crate::arch::GfniSpecializedStrategy512b, SimdStrategy);
+define_all_packed_binary_fields!(
+    packed_field {
+        name: PackedBinaryField512x1b,
+        bits: BinaryField1b,
+        prim: M512,
+        alpha_idx: 0,
+        mul: (None),
+        square: (None),
+        invert: (None),
+        mul_alpha: (None),
+        transform: (SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField256x2b,
+        bits: BinaryField2b,
+        prim: M512,
+        alpha_idx: 1,
+        mul: (PackedStrategy),
+        square: (PackedStrategy),
+        invert: (PackedStrategy),
+        mul_alpha: (PackedStrategy),
+        transform: (SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField128x4b,
+        bits: BinaryField4b,
+        prim: M512,
+        alpha_idx: 2,
+        mul: (PackedStrategy),
+        square: (PackedStrategy),
+        invert: (PackedStrategy),
+        mul_alpha: (PackedStrategy),
+        transform: (SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField64x8b,
+        bits: BinaryField8b,
+        prim: M512,
+        alpha_idx: 3,
+        mul: (
+            CfgSwitchx86_64,
+            crate::arch::AESIsomorphicStrategy,
+            crate::arch::PairwiseTableStrategy
+        ),
+        square: (
+            CfgSwitchx86_64,
+            crate::arch::ReuseMultiplyStrategy,
+            crate::arch::PairwiseTableStrategy
+        ),
+        invert: (
+            CfgSwitchx86_64,
+            crate::arch::GfniStrategy,
+            crate::arch::PairwiseTableStrategy
+        ),
+        mul_alpha: (
+            CfgSwitchx86_64,
+            crate::arch::ReuseMultiplyStrategy,
+            crate::arch::PairwiseTableStrategy
+        ),
+        transform: (
+            CfgSwitchx86_64,
+            crate::arch::GfniStrategy,
+            SimdStrategy
+        ),
+    },
+    packed_field {
+        name: PackedBinaryField32x16b,
+        bits: BinaryField16b,
+        prim: M512,
+        alpha_idx: 4,
+        mul: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        square: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        invert: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (CfgSwitchx86_64, 2, SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField16x32b,
+        bits: BinaryField32b,
+        prim: M512,
+        alpha_idx: 5,
+        mul: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        square: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        invert: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (CfgSwitchx86_64, 4, SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField8x64b,
+        bits: BinaryField64b,
+        prim: M512,
+        alpha_idx: 6,
+        mul: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        square: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        invert: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (CfgSwitchx86_64, 8, SimdStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField4x128b,
+        bits: BinaryField128b,
+        prim: M512,
+        alpha_idx: _,
+        mul: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        square: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        invert: (CfgSwitchx86_64, crate::arch::AESIsomorphicStrategy, SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (CfgSwitchx86_64, crate::arch::GfniSpecializedStrategy512b, SimdStrategy),
+    }
 );

@@ -28,40 +28,83 @@ use crate::{
 };
 
 define_all_packed_binary_fields!(
-	PackedBinaryField128x1b,
-		BinaryField1b, M128, 0,
-		(None), (None), (None), (None),
-		(PackedStrategy);
-
-	PackedBinaryField64x2b,
-		BinaryField2b, M128, 1,
-		(SimdStrategy), (SimdStrategy), (SimdStrategy), (SimdStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField32x4b,
-		BinaryField4b, M128, 2,
-		(SimdStrategy), (SimdStrategy), (SimdStrategy), (SimdStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField8x16b,
-		BinaryField16b, M128, 4,
-		(SimdStrategy), (SimdStrategy), (SimdStrategy), (SimdStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField4x32b,
-		BinaryField32b, M128, 5,
-		(PackedStrategy), (PairwiseStrategy), (PairwiseStrategy), (SimdStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField2x64b,
-		BinaryField64b, M128, 6,
-		(PairwiseStrategy), (PairwiseStrategy), (PairwiseStrategy), (PairwiseStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField1x128b,
-		BinaryField128b, M128, _,
-		(PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy),
-		(PairwiseStrategy);
+    packed_field {
+        name: PackedBinaryField128x1b,
+        bits: BinaryField1b,
+        prim: M128,
+        alpha_idx: 0,
+        mul: (None),
+        square: (None),
+        invert: (None),
+        mul_alpha: (None),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField64x2b,
+        bits: BinaryField2b,
+        prim: M128,
+        alpha_idx: 1,
+        mul: (SimdStrategy),
+        square: (SimdStrategy),
+        invert: (SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField32x4b,
+        bits: BinaryField4b,
+        prim: M128,
+        alpha_idx: 2,
+        mul: (SimdStrategy),
+        square: (SimdStrategy),
+        invert: (SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField8x16b,
+        bits: BinaryField16b,
+        prim: M128,
+        alpha_idx: 4,
+        mul: (SimdStrategy),
+        square: (SimdStrategy),
+        invert: (SimdStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField4x32b,
+        bits: BinaryField32b,
+        prim: M128,
+        alpha_idx: 5,
+        mul: (PackedStrategy),
+        square: (PairwiseStrategy),
+        invert: (PairwiseStrategy),
+        mul_alpha: (SimdStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField2x64b,
+        bits: BinaryField64b,
+        prim: M128,
+        alpha_idx: 6,
+        mul: (PairwiseStrategy),
+        square: (PairwiseStrategy),
+        invert: (PairwiseStrategy),
+        mul_alpha: (PairwiseStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField1x128b,
+        bits: BinaryField128b,
+        prim: M128,
+        alpha_idx: _,
+        mul: (PairwiseRecursiveStrategy),
+        square: (PairwiseRecursiveStrategy),
+        invert: (PairwiseRecursiveStrategy),
+        mul_alpha: (PairwiseRecursiveStrategy),
+        transform: (PairwiseStrategy),
+    }
 );
 
 // PackedBinaryField16x8b is constructed separately

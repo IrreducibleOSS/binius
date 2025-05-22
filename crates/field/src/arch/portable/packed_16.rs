@@ -17,28 +17,59 @@ use crate::{
 };
 
 define_all_packed_binary_fields!(
-	PackedBinaryField16x1b,
-		BinaryField1b, u16, 0,
-		(None), (None), (None), (None),
-		(PackedStrategy);
-
-	PackedBinaryField8x2b,
-		BinaryField2b, u16, 1,
-		(PackedStrategy), (PackedStrategy), (PairwiseRecursiveStrategy), (PackedStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField4x4b,
-		BinaryField4b, u16, 2,
-		(PackedStrategy), (PackedStrategy), (PairwiseRecursiveStrategy), (PackedStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField2x8b,
-		BinaryField8b, u16, 3,
-		(PairwiseTableStrategy), (PackedStrategy), (PairwiseTableStrategy), (PackedStrategy),
-		(PackedStrategy);
-
-	PackedBinaryField1x16b,
-		BinaryField16b, u16, _,
-		(PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy), (PairwiseRecursiveStrategy),
-		(PairwiseStrategy);
+    packed_field {
+        name: PackedBinaryField16x1b,
+        bits: BinaryField1b,
+        prim: u16,
+        alpha_idx: 0,
+        mul: (None),
+        square: (None),
+        invert: (None),
+        mul_alpha: (None),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField8x2b,
+        bits: BinaryField2b,
+        prim: u16,
+        alpha_idx: 1,
+        mul: (PackedStrategy),
+        square: (PackedStrategy),
+        invert: (PairwiseRecursiveStrategy),
+        mul_alpha: (PackedStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField4x4b,
+        bits: BinaryField4b,
+        prim: u16,
+        alpha_idx: 2,
+        mul: (PackedStrategy),
+        square: (PackedStrategy),
+        invert: (PairwiseRecursiveStrategy),
+        mul_alpha: (PackedStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField2x8b,
+        bits: BinaryField8b,
+        prim: u16,
+        alpha_idx: 3,
+        mul: (PairwiseTableStrategy),
+        square: (PackedStrategy),
+        invert: (PairwiseTableStrategy),
+        mul_alpha: (PackedStrategy),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField1x16b,
+        bits: BinaryField16b,
+        prim: u16,
+        alpha_idx: _,
+        mul: (PairwiseRecursiveStrategy),
+        square: (PairwiseRecursiveStrategy),
+        invert: (PairwiseRecursiveStrategy),
+        mul_alpha: (PairwiseRecursiveStrategy),
+        transform: (PairwiseStrategy),
+    }
 );

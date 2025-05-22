@@ -463,22 +463,27 @@ pub(crate) use impl_ops_for_zero_height;
 pub(crate) mod packed_binary_field_macros {
 	macro_rules! define_all_packed_binary_fields {
 		($(
-			$name:ident, $bits:ident, $prim:ident, $alpha_idx:tt,
-			($($mul:tt)*),
-			($($square:tt)*),
-			($($invert:tt)*),
-			($($mul_alpha:tt)*),
-			($($transform:tt)*)
-		);* $(;)?) => {
+			packed_field {
+				name: $name:ident,
+				bits: $bits:ident,
+				prim: $prim:ident,
+				alpha_idx: $alpha_idx:tt,
+				mul: ($($mul:tt)*),
+				square: ($($square:tt)*),
+				invert: ($($invert:tt)*),
+				mul_alpha: ($($mul_alpha:tt)*),
+				transform: ($($transform:tt)*),
+			}
+		),* $(,)?) => {
 			$(
-				define_packed_binary_field! {
+				define_packed_binary_field!(
 					$name, $bits, $prim, $alpha_idx,
 					($($mul)*),
 					($($square)*),
 					($($invert)*),
 					($($mul_alpha)*),
 					($($transform)*)
-				}
+				);
 			)*
 		};
 	}

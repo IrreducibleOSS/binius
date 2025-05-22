@@ -19,15 +19,28 @@ use crate::{
 };
 
 define_all_packed_binary_fields!(
-	PackedBinaryField2x1b,
-		BinaryField1b, U2, _,
-		(None), (None), (None), (None),
-		(PackedStrategy);
-
-	PackedBinaryField1x2b,
-		BinaryField2b, U2, _,
-		(PairwiseTableStrategy), (ReuseMultiplyStrategy), (PairwiseTableStrategy), (ReuseMultiplyStrategy),
-		(PairwiseStrategy);
+    packed_field {
+        name: PackedBinaryField2x1b,
+        bits: BinaryField1b,
+        prim: U2,
+        alpha_idx: _,
+        mul: (None),
+        square: (None),
+        invert: (None),
+        mul_alpha: (None),
+        transform: (PackedStrategy),
+    },
+    packed_field {
+        name: PackedBinaryField1x2b,
+        bits: BinaryField2b,
+        prim: U2,
+        alpha_idx: _,
+        mul: (PairwiseTableStrategy),
+        square: (ReuseMultiplyStrategy),
+        invert: (PairwiseTableStrategy),
+        mul_alpha: (ReuseMultiplyStrategy),
+        transform: (PairwiseStrategy),
+    }
 );
 
 // Define operations for height 0
