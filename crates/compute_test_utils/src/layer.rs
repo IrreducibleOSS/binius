@@ -286,11 +286,9 @@ pub fn test_generic_map_with_multilinear_evaluations<
 			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
 
 			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
-			let res = compute.map(
-				exec,
-				|exec, iter_item| compute.inner_product(exec, F::TOWER_LEVEL, *iter_item, eq_ind),
-				[mle1_slice, mle2_slice].iter(),
-			)?;
+			let res = compute.map(exec, [mle1_slice, mle2_slice].iter(), |exec, iter_item| {
+				compute.inner_product(exec, SubfieldSlice::new(*iter_item, F::TOWER_LEVEL), eq_ind)
+			})?;
 			Ok(res)
 		})
 		.unwrap();
