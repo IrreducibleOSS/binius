@@ -32,6 +32,8 @@ pub struct TableStat {
 	per_tower_level: SparseIndex<PerTowerLevel>,
 	bits_per_row_committed: usize,
 	bits_per_row_virtual: usize,
+	total_flush_multiplicity: usize,
+	effective_log_capacity: Option<usize>,
 }
 
 impl TableStat {
@@ -52,7 +54,26 @@ impl TableStat {
 			per_tower_level: SparseIndex::new(),
 			bits_per_row_committed,
 			bits_per_row_virtual,
+			total_flush_multiplicity: 0,
+			effective_log_capacity: None,
 		};
+
+		let mut calculated_total_flush_multiplicity = 0;
+		for (_, partition) in table.partitions.iter() {
+			for flush in partition.flushes.iter() {
+				calculated_total_flush_multiplicity += flush.multiplicity as usize;
+			}
+		}
+		me.total_flush_multiplicity = calculated_total_flush_multiplicity;
+
+		match table.size_spec() {
+			super::table::TableSizeSpec::Fixed { log_size } => {
+				me.effective_log_capacity = Some(log_size);
+			}
+			_ => {
+				// Keep None for PowerOfTwo and Arbitrary
+			}
+		}
 
 		for (_, partition) in table.partitions.iter() {
 			let &TablePartition {
@@ -156,6 +177,25 @@ impl TableStat {
 	pub fn bits_per_row_virtual(&self) -> usize {
 		self.bits_per_row_virtual
 	}
+
+	/// Returns the total flush multiplicity of this table.
+	pub fn total_flush_multiplicity(&self) -> usize {
+		self.total_flush_multiplicity
+	}
+
+	/// Returns the effective log capacity of this table, if fixed.
+	pub fn effective_log_capacity(&self) -> Option<usize> {
+		self.effective_log_capacity
+	}
+
+	/// Returns the approximate cost of flush operations for this table.
+	///
+	/// This is calculated as `total_flush_multiplicity * table_size`.
+	/// Returns `None` if the table size is not fixed.
+	pub fn flush_cost_approx(&self) -> Option<usize> {
+		self.effective_log_capacity
+			.map(|log_cap| self.total_flush_multiplicity * (1 << log_cap))
+	}
 }
 
 impl fmt::Display for TableStat {
@@ -191,6 +231,141 @@ impl fmt::Display for TableStat {
 
 		let cost = self.assert_zero_cost_approx();
 		writeln!(f, "Total approximate assert_zero costs: {cost}")?;
+
+		writeln!(f, "* Total flush multiplicity: {}", self.total_flush_multiplicity())?;
+		match self.flush_cost_approx() {
+			Some(cost) => {
+				writeln!(f, "* Estimated total flush cost: {}", cost)?;
+			}
+			None => {
+				writeln!(
+					f,
+					"* Estimated total flush cost: N/A (table size not fixed; multiply total flush multiplicity by 2^log_capacity to estimate)"
+				)?;
+			}
+		}
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::builder::table::{Table, TableBuilder, TableSizeSpec};
+	use crate::builder::channel::FlushOpts;
+	use binius_core::constraint_system::channel::ChannelId;
+	use binius_field::B128; // Assuming B128 is a suitable field type
+
+	#[test]
+	fn test_no_flushes_fixed_size() {
+		let mut table = Table::<B128>::new(0, "test_no_flushes_fixed");
+		let mut tb = TableBuilder::new(&mut table);
+		tb.require_fixed_size(10);
+		// No flushes added
+
+		let stat = table.stat();
+
+		assert_eq!(stat.total_flush_multiplicity(), 0);
+		assert_eq!(stat.effective_log_capacity(), Some(10));
+		assert_eq!(stat.flush_cost_approx(), Some(0));
+
+		let display_output = format!("{}", stat);
+		assert!(display_output.contains("Total flush multiplicity: 0"));
+		assert!(display_output.contains("Estimated total flush cost: 0"));
+	}
+
+	#[test]
+	fn test_no_flushes_power_of_two_size() {
+		let mut table = Table::<B128>::new(0, "test_no_flushes_pot");
+		let mut tb = TableBuilder::new(&mut table);
+		tb.require_power_of_two_size();
+		// No flushes added
+
+		let stat = table.stat();
+
+		assert_eq!(stat.total_flush_multiplicity(), 0);
+		assert_eq!(stat.effective_log_capacity(), None);
+		assert_eq!(stat.flush_cost_approx(), None);
+
+		let display_output = format!("{}", stat);
+		assert!(display_output.contains("Total flush multiplicity: 0"));
+		assert!(display_output.contains("Estimated total flush cost: N/A (table size not fixed; multiply total flush multiplicity by 2^log_capacity to estimate)"));
+	}
+
+	#[test]
+	fn test_with_flushes_fixed_size() {
+		let mut table = Table::<B128>::new(0, "test_with_flushes_fixed");
+		let mut tb = TableBuilder::new(&mut table);
+		tb.require_fixed_size(8);
+
+		let col1 = tb.add_committed::<B128, 1>("col1");
+		let col2 = tb.add_committed::<B128, 1>("col2");
+        let col3 = tb.add_committed::<B128, 1>("col3");
+
+
+		// Flush 1: channel 0, one column, multiplicity = 2
+		tb.push_with_opts(
+			ChannelId::new(0),
+			vec![col1.into()],
+			FlushOpts { multiplicity: 2, ..Default::default() },
+		);
+
+		// Flush 2: channel 1, two columns, multiplicity = 1 (default)
+        tb.push_with_opts(
+            ChannelId::new(1),
+            vec![col2.into(), col3.into()],
+            Default::default(),
+        );
+
+
+		let stat = table.stat();
+		let expected_total_flush_multiplicity = 2 + 1; // col1 (mult 2) + col2,col3 (mult 1)
+		let expected_flush_cost_approx = expected_total_flush_multiplicity * (1 << 8); // 3 * 256 = 768
+
+		assert_eq!(stat.total_flush_multiplicity(), expected_total_flush_multiplicity);
+		assert_eq!(stat.effective_log_capacity(), Some(8));
+		assert_eq!(stat.flush_cost_approx(), Some(expected_flush_cost_approx));
+
+		let display_output = format!("{}", stat);
+		assert!(display_output.contains(&format!("Total flush multiplicity: {}", expected_total_flush_multiplicity)));
+		assert!(display_output.contains(&format!("Estimated total flush cost: {}", expected_flush_cost_approx)));
+	}
+
+	#[test]
+	fn test_with_flushes_arbitrary_size() {
+		let mut table = Table::<B128>::new(0, "test_with_flushes_arbitrary");
+		let mut tb = TableBuilder::new(&mut table);
+		// Default size spec is Arbitrary
+
+		let col1 = tb.add_committed::<B128, 1>("col1");
+		let col2 = tb.add_committed::<B128, 1>("col2");
+        let col3 = tb.add_committed::<B128, 1>("col3");
+        let col4 = tb.add_committed::<B128, 1>("col4");
+
+
+		// Flush 1: channel 0, two columns, multiplicity = 3
+        tb.push_with_opts(
+            ChannelId::new(0),
+            vec![col1.into(), col2.into()],
+            FlushOpts { multiplicity: 3, ..Default::default() },
+        );
+
+		// Flush 2: channel 1, two columns, multiplicity = 1 (default)
+        tb.push_with_opts(
+            ChannelId::new(1),
+            vec![col3.into(), col4.into()],
+            Default::default(),
+        );
+
+		let stat = table.stat();
+        let expected_total_flush_multiplicity = 3 + 1; // (col1,col2) mult 3 + (col3,col4) mult 1
+
+		assert_eq!(stat.total_flush_multiplicity(), expected_total_flush_multiplicity);
+		assert_eq!(stat.effective_log_capacity(), None);
+		assert_eq!(stat.flush_cost_approx(), None);
+
+		let display_output = format!("{}", stat);
+		assert!(display_output.contains(&format!("Total flush multiplicity: {}", expected_total_flush_multiplicity)));
+		assert!(display_output.contains("Estimated total flush cost: N/A (table size not fixed; multiply total flush multiplicity by 2^log_capacity to estimate)"));
 	}
 }
