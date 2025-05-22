@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, slice};
+use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
@@ -17,7 +17,7 @@ use binius_field::{
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
 };
-use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef, tensor_prod_eq_ind};
+use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef, fold_left, tensor_prod_eq_ind};
 use binius_maybe_rayon::{
 	iter::{
 		IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
@@ -26,7 +26,10 @@ use binius_maybe_rayon::{
 	slice::{ParallelSlice, ParallelSliceMut},
 };
 use binius_ntt::AdditiveNTT;
-use binius_utils::{checked_arithmetics::checked_int_div, rayon::get_log_max_threads};
+use binius_utils::{
+	checked_arithmetics::{checked_int_div, strict_log_2},
+	rayon::get_log_max_threads,
+};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 
@@ -262,11 +265,45 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	fn fold_left<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		_mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		_vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		_out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		unimplemented!()
+		let log_evals_size = strict_log_2(mat.subfield_len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		// Safety: `P` must not implement `Drop` to safely use `MaybeUninit` for uninitialized
+		// memory.
+		assert!(!std::mem::needs_drop::<P>(), "`P` must not implement Drop");
+		let out = unsafe {
+			slice::from_raw_parts_mut(out.data.as_ptr() as *mut MaybeUninit<P>, out.data.len())
+		};
+
+		fn fold_left_impl<FSub: Field, P: PackedExtension<FSub>>(
+			mat: &[P],
+			log_evals_size: usize,
+			vec: &[P],
+			log_query_size: usize,
+			out: &mut [MaybeUninit<P>],
+		) -> Result<(), Error> {
+			let mat = PackedExtension::cast_bases(mat);
+
+			fold_left(mat, log_evals_size, vec, log_query_size, out).map_err(|_| {
+				Error::InputValidation("the input data dimensions are wrong".to_string())
+			})
+		}
+
+		let result = each_tower_subfield!(
+			mat.tower_level,
+			T,
+			fold_left_impl::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out,)
+		);
+		result
+			.map_err(|_| Error::InputValidation("the input data dimensions are wrong".to_string()))
 	}
 
 	fn fold_right<'a>(
