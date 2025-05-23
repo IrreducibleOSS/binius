@@ -59,8 +59,7 @@ macro_rules! impl_transformation {
 	};
 }
 
-pub(crate) use maybe_impl_broadcast;
-pub(crate) use maybe_impl_tower_constants;
 pub(crate) use impl_strategy;
 pub(crate) use impl_transformation;
-
+pub(crate) use maybe_impl_broadcast;
+pub(crate) use maybe_impl_tower_constants;
