@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height},
+	packed::{PackedPrimitiveType},
 	packed_arithmetic::TowerConstants,
 	reuse_multiply_arithmetic::Alpha,
 };
@@ -9,7 +9,7 @@ use crate::{
 	BinaryField1b, BinaryField2b,
 	arch::{
 		PackedStrategy, PairwiseStrategy, PairwiseTableStrategy, ReuseMultiplyStrategy,
-		portable::packed::packed_binary_field_macros::*,
+		portable::packed_macros::*,
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
@@ -18,29 +18,29 @@ use crate::{
 	underlier::{U2, UnderlierType},
 };
 
-define_all_packed_binary_fields!(
-    packed_field {
-        name: PackedBinaryField2x1b,
-        bits: BinaryField1b,
-        prim: U2,
-        alpha_idx: _,
-        mul: (None),
-        square: (None),
-        invert: (None),
-        mul_alpha: (None),
-        transform: (PackedStrategy),
-    },
-    packed_field {
-        name: PackedBinaryField1x2b,
-        bits: BinaryField2b,
-        prim: U2,
-        alpha_idx: _,
-        mul: (PairwiseTableStrategy),
-        square: (ReuseMultiplyStrategy),
-        invert: (PairwiseTableStrategy),
-        mul_alpha: (ReuseMultiplyStrategy),
-        transform: (PairwiseStrategy),
-    }
+define_packed_binary_fields!(
+	packed_field {
+		name: PackedBinaryField2x1b,
+		scalar: BinaryField1b,
+		underlier: U2,
+		alpha_idx: _,
+		mul: (None),
+		square: (None),
+		invert: (None),
+		mul_alpha: (None),
+		transform: (PackedStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField1x2b,
+		scalar: BinaryField2b,
+		underlier: U2,
+		alpha_idx: _,
+		mul: (PairwiseTableStrategy),
+		square: (ReuseMultiplyStrategy),
+		invert: (PairwiseTableStrategy),
+		mul_alpha: (ReuseMultiplyStrategy),
+		transform: (PairwiseStrategy),
+	}
 );
 
 // Define operations for height 0

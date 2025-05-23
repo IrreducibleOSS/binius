@@ -1,11 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use super::packed::{PackedPrimitiveType, impl_broadcast, impl_ops_for_zero_height};
+use super::packed::{PackedPrimitiveType};
 use crate::{
 	BinaryField1b,
 	arch::{
 		PairwiseStrategy,
-		portable::packed::packed_binary_field_macros::impl_serialize_deserialize_for_packed_binary_field,
+		portable::packed_macros::{impl_broadcast, impl_ops_for_zero_height, assert_scalar_matches_canonical, impl_serialize_deserialize_for_packed_binary_field},
 	},
 	arithmetic_traits::impl_transformation_with_strategy,
 	underlier::U1,

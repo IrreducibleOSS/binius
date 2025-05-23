@@ -1,8 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{PackedPrimitiveType, impl_broadcast},
+	packed::PackedPrimitiveType,
 	packed_arithmetic::{alphas, impl_tower_constants},
+	packed_macros::impl_broadcast
 };
 use crate::{
 	aes_field::{

@@ -3,8 +3,9 @@
 use cfg_if::cfg_if;
 
 use super::{
-	packed::{PackedPrimitiveType, impl_broadcast},
+	packed::PackedPrimitiveType,
 	packed_arithmetic::{alphas, impl_tower_constants},
+	packed_macros::impl_broadcast
 };
 use crate::{
 	AESTowerField8b, AESTowerField16b, AESTowerField32b,
