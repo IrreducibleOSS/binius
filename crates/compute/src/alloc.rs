@@ -5,7 +5,7 @@ use std::cell::Cell;
 use super::memory::{ComputeMemory, SizedSlice};
 use crate::cpu::CpuMemory;
 
-pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
+pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
 	/// Allocates a slice of elements.
 	///
 	/// This method operates on an immutable self reference so that multiple allocator references
@@ -21,7 +21,7 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	///
 	/// This allows another allocator to have unique mutable access to the rest of the elements in
 	/// this allocator until it gets dropped, at which point this allocator can be used again
-	fn remaining(&mut self) -> Mem::FSliceMut<'_>;
+	fn remaining(&mut self) -> &mut Mem::FSliceMut<'a>;
 
 	/// Returns the remaining number of elements that can be allocated.
 	fn capacity(&self) -> usize;
@@ -31,7 +31,6 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 /// construction.
 pub struct BumpAllocator<'a, F, Mem: ComputeMemory<F>> {
 	buffer: Cell<Option<Mem::FSliceMut<'a>>>,
-	
 }
 
 impl<'a, F, Mem> BumpAllocator<'a, F, Mem>
@@ -53,7 +52,7 @@ where
 	}
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
+impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocator<'a, F, Mem> {
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error> {
 		let buffer = self
 			.buffer
@@ -72,12 +71,9 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 		}
 	}
 
-	fn remaining(&mut self) -> Mem::FSliceMut<'_> {
-		let buffer = self
-			.buffer
-			.take()
-			.expect("buffer is always Some by invariant");
-		Mem::narrow_mut(buffer)
+	fn remaining(&mut self) -> &mut Mem::FSliceMut<'a> {
+		let buffer = self.buffer.get_mut().as_mut().expect("");
+		buffer
 	}
 
 	fn capacity(&self) -> usize {
@@ -143,7 +139,6 @@ mod tests {
 
 			// let _ = bump.alloc(100);
 			println!("got here");
-
 		}
 		// Release memory all at once.
 
