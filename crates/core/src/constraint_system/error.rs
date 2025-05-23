@@ -41,10 +41,11 @@ pub enum Error {
 	},
 
 	#[error(
-		"{oracle} witness has unexpected n_vars={witness_num_vars}. Expected n_vars={oracle_num_vars}"
+		"{oracle} witness has unexpected n_vars={witness_num_vars}. Expected n_vars{condition}{oracle_num_vars}"
 	)]
 	VirtualOracleNvarsMismatch {
 		oracle: String,
+		condition: char,
 		oracle_num_vars: usize,
 		witness_num_vars: usize,
 	},

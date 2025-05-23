@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::mem;
+use std::{iter, mem};
 
 use binius_field::{Field, TowerField, util::inner_product_unchecked};
 use getset::{Getters, MutGetters};
@@ -155,6 +155,21 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		match multilinear.variant {
 			MultilinearPolyVariant::Transparent(inner) => {
 				let actual_eval = inner.poly().evaluate(&eval_point)?;
+				if actual_eval != eval {
+					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
+				}
+			}
+			MultilinearPolyVariant::Structured(inner) => {
+				// Here we need to extend the eval_point to the input domain of the arith circuit
+				// by assigning zeroes to the variables.
+				let eval_point: &[F] = &eval_point;
+				let n_pad_zeros = inner.n_vars() - eval_point.len();
+				let query = eval_point
+					.iter()
+					.copied()
+					.chain(iter::repeat_n(F::ZERO, n_pad_zeros))
+					.collect::<Vec<_>>();
+				let actual_eval = inner.evaluate(&query)?;
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
 				}

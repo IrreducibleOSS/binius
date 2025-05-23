@@ -500,7 +500,7 @@ where
 		let multilinear = self.oracles.oracle(id);
 
 		match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => {}
+			MultilinearPolyVariant::Transparent { .. } | MultilinearPolyVariant::Structured(_) => {}
 			MultilinearPolyVariant::Committed => {
 				self.committed_eval_claims.push(EvalcheckMultilinearClaim {
 					id: multilinear.id,
