@@ -922,7 +922,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 		self.name.as_deref()
 	}
 
-	const fn type_str(&self) -> &str {
+	pub const fn type_str(&self) -> &str {
 		match self.variant {
 			MultilinearPolyVariant::Transparent(_) => "Transparent",
 			MultilinearPolyVariant::Committed => "Committed",
