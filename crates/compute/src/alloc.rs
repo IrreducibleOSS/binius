@@ -125,24 +125,17 @@ mod tests {
 	fn test_stack_alloc() {
 		let mut data = (0..256u128).collect::<Vec<_>>();
 		let mut bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
-		println!("got here");
 		assert_eq!(bump.alloc(100).unwrap().len(), 100);
-		println!("got here");
-
 		assert_matches!(bump.alloc(200), Err(Error::OutOfMemory));
 
 		{
 			let next_layer_memory = bump.remaining();
 			let bump2 = BumpAllocator::<u128, CpuMemory>::new(next_layer_memory);
-			let _ = bump2.alloc(100);
-			println!("got here");
-
-			// let _ = bump.alloc(100);
-			println!("got here");
+			let _ = bump2.alloc(100).unwrap();
+			assert_matches!(bump2.alloc(57), Err(Error::OutOfMemory));
+			let _ = bump2.alloc(56).unwrap();
 		}
-		// Release memory all at once.
 
-		let data = bump.alloc(100).unwrap();
-		assert_eq!(data.len(), 100);
+		let _ = bump.alloc(100).unwrap();
 	}
 }
