@@ -273,7 +273,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composite) => {
-				let position = transcript.decommitment().read::<u32>()? as usize;
+				let position = transcript.message().read::<u32>()? as usize;
 
 				if let Some((constraints_eval_point, _)) =
 					self.new_mlechecks_constraints.get(position)
