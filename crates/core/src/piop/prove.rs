@@ -226,7 +226,7 @@ where
 {
 	let hal = Hal::default();
 
-	let dev_alloc = BumpAllocator::new(dev_mem);
+	let dev_alloc = BumpAllocator::<'_,F,Hal::DevMem>::new(dev_mem);
 
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -255,11 +255,16 @@ where
 		// sumcheck prover in order to derive the final FRI value.
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
 	let mut host_mem = hal.host_alloc(1 << 20);
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
 
 	let mut sumcheck_provers = vec![];
 
 	for (_n_vars, desc) in non_empty_sumcheck_descs{
-		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+		let this_sumcheck_host_mem = host_alloc.alloc(1<<4).unwrap();
+		let this_sumcheck_host_alloc = HostBumpAllocator::new(this_sumcheck_host_mem);
+
+		let this_sumcheck_dev_mem = dev_alloc.alloc(1<<24).unwrap();
+		let this_sumcheck_dev_alloc = BumpAllocator::new(this_sumcheck_dev_mem);
 
 		let multilins = chain!(
 			packed_committed_multilins[desc.committed_indices.clone()]
@@ -298,7 +303,7 @@ where
 			.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
 			.collect();
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &dev_alloc, host_alloc, &claim, fslices_const)?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &this_sumcheck_dev_alloc, this_sumcheck_host_alloc, &claim, fslices_const)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
