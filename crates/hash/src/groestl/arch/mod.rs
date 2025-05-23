@@ -10,6 +10,10 @@ cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
 		mod groestl_multi_avx2;
 		pub use groestl_multi_avx2::Groestl256Multi;
+	} else {
+		use super::Groestl256;
+		use crate::multi_digest::MultipleDigests;
+		pub type Groestl256Multi = MultipleDigests<Groestl256,4>;
 	}
 }
 
