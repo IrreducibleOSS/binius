@@ -225,6 +225,98 @@ pub fn test_generic_multiple_multilinear_evaluations<
 	assert_eq!(eval2, expected_eval2);
 }
 
+pub fn test_generic_map_with_multilinear_evaluations<
+	F: Field + TowerField + PackedField<Scalar = F>,
+	C: ComputeLayer<F>,
+>(
+	compute: C,
+	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+	n_vars: usize,
+) {
+	let mut rng = StdRng::seed_from_u64(0);
+
+	// Allocate buffers to be device mapped
+	let mut mle1_buffer = compute.host_alloc(1 << n_vars);
+	let mle1_buffer = mle1_buffer.as_mut();
+	for x_i in mle1_buffer.iter_mut() {
+		*x_i = <F as Field>::random(&mut rng);
+	}
+	let mle1 = mle1_buffer.to_vec();
+
+	let mut mle2_buffer = compute.host_alloc(1 << n_vars);
+	let mle2_buffer = mle2_buffer.as_mut();
+	for x_i in mle2_buffer.iter_mut() {
+		*x_i = <F as Field>::random(&mut rng);
+	}
+	let mle2 = mle2_buffer.to_vec();
+
+	let mut eq_ind_buffer = compute.host_alloc(1 << n_vars);
+	let eq_ind_buffer = eq_ind_buffer.as_mut();
+	for x_i in eq_ind_buffer.iter_mut() {
+		*x_i = F::ZERO;
+	}
+
+	// Copy data to device (creating F-slices)
+	let (mut mle1_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle1_buffer.len());
+	compute.copy_h2d(mle1_buffer, &mut mle1_slice).unwrap();
+	let mle1_slice = C::DevMem::as_const(&mle1_slice);
+
+	let (mut mle2_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle2_buffer.len());
+	compute.copy_h2d(mle2_buffer, &mut mle2_slice).unwrap();
+	let mle2_slice = C::DevMem::as_const(&mle2_slice);
+
+	let (mut eq_ind_slice, _device_memory) =
+		C::DevMem::split_at_mut(device_memory, eq_ind_buffer.len());
+	compute.copy_h2d(eq_ind_buffer, &mut eq_ind_slice).unwrap();
+
+	let coordinates = repeat_with(|| <F as Field>::random(&mut rng))
+		.take(n_vars)
+		.collect::<Vec<_>>();
+
+	// Run the HAL operation
+	let results = compute
+		.execute(|exec| {
+			{
+				// Swap first element on the device buffer
+				let mut first_elt =
+					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
+				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+			}
+
+			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
+
+			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
+			let res = compute.map(exec, [mle1_slice, mle2_slice].iter(), |exec, iter_item| {
+				compute.inner_product(exec, SubfieldSlice::new(*iter_item, F::TOWER_LEVEL), eq_ind)
+			})?;
+			Ok(res)
+		})
+		.unwrap();
+	let (eval1, eval2) = TryInto::<[F; 2]>::try_into(results)
+		.expect("expected two evaluations")
+		.into();
+
+	// Compute the expected value
+	let query = MultilinearQuery::<F>::expand(&coordinates);
+	let expected_eval1 = MultilinearExtension::new(n_vars, mle1)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
+	let expected_eval2 = MultilinearExtension::new(n_vars, mle2)
+		.unwrap()
+		.evaluate(&query)
+		.unwrap();
+
+	// Copy eq_ind back from the device
+	let eq_ind_slice = C::DevMem::as_const(&eq_ind_slice);
+	compute.copy_d2h(eq_ind_slice, eq_ind_buffer).unwrap();
+
+	// Compare the results
+	assert_eq!(eq_ind_buffer, query.into_expansion());
+	assert_eq!(eval1, expected_eval1);
+	assert_eq!(eval2, expected_eval2);
+}
+
 pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
 	compute: C,
 	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,

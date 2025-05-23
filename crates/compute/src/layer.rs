@@ -97,6 +97,16 @@ pub trait ComputeLayer<F: Field>: 'static {
 		Ok((out1, out2))
 	}
 
+	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
+	fn map<Out, I: ExactSizeIterator>(
+		&self,
+		exec: &mut Self::Exec,
+		iter: I,
+		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
+	) -> Result<Vec<Out>, Error> {
+		iter.map(|item| map(exec, item)).collect()
+	}
+
 	/// Compiles an arithmetic expression to the evaluator.
 	fn compile_expr(&self, expr: &ArithExpr<F>) -> Result<Self::ExprEval, Error>;
 
