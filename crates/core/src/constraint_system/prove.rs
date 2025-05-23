@@ -106,9 +106,25 @@ where
 
 	reorder_exponents(&mut exponents, &oracles);
 
+	let witness_span = tracing::info_span!(
+		"[phase] Witness Finalization",
+		phase = "witness",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
+	let exp_compute_layer_span = tracing::info_span!(
+		"[step] Compute Exponentiation Layers",
+		phase = "witness",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 	let exp_witnesses = exp::make_exp_witnesses::<U, Tower>(&mut witness, &oracles, &exponents)?;
+	drop(exp_compute_layer_span);
+
+	drop(witness_span);
 
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
@@ -149,7 +165,12 @@ where
 	let mut writer = transcript.message();
 	writer.write(&commitment);
 
-	// GKR exp
+	let exp_span = tracing::info_span!(
+		"[phase] Exponentiation",
+		phase = "exp",
+		perfetto_category = "phase.main"
+	)
+	.entered();
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
 	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
@@ -181,15 +202,38 @@ where
 	.isomorphic();
 
 	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	drop(exp_span);
 
 	// Grand product arguments
 	// Grand products for non-zero checking
+	let prodcheck_span = tracing::info_span!(
+		"[phase] Product Check",
+		phase = "prodcheck",
+		perfetto_category = "phase.main"
+	)
+	.entered();
+
+	let nonzero_convert_span = tracing::info_span!(
+		"[task] Convert Non-Zero to Fast Field",
+		phase = "prodcheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	let non_zero_fast_witnesses =
 		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+	drop(nonzero_convert_span);
+
+	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
+		"[step] Compute Non-Zero Product Layers",
+		phase = "prodcheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	drop(nonzero_prodcheck_compute_layer_span);
 
 	let non_zero_products =
 		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
@@ -218,17 +262,31 @@ where
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
+	let flush_convert_span = tracing::info_span!(
+		"[task] Convert Non-Zero to Fast Field",
+		phase = "prodcheck",
+		perfetto_category = "task.main"
+	)
+	.entered();
 	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids, &flushes)?;
 
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
 		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+	drop(flush_convert_span);
 
-	// This is important to do in parallel.
+	let flush_prodcheck_compute_layer_span = tracing::info_span!(
+		"[step] Compute Flush Product Layers",
+		phase = "prodcheck",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
 	let flush_prodcheck_witnesses = flush_witnesses
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	drop(flush_prodcheck_compute_layer_span);
+
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
 
 	transcript.message().write_scalar_slice(&flush_products);
@@ -263,6 +321,7 @@ where
 		chain!(flush_oracle_ids, non_zero_oracle_ids),
 		final_layer_claims,
 	)?;
+	drop(prodcheck_span);
 
 	// Zerocheck
 	let zerocheck_span = tracing::info_span!(
