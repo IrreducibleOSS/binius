@@ -2,8 +2,6 @@
 
 use cfg_if::cfg_if;
 
-mod packed_macros;
-
 cfg_if! {
 	if #[cfg(all(target_feature = "neon", target_feature = "aes"))] {
 		pub(super) mod m128;
@@ -12,6 +10,7 @@ cfg_if! {
 		pub mod packed_128;
 		pub mod packed_aes_128;
 		pub mod packed_polyval_128;
+		mod packed_macros;
 	} else {
 		pub use super::portable::packed_128;
 		pub use super::portable::packed_aes_128;
