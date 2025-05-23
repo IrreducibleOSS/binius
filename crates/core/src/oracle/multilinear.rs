@@ -6,7 +6,9 @@ use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::ArithCircuit;
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail};
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail, ensure,
+};
 use getset::{CopyGetters, Getters};
 
 use crate::{
@@ -64,9 +66,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn repeating(self, inner_id: OracleId, log_count: usize) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
 		let inner = self.mut_ref.get_from_set(inner_id);
 
@@ -91,9 +91,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		block_bits: usize,
 		variant: ShiftVariant,
 	) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
 		let inner = self.mut_ref.get_from_set(inner_id);
 		if block_bits > inner.n_vars {
@@ -123,9 +121,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn packed(self, inner_id: OracleId, log_degree: usize) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		if log_degree > inner_n_vars {
@@ -159,6 +155,8 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		values: Vec<F>,
 		start_index: usize,
 	) -> Result<OracleId, Error> {
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
+
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		let values_len = values.len();
 		if values_len > inner_n_vars {
@@ -189,6 +187,8 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		inner_id: OracleId,
 		values: Vec<F>,
 	) -> Result<OracleId, Error> {
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
+
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		let start_index = inner_n_vars - values.len();
 		let values_len = values.len();
@@ -232,9 +232,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|(inner_id, coeff)| {
-				if inner_id.index() >= self.mut_ref.oracles.len() {
-					return Err(Error::InvalidOracleId(inner_id));
-				}
+				ensure!(
+					self.mut_ref.is_valid_oracle_id(inner_id),
+					Error::InvalidOracleId(inner_id)
+				);
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
@@ -271,9 +272,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|inner_id| {
-				if inner_id.index() >= self.mut_ref.oracles.len() {
-					return Err(Error::InvalidOracleId(inner_id));
-				}
+				ensure!(
+					self.mut_ref.is_valid_oracle_id(inner_id),
+					Error::InvalidOracleId(inner_id)
+				);
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
