@@ -581,6 +581,13 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	Composite(CompositeMLE<F>),
 }
 
+impl<F: TowerField> MultilinearPolyVariant<F> {
+	/// Returns true if this multilinear polynomial variant is committed, as opposed to virtual.
+	pub fn is_committed(&self) -> bool {
+		matches!(self, Self::Committed)
+	}
+}
+
 impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
 	fn deserialize(
 		mut buf: impl bytes::Buf,

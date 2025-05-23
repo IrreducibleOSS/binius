@@ -105,7 +105,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 			.enumerate()
 			.map(|(i, eval_claim)| {
 				let oracle = oracles.oracle(eval_claim.id);
-				if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+				if !oracle.variant.is_committed() {
 					return Err(Error::EvalcheckClaimForDerivedPoly { id: eval_claim.id });
 				}
 				let committed_idx = oracle_to_commit_index
