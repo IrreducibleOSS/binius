@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 macro_rules! maybe_impl_broadcast {
 	(M128, $scalar:ident) => {};
 }

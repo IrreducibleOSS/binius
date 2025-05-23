@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 macro_rules! impl_broadcast {
 	($name:ty, BinaryField1b) => {
 		impl $crate::arithmetic_traits::Broadcast<BinaryField1b>
