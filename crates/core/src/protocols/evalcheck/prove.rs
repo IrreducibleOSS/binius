@@ -88,6 +88,8 @@ where
 	evals_memoization: EvalPointOracleIdMap<F, F>,
 	// The index of the next claim to be verified
 	round_claim_index: usize,
+
+	round: usize,
 }
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
@@ -120,6 +122,7 @@ where
 			visited_claims: EvalPointOracleIdMap::new(),
 			evals_memoization: EvalPointOracleIdMap::new(),
 			round_claim_index: 0,
+			round: 0,
 		}
 	}
 
@@ -227,6 +230,12 @@ where
 
 		drop(mle_fold_full_span);
 
+		#[cfg(feature = "evalcheck-visualization")]
+		{
+			use crate::protocols::evalcheck::visualization::GraphBuilder;
+			GraphBuilder::new(self.oracles, self.round).build(&evalcheck_claims);
+		}
+
 		// Step 2: Prove multilinears: For each claim, we prove the claim by recursively proving the
 		// subclaims by stepping through subclaims in a DFS manner and deduplicating claims.
 		for claim in evalcheck_claims {
@@ -281,6 +290,8 @@ where
 			self.oracles,
 			self.witness_index,
 		);
+
+		self.round += 1;
 
 		Ok(())
 	}

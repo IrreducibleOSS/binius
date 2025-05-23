@@ -21,6 +21,8 @@ pub mod subclaims;
 #[cfg(test)]
 mod tests;
 mod verify;
+#[cfg(feature = "evalcheck-visualization")]
+mod visualization;
 
 pub use error::*;
 pub use evalcheck::*;
