@@ -72,8 +72,10 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocato
 	}
 
 	fn remaining(&mut self) -> &mut Mem::FSliceMut<'a> {
-		let buffer = self.buffer.get_mut().as_mut().expect("");
-		buffer
+		self.buffer
+			.get_mut()
+			.as_mut()
+			.expect("buffer is always Some by invariant")
 	}
 
 	fn capacity(&self) -> usize {
