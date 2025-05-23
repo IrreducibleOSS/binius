@@ -5,7 +5,7 @@
 //!
 //! Each node in the generated graph corresponds to a specific OracleId.
 //!
-//! Rectangular nodes represent polynomials that require additional
+//! Nodes with a red border represent polynomials that require additional
 //! randomization via the sumcheck protocol.
 //!
 //! Nodes positioned on the left side represent oracles coming from the previous round
@@ -85,21 +85,25 @@ impl<'a, F: TowerField> GraphBuilder<'a, F> {
 					),
 				};
 
-				let shape = match node.oracle.variant {
+				let color = match node.oracle.variant {
 					MultilinearPolyVariant::Shifted(_)
 					| MultilinearPolyVariant::Packed(_)
-					| MultilinearPolyVariant::Composite(_) => "box",
-					_ => "oval",
+					| MultilinearPolyVariant::Composite(_)
+						if !node.is_already_visited =>
+					{
+						"red"
+					}
+					_ => "black",
 				};
 
-				let color = if node.is_already_visited {
+				let fillcolor = if node.is_already_visited {
 					"grey"
 				} else {
 					"white"
 				};
 
 				format!(
-					"label=\"{label}\", shape={shape}, style=filled, fillcolor={color}, fontcolor=black"
+					"label=\"{label}\", color={color}, style=filled, fillcolor={fillcolor}, fontcolor=black"
 				)
 			},
 		);
