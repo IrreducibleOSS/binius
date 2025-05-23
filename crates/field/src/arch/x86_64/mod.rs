@@ -2,6 +2,8 @@
 
 use cfg_if::cfg_if;
 
+mod packed_macros;
+
 #[cfg(target_feature = "gfni")]
 mod gfni;
 
