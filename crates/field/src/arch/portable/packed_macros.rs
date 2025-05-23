@@ -177,91 +177,11 @@ macro_rules! impl_serialize_deserialize_for_packed_binary_field {
 	};
 }
 
-macro_rules! maybe_impl_broadcast {
-	(M128, $scalar:ident) => {};
-	(M256, $scalar:ident) => {};
-	(M512, $scalar:ident) => {};
-	($underlier:ty, $scalar:ident) => {
-		impl_broadcast!($underlier, $scalar);
-	};
-}
-
 macro_rules! maybe_impl_ops {
 	($name:ident, 0) => {
 		impl_ops_for_zero_height!($name);
 	};
 	($name:ident, $other_idx:tt) => {};
-}
-
-macro_rules! maybe_impl_tower_constants {
-	($scalar:ident, $underlier:ty, _) => {};
-	($scalar:ident, M128, $alpha_idx:tt) => {
-		cfg_if::cfg_if! {
-			if #[cfg(target_feature = "sse2")] {
-				impl_tower_constants!($scalar, M128, { M128::from_u128(alphas!(u128, $alpha_idx)) });
-			} else {
-				impl_tower_constants!($scalar, M128, { M128(alphas!(u128, $alpha_idx)) });
-			}
-		}
-	};
-	($scalar:ident, M256, $alpha_idx:tt) => {
-		impl_tower_constants!($scalar, M256, { M256::from_equal_u128s(M256, $alpha_idx) });
-	};
-	($scalar:ident, M512, $alpha_idx:tt) => {
-		impl_tower_constants!($scalar, M512, { M512::from_equal_u128s(M512, $alpha_idx) });
-	};
-	($scalar:ident, $underlier:ty, $alpha_idx:tt) => {
-		impl_tower_constants!($scalar, $underlier, { alphas!($underlier, $alpha_idx) });
-	};
-}
-
-macro_rules! impl_strategy {
-	($impl_macro:ident $name:ident, None) => {};
-	($impl_macro:ident $name:ident, CfgSwitchPortable, $delegate:ty, $fallback:ty) => {
-		cfg_if! {
-			if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
-				$impl_macro!($name => $delegate);
-			} else {
-				$impl_macro!($name @ $fallback);
-			}
-		}
-	};
-	($impl_macro:ident $name:ident, CfgSwitchx86_64, $delegate:ty, $fallback:ty) => {
-		cfg_if! {
-			if #[cfg(target_feature = "gfni")] {
-				$impl_macro!($name @ $delegate);
-			} else {
-				$impl_macro!($name @ $fallback);
-			}
-		}
-	};
-	($impl_macro:ident $name:ident, $strategy:ty) => {
-		$impl_macro!($name @ $strategy);
-	};
-}
-
-macro_rules! impl_transformation {
-	($name:ident, CfgSwitchx86_64, $num:literal, $fallback:ty) => {
-		cfg_if::cfg_if! {
-			if #[cfg(target_feature = "gfni")] {
-				impl_transformation_with_gfni_nxn!($name, $num);
-			} else {
-				impl_transformation_with_strategy!($name, $fallback);
-			}
-		}
-	};
-	($name:ident, CfgSwitchx86_64, $delegate:ty, $fallback:ty) => {
-		cfg_if::cfg_if! {
-			if #[cfg(target_feature = "gfni")] {
-				impl_transformation_with_strategy!($name, $delegate);
-			} else {
-				impl_transformation_with_strategy!($name, $fallback);
-			}
-		}
-	};
-	($name:ident, $strategy:ty) => {
-		impl_transformation_with_strategy!($name, $strategy);
-	};
 }
 
 pub(crate) use assert_scalar_matches_canonical;
@@ -270,8 +190,46 @@ pub(crate) use define_packed_binary_fields;
 pub(crate) use impl_broadcast;
 pub(crate) use impl_ops_for_zero_height;
 pub(crate) use impl_serialize_deserialize_for_packed_binary_field;
-pub(crate) use impl_strategy;
-pub(crate) use impl_transformation;
-pub(crate) use maybe_impl_broadcast;
 pub(crate) use maybe_impl_ops;
-pub(crate) use maybe_impl_tower_constants;
+
+pub(crate) mod portable_macros {
+	macro_rules! maybe_impl_broadcast {
+		($underlier:ty, $scalar:ident) => {
+			impl_broadcast!($underlier, $scalar);
+		};
+	}
+
+	macro_rules! maybe_impl_tower_constants {
+		($scalar:ident, $underlier:ty, _) => {};
+		($scalar:ident, $underlier:ty, $alpha_idx:tt) => {
+			impl_tower_constants!($scalar, $underlier, { alphas!($underlier, $alpha_idx) });
+		};
+	}
+
+	macro_rules! impl_strategy {
+		($impl_macro:ident $name:ident, None) => {};
+		($impl_macro:ident $name:ident, $delegate:ty, $fallback:ty) => {
+			cfg_if! {
+				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
+					$impl_macro!($name => $delegate);
+				} else {
+					$impl_macro!($name @ $fallback);
+				}
+			}
+		};
+		($impl_macro:ident $name:ident, $strategy:ty) => {
+			$impl_macro!($name @ $strategy);
+		};
+	}
+
+	macro_rules! impl_transformation {
+		($name:ident, $strategy:ty) => {
+			impl_transformation_with_strategy!($name, $strategy);
+		};
+	}
+
+	pub(crate) use impl_strategy;
+	pub(crate) use impl_transformation;
+	pub(crate) use maybe_impl_broadcast;
+	pub(crate) use maybe_impl_tower_constants;
+}

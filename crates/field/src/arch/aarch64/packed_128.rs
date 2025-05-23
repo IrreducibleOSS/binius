@@ -4,10 +4,11 @@ use std::ops::Mul;
 
 use super::{
 	super::portable::{
-		packed::{PackedPrimitiveType},
+		packed::PackedPrimitiveType,
 		packed_arithmetic::{alphas, impl_tower_constants},
 	},
 	m128::M128,
+	packed_macros::*,
 	simd_arithmetic::{
 		packed_aes_16x8b_into_tower, packed_tower_16x8b_invert_or_zero,
 		packed_tower_16x8b_multiply, packed_tower_16x8b_multiply_alpha, packed_tower_16x8b_square,

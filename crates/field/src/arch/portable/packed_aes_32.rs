@@ -5,68 +5,54 @@ use cfg_if::cfg_if;
 use super::{
 	packed::PackedPrimitiveType,
 	packed_arithmetic::{alphas, impl_tower_constants},
-	packed_macros::impl_broadcast
+	packed_macros::impl_broadcast,
 };
 use crate::{
 	AESTowerField8b, AESTowerField16b, AESTowerField32b,
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
+	arch::{
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
+		portable::packed_macros::{portable_macros::*, *},
+	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
 };
 
-// Define 32 bit packed field types
-pub type PackedAESBinaryField4x8b = PackedPrimitiveType<u32, AESTowerField8b>;
-pub type PackedAESBinaryField2x16b = PackedPrimitiveType<u32, AESTowerField16b>;
-pub type PackedAESBinaryField1x32b = PackedPrimitiveType<u32, AESTowerField32b>;
+define_packed_binary_fields!(
+	packed_field {
+		name: PackedAESBinaryField4x8b,
+		scalar: AESTowerField8b,
+		underlier: u32,
+		alpha_idx: _,
+		mul: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
+		square: (PairwiseTableStrategy),
+		invert: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
+		mul_alpha: (PairwiseTableStrategy),
+		transform: (PackedStrategy),
+	},
+	packed_field {
+		name: PackedAESBinaryField2x16b,
+		scalar: AESTowerField16b,
+		underlier: u32,
+		alpha_idx: 4,
+		mul: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
+		square: (PairwiseRecursiveStrategy),
+		invert: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
+		mul_alpha: (PackedStrategy),
+		transform: (PackedStrategy),
+	},
+	packed_field {
+		name: PackedAESBinaryField1x32b,
+		scalar: AESTowerField32b,
+		underlier: u32,
+		alpha_idx: _,
+		mul: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
+		square: (PairwiseRecursiveStrategy),
+		invert: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
+		mul_alpha: (PairwiseRecursiveStrategy),
+		transform: (PairwiseStrategy),
+	},
+);
 
-// Define broadcast
-impl_broadcast!(u32, AESTowerField8b);
-impl_broadcast!(u32, AESTowerField16b);
-impl_broadcast!(u32, AESTowerField32b);
-
-// Define constants
 impl_tower_constants!(AESTowerField8b, u32, 0x00d300d3);
-impl_tower_constants!(AESTowerField16b, u32, { alphas!(u32, 4) });
-
-// Define multiplication
-cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
-		impl_mul_with!(PackedAESBinaryField4x8b => crate::PackedAESBinaryField16x8b);
-		impl_mul_with!(PackedAESBinaryField2x16b => crate::PackedAESBinaryField8x16b);
-		impl_mul_with!(PackedAESBinaryField1x32b => crate::PackedAESBinaryField4x32b);
-	} else {
-		impl_mul_with!(PackedAESBinaryField4x8b @ PairwiseTableStrategy);
-		impl_mul_with!(PackedAESBinaryField2x16b @ PairwiseRecursiveStrategy);
-		impl_mul_with!(PackedAESBinaryField1x32b @ PairwiseRecursiveStrategy);
-	}
-}
-
-// Define square
-impl_square_with!(PackedAESBinaryField4x8b @ PairwiseTableStrategy);
-impl_square_with!(PackedAESBinaryField2x16b @ PairwiseRecursiveStrategy);
-impl_square_with!(PackedAESBinaryField1x32b @ PairwiseRecursiveStrategy);
-
-// Define invert
-cfg_if! {
-	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
-		impl_invert_with!(PackedAESBinaryField4x8b => crate::PackedAESBinaryField16x8b);
-		impl_invert_with!(PackedAESBinaryField2x16b => crate::PackedAESBinaryField8x16b);
-		impl_invert_with!(PackedAESBinaryField1x32b => crate::PackedAESBinaryField4x32b);
-	} else {
-		impl_invert_with!(PackedAESBinaryField4x8b @ PairwiseTableStrategy);
-		impl_invert_with!(PackedAESBinaryField2x16b @ PairwiseRecursiveStrategy);
-		impl_invert_with!(PackedAESBinaryField1x32b @ PairwiseRecursiveStrategy);
-	}
-}
-
-// Define multiply by alpha
-impl_mul_alpha_with!(PackedAESBinaryField4x8b @ PairwiseTableStrategy);
-impl_mul_alpha_with!(PackedAESBinaryField2x16b @ PackedStrategy);
-impl_mul_alpha_with!(PackedAESBinaryField1x32b @ PairwiseRecursiveStrategy);
-
-// Define linear transformations
-impl_transformation_with_strategy!(PackedAESBinaryField4x8b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField2x16b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField1x32b, PairwiseStrategy);

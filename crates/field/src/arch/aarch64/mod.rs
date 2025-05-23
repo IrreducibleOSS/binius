@@ -2,6 +2,8 @@
 
 use cfg_if::cfg_if;
 
+mod packed_macros;
+
 cfg_if! {
 	if #[cfg(all(target_feature = "neon", target_feature = "aes"))] {
 		pub(super) mod m128;

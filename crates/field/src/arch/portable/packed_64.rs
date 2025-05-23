@@ -3,7 +3,7 @@
 use cfg_if::cfg_if;
 
 use super::{
-	packed::{PackedPrimitiveType},
+	packed::PackedPrimitiveType,
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
 	BinaryField64b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy,
-		portable::packed_macros::*,
+		portable::packed_macros::{portable_macros::*, *},
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
@@ -67,9 +67,9 @@ define_packed_binary_fields!(
 		scalar: BinaryField8b,
 		underlier: u64,
 		alpha_idx: 3,
-		mul: (CfgSwitchPortable, PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
-		square: (CfgSwitchPortable, PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
-		invert: (CfgSwitchPortable, PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
+		mul: (PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
+		square: (PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
+		invert: (PackedBinaryField16x8b, crate::arch::PairwiseTableStrategy),
 		mul_alpha: (PackedStrategy),
 		transform: (PackedStrategy),
 	},
@@ -78,9 +78,9 @@ define_packed_binary_fields!(
 		scalar: BinaryField16b,
 		underlier: u64,
 		alpha_idx: 4,
-		mul: (CfgSwitchPortable, PackedBinaryField8x16b, PairwiseRecursiveStrategy),
-		square: (CfgSwitchPortable, PackedBinaryField8x16b, PairwiseStrategy),
-		invert: (CfgSwitchPortable, PackedBinaryField8x16b, PairwiseStrategy),
+		mul: (PackedBinaryField8x16b, PairwiseRecursiveStrategy),
+		square: (PackedBinaryField8x16b, PairwiseStrategy),
+		invert: (PackedBinaryField8x16b, PairwiseStrategy),
 		mul_alpha: (PackedStrategy),
 		transform: (PackedStrategy),
 	},
@@ -89,9 +89,9 @@ define_packed_binary_fields!(
 		scalar: BinaryField32b,
 		underlier: u64,
 		alpha_idx: 5,
-		mul: (CfgSwitchPortable, PackedBinaryField4x32b, PairwiseRecursiveStrategy),
-		square: (CfgSwitchPortable, PackedBinaryField4x32b, PairwiseRecursiveStrategy),
-		invert: (CfgSwitchPortable, PackedBinaryField4x32b, PairwiseStrategy),
+		mul: (PackedBinaryField4x32b, PairwiseRecursiveStrategy),
+		square: (PackedBinaryField4x32b, PairwiseRecursiveStrategy),
+		invert: (PackedBinaryField4x32b, PairwiseStrategy),
 		mul_alpha: (PackedStrategy),
 		transform: (PackedStrategy),
 	},
@@ -100,9 +100,9 @@ define_packed_binary_fields!(
 		scalar: BinaryField64b,
 		underlier: u64,
 		alpha_idx: _,
-		mul: (CfgSwitchPortable, PackedBinaryField2x64b, PairwiseRecursiveStrategy),
-		square: (CfgSwitchPortable, PackedBinaryField2x64b, crate::arch::HybridRecursiveStrategy),
-		invert: (CfgSwitchPortable, PackedBinaryField2x64b, PairwiseRecursiveStrategy),
+		mul: (PackedBinaryField2x64b, PairwiseRecursiveStrategy),
+		square: (PackedBinaryField2x64b, crate::arch::HybridRecursiveStrategy),
+		invert: (PackedBinaryField2x64b, PairwiseRecursiveStrategy),
 		mul_alpha: (PairwiseRecursiveStrategy),
 		transform: (PairwiseStrategy),
 	}

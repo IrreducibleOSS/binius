@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{PackedPrimitiveType},
+	packed::PackedPrimitiveType,
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 	BinaryField64b, BinaryField128b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
-		portable::packed_macros::*,
+		portable::packed_macros::{portable_macros::*, *},
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,

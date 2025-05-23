@@ -1,15 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use super::{
-	packed::{PackedPrimitiveType},
-	packed_arithmetic::TowerConstants,
+	packed::PackedPrimitiveType, packed_arithmetic::TowerConstants,
 	reuse_multiply_arithmetic::Alpha,
 };
 use crate::{
 	BinaryField1b, BinaryField2b,
 	arch::{
 		PackedStrategy, PairwiseStrategy, PairwiseTableStrategy, ReuseMultiplyStrategy,
-		portable::packed_macros::*,
+		portable::packed_macros::{portable_macros::*, *},
 	},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,

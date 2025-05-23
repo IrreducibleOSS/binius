@@ -13,8 +13,7 @@ use std::{
 	ops::{BitXor, Mul},
 };
 
-use super::packed::PackedPrimitiveType;
-use super::packed_macros::impl_broadcast;
+use super::{packed::PackedPrimitiveType, packed_macros::impl_broadcast};
 use crate::{
 	BinaryField128bPolyval,
 	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
