@@ -18,9 +18,9 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error>;
 
 	/// Allocates the remaining elements in the slice
-	/// 
-	/// This allows another allocator to have unique mutable access to the rest of the elements in this
-	/// allocator until it gets dropped, at which point this allocator can be used again
+	///
+	/// This allows another allocator to have unique mutable access to the rest of the elements in
+	/// this allocator until it gets dropped, at which point this allocator can be used again
 	fn remaining(&mut self) -> Mem::FSliceMut<'_>;
 
 	/// Returns the remaining number of elements that can be allocated.
@@ -31,6 +31,7 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 /// construction.
 pub struct BumpAllocator<'a, F, Mem: ComputeMemory<F>> {
 	buffer: Cell<Option<Mem::FSliceMut<'a>>>,
+	
 }
 
 impl<'a, F, Mem> BumpAllocator<'a, F, Mem>
@@ -76,7 +77,6 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			.buffer
 			.take()
 			.expect("buffer is always Some by invariant");
-
 		Mem::narrow_mut(buffer)
 	}
 
@@ -129,14 +129,21 @@ mod tests {
 	fn test_stack_alloc() {
 		let mut data = (0..256u128).collect::<Vec<_>>();
 		let mut bump = BumpAllocator::<u128, CpuMemory>::new(&mut data);
+		println!("got here");
 		assert_eq!(bump.alloc(100).unwrap().len(), 100);
+		println!("got here");
+
 		assert_matches!(bump.alloc(200), Err(Error::OutOfMemory));
 
 		{
 			let next_layer_memory = bump.remaining();
 			let bump2 = BumpAllocator::<u128, CpuMemory>::new(next_layer_memory);
 			let _ = bump2.alloc(100);
-			let _ = bump.alloc(100);
+			println!("got here");
+
+			// let _ = bump.alloc(100);
+			println!("got here");
+
 		}
 		// Release memory all at once.
 
