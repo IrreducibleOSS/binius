@@ -254,52 +254,52 @@ where
 		// indicates unconstrained columns, but we still need the final evaluations from the
 		// sumcheck prover in order to derive the final FRI value.
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
-	let sumcheck_provers = non_empty_sumcheck_descs
-		.map(|(_n_vars, desc)| {
-			let mut host_mem = hal.host_alloc(1 << 20);
+	let mut host_mem = hal.host_alloc(1 << 20);
 
-			let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let mut sumcheck_provers = vec![];
 
-			let multilins = chain!(
-				packed_committed_multilins[desc.committed_indices.clone()]
-					.iter()
-					.map(Either::Left),
-				transparent_multilins[desc.transparent_indices.clone()]
-					.iter()
-					.map(Either::Right),
-			)
+	for (_n_vars, desc) in non_empty_sumcheck_descs{
+		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+
+		let multilins = chain!(
+			packed_committed_multilins[desc.committed_indices.clone()]
+				.iter()
+				.map(Either::Left),
+			transparent_multilins[desc.transparent_indices.clone()]
+				.iter()
+				.map(Either::Right),
+		)
+		.collect::<Vec<_>>();
+		// RegularSumcheckProver::new(
+		// 	EvaluationOrder::HighToLow,
+		// 	multilins,
+		// 	desc.composite_sums.iter().cloned(),
+		// 	&domain_factory,
+		// 	immediate_switchover_heuristic,
+		// 	backend,
+		// )
+
+		let claim = SumcheckClaim::new(
+			_n_vars,
+			multilins.len(),
+			desc.composite_sums.iter().cloned().collect(),
+		)?;
+
+		// let f_vecs = multilins.iter().map(|multilin|{
+		// 	P::unpack_scalars(multilin.packed_evals().unwrap())
+		// }).collect();
+
+		let mut fslices_mut = multilins
+			.iter()
+			.map(|_| dev_alloc.alloc(1 << 20).unwrap())
 			.collect::<Vec<_>>();
-			// RegularSumcheckProver::new(
-			// 	EvaluationOrder::HighToLow,
-			// 	multilins,
-			// 	desc.composite_sums.iter().cloned(),
-			// 	&domain_factory,
-			// 	immediate_switchover_heuristic,
-			// 	backend,
-			// )
+		let fslices_const = fslices_mut
+			.iter()
+			.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
+			.collect();
 
-			let claim = SumcheckClaim::new(
-				_n_vars,
-				multilins.len(),
-				desc.composite_sums.iter().cloned().collect(),
-			)?;
-
-			// let f_vecs = multilins.iter().map(|multilin|{
-			// 	P::unpack_scalars(multilin.packed_evals().unwrap())
-			// }).collect();
-
-			let fslices_mut = multilins
-				.iter()
-				.map(|_| dev_alloc.alloc(1 << 20).unwrap())
-				.collect::<Vec<_>>();
-			let fslices_const = fslices_mut
-				.iter()
-				.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
-				.collect();
-
-			BivariateSumcheckProver::new(&hal, &dev_alloc, host_alloc, &claim, fslices_const)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
+		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &dev_alloc, host_alloc, &claim, fslices_const)?);
+	}
 
 	prove_interleaved_fri_sumcheck(
 		commit_meta.total_vars(),
