@@ -191,6 +191,11 @@ impl<F: Field> EvalPoint<F> {
 	pub fn try_get_prefix(&self, suffix: &Self) -> Option<Self> {
 		let suffix_len = suffix.len();
 		let self_len = self.len();
+
+		if suffix_len > self_len {
+			return None;
+		}
+
 		if self.slice(self_len - suffix_len..self_len) == *suffix {
 			return Some(self.slice(0..self_len - suffix_len));
 		}
