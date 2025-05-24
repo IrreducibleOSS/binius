@@ -2,18 +2,18 @@
 
 use cfg_if::cfg_if;
 
-use super::m256::M256;
+use super::{m256::M256, packed_macros::*};
+#[cfg(target_feature = "gfni")]
+use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 use crate::{
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
 	BinaryField64b, BinaryField128b,
 	arch::{
 		PackedStrategy, SimdStrategy,
 		portable::{
-			packed::{
-				PackedPrimitiveType, impl_ops_for_zero_height,
-				impl_serialize_deserialize_for_packed_binary_field,
-			},
+			packed::PackedPrimitiveType,
 			packed_arithmetic::{alphas, impl_tower_constants},
+			packed_macros::*,
 		},
 	},
 	arithmetic_traits::{
@@ -22,128 +22,93 @@ use crate::{
 	},
 };
 
-// Define 128 bit packed field types
-pub type PackedBinaryField256x1b = PackedPrimitiveType<M256, BinaryField1b>;
-pub type PackedBinaryField128x2b = PackedPrimitiveType<M256, BinaryField2b>;
-pub type PackedBinaryField64x4b = PackedPrimitiveType<M256, BinaryField4b>;
-pub type PackedBinaryField32x8b = PackedPrimitiveType<M256, BinaryField8b>;
-pub type PackedBinaryField16x16b = PackedPrimitiveType<M256, BinaryField16b>;
-pub type PackedBinaryField8x32b = PackedPrimitiveType<M256, BinaryField32b>;
-pub type PackedBinaryField4x64b = PackedPrimitiveType<M256, BinaryField64b>;
-pub type PackedBinaryField2x128b = PackedPrimitiveType<M256, BinaryField128b>;
-
-// Define (de)serialize
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField256x1b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x2b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x4b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x8b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x16b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x32b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x64b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x128b);
-
-// Define operations for zero height
-impl_ops_for_zero_height!(PackedBinaryField256x1b);
-
-// Define constants
-impl_tower_constants!(BinaryField1b, M256, { M256::from_equal_u128s(alphas!(u128, 0)) });
-impl_tower_constants!(BinaryField2b, M256, { M256::from_equal_u128s(alphas!(u128, 1)) });
-impl_tower_constants!(BinaryField4b, M256, { M256::from_equal_u128s(alphas!(u128, 2)) });
-impl_tower_constants!(BinaryField8b, M256, { M256::from_equal_u128s(alphas!(u128, 3)) });
-impl_tower_constants!(BinaryField16b, M256, { M256::from_equal_u128s(alphas!(u128, 4)) });
-impl_tower_constants!(BinaryField32b, M256, { M256::from_equal_u128s(alphas!(u128, 5)) });
-impl_tower_constants!(BinaryField64b, M256, { M256::from_equal_u128s(alphas!(u128, 6)) });
-
-// Define multiplication
-impl_mul_with!(PackedBinaryField128x2b @ PackedStrategy);
-impl_mul_with!(PackedBinaryField64x4b @ PackedStrategy);
-cfg_if! {
-	if #[cfg(target_feature = "gfni")] {
-		impl_mul_with!(PackedBinaryField32x8b @ crate::arch::AESIsomorphicStrategy);
-		impl_mul_with!(PackedBinaryField16x16b @ crate::arch::AESIsomorphicStrategy);
-		impl_mul_with!(PackedBinaryField8x32b @ crate::arch::AESIsomorphicStrategy);
-		impl_mul_with!(PackedBinaryField4x64b @ crate::arch::AESIsomorphicStrategy);
-		impl_mul_with!(PackedBinaryField2x128b @ crate::arch::AESIsomorphicStrategy);
-	} else {
-		impl_mul_with!(PackedBinaryField32x8b @ crate::arch::PairwiseTableStrategy);
-		impl_mul_with!(PackedBinaryField16x16b @ SimdStrategy);
-		impl_mul_with!(PackedBinaryField8x32b @ SimdStrategy);
-		impl_mul_with!(PackedBinaryField4x64b @ SimdStrategy);
-		impl_mul_with!(PackedBinaryField2x128b @ SimdStrategy);
+define_packed_binary_fields!(
+	packed_field {
+		name: PackedBinaryField256x1b,
+		scalar: BinaryField1b,
+		underlier: M256,
+		alpha_idx: 0,
+		mul: (None),
+		square: (None),
+		invert: (None),
+		mul_alpha: (None),
+		transform: (SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField128x2b,
+		scalar: BinaryField2b,
+		underlier: M256,
+		alpha_idx: 1,
+		mul: (PackedStrategy),
+		square: (PackedStrategy),
+		invert: (PackedStrategy),
+		mul_alpha: (PackedStrategy),
+		transform: (SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField64x4b,
+		scalar: BinaryField4b,
+		underlier: M256,
+		alpha_idx: 2,
+		mul: (PackedStrategy),
+		square: (PackedStrategy),
+		invert: (PackedStrategy),
+		mul_alpha: (PackedStrategy),
+		transform: (SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField32x8b,
+		scalar: BinaryField8b,
+		underlier: M256,
+		alpha_idx: 3,
+		mul: (crate::arch::AESIsomorphicStrategy, crate::arch::PairwiseTableStrategy),
+		square: (crate::arch::ReuseMultiplyStrategy, crate::arch::PairwiseTableStrategy),
+		invert: (crate::arch::GfniStrategy, crate::arch::PairwiseTableStrategy),
+		mul_alpha: (crate::arch::ReuseMultiplyStrategy, crate::arch::PairwiseTableStrategy),
+		transform: (crate::arch::GfniStrategy, SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField16x16b,
+		scalar: BinaryField16b,
+		underlier: M256,
+		alpha_idx: 4,
+		mul: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		square: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		invert: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		mul_alpha: (SimdStrategy),
+		transform: (2, SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField8x32b,
+		scalar: BinaryField32b,
+		underlier: M256,
+		alpha_idx: 5,
+		mul: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		square: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		invert: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		mul_alpha: (SimdStrategy),
+		transform: (4, SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField4x64b,
+		scalar: BinaryField64b,
+		underlier: M256,
+		alpha_idx: 6,
+		mul: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		square: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		invert: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		mul_alpha: (SimdStrategy),
+		transform: (8, SimdStrategy),
+	},
+	packed_field {
+		name: PackedBinaryField2x128b,
+		scalar: BinaryField128b,
+		underlier: M256,
+		alpha_idx: _,
+		mul: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		square: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		invert: (crate::arch::AESIsomorphicStrategy, SimdStrategy),
+		mul_alpha: (SimdStrategy),
+		transform: (crate::arch::GfniSpecializedStrategy256b, SimdStrategy),
 	}
-}
-
-// Define square
-impl_square_with!(PackedBinaryField128x2b @ PackedStrategy);
-impl_square_with!(PackedBinaryField64x4b @ PackedStrategy);
-cfg_if! {
-	if #[cfg(target_feature = "gfni")] {
-		impl_square_with!(PackedBinaryField32x8b @ crate::arch::ReuseMultiplyStrategy);
-		impl_square_with!(PackedBinaryField16x16b @ crate::arch::AESIsomorphicStrategy);
-		impl_square_with!(PackedBinaryField8x32b @ crate::arch::AESIsomorphicStrategy);
-		impl_square_with!(PackedBinaryField4x64b @ crate::arch::AESIsomorphicStrategy);
-		impl_square_with!(PackedBinaryField2x128b @ crate::arch::AESIsomorphicStrategy);
-	} else {
-		impl_square_with!(PackedBinaryField32x8b @ crate::arch::PairwiseTableStrategy);
-		impl_square_with!(PackedBinaryField16x16b @ SimdStrategy);
-		impl_square_with!(PackedBinaryField8x32b @ SimdStrategy);
-		impl_square_with!(PackedBinaryField4x64b @ SimdStrategy);
-		impl_square_with!(PackedBinaryField2x128b @ SimdStrategy);
-	}
-}
-
-// Define invert
-impl_invert_with!(PackedBinaryField128x2b @ PackedStrategy);
-impl_invert_with!(PackedBinaryField64x4b @ PackedStrategy);
-cfg_if! {
-	if #[cfg(target_feature = "gfni")] {
-		impl_invert_with!(PackedBinaryField32x8b @ crate::arch::GfniStrategy);
-		impl_invert_with!(PackedBinaryField16x16b @ crate::arch::AESIsomorphicStrategy);
-		impl_invert_with!(PackedBinaryField8x32b @ crate::arch::AESIsomorphicStrategy);
-		impl_invert_with!(PackedBinaryField4x64b @ crate::arch::AESIsomorphicStrategy);
-		impl_invert_with!(PackedBinaryField2x128b @ crate::arch::AESIsomorphicStrategy);
-	} else {
-		impl_invert_with!(PackedBinaryField32x8b @ crate::arch::PairwiseTableStrategy);
-		impl_invert_with!(PackedBinaryField16x16b @ SimdStrategy);
-		impl_invert_with!(PackedBinaryField8x32b @ SimdStrategy);
-		impl_invert_with!(PackedBinaryField4x64b @ SimdStrategy);
-		impl_invert_with!(PackedBinaryField2x128b @ SimdStrategy);
-	}
-}
-
-// Define multiply by alpha
-impl_mul_alpha_with!(PackedBinaryField128x2b @ PackedStrategy);
-impl_mul_alpha_with!(PackedBinaryField64x4b @ PackedStrategy);
-cfg_if! {
-	if #[cfg(target_feature = "gfni")] {
-		impl_mul_alpha_with!(PackedBinaryField32x8b @ crate::arch::ReuseMultiplyStrategy);
-	} else {
-		impl_mul_alpha_with!(PackedBinaryField32x8b @ crate::arch::PairwiseTableStrategy);
-	}
-}
-impl_mul_alpha_with!(PackedBinaryField16x16b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField8x32b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField4x64b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField2x128b @ SimdStrategy);
-
-// Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryField256x1b, SimdStrategy);
-impl_transformation_with_strategy!(PackedBinaryField128x2b, SimdStrategy);
-impl_transformation_with_strategy!(PackedBinaryField64x4b, SimdStrategy);
-cfg_if! {
-	if #[cfg(target_feature ="gfni")] {
-		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
-
-		impl_transformation_with_strategy!(PackedBinaryField32x8b, crate::arch::GfniStrategy);
-		impl_transformation_with_gfni_nxn!(PackedBinaryField16x16b, 2);
-		impl_transformation_with_gfni_nxn!(PackedBinaryField8x32b, 4);
-		impl_transformation_with_gfni_nxn!(PackedBinaryField4x64b, 8);
-		impl_transformation_with_strategy!(PackedBinaryField2x128b, crate::arch::GfniSpecializedStrategy256b);
-	} else {
-		impl_transformation_with_strategy!(PackedBinaryField32x8b, SimdStrategy);
-		impl_transformation_with_strategy!(PackedBinaryField16x16b, SimdStrategy);
-		impl_transformation_with_strategy!(PackedBinaryField8x32b, SimdStrategy);
-		impl_transformation_with_strategy!(PackedBinaryField4x64b, SimdStrategy);
-		impl_transformation_with_strategy!(PackedBinaryField2x128b, SimdStrategy);
-	}
-}
+);

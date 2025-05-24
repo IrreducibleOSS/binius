@@ -15,6 +15,7 @@ cfg_if! {
 		pub mod packed_128;
 		pub mod packed_polyval_128;
 		pub mod packed_aes_128;
+		mod packed_macros;
 	} else {
 		pub use super::portable::packed_128;
 		pub use super::portable::packed_aes_128;
