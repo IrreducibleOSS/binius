@@ -8,7 +8,7 @@ macro_rules! maybe_impl_tower_constants {
 	($scalar:ident, $underlier:ty, _) => {};
 	($scalar:ident, $underlier:ty, $alpha_idx:tt) => {
 		impl_tower_constants!($scalar, $underlier, {
-			$underlier::from_u128(alphas!(u128, $alpha_idx))
+			<$underlier>::from_u128(alphas!(u128, $alpha_idx))
 		});
 	};
 }
