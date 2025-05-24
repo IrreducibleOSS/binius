@@ -78,7 +78,7 @@ pub fn process_shifted_sumcheck<F, P>(
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<P>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	projected: Option<MultilinearExtension<P>>,
+	partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
@@ -99,7 +99,7 @@ where
 			let shift_ind_mle = shift_ind.multilinear_extension::<P>()?;
 			Ok(MLEDirectAdapter::from(shift_ind_mle).upcast_arc_dyn())
 		},
-		projected,
+		partial_evals,
 	)?;
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, shifted.block_size(), eval);
 
@@ -175,7 +175,7 @@ pub fn process_packed_sumcheck<F, P>(
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<P>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	projected: Option<MultilinearExtension<P>>,
+	partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
@@ -193,7 +193,7 @@ where
 			let tower_basis_mle = tower_basis.multilinear_extension::<P>()?;
 			Ok(MLEDirectAdapter::from(tower_basis_mle).upcast_arc_dyn())
 		},
-		projected,
+		partial_evals,
 	)?;
 
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, packed.log_degree(), eval);
@@ -256,7 +256,7 @@ fn process_projected_bivariate_witness<'a, F, P>(
 	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, P>, Error>,
-	projected: Option<MultilinearExtension<P>>,
+	partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
@@ -266,19 +266,22 @@ where
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
-		..
+		inner_id,
 	} = meta;
 
 	let projected_eval_point = if let Some(projected_id) = projected_id {
+		let (prefix, suffix) = eval_point.split_at(projected_n_vars);
+
+		let projected = partial_evals
+			.get(inner_id, suffix)
+			.expect("projected should exist if projected_id exist")
+			.clone();
+
 		witness_index.update_multilin_poly(vec![(
 			projected_id,
-			MLEDirectAdapter::from(
-				projected.expect("projected should exist if projected_id exist"),
-			)
-			.upcast_arc_dyn(),
+			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
 		)])?;
-
-		&eval_point[..projected_n_vars]
+		prefix
 	} else {
 		eval_point
 	};
@@ -291,21 +294,28 @@ where
 	Ok(())
 }
 
-/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the
-/// projected eval_point) composite oracle -> None
+pub struct OracleIdPartialEval<P: PackedField> {
+	pub id: OracleId,
+	pub suffix: EvalPoint<P::Scalar>,
+	pub partial_eval: MultilinearExtension<P>,
+}
+
+/// shifted / packed oracle compute the projected MLE (i.e. the inner oracle evaluated on the
+/// projected eval_point)
 #[allow(clippy::type_complexity)]
 #[instrument(
 	skip_all,
 	name = "Evalcheck::calculate_projected_mles",
 	level = "debug"
 )]
-pub fn calculate_projected_mles<F, P, Backend>(
+pub fn collect_projected_mles<F, P, Backend>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedData<P, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &MultilinearExtensionIndex<P>,
 	backend: &Backend,
-) -> Result<Vec<Option<MultilinearExtension<P>>>, Error>
+	partial_evals: &mut EvalPointOracleIdMap<MultilinearExtension<P>, F>,
+) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
@@ -317,7 +327,7 @@ where
 	}
 	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
 
-	projected_bivariate_claims
+	let new_partial_evals = projected_bivariate_claims
 		.par_iter()
 		.zip(metas)
 		.map(|(claim, meta)| match meta.projected_id {
@@ -327,15 +337,35 @@ where
 				let query = memoized_queries
 					.full_query_readonly(eval_point)
 					.ok_or(Error::MissingQuery)?;
-				Ok(Some(
-					backend
-						.evaluate_partial_high(&inner_multilin, query.to_ref())
-						.map_err(Error::from)?,
-				))
+
+				if partial_evals.get(meta.inner_id, eval_point).is_some() {
+					return Ok(None);
+				}
+
+				let partial_eval = backend
+					.evaluate_partial_high(&inner_multilin, query.to_ref())
+					.map_err(Error::from)?;
+
+				Ok(Some(OracleIdPartialEval {
+					id: meta.inner_id,
+					suffix: eval_point.into(),
+					partial_eval,
+				}))
 			}
 			_ => Ok(None),
 		})
-		.collect::<Result<Vec<Option<_>>, Error>>()
+		.collect::<Result<Vec<Option<_>>, Error>>();
+
+	for OracleIdPartialEval {
+		id,
+		suffix,
+		partial_eval,
+	} in new_partial_evals?.into_iter().flatten()
+	{
+		partial_evals.insert(id, suffix, partial_eval)
+	}
+
+	Ok(())
 }
 
 /// Struct for memoizing tensor expansions of evaluation points and partial evaluations of
