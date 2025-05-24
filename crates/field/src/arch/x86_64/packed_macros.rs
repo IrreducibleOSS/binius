@@ -6,6 +6,9 @@ macro_rules! maybe_impl_broadcast {
 
 macro_rules! maybe_impl_tower_constants {
 	($scalar:ident, $underlier:ty, _) => {};
+	($scalar:ident, M128, $alpha_idx:tt) => {
+		impl_tower_constants!($scalar, M128, { M128::from_u128(alphas!(u128, $alpha_idx)) });
+	};
 	($scalar:ident, $underlier:ty, $alpha_idx:tt) => {
 		impl_tower_constants!($scalar, $underlier, {
 			<$underlier>::from_equal_u128s(alphas!(u128, $alpha_idx))
