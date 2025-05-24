@@ -24,7 +24,7 @@ define_packed_binary_fields!(
 		name: PackedAESBinaryField64x8b,
 		scalar: AESTowerField8b,
 		underlier: M512,
-		alpha_idx: 3,
+		alpha_idx: _,
 		mul: (crate::arch::GfniStrategy, crate::arch::PairwiseTableStrategy),
 		square: (ReuseMultiplyStrategy, crate::arch::PairwiseTableStrategy),
 		invert: (crate::arch::GfniStrategy, crate::arch::PairwiseTableStrategy),
