@@ -362,9 +362,7 @@ where
 		partial_eval,
 	} in new_partial_evals?.into_iter().flatten()
 	{
-		if partial_evals.get(id, &suffix).is_none() {
-			partial_evals.insert(id, suffix, partial_eval)
-		}
+		partial_evals.insert(id, suffix, partial_eval)
 	}
 
 	Ok(())

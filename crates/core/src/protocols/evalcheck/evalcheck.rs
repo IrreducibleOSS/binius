@@ -119,14 +119,19 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	}
 
 	/// Insert a new evaluation point for a given oracle id.
-	///
-	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id.index() >= self.data.len() {
 			self.data.resize(id.index() + 1, Vec::new());
 		}
 
-		self.data[id.index()].push((eval_point, val))
+		if self.get(id, &eval_point).is_none() {
+			self.data[id.index()].push((eval_point, val))
+		}
+	}
+
+	/// Returns `true` if the map contains a value.
+	pub fn contains(&self, id: OracleId, eval_point: &EvalPoint<F>) -> bool {
+		self.get(id, eval_point).is_some()
 	}
 
 	/// Flatten the data structure into a vector of values.

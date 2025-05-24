@@ -255,9 +255,7 @@ where
 			partial_eval,
 		} in partial_evals.into_iter().flatten()
 		{
-			if self.partial_evals.get(id, &suffix).is_none() {
-				self.partial_evals.insert(id, suffix, partial_eval)
-			}
+			self.partial_evals.insert(id, suffix, partial_eval);
 		}
 
 		for subclaim in &subclaims {
@@ -346,11 +344,7 @@ where
 		eval_point: EvalPoint<F>,
 		eval: Option<F>,
 	) {
-		if self
-			.visited_claims
-			.get(multilinear_id, &eval_point)
-			.is_some()
-		{
+		if self.visited_claims.contains(multilinear_id, &eval_point) {
 			return;
 		}
 
@@ -358,25 +352,15 @@ where
 			.insert(multilinear_id, eval_point.clone(), ());
 
 		if let Some(eval) = eval {
-			if self
-				.evals_memoization
-				.get(multilinear_id, &eval_point)
-				.is_none()
-			{
-				self.evals_memoization
-					.insert(multilinear_id, eval_point.clone(), eval);
-			}
+			self.evals_memoization
+				.insert(multilinear_id, eval_point.clone(), eval);
 		}
 
 		let multilinear = self.oracles.oracle(multilinear_id);
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Shifted(_) => {
-				if self
-					.evals_memoization
-					.get(multilinear_id, &eval_point)
-					.is_none()
-				{
+				if !self.evals_memoization.contains(multilinear_id, &eval_point) {
 					self.collect_suffixes(multilinear_id, eval_point.clone());
 
 					self.claims_to_be_evaluated
@@ -463,11 +447,7 @@ where
 				self.collect_subclaims_for_memoization(id, inner_eval_point, None);
 			}
 			_ => {
-				if self
-					.evals_memoization
-					.get(multilinear_id, &eval_point)
-					.is_none()
-				{
+				if !self.evals_memoization.contains(multilinear_id, &eval_point) {
 					self.claims_to_be_evaluated
 						.insert((multilinear_id, eval_point));
 				}
