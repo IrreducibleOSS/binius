@@ -2,8 +2,13 @@
 
 use std::{fmt::Debug, sync::Arc};
 
-use binius_field::PackedField;
+use binius_compute::{
+	ComputeLayer, ComputeMemory, FSlice,
+	alloc::{BumpAllocator, ComputeAllocator},
+};
+use binius_field::{Field, PackedField};
 use binius_math::MultilinearPoly;
+use binius_utils::sparse_index::SparseIndex;
 
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 
@@ -45,6 +50,10 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Compute Layer error: {0}")]
+	ComputeError(#[from] binius_compute::Error),
+	#[error("Alloc error: {0}")]
+	AllocError(#[from] binius_compute::alloc::Error),
 	#[error("Math error: {0}")]
 	MathError(#[from] binius_math::Error),
 }
@@ -103,6 +112,54 @@ where
 				nonzero_scalars_prefix,
 			});
 		}
+		Ok(())
+	}
+}
+
+pub struct LazyHalMultilinearExtensionIndex<'a, F: Field, Mem: ComputeMemory<F>> {
+	indexes: SparseIndex<Mem::FSliceMut<'a>>,
+	dev_alloc: &'a BumpAllocator<'a, F, Mem>,
+}
+
+impl<'a, F: Field, Mem: ComputeMemory<F>> LazyHalMultilinearExtensionIndex<'a, F, Mem> {
+	pub fn get_multilin_poly<'b, Hal: ComputeLayer<F, DevMem = Mem>, P: PackedField<Scalar = F>>(
+		&mut self,
+		id: OracleId,
+		hal: &'a Hal,
+		witness_index: &'a MultilinearExtensionIndex<'b, P>,
+	) -> Result<FSlice<'_, F, Hal>, Error> {
+		if !self.indexes.contains_key(id.index()) {
+			let poly = witness_index.get_multilin_poly(id)?;
+
+			let n_vars = poly.n_vars();
+
+			let evals = (0..1 << n_vars)
+				.map(|i| poly.evaluate_on_hypercube(i).expect("correct size"))
+				.collect::<Vec<_>>();
+
+			self.update_multilin_poly::<_, P>(hal, [(id, &evals[..])])?
+		}
+
+		Ok(Mem::as_const(self.indexes.get(id.index()).expect("added above")))
+	}
+
+	pub fn update_multilin_poly<
+		'b,
+		Hal: ComputeLayer<F, DevMem = Mem>,
+		P: PackedField<Scalar = F>,
+	>(
+		&mut self,
+		hal: &'a Hal,
+		witnesses: impl IntoIterator<Item = (OracleId, &'b [F])>,
+	) -> Result<(), Error> {
+		for (id, evals) in witnesses {
+			let mut buffer = self.dev_alloc.alloc(evals.len())?;
+
+			hal.copy_h2d(evals, &mut buffer)?;
+
+			self.indexes.set(id.index(), buffer);
+		}
+
 		Ok(())
 	}
 }
