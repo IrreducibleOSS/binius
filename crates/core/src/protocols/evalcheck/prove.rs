@@ -86,6 +86,8 @@ where
 	visited_claims: EvalPointOracleIdMap<(), F>,
 	// Memoization of evaluations of claims the prover sees in this round
 	evals_memoization: EvalPointOracleIdMap<F, F>,
+	// Triples (ep, sqrt_ep, _) with sqrt_ep^2 = ep
+	square_roots_memoization: Vec<(EvalPoint<F>, EvalPoint<F>, F)>,
 	// The index of the next claim to be verified
 	round_claim_index: usize,
 }
@@ -119,6 +121,7 @@ where
 			claim_to_index: EvalPointOracleIdMap::new(),
 			visited_claims: EvalPointOracleIdMap::new(),
 			evals_memoization: EvalPointOracleIdMap::new(),
+			square_roots_memoization: Vec::new(),
 			round_claim_index: 0,
 		}
 	}
@@ -504,23 +507,6 @@ where
 
 				self.projected_bivariate_claims.push(claim);
 			}
-			MultilinearPolyVariant::Composite(composite) => {
-				let position = self
-					.new_mlechecks_constraints
-					.iter()
-					.position(|(ep, _)| *ep == eval_point)
-					.unwrap_or(self.new_mlechecks_constraints.len());
-
-				transcript.message().write(&(position as u32));
-
-				add_composite_sumcheck_to_constraints(
-					position,
-					&eval_point,
-					&mut self.new_mlechecks_constraints,
-					&composite,
-					eval,
-				);
-			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				for suboracle_id in linear_combination.polys() {
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
@@ -584,6 +570,66 @@ where
 					},
 					transcript,
 				)?;
+			}
+			MultilinearPolyVariant::Squared(id) => {
+				let (sqrt_eval_point, sqrt_eval) = if let Some(position) = self
+					.square_roots_memoization
+					.iter()
+					.position(|(ep, _, _)| *ep == eval_point)
+				{
+					transcript.message().write(&(position as u32));
+					let (_, sqrt_eval_point, sqrt_eval) = &self.square_roots_memoization[position];
+					(sqrt_eval_point.clone(), *sqrt_eval)
+				} else {
+					transcript
+						.message()
+						.write(&(self.square_roots_memoization.len() as u32));
+
+					let sqrt_eval_point_values = eval_point
+						.iter()
+						.map(|x| x.square_root())
+						.collect::<Vec<_>>();
+					transcript
+						.message()
+						.write_scalar_slice(sqrt_eval_point_values.as_slice());
+					let sqrt_eval_point = EvalPoint::from(sqrt_eval_point_values);
+
+					let sqrt_eval = eval.square_root();
+					transcript.message().write_scalar(sqrt_eval);
+
+					self.square_roots_memoization.push((
+						eval_point.clone(),
+						sqrt_eval_point.clone(),
+						sqrt_eval,
+					));
+					(sqrt_eval_point, sqrt_eval)
+				};
+
+				self.prove_multilinear(
+					EvalcheckMultilinearClaim {
+						id,
+						eval_point: sqrt_eval_point,
+						eval: sqrt_eval,
+					},
+					transcript,
+				)?;
+			}
+			MultilinearPolyVariant::Composite(composite) => {
+				let position = self
+					.new_mlechecks_constraints
+					.iter()
+					.position(|(ep, _)| *ep == eval_point)
+					.unwrap_or(self.new_mlechecks_constraints.len());
+
+				transcript.message().write(&(position as u32));
+
+				add_composite_sumcheck_to_constraints(
+					position,
+					&eval_point,
+					&mut self.new_mlechecks_constraints,
+					&composite,
+					eval,
+				);
 			}
 		}
 		Ok(())

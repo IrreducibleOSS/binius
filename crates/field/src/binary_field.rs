@@ -84,6 +84,12 @@ where
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis_checked(1 << iota)?)
 	}
+
+	/// Inefficiently computes the unique square root of the input.
+	fn square_root(self) -> Self {
+		let exponent: u128 = 1 << (Self::DEGREE - 1);
+		<Self as crate::field::Field>::pow(&self, [exponent as u64, (exponent >> 64) as u64])
+	}
 }
 
 /// Returns the i'th basis element of `FExt` as a field extension of `FSub`.

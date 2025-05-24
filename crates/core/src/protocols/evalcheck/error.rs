@@ -41,8 +41,22 @@ pub enum VerificationError {
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
-	#[error("Advised MLECheck ConstraintSet positios must has the same eval_point")]
+	#[error("`position` in SquareRoot case must be no more than `square_roots_memoization.len()`")]
+	SquareRootPositionMismatch,
+	#[error(
+		"`position` in SquareRoot case must point to a triple `(eval_point', _, sqrt_eval)` in `square_roots_memoization` with `eval_point' = eval_point` and `sqrt_eval^2 = eval`"
+	)]
+	SquareRootEvalPointMismatch,
+	#[error(
+		"when `position = square_roots_memoization.len()`, transcript must yield the square root of `eval_point` and `eval`"
+	)]
+	SquareRootWrongSqrtEvalPoint,
+	#[error("`position` in Composite case must be no more than `new_mlechecks_constraints.len()`")]
 	MLECheckConstraintSetPositionMismatch,
+	#[error(
+		"`position` in Composite case must point to an identical eval point in `new_mlechecks_constraints`"
+	)]
+	MLECheckConstraintSetEvalPointMismatch,
 	#[error("LinearCombination must contain an eval")]
 	MissingLinearCombinationEval,
 	#[error("The referenced duplicate claim is different from expected")]

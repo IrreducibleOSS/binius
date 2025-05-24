@@ -188,6 +188,24 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	/// Adds a derived column that is computed as the square of the input column.
+	///
+	/// The derived column has the same vertical stacking factor as the input column and its
+	/// values are squared independently. The cost of the column's evaluations are minimal
+	/// and independent of the table height. This is a special case of a computed column.
+	pub fn add_squared<FSub, const V: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, V>,
+	) -> Col<FSub, V>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table
+			.new_column(self.namespaced_name(name), ColumnDef::Squared { col: col.id() })
+	}
+
 	/// Adds a derived column that is computed as an expression over other columns in the table.
 	///
 	/// The derived column has the same vertical stacking factor as the input columns and its

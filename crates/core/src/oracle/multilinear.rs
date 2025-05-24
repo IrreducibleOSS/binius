@@ -263,6 +263,19 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
+	pub fn squared(self, inner_id: OracleId) -> OracleId {
+		let inner = self.mut_ref.get_from_set(inner_id);
+
+		let oracle = |id: OracleId| MultilinearPolyOracle {
+			id,
+			n_vars: inner.n_vars,
+			tower_level: inner.binary_tower_level(),
+			name: self.name,
+			variant: MultilinearPolyVariant::Squared(inner_id),
+		};
+		self.mut_ref.add_to_set(oracle)
+	}
+
 	pub fn composite_mle(
 		self,
 		n_vars: usize,
@@ -505,6 +518,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			.zero_padded(id, n_pad_vars, nonzero_index, start_index)
 	}
 
+	pub fn add_squared(&mut self, id: OracleId) -> OracleId {
+		self.add().squared(id)
+	}
+
 	pub fn add_composite_mle(
 		&mut self,
 		n_vars: usize,
@@ -580,6 +597,7 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	Packed(Packed),
 	LinearCombination(LinearCombination<F>),
 	ZeroPadded(ZeroPadded),
+	Squared(OracleId),
 	Composite(CompositeMLE<F>),
 }
 
@@ -932,6 +950,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 			MultilinearPolyVariant::Packed(_) => "Packed",
 			MultilinearPolyVariant::LinearCombination(_) => "LinearCombination",
 			MultilinearPolyVariant::ZeroPadded(_) => "ZeroPadded",
+			MultilinearPolyVariant::Squared(_) => "Squared",
 			MultilinearPolyVariant::Composite(_) => "CompositeMLE",
 		}
 	}
