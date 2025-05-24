@@ -263,7 +263,7 @@ where
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
 	let flush_convert_span = tracing::info_span!(
-		"[task] Convert Non-Zero to Fast Field",
+		"[task] Convert Flushes to Fast Field",
 		phase = "prodcheck",
 		perfetto_category = "task.main"
 	)
