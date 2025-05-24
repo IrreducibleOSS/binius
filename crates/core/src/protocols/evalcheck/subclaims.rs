@@ -300,8 +300,8 @@ pub struct OracleIdPartialEval<P: PackedField> {
 	pub partial_eval: MultilinearExtension<P>,
 }
 
-/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the
-/// projected eval_point) composite oracle -> None
+/// shifted / packed oracle compute the projected MLE (i.e. the inner oracle evaluated on the
+/// projected eval_point)
 #[allow(clippy::type_complexity)]
 #[instrument(
 	skip_all,
@@ -327,7 +327,7 @@ where
 	}
 	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
 
-	let mles = projected_bivariate_claims
+	let new_partial_evals = projected_bivariate_claims
 		.par_iter()
 		.zip(metas)
 		.map(|(claim, meta)| match meta.projected_id {
@@ -360,7 +360,7 @@ where
 		id,
 		suffix,
 		partial_eval,
-	} in mles?.into_iter().flatten()
+	} in new_partial_evals?.into_iter().flatten()
 	{
 		if partial_evals.get(id, &suffix).is_none() {
 			partial_evals.insert(id, suffix, partial_eval)

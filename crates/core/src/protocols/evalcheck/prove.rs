@@ -89,8 +89,10 @@ where
 	// The index of the next claim to be verified
 	round_claim_index: usize,
 
+	// Partial evaluations after `evaluate_partial_high` in suffixes
 	partial_evals: EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 
+	// These oracles reuse the same suffix across multiple evaluations
 	oracles_with_suffixes: HashSet<(OracleId, EvalPoint<F>)>,
 }
 
@@ -734,6 +736,7 @@ where
 		}
 	}
 
+	/// Collect common suffixes to reuse `partial_evals` with different prefixes.
 	pub fn collect_suffixes(&mut self, oracle_id: OracleId, suffix: EvalPoint<F>) {
 		let multilinear = &self.oracles[oracle_id];
 
@@ -848,7 +851,10 @@ where
 							suffix: suffix.clone(),
 							partial_eval,
 						});
-						&new_partial_eval.as_ref().expect("exist").partial_eval
+						&new_partial_eval
+							.as_ref()
+							.expect("new_partial_eval added above")
+							.partial_eval
 					}
 				};
 
