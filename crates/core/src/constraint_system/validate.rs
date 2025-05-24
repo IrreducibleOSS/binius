@@ -242,6 +242,15 @@ where
 				});
 			}
 		}
+		MultilinearPolyVariant::Squared(inner_id) => {
+			let inner_poly = witness.get_multilin_poly(*inner_id)?;
+			let squared = witness.get_multilin_poly(oracle.id())?;
+			for i in 1..1 << n_vars {
+				let inner_poly_value = inner_poly.evaluate_on_hypercube(i)?;
+				let squared_value = squared.evaluate_on_hypercube(i)?;
+				check_eval(oracle_label, i, inner_poly_value * inner_poly_value, squared_value)?;
+			}
+		}
 		MultilinearPolyVariant::Composite(composite_mle) => {
 			let inner_polys = composite_mle
 				.polys()

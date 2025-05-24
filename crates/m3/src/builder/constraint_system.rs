@@ -598,6 +598,11 @@ fn add_oracle_for_column<F: TowerField>(
 			let oracle_id = oracles.add_named(name).packed(source, *log_degree)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
+		ColumnDef::Squared { col } => {
+			let source = oracle_lookup[*col];
+			let oracle_id = oracles.add_named(name).squared(source);
+			oracle_lookup.register_regular(*column_id, oracle_id);
+		}
 		ColumnDef::Computed { cols, expr } => {
 			if let Ok(LinearNormalForm {
 				constant: offset,
