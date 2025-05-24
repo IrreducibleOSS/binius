@@ -12,10 +12,10 @@ macro_rules! maybe_impl_tower_constants {
 		impl_tower_constants!($scalar, M128, { M128::from_u128(alphas!(u128, $alpha_idx)) });
 	};
 	($scalar:ident, M256, $alpha_idx:tt) => {
-		impl_tower_constants!($scalar, M256, { M256::from_equal_u128s(u128, $alpha_idx) });
+		impl_tower_constants!($scalar, M256, { M256::from_equal_u128s(alphas!(u128, $alpha_idx)) });
 	};
 	($scalar:ident, M512, $alpha_idx:tt) => {
-		impl_tower_constants!($scalar, M512, { M512::from_equal_u128s(u128, $alpha_idx) });
+		impl_tower_constants!($scalar, M512, { M512::from_equal_u128s(alphas!(u128, $alpha_idx)) });
 	};
 }
 
