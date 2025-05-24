@@ -2,30 +2,35 @@
 
 use std::iter::repeat_with;
 
+use binius_compute::{alloc::BumpAllocator, cpu::CpuLayer};
 use binius_field::{
 	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
-	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField,
+	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField,
+	tower::{AESTowerFamily, CanonicalTowerFamily, TowerFamily},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
-	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	DefaultEvaluationDomainFactory, EvaluationDomainFactory, MLEDirectAdapter,
+	MultilinearExtension, MultilinearPoly,
 };
-use binius_ntt::SingleThreadedNTT;
+use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use binius_utils::{DeserializeBytes, SerializeBytes};
+use bytemuck::zeroed_vec;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
-	PIOPSumcheckClaim, prove,
+	PIOPSumcheckClaim,
 	prove::commit,
-	verify,
+	prove_compute_layer,
 	verify::{CommitMeta, make_commit_params_with_optimal_arity},
 };
 use crate::{
-	fiat_shamir::HasherChallenger,
+	fiat_shamir::{Challenger, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
+	piop::{prove, verify},
 	polynomial::MultivariatePoly,
-	protocols::fri::CommitOutput,
+	protocols::fri::{CommitOutput, FRIParams},
 	transcript::ProverTranscript,
 	transparent,
 };
@@ -97,20 +102,98 @@ where
 	sumcheck_claims
 }
 
-fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
+enum ComputeLayerType {
+	None,
+	Cpu,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_prove<T, FDomain, FEncode, P, M, NTT, DomainFactory, MTScheme, MTProver, Challenger_>(
+	fri_params: &FRIParams<T::B128, FEncode>,
+	ntt: &NTT,
+	merkle_prover: &MTProver,
+	domain_factory: DomainFactory,
+	commit_meta: &CommitMeta,
+	committed: MTProver::Committed,
+	codeword: &[P],
+	committed_multilins: &[M],
+	transparent_multilins: &[M],
+	claims: &[PIOPSumcheckClaim<T::B128>],
+	transcript: &mut ProverTranscript<Challenger_>,
+	compute_layer: ComputeLayerType,
+) -> Result<(), crate::piop::Error>
+where
+	T: TowerFamily,
+	FDomain: Field,
+	FEncode: BinaryField,
+	P: PackedField<Scalar = T::B128>
+		+ PackedExtension<T::B128, PackedSubfield = P>
+		+ PackedExtension<FDomain>
+		+ PackedExtension<FEncode>,
+	M: MultilinearPoly<P> + Send + Sync,
+	NTT: AdditiveNTT<FEncode> + Sync,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
+	MTScheme: MerkleTreeScheme<T::B128, Digest: SerializeBytes>,
+	MTProver: MerkleTreeProver<T::B128, Scheme = MTScheme>,
+	Challenger_: Challenger,
+{
+	let backend = make_portable_backend();
+	match compute_layer {
+		ComputeLayerType::None => prove(
+			fri_params,
+			ntt,
+			merkle_prover,
+			domain_factory,
+			commit_meta,
+			committed,
+			codeword,
+			committed_multilins,
+			transparent_multilins,
+			claims,
+			transcript,
+			&backend,
+		),
+		ComputeLayerType::Cpu => {
+			let compute_layer = CpuLayer::<T>::default();
+			let mut slice = zeroed_vec(1 << 16);
+			let dev_allocator = BumpAllocator::new(&mut slice[..]);
+			let mut slice = zeroed_vec(1 << 16);
+			let host_allocator = BumpAllocator::new(&mut slice[..]);
+
+			prove_compute_layer(
+				fri_params,
+				ntt,
+				merkle_prover,
+				commit_meta,
+				committed,
+				codeword,
+				committed_multilins,
+				transparent_multilins,
+				claims,
+				transcript,
+				&compute_layer,
+				&dev_allocator,
+				&host_allocator,
+			)
+		}
+	}
+}
+
+fn commit_prove_verify<T, FDomain, FEncode, P, MTScheme>(
 	commit_meta: &CommitMeta,
 	n_transparents: usize,
-	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
+	merkle_prover: &impl MerkleTreeProver<T::B128, Scheme = MTScheme>,
 	log_inv_rate: usize,
+	compute_layer: ComputeLayerType,
 ) where
-	F: TowerField,
+	T: TowerFamily,
 	FDomain: BinaryField,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = F>
+	P: PackedField<Scalar = T::B128>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
-		+ PackedExtension<F, PackedSubfield = P>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
+		+ PackedExtension<T::B128, PackedSubfield = P>,
+	MTScheme: MerkleTreeScheme<T::B128, Digest: SerializeBytes + DeserializeBytes>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -123,7 +206,6 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	.unwrap();
 	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
-	let backend = make_portable_backend();
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let committed_multilins = generate_multilins::<P>(commit_meta.n_multilins_by_vars(), &mut rng)
@@ -154,7 +236,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	proof.message().write(&commitment);
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
-	prove(
+	run_prove::<T, _, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -166,7 +248,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		&transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
-		&backend,
+		compute_layer,
 	)
 	.unwrap();
 
@@ -184,7 +266,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		.collect::<Vec<_>>();
 	let transparent_polys = transparent_polys
 		.iter()
-		.map(|poly| poly as &dyn MultivariatePoly<F>)
+		.map(|poly| poly as &dyn MultivariatePoly<T::B128>)
 		.collect::<Vec<_>>();
 
 	let commitment = proof.message().read().unwrap();
@@ -216,12 +298,20 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -231,12 +321,20 @@ fn test_without_opening_claims() {
 	let n_transparents = 0;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -246,12 +344,20 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -261,12 +367,20 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -276,12 +390,20 @@ fn test_commit_prove_verify_small() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -291,12 +413,20 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::None);
+	commit_prove_verify::<
+		CanonicalTowerFamily,
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate, ComputeLayerType::Cpu);
 }
 
 #[test]
@@ -306,10 +436,13 @@ fn test_commit_prove_verify_byte_sliced() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _>(
+	commit_prove_verify::<AESTowerFamily, AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		ComputeLayerType::None,
 	);
+
+	// ByteSliced is not supported on custom compute layers yet
 }
