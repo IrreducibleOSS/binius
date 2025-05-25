@@ -716,7 +716,14 @@ fn count_zero_suffixes<P: PackedField, M: MultilinearPoly<P>>(poly: &M) -> usize
 			.rev()
 			.position(|&packed_eval| packed_eval != zeros)
 			.unwrap_or(packed_evals.len());
-		packed_zero_suffix_len << (P::LOG_WIDTH + poly.log_extension_degree())
+
+		let log_scalars_per_elem = P::LOG_WIDTH + poly.log_extension_degree();
+		if poly.n_vars() < log_scalars_per_elem {
+			debug_assert_eq!(packed_evals.len(), 1, "invariant of MultilinearPoly");
+			packed_zero_suffix_len << poly.n_vars()
+		} else {
+			packed_zero_suffix_len << log_scalars_per_elem
+		}
 	} else {
 		0
 	}
