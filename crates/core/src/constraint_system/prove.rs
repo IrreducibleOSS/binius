@@ -659,12 +659,29 @@ where
 							<FExt<Tower>>::ONE
 						} else {
 							// Otherwise, compute the linear combination
-							inner_oracles.iter().fold(const_term, |sum, (poly, coeff)| {
-								let scaled_eval = poly
-									.evaluate_on_hypercube_and_scale(index, *coeff)
-									.expect("index in bounds");
-								sum + scaled_eval
-							})
+							let mut inner_oracles_iter = inner_oracles.iter();
+
+							// Handle the first one specially because the mixing power is ONE,
+							// unless the first oracle was a constant.
+							if let Some((poly, coeff)) = inner_oracles_iter.next() {
+								let first_term = if *coeff == FExt::<Tower>::ONE {
+									poly.evaluate_on_hypercube(index).expect("index in bounds")
+								} else {
+									poly.evaluate_on_hypercube_and_scale(index, *coeff)
+										.expect("index in bounds")
+								};
+								inner_oracles_iter.fold(
+									const_term + first_term,
+									|sum, (poly, coeff)| {
+										let scaled_eval = poly
+											.evaluate_on_hypercube_and_scale(index, *coeff)
+											.expect("index in bounds");
+										sum + scaled_eval
+									},
+								)
+							} else {
+								const_term
+							}
 						}
 					})
 				})
