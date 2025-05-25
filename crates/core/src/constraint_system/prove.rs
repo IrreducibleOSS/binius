@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{env, marker::PhantomData};
+use std::{env, iter, marker::PhantomData};
 
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
@@ -9,18 +9,19 @@ use binius_field::{
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
+	util::powers,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
-use itertools::{chain, izip};
+use itertools::chain;
 use tracing::instrument;
 
 use super::{
@@ -32,12 +33,13 @@ use super::{
 use crate::{
 	constraint_system::{
 		Flush,
+		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{Constraint, MultilinearOracleSet, MultilinearPolyVariant, OracleId},
+	oracle::{Constraint, MultilinearOracleSet, OracleId},
 	piop,
 	protocols::{
 		fri::CommitOutput,
@@ -268,7 +270,14 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
-	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids, &flushes)?;
+	make_masked_flush_witnesses::<U, _>(
+		&oracles,
+		&mut witness,
+		&flush_oracle_ids,
+		&flushes,
+		mixing_challenge,
+		&permutation_challenges,
+	)?;
 
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
@@ -538,120 +547,117 @@ where
 #[instrument(skip_all, level = "debug")]
 fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
 	flushes: &[Flush<FExt<Tower>>],
+	mixing_challenge: FExt<Tower>,
+	permutation_challenges: &[FExt<Tower>],
 ) -> Result<(), Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 {
-	let ones = PackedType::<U, FExt<Tower>>::one();
+	let one = PackedType::<U, FExt<Tower>>::one();
+
+	// Find the maximum power of the mixing challenge needed.
+	let max_n_mixed = flushes
+		.iter()
+		.map(|flush| flush.oracles.len())
+		.max()
+		.unwrap_or_default();
+	let mixing_powers = powers(mixing_challenge)
+		.take(max_n_mixed)
+		.collect::<Vec<_>>();
+
 	// The function is on the critical path, parallelize.
-	let indices_to_update = izip!(flush_oracle_ids, flushes)
-		.map(|(&flush_oracle, flush)| match &oracles[flush_oracle].variant {
-			MultilinearPolyVariant::Composite(composite) => {
-				let inner_polys = composite.inner();
+	let indices_to_update = flush_oracle_ids
+		.par_iter()
+		.zip(flushes)
+		.map(|(&flush_oracle, flush)| {
+			let oracle = oracles.oracle(flush_oracle);
+			let n_vars = oracle.n_vars();
 
-				let selectors = flush
-					.selectors
-					.iter()
-					.map(|id| witness.get_multilin_poly(*id))
-					.collect::<Result<Vec<_>, _>>()?;
+			let const_term = flush
+				.oracles
+				.iter()
+				.copied()
+				.zip(mixing_powers.iter())
+				.filter_map(|(oracle_or_const, coeff)| match oracle_or_const {
+					OracleOrConst::Const { base, .. } => Some(base * coeff),
+					_ => None,
+				})
+				.sum::<FExt<Tower>>();
+			let const_term = permutation_challenges[flush.channel_id] + const_term;
 
-				let n_vars = composite.n_vars();
+			// Get inner polynomials
+			let inner_oracles = flush
+				.oracles
+				.iter()
+				.copied()
+				.zip(mixing_powers.iter())
+				.filter_map(|(oracle_or_const, &coeff)| match oracle_or_const {
+					OracleOrConst::Oracle(oracle_id) => Some((oracle_id, coeff)),
+					_ => None,
+				})
+				.map(|(inner_id, coeff)| {
+					let witness = witness_index.get_multilin_poly(inner_id)?;
+					Ok((witness, coeff))
+				})
+				.collect::<Result<Vec<_>, Error>>()?;
 
-				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+			// Get all selectors
+			let selectors = flush
+				.selectors
+				.iter()
+				.map(|id| witness_index.get_multilin_poly(*id))
+				.collect::<Result<Vec<_>, _>>()?;
 
-				let len: usize = 1 << n_vars;
-				let packed_len: usize = 1 << n_vars.saturating_sub(log_width);
+			let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+			let witness_data = (0..1 << n_vars.saturating_sub(log_width))
+				.into_par_iter()
+				.map(|i| {
+					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+						let index = i << log_width | j;
 
-				let inner_c = composite.c();
+						// Compute the product of all selectors at this point
+						let selector_off = selectors.iter().any(|selector| {
+							let sel_val = selector
+								.evaluate_on_hypercube(index)
+								.expect("index < 1 << n_vars");
+							sel_val.is_zero()
+						});
 
-				let zero_suffixes = count_zero_suffixes(&selectors);
-
-				for (zero_suffix, id, poly) in izip!(&zero_suffixes, inner_polys, selectors) {
-					let nonzero_scalars_prefixes = len.saturating_sub(*zero_suffix);
-
-					witness.update_multilin_poly_with_nonzero_scalars_prefixes([(
-						*id,
-						poly,
-						nonzero_scalars_prefixes,
-					)])?;
-				}
-
-				let polys = inner_polys
-					.iter()
-					.map(|id| witness.get_multilin_poly(*id))
-					.collect::<Result<Vec<_>, _>>()?;
-
-				let max_packed_zero_suffix =
-					zero_suffixes.into_iter().max().unwrap_or(0) >> log_width;
-
-				let mut composite_data = (0..packed_len.saturating_sub(max_packed_zero_suffix))
-					.into_par_iter()
-					.map(|i| {
-						let evals = polys
-							.iter()
-							.map(|poly| {
-								<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-									let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-									poly.evaluate_on_hypercube(index).unwrap_or_default()
-								})
+						if selector_off {
+							// If all selectors are zero, the result is 1
+							<FExt<Tower>>::ONE
+						} else {
+							// Otherwise, compute the linear combination
+							inner_oracles.iter().fold(const_term, |sum, (poly, coeff)| {
+								let scaled_eval = poly
+									.evaluate_on_hypercube_and_scale(index, *coeff)
+									.expect("index in bounds");
+								sum + scaled_eval
 							})
-							.collect::<Vec<_>>();
-
-						inner_c
-							.evaluate(&evals)
-							.expect("query length is the same as poly length")
+						}
 					})
-					.collect::<Vec<_>>();
+				})
+				.collect::<Vec<_>>();
 
-				// `ArithExpr::Const(F::ONE) + selector * arith_expr_linear` — so if selector is
-				// zero, we fill with ones.
-				composite_data.resize(packed_len, ones);
-
-				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
-					.expect("data is constructed with the correct length with respect to n_vars");
-
-				Ok((flush_oracle, MLEDirectAdapter::from(composite_poly).upcast_arc_dyn()))
-			}
-			MultilinearPolyVariant::LinearCombination(lincom) => {
-				let polys = lincom
-					.polys()
-					.map(|id| witness.get_multilin_poly(id))
-					.collect::<Result<Vec<_>, _>>()?;
-
-				let packed_len = 1
-					<< lincom
-						.n_vars()
-						.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
-				let lin_comb_data = (0..packed_len)
-					.into_par_iter()
-					.map(|i| {
-						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-							polys.iter().zip(lincom.coefficients()).fold(
-								lincom.offset(),
-								|sum, (poly, coeff)| {
-									sum + poly
-										.evaluate_on_hypercube_and_scale(index, coeff)
-										.unwrap_or(<FExt<Tower>>::ZERO)
-								},
-							)
-						})
-					})
-					.collect::<Vec<_>>();
-
-				let lincom_poly = MultilinearExtension::new(lincom.n_vars(), lin_comb_data)
-					.expect("data is constructed with the correct length with respect to n_vars");
-				Ok((flush_oracle, MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn()))
-			}
-			_ => unreachable!("flush_oracles must either be composite or linear combinations"),
+			let witness = MLEDirectAdapter::from(
+				MultilinearExtension::new(n_vars, witness_data)
+					.expect("witness_data created with correct n_vars"),
+			);
+			Ok((witness, 0))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
-	witness.update_multilin_poly(indices_to_update.into_iter())?;
+	witness_index.update_multilin_poly_with_nonzero_scalars_prefixes(
+		iter::zip(flush_oracle_ids, indices_to_update).map(
+			|(&oracle_id, (witness, nonzero_scalars_prefix))| {
+				(oracle_id, witness.upcast_arc_dyn(), nonzero_scalars_prefix)
+			},
+		),
+	)?;
 	Ok(())
 }
 
