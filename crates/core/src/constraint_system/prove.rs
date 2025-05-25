@@ -557,7 +557,21 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 {
-	let one = PackedType::<U, FExt<Tower>>::one();
+	// TODO: Move me out into a separate function & deduplicate.
+	// Count the suffix zeros on all selectors.
+	for flush in flushes {
+		for &selector_id in &flush.selectors {
+			let selector = witness_index.get_multilin_poly(selector_id)?;
+			let zero_suffix_len = count_zero_suffixes(&selector);
+
+			let nonzero_prefix_len = (1 << selector.n_vars()) - zero_suffix_len;
+			witness_index.update_multilin_poly_with_nonzero_scalars_prefixes([(
+				selector_id,
+				selector,
+				nonzero_prefix_len,
+			)])?;
+		}
+	}
 
 	// Find the maximum power of the mixing challenge needed.
 	let max_n_mixed = flushes
@@ -589,7 +603,6 @@ where
 				.sum::<FExt<Tower>>();
 			let const_term = permutation_challenges[flush.channel_id] + const_term;
 
-			// Get inner polynomials
 			let inner_oracles = flush
 				.oracles
 				.iter()
@@ -605,15 +618,29 @@ where
 				})
 				.collect::<Result<Vec<_>, Error>>()?;
 
-			// Get all selectors
-			let selectors = flush
+			let selector_entries = flush
 				.selectors
 				.iter()
-				.map(|id| witness_index.get_multilin_poly(*id))
+				.map(|id| witness_index.get_index_entry(*id))
 				.collect::<Result<Vec<_>, _>>()?;
 
+			// Get the number of entries before any selector column is disabled.
+			let selector_prefix_len = selector_entries
+				.iter()
+				.map(|selector_entry| selector_entry.nonzero_scalars_prefix)
+				.min()
+				.unwrap_or(1 << n_vars);
+
+			let selectors = selector_entries
+				.into_iter()
+				.map(|entry| entry.multilin_poly)
+				.collect::<Vec<_>>();
+
 			let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
-			let witness_data = (0..1 << n_vars.saturating_sub(log_width))
+			let packed_selector_prefix_len = selector_prefix_len.div_ceil(1 << log_width);
+
+			let mut witness_data = Vec::with_capacity(1 << n_vars.saturating_sub(log_width));
+			(0..packed_selector_prefix_len)
 				.into_par_iter()
 				.map(|i| {
 					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
@@ -641,7 +668,8 @@ where
 						}
 					})
 				})
-				.collect::<Vec<_>>();
+				.collect_into_vec(&mut witness_data);
+			witness_data.resize(witness_data.capacity(), PackedType::<U, FExt<Tower>>::one());
 
 			let witness = MLEDirectAdapter::from(
 				MultilinearExtension::new(n_vars, witness_data)
@@ -661,26 +689,18 @@ where
 	Ok(())
 }
 
-fn count_zero_suffixes<P: PackedField>(polys: &[MultilinearWitness<P>]) -> Vec<usize> {
+fn count_zero_suffixes<P: PackedField, M: MultilinearPoly<P>>(poly: &M) -> usize {
 	let zeros = P::zero();
-	polys
-		.iter()
-		.map(|poly| {
-			if let Some(packed_evals) = poly.packed_evals() {
-				let mut zero_suffix_len = 0;
-
-				for &packed_evals in packed_evals.iter().rev() {
-					if packed_evals != zeros {
-						break;
-					}
-					zero_suffix_len += 1 << (P::LOG_WIDTH + poly.log_extension_degree());
-				}
-				zero_suffix_len
-			} else {
-				0
-			}
-		})
-		.collect()
+	if let Some(packed_evals) = poly.packed_evals() {
+		let packed_zero_suffix_len = packed_evals
+			.iter()
+			.rev()
+			.position(|&packed_eval| packed_eval != zeros)
+			.unwrap_or(packed_evals.len());
+		packed_zero_suffix_len << (P::LOG_WIDTH + poly.log_extension_degree())
+	} else {
+		0
+	}
 }
 
 #[allow(clippy::type_complexity)]

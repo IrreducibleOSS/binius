@@ -39,6 +39,12 @@ pub(crate) trait IndexedParallelIteratorInner: ParallelIteratorInner {
 	}
 
 	#[inline]
+	fn collect_into_vec(self, target: &mut Vec<Self::Item>) {
+		target.clear();
+		target.extend(self);
+	}
+
+	#[inline]
 	fn zip<Z>(self, zip_op: Z) -> std::iter::Zip<Self, Z>
 	where
 		Z: IndexedParallelIteratorInner,
@@ -143,6 +149,11 @@ pub trait IndexedParallelIterator: ParallelIterator {
 		ParallelWrapper::new(IndexedParallelIteratorInner::enumerate(
 			IndexedParallelIterator::into_inner(self),
 		))
+	}
+
+	#[inline]
+	fn collect_into_vec(self, target: &mut Vec<Self::Item>) {
+		IndexedParallelIterator::into_inner(self).collect_into_vec(target)
 	}
 
 	#[inline]
