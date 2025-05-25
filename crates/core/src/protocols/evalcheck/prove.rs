@@ -572,44 +572,44 @@ where
 				)?;
 			}
 			MultilinearPolyVariant::Squared(id) => {
-				let (sqrt_eval_point, sqrt_eval) = if let Some(position) = self
+				let position = if let Some(position) = self
 					.square_roots_memoization
 					.iter()
 					.position(|(ep, _, _)| *ep == eval_point)
 				{
 					transcript.message().write(&(position as u32));
-					let (_, sqrt_eval_point, sqrt_eval) = &self.square_roots_memoization[position];
-					(sqrt_eval_point.clone(), *sqrt_eval)
+					position
 				} else {
-					transcript
-						.message()
-						.write(&(self.square_roots_memoization.len() as u32));
+					let position = self.square_roots_memoization.len();
+					transcript.message().write(&(position as u32));
 
-					let sqrt_eval_point_values = eval_point
+					let sqrt_eval_point = eval_point
 						.iter()
 						.map(|x| x.square_root())
 						.collect::<Vec<_>>();
 					transcript
 						.message()
-						.write_scalar_slice(sqrt_eval_point_values.as_slice());
-					let sqrt_eval_point = EvalPoint::from(sqrt_eval_point_values);
+						.write_scalar_slice(sqrt_eval_point.as_slice());
 
 					let sqrt_eval = eval.square_root();
 					transcript.message().write_scalar(sqrt_eval);
 
 					self.square_roots_memoization.push((
 						eval_point.clone(),
-						sqrt_eval_point.clone(),
+						sqrt_eval_point.into(),
 						sqrt_eval,
 					));
-					(sqrt_eval_point, sqrt_eval)
+
+					position
 				};
+
+				let (_, sqrt_eval_point, sqrt_eval) = &self.square_roots_memoization[position];
 
 				self.prove_multilinear(
 					EvalcheckMultilinearClaim {
 						id,
-						eval_point: sqrt_eval_point,
-						eval: sqrt_eval,
+						eval_point: sqrt_eval_point.clone(),
+						eval: *sqrt_eval,
 					},
 					transcript,
 				)?;

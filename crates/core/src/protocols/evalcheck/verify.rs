@@ -278,12 +278,15 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 			MultilinearPolyVariant::Squared(id) => {
 				let position = transcript.message().read::<u32>()? as usize;
+
 				if position > self.square_roots_memoization.len() {
 					return Err(VerificationError::SquareRootPositionMismatch.into());
-				} else if position == self.square_roots_memoization.len() {
-					let sqrt_eval_point_values: Vec<F> =
-						transcript.message().read_scalar_slice(eval_point.len())?;
-					let sqrt_eval_point = EvalPoint::from(sqrt_eval_point_values);
+				}
+
+				if position == self.square_roots_memoization.len() {
+					let sqrt_eval_point = transcript
+						.message()
+						.read_scalar_slice::<F>(eval_point.len())?;
 
 					if sqrt_eval_point
 						.iter()
@@ -293,17 +296,14 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 						return Err(VerificationError::SquareRootWrongSqrtEvalPoint.into());
 					}
 
-					let sqrt_eval: F = transcript.message().read_scalar()?;
-					if sqrt_eval.square() != eval {
-						return Err(VerificationError::SquareRootWrongSqrtEvalPoint.into());
-					}
-
+					let sqrt_eval = transcript.message().read_scalar::<F>()?;
 					self.square_roots_memoization.push((
 						eval_point.clone(),
-						sqrt_eval_point,
+						sqrt_eval_point.into(),
 						sqrt_eval,
 					));
-				};
+				}
+
 				let (same_eval_point, sqrt_eval_point, sqrt_eval) =
 					&self.square_roots_memoization[position];
 
@@ -325,11 +325,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				if position > self.new_mlechecks_constraints.len() {
 					return Err(VerificationError::MLECheckConstraintSetPositionMismatch.into());
-				} else if position == self.new_mlechecks_constraints.len() {
-					// a new constraint set builder will be created in
-					// `add_composite_sumcheck_to_constraints`
-				} else {
-					let (constraints_eval_point, _) = &self.new_mlechecks_constraints[position];
+				}
+
+				if let Some((constraints_eval_point, _)) =
+					self.new_mlechecks_constraints.get(position)
+				{
 					if *constraints_eval_point != eval_point {
 						return Err(
 							VerificationError::MLECheckConstraintSetEvalPointMismatch.into()

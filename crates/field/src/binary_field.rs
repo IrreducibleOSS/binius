@@ -88,7 +88,7 @@ where
 	/// Inefficiently computes the unique square root of the input.
 	fn square_root(self) -> Self {
 		let exponent: u128 = 1 << (Self::DEGREE - 1);
-		<Self as crate::field::Field>::pow(&self, [exponent as u64, (exponent >> 64) as u64])
+		<Self as Field>::pow(&self, [exponent as u64, (exponent >> 64) as u64])
 	}
 }
 
