@@ -816,7 +816,7 @@ where
 		let mut eval = None;
 		let mut new_partial_eval = None;
 
-		for (_, suffix) in oracles_with_suffixes.iter() {
+		for (_, suffix) in oracles_with_suffixes {
 			if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 				let partial_eval = match partial_evals.get(oracle_id, suffix) {
 					Some(partial_eval) => partial_eval,
