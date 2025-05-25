@@ -203,7 +203,7 @@ where
 			);
 		}
 
-		let eval_points = self
+		let mut eval_points = self
 			.claims_to_be_evaluated
 			.iter()
 			.map(|(_, eval_point)| eval_point.clone())
@@ -218,10 +218,16 @@ where
 		let mut prefixes = HashSet::new();
 
 		for suffix in &suffixes {
+			let mut to_remove = Vec::new();
 			for eval_points in &eval_points {
 				if let Some(prefix) = eval_points.try_get_prefix(suffix) {
 					prefixes.insert(prefix);
+					to_remove.push(eval_points.clone());
 				}
+			}
+
+			for ep in to_remove {
+				eval_points.remove(&ep);
 			}
 		}
 
@@ -810,10 +816,7 @@ where
 		let mut eval = None;
 		let mut new_partial_eval = None;
 
-		for (_, suffix) in oracles_with_suffixes
-			.iter()
-			.filter(|(id, _)| *id == oracle_id)
-		{
+		for (_, suffix) in oracles_with_suffixes.iter() {
 			if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 				let partial_eval = match partial_evals.get(oracle_id, suffix) {
 					Some(partial_eval) => partial_eval,
