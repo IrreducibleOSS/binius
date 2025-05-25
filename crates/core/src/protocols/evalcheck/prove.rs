@@ -213,18 +213,17 @@ where
 
 		let mut prefixes = HashSet::new();
 
+		let mut to_remove = Vec::new();
 		for suffix in &suffixes {
-			let mut to_remove = Vec::new();
 			for eval_point in &eval_points {
 				if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 					prefixes.insert(prefix);
 					to_remove.push(eval_point.clone());
 				}
 			}
-
-			for ep in to_remove {
-				eval_points.remove(&ep);
-			}
+		}
+		for ep in to_remove {
+			eval_points.remove(&ep);
 		}
 
 		for eval_point in eval_points {
