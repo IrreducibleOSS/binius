@@ -53,7 +53,7 @@ use crate::{
 	},
 	ring_switch,
 	transcript::ProverTranscript,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
@@ -775,22 +775,23 @@ where
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
 
-			// TODO: Update me to use get_index_entry and skip conversion of the trailing
-			// constants.
-			let poly = witness.get_multilin_poly(flush_oracle_id)?;
+			let IndexEntry {
+				multilin_poly: poly,
+				nonzero_scalars_prefix,
+			} = witness.get_index_entry(flush_oracle_id)?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
 			let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
 			let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
-			let non_const_scalars = 1usize << n_vars; // REVIEW: What's going on here?
+			let non_const_scalars = nonzero_scalars_prefix;
 			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
 
 			let mut fast_ext_result = vec![
 				PackedType::<U, FFastExt<Tower>>::one();
-				non_const_subcubes * subcube_packed_size
+				1 << n_vars.saturating_sub(log_width)
 			];
 
-			fast_ext_result
+			fast_ext_result[..non_const_subcubes * subcube_packed_size]
 				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
 				.for_each(|(subcube_index, fast_subcube)| {
@@ -808,8 +809,6 @@ where
 						*underlier = PackedType::<U, FFastExt<Tower>>::to_underlier(dest);
 					}
 				});
-
-			fast_ext_result.truncate(non_const_scalars);
 
 			// TODO: Refactor the return type to be MultilinearExtension. I need to understand how
 			// the non_const_scalars thing works first though.
