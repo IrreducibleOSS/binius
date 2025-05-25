@@ -624,7 +624,7 @@ where
 				.map(|id| witness_index.get_index_entry(*id))
 				.collect::<Result<Vec<_>, _>>()?;
 
-			// Get the number of entries before any selector column is disabled.
+			// Get the number of entries before any selector column is fully disabled.
 			let selector_prefix_len = selector_entries
 				.iter()
 				.map(|selector_entry| selector_entry.nonzero_scalars_prefix)
@@ -675,7 +675,9 @@ where
 				MultilinearExtension::new(n_vars, witness_data)
 					.expect("witness_data created with correct n_vars"),
 			);
-			Ok((witness, 0))
+			// TODO: This is sketchy. The field on witness index is called "nonzero_prefix", but
+			// I'm setting it when the suffix is 1, not zero.
+			Ok((witness, selector_prefix_len))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
