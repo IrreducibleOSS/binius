@@ -14,7 +14,9 @@ use binius_field::{
 pub use state::{StateMatrix, StateRow};
 use trace::PermutationTrace;
 
-use crate::builder::{B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment};
+use crate::builder::{
+	B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_expr,
+};
 
 mod state;
 mod test_vector;
@@ -84,14 +86,14 @@ pub struct Keccakf {
 	/// the 3rd round.
 	///
 	/// This is used for the state-in to state-out linking rule.
-	next_state_in: StateMatrix<PackedLane8>,
+	next_state_in: StateMatrix<Col<B64, TRACKS_PER_BATCH>>,
 
 	/// Link selector.
 	///
 	/// This is all ones for the first 7 tracks and all zeroes for the last one.
 	///
 	/// Used to turn off the state-in to state-out forwarding check for the last track.
-	link_sel: PackedLane8,
+	link_sel: Col<B1, TRACKS_PER_BATCH>,
 }
 
 impl Keccakf {
@@ -136,29 +138,23 @@ impl Keccakf {
 
 		let link_sel = table.add_constant(
 			"link_sel",
-			array::from_fn(|bit_index| {
-				if bit_index < 64 * 7 {
-					B1::ONE
-				} else {
-					B1::ZERO
-				}
-			}),
+			array::from_fn(|bit_index| if bit_index < 7 { B1::ONE } else { B1::ZERO }),
 		);
 		let next_state_in = StateMatrix::from_fn(|(x, y)| {
 			table.add_shifted(
 				format!("next_state_in[{x},{y}]"),
-				batches[0].state_in[(x, y)],
-				9,
-				64,
+				state_in_packed[(x, y)],
+				TRACKS_PER_BATCH.ilog2() as usize,
+				1,
 				ShiftVariant::LogicalRight,
 			)
 		});
 		for x in 0..5 {
 			for y in 0..5 {
-				let state_out = &batches[2].state_out;
 				table.assert_zero(
 					"link_out_to_next_in",
-					(state_out[(x, y)] - next_state_in[(x, y)]) * link_sel,
+					(state_out_packed[(x, y)] - next_state_in[(x, y)])
+						* upcast_expr(Expr::from(link_sel)),
 				);
 			}
 		}
@@ -223,19 +219,9 @@ impl Keccakf {
 		}
 
 		{
-			let mut link_sel: std::cell::RefMut<'_, [u64]> = index.get_mut_as(self.link_sel)?;
-			assert!(link_sel.len() % TRACKS_PER_BATCH == 0);
-			for link_sel_chunk in link_sel.chunks_exact_mut(TRACKS_PER_BATCH) {
-				link_sel_chunk.copy_from_slice(&[
-					u64::MAX,
-					u64::MAX,
-					u64::MAX,
-					u64::MAX,
-					u64::MAX,
-					u64::MAX,
-					u64::MAX,
-					0,
-				]);
+			let mut link_sel: std::cell::RefMut<'_, [u8]> = index.get_mut_as(self.link_sel)?;
+			for link_sel_i in link_sel.iter_mut() {
+				*link_sel_i = 0x7f;
 			}
 		}
 
