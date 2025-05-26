@@ -1,5 +1,4 @@
 // Copyright 2024-2025 Irreducible Inc.
-
 use cfg_if::cfg_if;
 
 // We will choose the AVX512 Implementation of Grøstl if our machine supports the various AVX512
@@ -9,11 +8,10 @@ use cfg_if::cfg_if;
 cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
 		mod groestl_multi_avx2;
-		pub use groestl_multi_avx2::Groestl256Multi;
+		pub use groestl_multi_avx2::Groestl256Parallel;
 	} else {
 		use super::Groestl256;
-		use crate::multi_digest::MultipleDigests;
-		pub type Groestl256Multi = MultipleDigests<Groestl256,4>;
+		pub type Groestl256Parallel = Groestl256;
 	}
 }
 
