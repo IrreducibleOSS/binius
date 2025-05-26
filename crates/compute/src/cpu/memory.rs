@@ -25,6 +25,10 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 		data
 	}
 
+	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
+		data
+	}
+
 	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_> {
 		let start = match range.start_bound() {
 			Bound::Included(&start) => start,
