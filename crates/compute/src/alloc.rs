@@ -5,7 +5,7 @@ use std::cell::Cell;
 use super::memory::{ComputeMemory, SizedSlice};
 use crate::cpu::CpuMemory;
 
-pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
+pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	/// Allocates a slice of elements.
 	///
 	/// This method operates on an immutable self reference so that multiple allocator references
@@ -52,7 +52,7 @@ where
 	}
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocator<'a, F, Mem> {
+impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error> {
 		let buffer = self
 			.buffer
