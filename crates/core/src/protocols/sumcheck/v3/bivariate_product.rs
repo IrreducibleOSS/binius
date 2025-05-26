@@ -138,7 +138,11 @@ where
 			PhaseState::InitialSums(ref sums) => evaluate_univariate(sums, batch_coeff),
 			PhaseState::BatchedSum(sum) => sum,
 		};
-		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
+		let round_coeffs = if !self.compositions.is_empty() {
+			calculate_round_coeffs_from_evals(batched_sum, round_evals)
+		} else {
+			RoundCoeffs(vec![F::ZERO])
+		};
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
 		Ok(round_coeffs)
 	}
