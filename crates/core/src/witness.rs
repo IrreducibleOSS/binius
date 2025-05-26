@@ -149,7 +149,6 @@ impl<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> HalMultilinearExtensionIndex<'a
 			.get(id.index())
 			.ok_or(Error::MissingWitness { id })
 			.copied()
-			.map_err(Error::from)
 	}
 
 	pub fn update_multilin_polys_from_witness<'b, P>(
