@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{borrow::Cow, ops::Deref};
+use std::{borrow::Cow, ops::Deref, fs};
 
 use binius_compute::{
 	ComputeLayer, ComputeMemory,
@@ -193,6 +193,7 @@ pub fn prove<
 	Backend,
 >(
 	hal: &Hal,
+	host_mem: <CpuMemory as ComputeMemory<F>>::FSliceMut<'_>,
 	dev_mem: <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
@@ -225,6 +226,8 @@ where
 	Backend: ComputationBackend,
 	Hal: ComputeLayer<F> + Default,
 {
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+
 	let dev_alloc = BumpAllocator::<_,Hal::DevMem>::new(dev_mem);
 
 	// Map of n_vars to sumcheck claim descriptions
@@ -246,6 +249,13 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
+	let fslices_mut = packed_committed_multilins
+		.iter()
+		.map(|_| dev_alloc.alloc(1 << 20).unwrap())
+		.collect::<Vec<_>>();
+
+	let fslices = fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
 		.enumerate()
@@ -253,24 +263,10 @@ where
 		// indicates unconstrained columns, but we still need the final evaluations from the
 		// sumcheck prover in order to derive the final FRI value.
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
-	let mut host_mem = hal.host_alloc(1 << 20);
-	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
 
 	let mut sumcheck_provers = vec![];
-	let mut host_allocs = vec![];
-	let mut dev_allocs = vec![];
-	let non_empty_sumcheck_descs_iter = non_empty_sumcheck_descs.into_iter();
-	for _ in non_empty_sumcheck_descs_iter.clone(){
-		let this_sumcheck_host_mem = host_alloc.alloc(1<<4).unwrap();
-		let this_sumcheck_host_alloc = HostBumpAllocator::new(this_sumcheck_host_mem);
-		host_allocs.push(this_sumcheck_host_alloc);
 
-		let this_sumcheck_dev_mem = dev_alloc.alloc(1<<24).unwrap();
-		let this_sumcheck_dev_alloc = BumpAllocator::<_,Hal::DevMem>::new(this_sumcheck_dev_mem);
-		dev_allocs.push(this_sumcheck_dev_alloc);
-	} 
-
-	for (i,(_n_vars, desc)) in non_empty_sumcheck_descs_iter.enumerate(){
+	for (_n_vars, desc) in non_empty_sumcheck_descs{
 		let multilins = chain!(
 			packed_committed_multilins[desc.committed_indices.clone()]
 				.iter()
@@ -298,17 +294,9 @@ where
 		// let f_vecs = multilins.iter().map(|multilin|{
 		// 	P::unpack_scalars(multilin.packed_evals().unwrap())
 		// }).collect();
+		
 
-		let mut fslices_mut = multilins
-			.iter()
-			.map(|_| dev_alloc.alloc(1 << 20).unwrap())
-			.collect::<Vec<_>>();
-		let fslices_const = fslices_mut
-			.iter()
-			.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
-			.collect();
-
-		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_allocs[i], &host_allocs[i], &claim, fslices_const)?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, fslices.clone())?);
 	}
 
 	prove_interleaved_fri_sumcheck(

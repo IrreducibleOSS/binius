@@ -460,9 +460,11 @@ where
 	.entered();
 
 	let hal = CpuLayer::<Tower>::default();
+	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
 	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
 	piop::prove::<_, _, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
 		&hal,
+		&mut host_mem,
 		&mut dev_mem,
 		&fri_params,
 		&ntt,
