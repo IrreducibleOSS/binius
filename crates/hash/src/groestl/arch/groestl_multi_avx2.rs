@@ -1,6 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
 use std::{arch::x86_64::*, array};
+
+use crate::multi_digest::ParallelMulidigestImpl;
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
@@ -265,7 +267,7 @@ fn permutation_q(state: &mut State) {
 #[derive(Clone)]
 pub struct Groestl256Multi {
 	state: State,
-	unfinished_block: [[u8; STATE_SIZE]; 4],
+	unfinished_block: [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES],
 	num_unfinished_bytes: usize,
 	num_blocks_consumed: usize,
 }
@@ -441,6 +443,9 @@ impl MultiDigest<4> for Groestl256Multi {
 		digest.finalize_into(out);
 	}
 }
+
+#[allow(private_interfaces)]
+pub type Groestl256Parallel = ParallelMulidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]
 mod tests {
