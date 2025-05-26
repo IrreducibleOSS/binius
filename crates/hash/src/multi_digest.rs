@@ -172,87 +172,16 @@ impl<D: Digest + Send + Sync + Clone> ParallelDigest for D {
 	}
 }
 
-/// Default fallback implementation for a multi-digest hasher, given the single digest type
-/// This should be used when an architecture-optimized implementation isn't available on
-/// the current machine.
-///
-/// example:
-///
-/// cfg_if! {
-///     if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
-///         mod groestl_multi_avx2;
-///         pub use groestl_multi_avx2::Groestl256Multi;
-///     } else {
-///         use super::Groestl256;
-///         use crate::multi_digest::MultipleDigests;
-///         pub type Groestl256Multi = MultipleDigests<Groestl256,4>;
-///     }
-/// }
-#[derive(Clone)]
-pub struct MultipleDigests<D: Digest, const N: usize>([D; N]);
-
-impl<D: Digest + Send + Sync + Clone + digest::Reset, const N: usize> MultiDigest<N>
-	for MultipleDigests<D, N>
-{
-	type Digest = D;
-
-	fn new() -> Self {
-		Self(array::from_fn(|_| D::new()))
-	}
-
-	fn update(&mut self, data: [&[u8]; N]) {
-		self.0.iter_mut().enumerate().for_each(|(i, hasher)| {
-			hasher.update(data[i]);
-		});
-	}
-
-	fn finalize_into(self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
-		let mut out_each_mut = out.each_mut();
-		self.0
-			.iter()
-			.zip(out_each_mut.iter_mut())
-			.for_each(|(hasher, out_buffer)| {
-				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
-				hasher.clone().finalize_into(assumed_init_buffer);
-			});
-	}
-
-	fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
-		let mut out_each_mut = out.each_mut();
-		self.0
-			.iter_mut()
-			.zip(out_each_mut.iter_mut())
-			.for_each(|(hasher, out_buffer)| {
-				let assumed_init_buffer = unsafe { out_buffer.assume_init_mut() };
-				hasher.clone().finalize_into(assumed_init_buffer);
-				Digest::reset(hasher);
-			});
-	}
-
-	fn reset(&mut self) {
-		self.0.iter_mut().for_each(|hasher| {
-			Digest::reset(hasher);
-		});
-	}
-
-	fn digest(data: [&[u8]; N], out: &mut [MaybeUninit<Output<Self::Digest>>; N]) {
-		let mut multi_hasher = Self::new();
-		multi_hasher.update(data);
-		multi_hasher.finalize_into(out);
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::U32};
+	use digest::{FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::U32};
 	use itertools::izip;
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 	use super::*;
-	use crate::groestl::Groestl256;
 
 	#[derive(Clone, Default)]
 	struct MockDigest {
@@ -288,7 +217,53 @@ mod tests {
 		}
 	}
 
-	type MockMultiDigest = MultipleDigests<MockDigest, 4>;
+	#[derive(Clone, Default)]
+	struct MockMultiDigest {
+		digests: [MockDigest; 4],
+	}
+
+	impl MultiDigest<4> for MockMultiDigest {
+		type Digest = MockDigest;
+
+		fn new() -> Self {
+			Self::default()
+		}
+
+		fn update(&mut self, data: [&[u8]; 4]) {
+			for (digest, &chunk) in self.digests.iter_mut().zip(data.iter()) {
+				digest::Digest::update(digest, chunk);
+			}
+		}
+
+		fn finalize_into(self, out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
+			for (digest, out) in self.digests.into_iter().zip(out.iter_mut()) {
+				let mut output = digest::Output::<Self::Digest>::default();
+				digest::Digest::finalize_into(digest, &mut output);
+				*out = MaybeUninit::new(output);
+			}
+		}
+
+		fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
+			for (digest, out) in self.digests.iter_mut().zip(out.iter_mut()) {
+				let mut digest_copy = MockDigest::default();
+				std::mem::swap(digest, &mut digest_copy);
+				*out = MaybeUninit::new(digest_copy.finalize());
+			}
+			self.reset();
+		}
+
+		fn reset(&mut self) {
+			for digest in &mut self.digests {
+				*digest = MockDigest::default();
+			}
+		}
+
+		fn digest(data: [&[u8]; 4], out: &mut [MaybeUninit<Output<Self::Digest>>; 4]) {
+			let mut hasher = Self::default();
+			hasher.update(data);
+			hasher.finalize_into(out);
+		}
+	}
 
 	struct DataWrapper(Vec<u8>);
 
@@ -336,25 +311,6 @@ mod tests {
 		}
 	}
 
-	fn check_multiple_digest_consistency<
-		const N: usize,
-		D: MultiDigest<N, Digest: Send + Sync + Clone>,
-	>(
-		data: Vec<DataWrapper>,
-	) {
-		let mut multi_results = array::from_fn(|_| MaybeUninit::<Output<D::Digest>>::uninit());
-
-		let input_arr = array::from_fn(|i| &data[i].0[..]);
-		<D as MultiDigest<N>>::digest(input_arr, &mut multi_results);
-
-		for (data_slice, multi_output_buffer) in izip!(input_arr, multi_results) {
-			assert_eq!(
-				unsafe { multi_output_buffer.assume_init() },
-				<D::Digest as Digest>::digest(data_slice)
-			);
-		}
-	}
-
 	#[test]
 	fn test_empty_data() {
 		let data = generate_mock_data(0, 16);
@@ -367,11 +323,5 @@ mod tests {
 			let data = generate_mock_data(n_hashes, 16);
 			check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
 		}
-	}
-
-	#[test]
-	fn test_multi() {
-		let data = generate_mock_data(4, 16);
-		check_multiple_digest_consistency::<4, MultipleDigests<Groestl256, 4>>(data);
 	}
 }

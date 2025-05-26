@@ -2,13 +2,15 @@
 
 use std::{array, mem::MaybeUninit};
 
+use binius_field::{BinaryField8b, Field};
 use binius_hash::{
 	VisionHasherDigest, VisionHasherDigestByteSliced,
-	groestl::{Groestl256, Groestl256Multi},
-	multi_digest::MultiDigest,
+	groestl::{Groestl256, Groestl256Parallel},
+	multi_digest::{MultiDigest, ParallelDigest},
 };
+use binius_maybe_rayon::iter::IntoParallelIterator;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use digest::{Digest, generic_array::GenericArray, typenum::U32};
+use digest::{Digest, consts::U32, generic_array::GenericArray};
 use rand::{RngCore, thread_rng};
 
 fn bench_groestl(c: &mut Criterion) {
@@ -19,13 +21,29 @@ fn bench_groestl(c: &mut Criterion) {
 	const N: usize = 1 << 16;
 	let mut data = [0u8; N];
 	rng.fill_bytes(&mut data);
-
 	group.throughput(Throughput::Bytes(N as u64));
 	group.bench_function("Groestl256", |bench| {
-		bench.iter(|| Groestl256::digest(data));
+		let data2 = [[BinaryField8b::ZERO; N]; 1];
+
+		let parallel_borrowed_slices = data2.into_par_iter();
+		std::hint::black_box(parallel_borrowed_slices);
+		bench.iter(|| <Groestl256 as Digest>::digest(data))
 	});
+
+	let hasher = <Groestl256 as ParallelDigest>::new();
+	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 1] =
+		unsafe { MaybeUninit::uninit().assume_init() };
+	group.bench_function("Groestl256 Parallel Default", |bench| {
+		bench.iter(|| {
+			let data = [[BinaryField8b::ZERO; N]; 1];
+
+			let parallel_borrowed_slices = data.into_par_iter();
+			hasher.digest(parallel_borrowed_slices, &mut multi_digest)
+		})
+	});
+
 	group.bench_function("Groestl256-RustCrypto", |bench| {
-		bench.iter(|| groestl_crypto::Groestl256::digest(data));
+		bench.iter(|| <groestl_crypto::Groestl256 as groestl_crypto::Digest>::digest(data))
 	});
 
 	group.finish()
@@ -34,21 +52,19 @@ fn bench_groestl(c: &mut Criterion) {
 fn bench_groestl_multi(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Grøstl");
 
-	let mut rng = thread_rng();
+	const N: usize = 1 << 14;
 
-	const N: usize = 1 << 16;
-	let mut data = [[0u8; N]; 4];
-	for data_lane in &mut data {
-		rng.fill_bytes(data_lane);
-	}
-
-	let input_as_borrowed_slices = array::from_fn(|i| &data[i][..]);
 	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
 		unsafe { MaybeUninit::uninit().assume_init() };
+	let hasher = <Groestl256Parallel as ParallelDigest>::new();
 
 	group.throughput(Throughput::Bytes(4 * N as u64));
-	group.bench_function("Groestl256Multi", |bench| {
-		bench.iter(|| Groestl256Multi::digest(input_as_borrowed_slices, &mut multi_digest));
+	group.bench_function("Groestl256Parallel", |bench| {
+		bench.iter(|| {
+			let data = [[BinaryField8b::ZERO; N]; 4];
+			let parallel_borrowed_slices = data.into_par_iter();
+			hasher.digest(parallel_borrowed_slices, &mut multi_digest)
+		})
 	});
 
 	group.finish()
@@ -64,7 +80,9 @@ fn bench_vision32(c: &mut Criterion) {
 	rng.fill_bytes(&mut data);
 
 	group.throughput(Throughput::Bytes(N as u64));
-	group.bench_function("Vision-Single", |bench| bench.iter(|| VisionHasherDigest::digest(data)));
+	group.bench_function("Vision-Single", |bench| {
+		bench.iter(|| <VisionHasherDigest as Digest>::digest(data))
+	});
 
 	group.bench_function("Vision-Parallel32", |bench| {
 		bench.iter(|| {
