@@ -295,7 +295,8 @@ where
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
 	// Prove grand products
-	let all_gpa_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
+	let all_gpa_witnesses =
+		chain!(flush_prodcheck_witnesses, non_zero_prodcheck_witnesses).collect::<Vec<_>>();
 	let all_gpa_claims = chain!(flush_prodcheck_claims, non_zero_prodcheck_claims)
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
