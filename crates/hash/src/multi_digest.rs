@@ -172,6 +172,22 @@ impl<D: Digest + Send + Sync + Clone> ParallelDigest for D {
 	}
 }
 
+/// Default fallback implementation for a multi-digest hasher, given the single digest type
+/// This should be used when an architecture-optimized implementation isn't available on
+/// the current machine.
+///
+/// example:
+///
+/// cfg_if! {
+/// 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
+///			mod groestl_multi_avx2;
+///			pub use groestl_multi_avx2::Groestl256Multi;
+///		} else {
+///			use super::Groestl256;
+///			use crate::multi_digest::MultipleDigests;
+///			pub type Groestl256Multi = MultipleDigests<Groestl256,4>;
+/// 	}
+/// }
 #[derive(Clone)]
 pub struct MultipleDigests<D: Digest, const N: usize>([D; N]);
 
