@@ -249,12 +249,18 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let fslices_mut = packed_committed_multilins
+	let packed_committed_fslices_mut = packed_committed_multilins
 		.iter()
-		.map(|_| dev_alloc.alloc(1 << 20).unwrap())
+		.map(|packed_committed_multilin| {
+			let hypercube_evals = packed_committed_multilin.packed_evals();
+			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
+			let allocated_mem = dev_alloc.alloc(1 << 20).unwrap();
+			hal.copy_h2d(packed_committed_multilin,&mut allocated_mem);
+			allocated_mem
+		})
 		.collect::<Vec<_>>();
 
-	let fslices = fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+	let fslices = packed_committed_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
 
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
