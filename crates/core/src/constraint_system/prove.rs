@@ -654,7 +654,7 @@ where
 						});
 
 						if selector_off {
-							// If all selectors are zero, the result is 1
+							// If any selector is zero, the result is 1
 							<FExt<Tower>>::ONE
 						} else {
 							// Otherwise, compute the linear combination
