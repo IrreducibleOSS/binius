@@ -57,6 +57,10 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 	fn narrow_mut<'a, 'b: 'a>(data: Self::FSliceMut<'b>) -> Self::FSliceMut<'a> {
 		data
 	}
+
+	fn to_owned_mut<'a>(data: &'a mut Self::FSliceMut<'_>) -> Self::FSliceMut<'a>{
+        Self::FSliceMut::new(data.data)
+    }
 }
 
 impl<P: PackedField> PackedMemory<P> {

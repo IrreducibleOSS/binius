@@ -21,7 +21,7 @@ pub trait ComputeAllocator<'a, F, Mem: ComputeMemory<F>> {
 	///
 	/// This allows another allocator to have unique mutable access to the rest of the elements in
 	/// this allocator until it gets dropped, at which point this allocator can be used again
-	fn remaining(&mut self) -> &mut Mem::FSliceMut<'a>;
+	fn remaining(&mut self) -> Mem::FSliceMut<'_>;
 
 	/// Returns the remaining number of elements that can be allocated.
 	fn capacity(&self) -> usize;
@@ -71,11 +71,13 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<'a, F, Mem> for BumpAllocato
 		}
 	}
 
-	fn remaining(&mut self) -> &mut Mem::FSliceMut<'a> {
-		self.buffer
-			.get_mut()
-			.as_mut()
-			.expect("buffer is always Some by invariant")
+	fn remaining(&mut self) -> Mem::FSliceMut<'_> {
+		Mem::to_owned_mut(
+			self.buffer
+				.get_mut()
+				.as_mut()
+				.expect("buffer is always Some by invariant"),
+		)
 	}
 
 	fn capacity(&self) -> usize {

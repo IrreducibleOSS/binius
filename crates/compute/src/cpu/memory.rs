@@ -59,6 +59,10 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 	) -> (Self::FSliceMut<'_>, Self::FSliceMut<'_>) {
 		data.split_at_mut(mid)
 	}
+
+	fn to_owned_mut<'a>(data: &'a mut &mut [F]) -> &'a mut [F] {
+		data
+	}
 }
 
 #[cfg(test)]
