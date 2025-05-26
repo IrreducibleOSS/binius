@@ -588,8 +588,7 @@ where
 		.par_iter()
 		.zip(flushes)
 		.map(|(&flush_oracle, flush)| {
-			let oracle = oracles.oracle(flush_oracle);
-			let n_vars = oracle.n_vars();
+			let n_vars = oracles.n_vars(flush_oracle);
 
 			let const_term = flush
 				.oracles
