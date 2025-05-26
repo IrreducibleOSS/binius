@@ -17,7 +17,7 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error>;
 
-	/// Allocates the remaining elements in the slice
+	/// Borrow the remaining unallocated capacity.
 	///
 	/// This allows another allocator to have unique mutable access to the rest of the elements in
 	/// this allocator until it gets dropped, at which point this allocator can be used again
