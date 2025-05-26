@@ -10,14 +10,21 @@ use binius_circuits::{
 	builder::{ConstraintSystemBuilder, types::U},
 	collatz::{Advice, Collatz},
 };
+use binius_compute::{
+	ComputeLayer, FSliceMut,
+	alloc::{BumpAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
 use binius_core::{
 	constraint_system::{self, Proof},
 	fiat_shamir::HasherChallenger,
+	witness::HalMultilinearExtensionIndex,
 };
-use binius_field::tower::CanonicalTowerFamily;
+use binius_field::{BinaryField128b, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::rayon::adjust_thread_pool;
+use bytemuck::zeroed_vec;
 use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
 
@@ -69,6 +76,15 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 
 	constraint_system::validate::validate_witness(&constraint_system, &boundaries, &witness)?;
 
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let mut host_mem = hal.host_alloc(1 << 12);
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let dev_alloc = BumpAllocator::new(
+		(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+	);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
@@ -76,13 +92,17 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
+		_,
 	>(
 		&constraint_system,
 		log_inv_rate,
 		SECURITY_BITS,
 		&boundaries,
 		witness,
+		&hal_witness,
 		&make_portable_backend(),
+		&host_alloc,
+		&dev_alloc,
 	)?;
 
 	Ok((advice, proof))

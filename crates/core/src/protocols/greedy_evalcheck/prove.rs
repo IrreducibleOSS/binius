@@ -1,5 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_compute::{
+	ComputeLayer,
+	alloc::{BumpAllocator, HostBumpAllocator},
+};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
@@ -15,7 +19,7 @@ use crate::{
 		},
 	},
 	transcript::ProverTranscript,
-	witness::MultilinearExtensionIndex,
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex},
 };
 
 pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
@@ -24,14 +28,17 @@ pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: Com
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn prove<'a, F, P, DomainField, Challenger_, Backend>(
+pub fn prove<'a, 'b, 'alloc, F, P, DomainField, Challenger_, Backend, Hal: ComputeLayer<F>>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &'a mut MultilinearExtensionIndex<P>,
+	hal_witness: &'b HalMultilinearExtensionIndex<'b, 'alloc, F, Hal>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	transcript: &mut ProverTranscript<Challenger_>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
+	dev_alloc: &'b BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'b HostBumpAllocator<'b, F>,
 ) -> Result<GreedyEvalcheckProveOutput<'a, F, P, Backend>, Error>
 where
 	F: TowerField + ExtensionField<DomainField>,
@@ -54,7 +61,7 @@ where
 		perfetto_category = "phase.sub"
 	)
 	.entered();
-	evalcheck_prover.prove(claims, transcript)?;
+	evalcheck_prover.prove(claims, transcript, hal_witness)?;
 	drop(initial_evalcheck_round_span);
 
 	loop {
@@ -74,29 +81,23 @@ where
 			Vec::with_capacity(new_bivariate_sumchecks.len() + new_mlechecks.len());
 
 		if !new_bivariate_sumchecks.is_empty() {
-			// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck
-			// claims.
-			let dimensions_data =
-				RegularSumcheckDimensionsData::new(new_bivariate_sumchecks.iter());
-			let evalcheck_round_mle_fold_high_span = tracing::debug_span!(
+			tracing::debug_span!(
 				"[task] (Evalcheck) Regular Sumcheck (Small)",
 				phase = "evalcheck",
 				perfetto_category = "task.main",
-				dimensions_data = ?dimensions_data,
 			)
-			.entered();
-			let evalcheck_claims =
-				prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
-					evalcheck_prover.witness_index,
+			.in_scope(|| {
+				let evalcheck_claims = prove_bivariate_sumchecks_with_switchover(
 					new_bivariate_sumchecks,
+					hal_witness,
+					dev_alloc,
+					host_alloc,
 					transcript,
-					switchover_fn.clone(),
-					domain_factory.clone(),
-					backend,
 				)?;
 
-			new_evalcheck_claims.extend(evalcheck_claims);
-			drop(evalcheck_round_mle_fold_high_span);
+				new_evalcheck_claims.extend(evalcheck_claims);
+				Ok::<_, Error>(())
+			})?;
 		}
 
 		if !new_mlechecks.is_empty() {
@@ -139,7 +140,7 @@ where
 			break;
 		}
 
-		evalcheck_prover.prove(new_evalcheck_claims, transcript)?;
+		evalcheck_prover.prove(new_evalcheck_claims, transcript, hal_witness)?;
 	}
 
 	let committed_claims = evalcheck_prover

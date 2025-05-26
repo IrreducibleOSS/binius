@@ -1,16 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 use std::iter::repeat_with;
 
+use binius_compute::{
+	ComputeLayer, FSliceMut,
+	alloc::{BumpAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
 use binius_field::{
 	BinaryField1b, BinaryField32b, BinaryField128b, ExtensionField, Field, PackedBinaryField1x128b,
 	PackedBinaryField128x1b, PackedExtension, PackedField, RepackedExtension, TowerField,
 	packed::{get_packed_slice, len_packed_slice, pack_slice, set_packed_slice},
+	tower::{CanonicalTowerFamily, TowerFamily},
 };
 use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{DefaultEvaluationDomainFactory, MultilinearExtension};
-use bytemuck::Pod;
+use bytemuck::{Pod, zeroed_vec};
 use either::Either;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -25,7 +31,7 @@ use crate::{
 	},
 	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
-	witness::MultilinearExtensionIndex,
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex},
 };
 
 type FExtension = BinaryField128b;
@@ -60,6 +66,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b> + ExtensionField<FDomain>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension: PackedField<Scalar = FExtension>
 		+ PackedExtension<FDomain>
 		+ RepackedExtension<P>
@@ -158,15 +165,26 @@ where
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
 
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 20);
+	let mut host_mem = hal.host_alloc(1 << 20);
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let _ = prove::<_, _, FDomain, _, _>(
+	let _ = prove::<_, _, FDomain, _, _, _>(
 		&mut oracles,
 		&mut witness_index,
+		&hal_witness,
 		[composite_claim.clone(), shifted_claim.clone()],
 		standard_switchover_heuristic(-2),
 		&mut transcript,
 		&domain_factory,
 		&backend,
+		&dev_alloc,
+		&host_alloc,
 	)
 	.unwrap();
 

@@ -1,5 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_compute::{
+	ComputeLayer,
+	alloc::{BumpAllocator, HostBumpAllocator},
+};
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
@@ -11,15 +15,22 @@ use super::{
 	eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder},
 };
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
+	composition::BivariateProduct,
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, IndexCompositionConstraint,
+		IndexCompositionConstraintSet,
+	},
 	protocols::{
 		evalcheck::{EvalPoint, subclaims::MemoizedData},
 		sumcheck::{
-			CompositeSumClaim, Error, OracleClaimMeta, constraint_set_mlecheck_claim,
-			constraint_set_sumcheck_claim,
+			CompositeSumClaim, Error, OracleClaimMeta, SumcheckClaim,
+			constraint_set_mlecheck_claim, index_composition_constraint_set_sumcheck_claim,
+			v3::bivariate_product::BivariateSumcheckProver,
 		},
 	},
-	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
+	witness::{
+		HalMultilinearExtensionIndex, IndexEntry, MultilinearExtensionIndex, MultilinearWitness,
+	},
 };
 
 pub type OracleZerocheckProver<'a, P, FBase, FDomain, DomainFactory, Backend> = ZerocheckProverImpl<
@@ -108,46 +119,48 @@ where
 
 /// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains
 /// zerochecks.
-pub fn constraint_set_sumcheck_prover<'a, F, P, FDomain, Backend>(
-	evaluation_order: EvaluationOrder,
-	constraint_set: ConstraintSet<F>,
-	witness: &MultilinearExtensionIndex<'a, P>,
-	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	switchover_fn: impl Fn(usize) -> usize + Clone,
-	backend: &'a Backend,
-) -> Result<OracleSumcheckProver<'a, FDomain, P, Backend>, Error>
+pub fn constraint_set_bivariate_sumcheck_prover<'a, 'alloc, F, Hal: ComputeLayer<F>>(
+	constraint_set: IndexCompositionConstraintSet<F, BivariateProduct, 2>,
+	witness: &'a HalMultilinearExtensionIndex<'a, 'alloc, F, Hal>,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, F>,
+) -> Result<BivariateSumcheckProver<'a, 'alloc, F, Hal>, Error>
 where
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	F: TowerField + ExtensionField<FDomain>,
-	FDomain: Field,
-	Backend: ComputationBackend,
+	F: TowerField,
 {
-	let (constraints, multilinears) = split_constraint_set::<F, P>(constraint_set, witness)?;
+	let IndexCompositionConstraintSet {
+		oracle_ids,
+		constraints,
+		n_vars,
+	} = constraint_set;
+
+	let multilins = oracle_ids
+		.into_iter()
+		.map(|id| witness.get_multilin_poly(id))
+		.collect::<Result<Vec<_>, _>>()?;
 
 	let mut sums = Vec::new();
 
-	for Constraint {
+	for IndexCompositionConstraint {
 		composition,
 		predicate,
 		..
 	} in constraints
 	{
 		match predicate {
-			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
-				sum,
-			}),
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim { composition, sum }),
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
 
-	let prover = RegularSumcheckProver::new(
-		evaluation_order,
-		multilinears,
-		sums,
-		evaluation_domain_factory,
-		switchover_fn,
-		backend,
+	let claim = SumcheckClaim::new(n_vars, multilins.len(), sums)?;
+
+	let prover = BivariateSumcheckProver::<F, Hal>::new(
+		witness.hal,
+		dev_alloc,
+		host_alloc,
+		&claim,
+		multilins,
 	)?;
 
 	Ok(prover)
@@ -265,48 +278,40 @@ where
 	Ok((constraints, multilinears))
 }
 
-pub struct SumcheckProversWithMetas<'a, P, FDomain, Backend>
+pub struct BivariateSumcheckProversWithMetas<'a, 'alloc, F, Hal: ComputeLayer<F>>
 where
-	P: PackedField,
-	FDomain: Field,
-	Backend: ComputationBackend,
+	F: Field,
 {
-	pub provers: Vec<OracleSumcheckProver<'a, FDomain, P, Backend>>,
+	pub provers: Vec<BivariateSumcheckProver<'a, 'alloc, F, Hal>>,
 	pub metas: Vec<OracleClaimMeta>,
 }
 
 /// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
-pub fn constraint_sets_sumcheck_provers_metas<'a, P, FDomain, Backend>(
-	evaluation_order: EvaluationOrder,
-	constraint_sets: Vec<ConstraintSet<P::Scalar>>,
-	witness: &MultilinearExtensionIndex<'a, P>,
-	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	switchover_fn: impl Fn(usize) -> usize,
-	backend: &'a Backend,
-) -> Result<SumcheckProversWithMetas<'a, P, FDomain, Backend>, Error>
+pub fn constraint_sets_bivariate_sumcheck_provers_metas<'a, 'alloc, F, Hal: ComputeLayer<F>>(
+	constraint_sets: Vec<IndexCompositionConstraintSet<F, BivariateProduct, 2>>,
+	witness: &'a HalMultilinearExtensionIndex<'a, 'alloc, F, Hal>,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, F>,
+) -> Result<BivariateSumcheckProversWithMetas<'a, 'alloc, F, Hal>, Error>
 where
-	P: PackedExtension<FDomain>,
-	P::Scalar: TowerField + ExtensionField<FDomain>,
-	FDomain: Field,
-	Backend: ComputationBackend,
+	F: TowerField,
 {
 	let mut provers = Vec::with_capacity(constraint_sets.len());
 	let mut metas = Vec::with_capacity(constraint_sets.len());
 
 	for constraint_set in constraint_sets {
-		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone())?;
-		let prover = constraint_set_sumcheck_prover(
-			evaluation_order,
+		let (_, meta) = index_composition_constraint_set_sumcheck_claim(constraint_set.clone())?;
+
+		let prover = constraint_set_bivariate_sumcheck_prover(
 			constraint_set,
 			witness,
-			evaluation_domain_factory.clone(),
-			&switchover_fn,
-			backend,
+			dev_alloc,
+			host_alloc,
 		)?;
 		metas.push(meta);
 		provers.push(prover);
 	}
-	Ok(SumcheckProversWithMetas { provers, metas })
+	Ok(BivariateSumcheckProversWithMetas { provers, metas })
 }
 
 pub struct MLECheckProverWithMeta<'a, P, FDomain, Backend>

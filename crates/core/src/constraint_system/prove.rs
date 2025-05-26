@@ -2,6 +2,10 @@
 
 use std::{env, marker::PhantomData};
 
+use binius_compute::{
+	ComputeLayer,
+	alloc::{BumpAllocator, HostBumpAllocator},
+};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -51,18 +55,32 @@ use crate::{
 	},
 	ring_switch,
 	transcript::ProverTranscript,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
+#[allow(clippy::too_many_arguments)]
+pub fn prove<
+	'b,
+	'alloc,
+	U,
+	Tower,
+	Hash,
+	Compress,
+	Challenger_,
+	Backend,
+	Hal: ComputeLayer<Tower::B128>,
+>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	boundaries: &[Boundary<FExt<Tower>>],
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
+	hal_witness: &'b HalMultilinearExtensionIndex<'b, 'alloc, Tower::B128, Hal>,
 	backend: &Backend,
+	dev_alloc: &'b BumpAllocator<'alloc, Tower::B128, Hal::DevMem>,
+	host_alloc: &'b HostBumpAllocator<'b, Tower::B128>,
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
@@ -412,14 +430,17 @@ where
 	let GreedyEvalcheckProveOutput {
 		eval_claims,
 		memoized_data,
-	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
+	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _, _>(
 		&mut oracles,
 		&mut witness,
+		hal_witness,
 		chain!(prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
 		standard_switchover_heuristic(-2),
 		&mut transcript,
 		&domain_factory,
 		backend,
+		dev_alloc,
+		host_alloc,
 	)?;
 
 	// Reduce committed evaluation claims to PIOP sumcheck claims

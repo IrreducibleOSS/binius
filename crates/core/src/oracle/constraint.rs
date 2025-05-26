@@ -10,6 +10,7 @@ use binius_utils::bail;
 use itertools::Itertools;
 
 use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
+use crate::composition::IndexComposition;
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.
@@ -21,6 +22,13 @@ pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 pub struct Constraint<F: Field> {
 	pub name: String,
 	pub composition: ArithCircuit<F>,
+	pub predicate: ConstraintPredicate<F>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexCompositionConstraint<F: Field, C, const N: usize> {
+	pub name: String,
+	pub composition: IndexComposition<C, N>,
 	pub predicate: ConstraintPredicate<F>,
 }
 
@@ -39,6 +47,13 @@ pub struct ConstraintSet<F: Field> {
 	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,
 	pub constraints: Vec<Constraint<F>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexCompositionConstraintSet<F: Field, C, const N: usize> {
+	pub n_vars: usize,
+	pub oracle_ids: Vec<OracleId>,
+	pub constraints: Vec<IndexCompositionConstraint<F, C, N>>,
 }
 
 // A deferred constraint constructor that instantiates index composition after the superset of
@@ -255,6 +270,72 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.collect();
 
 		Ok(constraint_sets)
+	}
+
+	pub fn build_one_index_composition<C: Clone, const N: usize>(
+		self,
+		oracles: &MultilinearOracleSet<impl TowerField>,
+		composition: C,
+	) -> Result<IndexCompositionConstraintSet<F, C, N>, Error> {
+		let mut oracle_ids = self
+			.constraints
+			.iter()
+			.flat_map(|constraint| constraint.oracle_ids.clone())
+			.collect::<Vec<_>>();
+		if oracle_ids.is_empty() {
+			// Do not bail!, this error is handled in evalcheck.
+			return Err(Error::EmptyConstraintSet);
+		}
+		for id in &oracle_ids {
+			if !oracles.is_valid_oracle_id(*id) {
+				bail!(Error::InvalidOracleId(*id));
+			}
+		}
+		oracle_ids.sort();
+		oracle_ids.dedup();
+
+		let n_vars = oracle_ids
+			.first()
+			.map(|id| oracles.n_vars(*id))
+			.unwrap_or_default();
+
+		for id in &oracle_ids {
+			if oracles.n_vars(*id) != n_vars {
+				bail!(Error::ConstraintSetNvarsMismatch {
+					expected: n_vars,
+					got: oracles.n_vars(*id)
+				});
+			}
+		}
+
+		// at this point the superset of oracles is known and index compositions
+		// may be finally instantiated
+		let constraints = self
+			.constraints
+			.into_iter()
+			.map(|constraint| {
+				let pos_vec = positions(&constraint.oracle_ids, &oracle_ids)
+					.expect("precondition")
+					.try_into()
+					.map_err(|_| Error::CompositionMismatch)?;
+
+				Ok(IndexCompositionConstraint {
+					name: constraint.name,
+					composition: IndexComposition::new(
+						oracle_ids.len(),
+						pos_vec,
+						composition.clone(),
+					)?,
+					predicate: constraint.predicate,
+				})
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+
+		Ok(IndexCompositionConstraintSet {
+			n_vars,
+			oracle_ids,
+			constraints,
+		})
 	}
 }
 

@@ -3,9 +3,17 @@
 //! Utilities for testing M3 constraint systems and gadgets.
 
 use anyhow::Result;
-use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
+use binius_compute::{
+	ComputeLayer, FSliceMut,
+	alloc::{BumpAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
+use binius_core::{
+	constraint_system::channel::Boundary, fiat_shamir::HasherChallenger,
+	witness::HalMultilinearExtensionIndex,
+};
 use binius_field::{
-	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField128b, BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
@@ -13,6 +21,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
+use bytemuck::zeroed_vec;
 
 use super::{
 	B1, B8, B16, B32, B64,
@@ -129,6 +138,19 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
 
+		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+
+		let mut dev_mem = zeroed_vec(1 << 12);
+
+		let mut host_mem = hal.host_alloc(1 << 12);
+
+		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+		let dev_alloc = BumpAllocator::new(
+			(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+		);
+
+		let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 		let proof = binius_core::constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
@@ -136,13 +158,17 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
+			_,
 		>(
 			&ccs,
 			LOG_INV_RATE,
 			SECURITY_BITS,
 			&statement.boundaries,
 			witness,
+			&hal_witness,
 			&binius_hal::make_portable_backend(),
+			&dev_alloc,
+			&host_alloc,
 		)
 		.unwrap();
 

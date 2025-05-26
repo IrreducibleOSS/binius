@@ -29,6 +29,11 @@ pub mod vision;
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::{
+		ComputeLayer, FSliceMut,
+		alloc::{BumpAllocator, HostBumpAllocator},
+		cpu::CpuLayer,
+	};
 	use binius_core::{
 		constraint_system::{
 			self,
@@ -36,6 +41,7 @@ mod tests {
 		},
 		fiat_shamir::HasherChallenger,
 		oracle::{OracleId, ShiftVariant},
+		witness::HalMultilinearExtensionIndex,
 	};
 	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{
@@ -47,6 +53,7 @@ mod tests {
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 	use binius_macros::arith_expr;
 	use binius_math::CompositionPoly;
+	use bytemuck::zeroed_vec;
 	use rand::{seq::SliceRandom, thread_rng};
 
 	type B128 = BinaryField128b;
@@ -154,6 +161,15 @@ mod tests {
 
 		let backend = make_portable_backend();
 
+		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut dev_mem = zeroed_vec(1 << 20);
+		let mut host_mem = hal.host_alloc(1 << 20);
+		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+		let dev_alloc = BumpAllocator::new(
+			(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+		);
+		let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 		let proof = constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
@@ -161,7 +177,18 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, &boundaries, witness, &backend)
+			_,
+		>(
+			&constraint_system,
+			1,
+			10,
+			&boundaries,
+			witness,
+			&hal_witness,
+			&backend,
+			&dev_alloc,
+			&host_alloc,
+		)
 		.unwrap();
 
 		constraint_system::verify::<
@@ -370,6 +397,15 @@ mod tests {
 
 		validate_witness(&witness, &[], &[], 1).unwrap();
 
+		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut dev_mem = zeroed_vec(1 << 20);
+		let mut host_mem = hal.host_alloc(1 << 20);
+		let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+		let dev_alloc = BumpAllocator::new(
+			(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+		);
+		let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 		let proof = binius_core::constraint_system::prove::<
 			OptimalUnderlier,
 			CanonicalTowerFamily,
@@ -377,7 +413,18 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, log_inv_rate, security_bits, &[], witness, &backend)
+			_,
+		>(
+			&constraint_system,
+			log_inv_rate,
+			security_bits,
+			&[],
+			witness,
+			&hal_witness,
+			&backend,
+			&dev_alloc,
+			&host_alloc,
+		)
 		.unwrap();
 
 		binius_core::constraint_system::verify::<

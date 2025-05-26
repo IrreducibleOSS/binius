@@ -7,9 +7,14 @@ use std::iter::repeat_with;
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
-use binius_core::fiat_shamir::HasherChallenger;
+use binius_compute::{
+	ComputeLayer, FSliceMut,
+	alloc::{BumpAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
+use binius_core::{fiat_shamir::HasherChallenger, witness::HalMultilinearExtensionIndex};
 use binius_field::{
-	PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
+	BinaryField128b, PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
 	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
 };
@@ -22,6 +27,7 @@ use binius_m3::{
 	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
 };
 use binius_utils::rayon::adjust_thread_pool;
+use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
 use rand::{RngCore, thread_rng};
@@ -116,6 +122,15 @@ fn main() -> Result<()> {
 	let ccs = cs.compile(&statement).unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 20);
+	let mut host_mem = hal.host_alloc(1 << 20);
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let dev_alloc = BumpAllocator::new(
+		(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+	);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	let proof = binius_core::constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
@@ -123,15 +138,18 @@ fn main() -> Result<()> {
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
+		_,
 	>(
 		&ccs,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&statement.boundaries,
 		witness,
+		&hal_witness,
 		&binius_hal::make_portable_backend(),
-	)
-	.unwrap();
+		&host_alloc,
+		&dev_alloc,
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
