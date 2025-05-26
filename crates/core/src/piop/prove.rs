@@ -258,14 +258,20 @@ where
 	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
 
 	let mut sumcheck_provers = vec![];
+	let mut host_allocs = vec![];
+	let mut dev_allocs = vec![];
 
-	for (_n_vars, desc) in non_empty_sumcheck_descs{
+	for _ in non_empty_sumcheck_descs{
 		let this_sumcheck_host_mem = host_alloc.alloc(1<<4).unwrap();
 		let this_sumcheck_host_alloc = HostBumpAllocator::new(this_sumcheck_host_mem);
+		host_allocs.push(this_sumcheck_host_alloc);
 
 		let this_sumcheck_dev_mem = dev_alloc.alloc(1<<24).unwrap();
 		let this_sumcheck_dev_alloc = BumpAllocator::new(this_sumcheck_dev_mem);
+		dev_allocs.push(this_sumcheck_host_alloc);
+	} 
 
+	for (i,(_n_vars, desc)) in non_empty_sumcheck_descs.enumerate(){
 		let multilins = chain!(
 			packed_committed_multilins[desc.committed_indices.clone()]
 				.iter()
@@ -303,7 +309,7 @@ where
 			.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
 			.collect();
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &this_sumcheck_dev_alloc, this_sumcheck_host_alloc, &claim, fslices_const)?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &dev_allocs[i], &host_allocs[i], &claim, fslices_const)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
