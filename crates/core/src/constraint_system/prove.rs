@@ -451,12 +451,11 @@ where
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _, _>(
+	} = ring_switch::prove::<_, _, _, Tower, _>(
 		&system,
 		&committed_multilins,
 		&mut transcript,
 		memoized_data,
-		backend,
 	)?;
 	drop(ring_switch_span);
 

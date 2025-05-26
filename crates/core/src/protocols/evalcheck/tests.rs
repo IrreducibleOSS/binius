@@ -113,7 +113,7 @@ where
 		.unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
@@ -193,7 +193,7 @@ where
 		.unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
@@ -289,10 +289,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -365,10 +363,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -472,10 +468,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -537,10 +531,8 @@ where
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -630,10 +622,8 @@ where
 		eval: inner_eval,
 	};
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -729,7 +719,7 @@ pub fn test_zero_padded_zero_vars() {
 	};
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![zero_eval_claim.clone(), non_zero_eval_claim.clone()], &mut transcript)
 		.unwrap();
