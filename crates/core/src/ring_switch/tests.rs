@@ -18,7 +18,7 @@ use binius_math::{
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::prelude::*;
-
+use binius_compute::cpu::CpuLayer;
 use super::{
 	common::EvalClaimSystem,
 	prove,
@@ -286,6 +286,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
+	Tower: Default
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -340,7 +341,13 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	.unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
+	let hal = CpuLayer::<Tower>::default();
+	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
+	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
 	piop::prove(
+		&hal,
+		&mut host_mem,
+		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		merkle_prover,

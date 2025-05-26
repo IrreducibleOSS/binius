@@ -1,10 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::iter::repeat_with;
-
+use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
-	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField,
+	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField, tower::{TowerFamily, CanonicalTowerFamily},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -97,7 +97,7 @@ where
 	sumcheck_claims
 }
 
-fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
+fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Tower>(
 	commit_meta: &CommitMeta,
 	n_transparents: usize,
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
@@ -111,6 +111,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
+	Tower: TowerFamily + Default
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -154,7 +155,13 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	proof.message().write(&commitment);
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
+	let hal = CpuLayer::<Tower>::default();
+	let mut host_mem = vec![F::ZERO; 1 << 10];
+	let mut dev_mem = vec![F::ZERO; 1 << 28];
 	prove(
+		&hal,
+		&mut host_mem,
+		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -216,7 +223,7 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _,CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -231,7 +238,7 @@ fn test_without_opening_claims() {
 	let n_transparents = 0;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -246,7 +253,7 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -261,7 +268,7 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -276,7 +283,7 @@ fn test_commit_prove_verify_small() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -291,7 +298,7 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -306,7 +313,7 @@ fn test_commit_prove_verify_byte_sliced() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _>(
+	commit_prove_verify::<_, AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _, CanonicalTowerFamily>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
