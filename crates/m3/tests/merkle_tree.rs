@@ -481,86 +481,36 @@ mod model {
 }
 
 mod arithmetisation {
-	use std::{array, os::macos::raw::stat};
+	use std::{array, cell::RefMut};
 
-	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
-	use binius_field::Field;
-	use binius_hash::compression;
+	use anyhow::anyhow;
+	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
+	use binius_field::{
+		ExtensionField, Field, PackedBinaryField8x8b, PackedExtension, PackedFieldIndexable,
+		PackedSubfield, linear_transformation::PackedTransformationFactory,
+		packed::set_packed_slice, underlier::WithUnderlier,
+	};
+	use binius_hash::{compression, groestl::Groestl256, permutation};
 	use binius_m3::{
 		builder::{
-			B1, B8, B32, B64, Col, ConstraintSystem, Table, TableBuilder, TableFiller, TableId,
-			upcast_col,
+			B1, B8, B32, B64, B128, Col, ConstraintSystem, Error, Table, TableBuilder, TableFiller,
+			TableId, TableWitnessSegment, upcast_col,
 		},
 		gadgets::hash::groestl::{Permutation, PermutationVariant},
 	};
+	use itertools::Itertools;
 
 	use super::*;
+	use crate::model::MerkleTree;
 
 	/// A struct representing the constraint system for the Merkle tree. Like any M3 instance,
 	/// it is characterized by the tables with the column constraints, and the channels with
 	/// the flushing rules.
 	pub struct MerkleTreeCS {
-		pub compression_table: CompressionTable,
 		pub merkle_path_table: NodesTable,
 		pub root_table: RootTable,
 		pub nodes_channel: ChannelId,
 		pub roots_channel: ChannelId,
-		pub compression_channel: ChannelId,
-	}
-
-	/// A table representing the 2-1 digest compression function used in the Merkle tree.
-	/// This table represents the output transformation of the Groestl-256 hash function,
-	/// which is the P-permutation on the state followed by an XOR with the input and finally
-	/// extracting the last 32 bytes of the state.
-	pub struct CompressionTable {
-		pub id: TableId,
-		pub input_left: [Col<B64>; 4],
-		pub input_right: [Col<B64>; 4],
-		permutation: Permutation,
-		pub output: [Col<B64>; 4],
-	}
-
-	impl CompressionTable {
-		pub fn new(
-			cs: &mut ConstraintSystem,
-			state_in: [Col<B8, 8>; 8],
-			compression_channel: ChannelId,
-		) -> Self {
-			let mut table = cs.add_table("compression");
-			let id = table.id();
-			let permutation = Permutation::new(&mut table, PermutationVariant::P, state_in);
-			let input_left =
-				array::from_fn(|i| table.add_packed(format!("input_left_{i}"), state_in[i]));
-			let input_right =
-				array::from_fn(|i| table.add_packed(format!("input_right_{i}"), state_in[i + 4]));
-
-			// We don't need to pack all the state_out columns, only the last 4.
-			let state_out_packed: [Col<binius_field::BinaryField64b>; 4] = array::from_fn(|i| {
-				table
-					.add_packed(format!("packed_state_out_col_{i}"), permutation.state_out()[i + 4])
-			});
-			// As we will trim the state_out to 32 bytes, we only need to add the last 4 columns of
-			// the state_out, saving us some space in the table.
-			let output = array::from_fn(|i| {
-				table.add_computed(
-					&format!("compression_output_lane_{}", i),
-					input_right[i] + state_out_packed[i],
-				)
-			});
-
-			// We need to pull the input_left and input_right columns from the compression channel
-			// and push the output columns to the compression channel.
-			table.pull(compression_channel, input_left);
-			table.pull(compression_channel, input_right);
-			table.push(compression_channel, output);
-			Self {
-				id,
-				input_left,
-				input_right,
-				permutation,
-				output,
-			}
-		}
 	}
 
 	/// We need to implement tables for the different cases of Merkle path pulls based on aggregated
@@ -587,19 +537,19 @@ mod arithmetisation {
 
 		// Digests of the left, right and parent nodes.
 		// These are the digests of the nodes in the tree, which are used to verify the inclusion
-		left_digest: [Col<B8, 8>; 4],
-		right_digest: [Col<B8, 8>; 4],
-		parent_digest: [Col<B8, 8>; 4],
-		pub left: [Col<B64>; 4],
-		pub right: [Col<B64>; 4],
-		pub parent: [Col<B64>; 4],
+		left: [Col<B8, 8>; 4],
+		right: [Col<B8, 8>; 4],
+		parent: [Col<B8, 8>; 4],
 		pub parent_depth: Col<B32>,
 		pub child_depth: Col<B32>,
 		parent_index: Col<B1, 32>,
 		left_index: Col<B1, 32>,
-		pub left_index_packed: Col<B32>,
-		pub right_index_packed: Col<B32>,
-		pub parent_index_packed: Col<B32>,
+		right_index_packed: Col<B32>,
+		/// A table representing the 2-1 digest compression function used in the Merkle tree.
+		/// This table represents the output transformation of the Groestl-256 hash function,
+		/// which is the P-permutation on the state followed by an XOR with the input and finally
+		/// extracting the last 32 bytes of the state.
+		permutation: Permutation,
 		pub pull_child: MerklePathPullChild,
 	}
 
@@ -608,7 +558,6 @@ mod arithmetisation {
 			cs: &mut ConstraintSystem,
 			pull_child: MerklePathPullChild,
 			nodes_channel: ChannelId,
-			compression_channel: ChannelId,
 		) -> Self {
 			let mut table = cs.add_table(format!("merkle_tree_nodes_{}", {
 				match pull_child {
@@ -621,108 +570,108 @@ mod arithmetisation {
 			let id = table.id();
 			// committed coluumns are used to store the values of the nodes in the tree.
 			let root_id = table.add_committed("root_id");
-			let left_digest = array::from_fn(|i| table.add_committed(format!("left_digest{i}")));
-			let right_digest = array::from_fn(|i| table.add_committed(format!("right_digest{i}")));
-			let parent_digest =
-				array::from_fn(|i| table.add_committed(format!("parent_digest{i}")));
+			let left = array::from_fn(|i| table.add_committed(format!("left_digest{i}")));
+			let right = array::from_fn(|i| table.add_committed(format!("right_digest{i}")));
 
-			let left: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("left_{i}"), left_digest[i]));
-			let right: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("right_{i}"), right_digest[i]));
-			let parent: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("parent_{i}"), parent_digest[i]));
+			let state_in = [left, right]
+				.concat()
+				.try_into()
+				.expect("Should be 8 elements");
+
+			let permutation = Permutation::new(
+				&mut table.with_namespace("permutation"),
+				PermutationVariant::P,
+				state_in,
+			);
+
+			let parent = array::from_fn(|i| {
+				table.add_computed(
+					format!("parent_digest{i}"),
+					permutation.state_out()[i + 4] + right[i],
+				)
+			});
+
+			let left_packed: [Col<B64>; 4] =
+				array::from_fn(|i| table.add_packed(format!("left_{i}"), left[i]));
+			let right_packed: [Col<B64>; 4] =
+				array::from_fn(|i| table.add_packed(format!("right_{i}"), right[i]));
+			let parent_packed: [Col<B64>; 4] =
+				array::from_fn(|i| table.add_packed(format!("parent_{i}"), parent[i]));
 
 			let parent_depth = table.add_committed("parent_depth");
 			let child_depth = table.add_computed("child_depth", parent_depth + B32::ONE);
 			let parent_index: Col<B1, 32> = table.add_committed("parent_index");
 			let left_index: Col<B1, 32> =
-				table.add_shifted("left_index", parent_index, 32, 1, ShiftVariant::LogicalRight);
+				table.add_shifted("left_index", parent_index, 5, 1, ShiftVariant::LogicalRight);
+
+			// The indexes need to be packed and upcasted to agree with the flushing rules of the
+			// channel.
 			let left_index_packed = table.add_packed("left_index_packed", left_index);
 			let right_index_packed =
 				table.add_computed("right_index_packed", left_index_packed + B32::ONE);
-			let parent_index_packed = table.add_packed("parent_index_packed", parent_index);
+			let parent_index_packed: Col<B32> =
+				table.add_packed("parent_index_packed", parent_index);
 
 			let left_index_upcasted = upcast_col(left_index_packed);
 			let right_index_upcasted = upcast_col(right_index_packed);
 			let parent_index_upcasted = upcast_col(parent_index_packed);
 			let parent_depth_upcasted = upcast_col(parent_depth);
 			let child_depth_upcasted = upcast_col(child_depth);
-			let upcasted_root_id = upcast_col(root_id);
+			let root_id_upcasted = upcast_col(root_id);
 
 			table.push(
 				nodes_channel,
-				[
-					upcasted_root_id,
-					parent[0],
-					parent[1],
-					parent[2],
-					parent[3],
+				to_node_flush(
+					root_id_upcasted,
+					parent_packed,
 					parent_depth_upcasted,
 					parent_index_upcasted,
-				],
+				),
 			);
-			table.push(compression_channel, left);
-			table.push(compression_channel, right);
-			table.pull(compression_channel, parent);
+
 			match pull_child {
 				MerklePathPullChild::Left => table.pull(
 					nodes_channel,
-					[
-						upcasted_root_id,
-						left[0],
-						left[1],
-						left[2],
-						left[3],
+					to_node_flush(
+						root_id_upcasted,
+						left_packed,
 						child_depth_upcasted,
 						left_index_upcasted,
-					],
+					),
 				),
 				MerklePathPullChild::Right => table.pull(
 					nodes_channel,
-					[
-						upcasted_root_id,
-						right[0],
-						right[1],
-						right[2],
-						right[3],
+					to_node_flush(
+						root_id_upcasted,
+						right_packed,
 						child_depth_upcasted,
 						right_index_upcasted,
-					],
+					),
 				),
 				MerklePathPullChild::Both => {
 					table.pull(
 						nodes_channel,
-						[
-							upcasted_root_id,
-							left[0],
-							left[1],
-							left[2],
-							left[3],
+						to_node_flush(
+							root_id_upcasted,
+							left_packed,
 							child_depth_upcasted,
 							left_index_upcasted,
-						],
+						),
 					);
 					table.pull(
 						nodes_channel,
-						[
-							upcasted_root_id,
-							right[0],
-							right[1],
-							right[2],
-							right[3],
+						to_node_flush(
+							root_id_upcasted,
+							right_packed,
 							child_depth_upcasted,
 							right_index_upcasted,
-						],
+						),
 					)
 				}
 			}
 			Self {
 				id,
 				root_id,
-				left_digest,
-				right_digest,
-				parent_digest,
 				left,
 				right,
 				parent,
@@ -730,12 +679,22 @@ mod arithmetisation {
 				child_depth,
 				parent_index,
 				left_index,
-				left_index_packed,
 				right_index_packed,
-				parent_index_packed,
 				pull_child,
+				permutation,
 			}
 		}
+	}
+
+	fn to_node_flush(
+		root_id: Col<B64>,
+		digest: [Col<B64>; 4],
+		depth: Col<B64>,
+		index: Col<B64>,
+	) -> [Col<B64>; 7] {
+		[
+			root_id, digest[0], digest[1], digest[2], digest[3], depth, index,
+		]
 	}
 
 	pub struct RootTable {
@@ -805,48 +764,143 @@ mod arithmetisation {
 
 	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 	pub struct CompressionEvent {
+		root_id: u8,
+		pub left_index: usize,
+		pub right_index: usize,
 		pub left: [u8; 32],
 		pub right: [u8; 32],
 		pub output: [u8; 32],
 	}
 
-	impl TableFiller for CompressionTable {
+	impl<P> TableFiller<P> for NodesTable
+	where
+		P: PackedFieldIndexable<Scalar = B128>
+			+ PackedExtension<B1>
+			+ PackedExtension<B8>
+			+ PackedExtension<B32>
+			+ PackedExtension<B64>,
+		PackedSubfield<P, B8>:
+			PackedTransformationFactory<PackedSubfield<P, B8>> + PackedFieldIndexable,
+	{
 		type Event = MerklePathEvent;
 
 		fn id(&self) -> TableId {
-			todo!()
+			self.id
 		}
 
 		fn fill<'a>(
 			&'a self,
 			rows: impl Iterator<Item = &'a Self::Event> + Clone,
-			witness: &'a mut binius_m3::builder::TableWitnessSegment<P>,
+			witness: &'a mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
-			todo!()
+			// Creating the state_in for the Permutation gadget.
+			let states = rows
+				.clone()
+				.map(|MerklePathEvent { left, right, .. }| {
+					let mut state_in = [B8::ZERO; 64];
+					let (state_left, state_right) = state_in.split_at_mut(32);
+					state_left.copy_from_slice(B8::from_underliers_arr_ref(left));
+					state_right.copy_from_slice(B8::from_underliers_arr_ref(right));
+					state_in
+				})
+				.collect::<Vec<[B8; 64]>>();
+
+			self.permutation.populate_state_in(witness, states.iter())?;
+			self.permutation.populate(witness)?;
+
+			// Populating the parent digest witness, which should be the output of the permutation +
+			// xor with the input state and trimmed to the latter half of the final state.
+			for i in 0..4 {
+				let mut witness_parent = witness.get_mut(self.parent[i])?;
+				let state_out = witness.get_mut(self.permutation.state_out()[i + 4])?;
+				let state_in = witness.get_mut(self.permutation.state_in()[i + 4])?;
+
+				for j in 0..witness_parent.len() {
+					witness_parent[j] = state_in[j] + state_out[j]
+				}
+			}
+
+			let mut witness_root_id = witness.get_mut_as(self.root_id)?;
+			let mut witness_parent_depth: RefMut<'_, [u32]> =
+				witness.get_mut_as(self.parent_depth)?;
+			let mut witness_child_depth: RefMut<'_, [u32]> =
+				witness.get_mut_as(self.child_depth)?;
+			let mut witness_parent_index: RefMut<'_, [u32]> =
+				witness.get_mut_as(self.parent_index)?;
+			// The left and right indexes are packed into a single column, so we need to unpack them
+			let mut witness_left_index: RefMut<'_, [u32]> = witness.get_mut_as(self.left_index)?;
+			let mut witness_right_index_packed: RefMut<'_, [u32]> =
+				witness.get_mut_as(self.right_index_packed)?;
+
+			for (i, event) in rows.enumerate() {
+				let MerklePathEvent {
+					root_id,
+					parent_depth,
+					parent_index,
+					..
+				} = event;
+
+				witness_root_id[i] = *root_id;
+				witness_parent_depth[i] = *parent_depth as u32;
+				witness_parent_index[i] = *parent_index as u32;
+				witness_child_depth[i] = *parent_depth as u32 + 1;
+				witness_left_index[i] = (parent_index << 1) as u32;
+				witness_right_index_packed[i] = (parent_index << 1 | 1) as u32;
+			}
+
+			Ok(())
 		}
 	}
-	#[test]
-	fn test_compression_constructor() {
-		let mut cs = ConstraintSystem::new();
-		let compression_channel = cs.add_channel("compression");
-		let mut table = cs.add_table("state_in");
-		let state_in = array::from_fn(|i| table.add_committed(format!("state_in_{i}")));
-		let compression_table = CompressionTable::new(&mut cs, state_in, compression_channel);
-		assert_eq!(compression_table.input_left.len(), 4);
-		assert_eq!(compression_table.input_right.len(), 4);
-		assert_eq!(compression_table.output.len(), 4);
+
+	impl<P> TableFiller<P> for RootTable
+	where
+		P: PackedFieldIndexable<Scalar = B128>
+			+ PackedExtension<B1>
+			+ PackedExtension<B8>
+			+ PackedExtension<B32>
+			+ PackedExtension<B64>,
+		PackedSubfield<P, B8>: PackedFieldIndexable,
+	{
+		type Event = MerkleRootEvent;
+
+		fn id(&self) -> TableId {
+			self.id
+		}
+
+		fn fill<'a>(
+			&'a self,
+			rows: impl Iterator<Item = &'a Self::Event> + Clone,
+			witness: &'a mut TableWitnessSegment<P>,
+		) -> anyhow::Result<()> {
+			let mut witness_root_id = witness.get_mut_as(self.root_id)?;
+			let mut witness_root_digest = (0..4)
+				.map(|i| witness.get_mut(self.digest[i]))
+				.collect::<Result<Vec<_>, _>>()?;
+
+			for (i, event) in rows.enumerate() {
+				let &MerkleRootEvent { root_id, digest } = event;
+				witness_root_id[i] = root_id;
+				let digest_as_field = B8::from_underliers_arr(digest);
+				for j in 0..4 {
+					for k in 0..8 {
+						let scalar = B64::from_bases(digest_as_field[j * 8..(j + 1) * 8].to_vec())?;
+						set_packed_slice(&mut witness_root_digest[j], i * 8 + k, scalar);
+					}
+				}
+			}
+			Ok(())
+		}
 	}
+
 	#[test]
 	fn test_nodes_table_constructor() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
-		let compression_channel = cs.add_channel("compression");
 		let pull_child = MerklePathPullChild::Left;
-		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel, compression_channel);
+		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
 		assert_eq!(nodes_table.left.len(), 4);
 		assert_eq!(nodes_table.right.len(), 4);
 		assert_eq!(nodes_table.parent.len(), 4);
-		assert_eq!(nodes_table.parent_depth, nodes_table.child_depth);
 	}
 	#[test]
 	fn test_root_table_constructor() {
@@ -855,5 +909,15 @@ mod arithmetisation {
 		let roots_channel = cs.add_channel("roots");
 		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
 		assert_eq!(root_table.digest.len(), 4);
+	}
+	#[test]
+	fn test_nodes_table() {
+		let mut cs = ConstraintSystem::new();
+		let nodes_channel = cs.add_channel("nodes");
+		let pull_child = MerklePathPullChild::Left;
+		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
+		MerkleTree::new(&[
+			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
+		]);
 	}
 }
