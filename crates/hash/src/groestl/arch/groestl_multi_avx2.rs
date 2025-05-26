@@ -17,7 +17,7 @@ use crate::{groestl::Groestl256, multi_digest::MultiDigest};
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	let mut new_state = [unsafe { _mm256_setzero_si256() }; 8];
-	let byteslice_permuatation_m256 = unsafe {
+	let byteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
 			0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 0, 8, 1, 9, 2, 10, 3, 11, 4, 12,
 			5, 13, 6, 14, 7, 15,
@@ -36,7 +36,7 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	}
 
 	for new_state_row in &mut new_state {
-		let permuted = unsafe { _mm256_shuffle_epi8(*new_state_row, byteslice_permuatation_m256) };
+		let permuted = unsafe { _mm256_shuffle_epi8(*new_state_row, byteslice_permutation_m256) };
 
 		let permuted_swapped = unsafe { _mm256_permute2x128_si256(permuted, permuted, 0x01) };
 
@@ -47,7 +47,7 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 		*new_state_row = unsafe { _mm256_permute2x128_si256(bottom_half, top_half, 0x20) };
 	}
 
-	// row-align every eigth item
+	// row-align every eighth item
 	for i in 0..8 {
 		if i % 2 == 0 {
 			(new_state[i], new_state[i + 1]) = unsafe {
@@ -95,7 +95,7 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 #[inline]
 fn get_substates_par(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
 	let mut new_substates = [[0; STATE_SIZE]; NUM_PARALLEL_SUBSTATES];
-	let unbyteslice_permuatation_m256 = unsafe {
+	let unbyteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
 			0, 8, 1, 9, 4, 12, 5, 13, 2, 10, 3, 11, 6, 14, 7, 15, 0, 8, 1, 9, 4, 12, 5, 13, 2, 10,
 			3, 11, 6, 14, 7, 15,
@@ -125,7 +125,7 @@ fn get_substates_par(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTA
 	}
 
 	for state_row in &mut state {
-		let permuted = unsafe { _mm256_shuffle_epi8(*state_row, unbyteslice_permuatation_m256) };
+		let permuted = unsafe { _mm256_shuffle_epi8(*state_row, unbyteslice_permutation_m256) };
 
 		let permuted_swapped = unsafe { _mm256_permute2x128_si256(permuted, permuted, 0x01) };
 
