@@ -38,10 +38,10 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 	hal: &Hal,
 	dev_mem: FSliceMut<BinaryField128b, Hal>,
+	n_vars: usize,
 ) {
 	type F = BinaryField128b;
 
-	let n_vars = 8;
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mut host_mem = hal.host_alloc(3 * (1 << n_vars));
@@ -133,15 +133,16 @@ pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 	assert_eq!(coeffs, expected_coeffs.0);
 }
 
-pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(hal: &Hal, dev_mem: FSliceMut<F, Hal>)
-where
+pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
+	hal: &Hal,
+	dev_mem: FSliceMut<F, Hal>,
+	n_vars: usize,
+	n_multilins: usize,
+	n_compositions: usize,
+) where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
 {
-	let n_vars = 8;
-	let n_multilins = 8;
-	let n_compositions = 8;
-
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let evals = repeat_with(|| {

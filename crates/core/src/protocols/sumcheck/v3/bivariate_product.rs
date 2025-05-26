@@ -425,13 +425,23 @@ mod tests {
 
 		let hal = Hal::default();
 		let mut dev_mem = vec![F::ZERO; 1 << 10];
-		generic_test_calculate_round_evals(&hal, &mut dev_mem)
+		let n_vars = 8;
+		generic_test_calculate_round_evals(&hal, &mut dev_mem, n_vars)
 	}
 
 	#[test]
 	fn test_bivariate_sumcheck_prove_verify() {
 		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
-		generic_test_bivariate_sumcheck_prove_verify(&hal, &mut dev_mem)
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+		generic_test_bivariate_sumcheck_prove_verify(
+			&hal,
+			&mut dev_mem,
+			n_vars,
+			n_multilins,
+			n_compositions,
+		)
 	}
 }
