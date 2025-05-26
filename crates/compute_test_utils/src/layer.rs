@@ -63,7 +63,7 @@ pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 
 pub fn test_generic_single_inner_product<
 	F2: TowerField,
-	F: Field + PackedExtension<F2> + ExtensionField<F2>,
+	F: TowerField + PackedExtension<F2> + ExtensionField<F2>,
 	C: ComputeLayer<F>,
 >(
 	compute: C,
@@ -73,7 +73,7 @@ pub fn test_generic_single_inner_product<
 	let mut rng = StdRng::seed_from_u64(0);
 
 	// Allocate buffers a and b to be device mapped
-	let mut a_buffer = compute.host_alloc(1 << (n_vars - F::LOG_DEGREE));
+	let mut a_buffer = compute.host_alloc(1 << (n_vars - <F as ExtensionField<F2>>::LOG_DEGREE));
 	let a_buffer = a_buffer.as_mut();
 	for x_i in a_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
@@ -113,7 +113,7 @@ pub fn test_generic_single_inner_product<
 pub fn test_generic_multiple_multilinear_evaluations<
 	F1: TowerField,
 	F2: TowerField,
-	F: Field
+	F: TowerField
 		+ PackedField<Scalar = F>
 		+ PackedExtension<F1>
 		+ ExtensionField<F1>

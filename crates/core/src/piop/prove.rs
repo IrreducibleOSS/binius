@@ -2,8 +2,14 @@
 
 use std::{borrow::Cow, ops::Deref};
 
+use binius_compute::{
+	ComputeMemory,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	layer::ComputeLayer,
+};
 use binius_field::{
 	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
+	unpack_if_possible,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -34,13 +40,14 @@ use crate::{
 		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 	},
 	protocols::{
-		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
+		fri::{self, FRIFolder, FRIFolderCL, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			self, immediate_switchover_heuristic,
+			self, SumcheckClaim, immediate_switchover_heuristic,
 			prove::{
 				RegularSumcheckProver, SumcheckProver,
 				front_loaded::BatchProver as SumcheckBatchProver,
 			},
+			v3::bivariate_product::BivariateSumcheckProver,
 		},
 	},
 	transcript::ProverTranscript,
@@ -271,6 +278,214 @@ where
 		transcript,
 	)?;
 
+	Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn prove_compute_layer<'a, F, FEncode, P, M, NTT, MTScheme, MTProver, Challenger_, CL>(
+	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
+	merkle_prover: &MTProver,
+	commit_meta: &CommitMeta,
+	committed: MTProver::Committed,
+	codeword: &[P],
+	committed_multilins: &[M],
+	transparent_multilins: &[M],
+	claims: &[PIOPSumcheckClaim<F>],
+	transcript: &mut ProverTranscript<Challenger_>,
+	cl: &'a CL,
+	dev_allocator: &'a BumpAllocator<'a, F, CL::DevMem>,
+	host_allocator: &'a HostBumpAllocator<'a, F>,
+) -> Result<(), Error>
+where
+	F: TowerField,
+	FEncode: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FEncode>,
+	M: MultilinearPoly<P> + Send + Sync,
+	NTT: AdditiveNTT<FEncode> + Sync,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Challenger_: Challenger,
+	CL: ComputeLayer<F>,
+{
+	// Map of n_vars to sumcheck claim descriptions
+	let sumcheck_claim_descs = make_sumcheck_claim_descs(
+		commit_meta,
+		transparent_multilins.iter().map(|poly| poly.n_vars()),
+		claims,
+	)?;
+
+	// The committed multilinears provided by argument are committed *small field* multilinears.
+	// Create multilinears representing the packed polynomials here. Eventually, we would like to
+	// refactor the calling code so that the PIOP only handles *big field* multilinear witnesses.
+	let packed_committed_multilins = committed_multilins
+		.iter()
+		.enumerate()
+		.map(|(i, unpacked_committed)| {
+			packed_committed(OracleId::from_index(i), unpacked_committed)
+				.map(MLEDirectAdapter::from)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
+	let non_empty_sumcheck_descs = sumcheck_claim_descs
+		.iter()
+		.enumerate()
+		// Keep sumcheck claims with >0 committed multilinears, even with 0 composite claims. This
+		// indicates unconstrained columns, but we still need the final evaluations from the
+		// sumcheck prover in order to derive the final FRI value.
+		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
+	let sumcheck_provers = non_empty_sumcheck_descs
+		.map(|(n_vars, desc)| {
+			let multilins = chain!(
+				packed_committed_multilins[desc.committed_indices.clone()]
+					.iter()
+					.map(|m| {
+						m.packed_evals()
+							.expect("guaranteed by function precondition")
+					}),
+				transparent_multilins[desc.transparent_indices.clone()]
+					.iter()
+					.map(|m| {
+						m.packed_evals()
+							.expect("guaranteed by function precondition")
+					}),
+			)
+			.map(|packed_values| {
+				unpack_if_possible(
+					packed_values,
+					|scalars| {
+						let mut dev_slice = dev_allocator
+							.alloc(scalars.len())
+							.expect("failed to allocate");
+						cl.copy_h2d(scalars, &mut dev_slice)
+							.expect("failed to copy");
+
+						CL::DevMem::to_const(dev_slice)
+					},
+					|_packed| unimplemented!(),
+				)
+			})
+			.collect::<Vec<_>>();
+			let claim = SumcheckClaim::new(n_vars, multilins.len(), desc.composite_sums.clone())?;
+			BivariateSumcheckProver::new(cl, dev_allocator, host_allocator, &claim, multilins)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
+	prove_interleaved_fri_sumcheck_compute_layer(
+		dev_allocator,
+		cl,
+		commit_meta.total_vars(),
+		fri_params,
+		ntt,
+		merkle_prover,
+		sumcheck_provers,
+		codeword,
+		&committed,
+		transcript,
+	)?;
+
+	Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_interleaved_fri_sumcheck_compute_layer<
+	'a,
+	F,
+	FEncode,
+	P,
+	NTT,
+	MTScheme,
+	MTProver,
+	Challenger_,
+	CL,
+>(
+	allocator: &'a impl ComputeAllocator<F, CL::DevMem>,
+	cl: &'a CL,
+	n_rounds: usize,
+	fri_params: &FRIParams<F, FEncode>,
+	ntt: &NTT,
+	merkle_prover: &MTProver,
+	sumcheck_provers: Vec<impl SumcheckProver<F>>,
+	codeword: &[P],
+	committed: &MTProver::Committed,
+	transcript: &mut ProverTranscript<Challenger_>,
+) -> Result<(), Error>
+where
+	F: TowerField,
+	FEncode: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	NTT: AdditiveNTT<FEncode> + Sync,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Challenger_: Challenger,
+	CL: ComputeLayer<F>,
+{
+	let mut fri_prover = FRIFolderCL::new(fri_params, ntt, merkle_prover, codeword, committed, cl)?;
+
+	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
+
+	for round in 0..n_rounds {
+		let _span =
+			tracing::debug_span!("PIOP Compiler Round", phase = "piop_compiler", round = round)
+				.entered();
+
+		let bivariate_sumcheck_span = tracing::debug_span!(
+			"[step] Bivariate Sumcheck",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "phase.sub"
+		)
+		.entered();
+		let provers_dimensions_data =
+			SumcheckBatchProverDimensionsData::new(round, sumcheck_batch_prover.provers());
+		let bivariate_sumcheck_calculate_coeffs_span = tracing::debug_span!(
+			"[task] (PIOP Compiler) Calculate Coeffs",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
+		)
+		.entered();
+		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
+		drop(bivariate_sumcheck_calculate_coeffs_span);
+
+		let challenge = transcript.sample();
+		let bivariate_sumcheck_all_folds_span = tracing::debug_span!(
+			"[task] (PIOP Compiler) Fold (All Rounds)",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "task.main",
+			dimensions_data = ?provers_dimensions_data,
+		)
+		.entered();
+		sumcheck_batch_prover.receive_challenge(challenge)?;
+		drop(bivariate_sumcheck_all_folds_span);
+		drop(bivariate_sumcheck_span);
+
+		let dimensions_data = FriFoldRoundsData::new(
+			round,
+			fri_params.log_batch_size(),
+			fri_prover.current_codeword_len(),
+		);
+		let fri_fold_rounds_span = tracing::debug_span!(
+			"[step] FRI Fold Rounds",
+			phase = "piop_compiler",
+			round = round,
+			perfetto_category = "phase.sub",
+			dimensions_data = ?dimensions_data,
+		)
+		.entered();
+		match fri_prover.execute_fold_round(allocator, challenge)? {
+			FoldRoundOutput::NoCommitment => {}
+			FoldRoundOutput::Commitment(round_commitment) => {
+				transcript.message().write(&round_commitment);
+			}
+		}
+		drop(fri_fold_rounds_span);
+	}
+
+	sumcheck_batch_prover.finish(&mut transcript.message())?;
+	fri_prover.finish_proof(transcript)?;
 	Ok(())
 }
 
