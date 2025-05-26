@@ -110,7 +110,7 @@ mod model {
 	pub struct MerkleTree {
 		depth: usize,
 		nodes: Vec<[u8; 32]>,
-		root: [u8; 32],
+		pub root: [u8; 32],
 	}
 
 	impl MerkleTree {
@@ -264,7 +264,7 @@ mod model {
 		/// Method to generate the trace given the witness values. The function assumes that the
 		/// root_id is the index of the root in the roots vector and that the paths and leaves are
 		/// passed in with their assigned root_id.
-		fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
+		pub fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
 			let mut path_nodes = Vec::new();
 			let mut root_nodes = HashSet::new();
 			let mut boundaries = MerkleBoundaries::new();
@@ -487,21 +487,23 @@ mod arithmetisation {
 	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
 	use binius_field::{
 		ExtensionField, Field, PackedBinaryField8x8b, PackedExtension, PackedFieldIndexable,
-		PackedSubfield, linear_transformation::PackedTransformationFactory,
-		packed::set_packed_slice, underlier::WithUnderlier,
+		PackedSubfield, arch::OptimalUnderlier128b, as_packed_field::PackedType,
+		linear_transformation::PackedTransformationFactory, packed::set_packed_slice,
+		underlier::WithUnderlier,
 	};
 	use binius_hash::{compression, groestl::Groestl256, permutation};
 	use binius_m3::{
 		builder::{
 			B1, B8, B32, B64, B128, Col, ConstraintSystem, Error, Table, TableBuilder, TableFiller,
-			TableId, TableWitnessSegment, upcast_col,
+			TableId, TableWitnessSegment, WitnessIndex, upcast_col,
 		},
 		gadgets::hash::groestl::{Permutation, PermutationVariant},
 	};
+	use bumpalo::Bump;
 	use itertools::Itertools;
 
 	use super::*;
-	use crate::model::MerkleTree;
+	use crate::model::{MerklePath, MerklePathEvent, MerkleRootEvent, MerkleTree, MerkleTreeTrace};
 
 	/// A struct representing the constraint system for the Merkle tree. Like any M3 instance,
 	/// it is characterized by the tables with the column constraints, and the channels with
@@ -744,34 +746,6 @@ mod arithmetisation {
 		}
 	}
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-	pub struct MerklePathEvent {
-		pub root_id: u8,
-		pub left: [u8; 32],
-		pub right: [u8; 32],
-		pub parent: [u8; 32],
-		pub parent_depth: usize,
-		pub parent_index: usize,
-		pub flush_left: bool,
-		pub flush_right: bool,
-	}
-
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-	pub struct MerkleRootEvent {
-		pub root_id: u8,
-		pub digest: [u8; 32],
-	}
-
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-	pub struct CompressionEvent {
-		root_id: u8,
-		pub left_index: usize,
-		pub right_index: usize,
-		pub left: [u8; 32],
-		pub right: [u8; 32],
-		pub output: [u8; 32],
-	}
-
 	impl<P> TableFiller<P> for NodesTable
 	where
 		P: PackedFieldIndexable<Scalar = B128>
@@ -911,13 +885,53 @@ mod arithmetisation {
 		assert_eq!(root_table.digest.len(), 4);
 	}
 	#[test]
-	fn test_nodes_table() {
+	fn test_node_table_filling() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
+		let roots_channel = cs.add_channel("roots");
+		// Create a nodes table with the left child pull.
 		let pull_child = MerklePathPullChild::Left;
 		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
-		MerkleTree::new(&[
+		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
+		let tree = MerkleTree::new(&[
 			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
 		]);
+		let index = 0;
+		let path = tree.merkle_path(0);
+		let trace = MerkleTreeTrace::generate(
+			vec![tree.root],
+			&[MerklePath {
+				root_id: 0,
+				index,
+				leaf: [0u8; 32],
+				nodes: path,
+			}],
+		);
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		witness
+			.fill_table_sequential(&nodes_table, &trace.nodes)
+			.unwrap();
+
+	}
+
+	fn test_root_table_filling() {
+		let mut cs = ConstraintSystem::new();
+		let nodes_channel = cs.add_channel("nodes");
+		let roots_channel = cs.add_channel("roots");
+		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
+		let tree = MerkleTree::new(&[
+			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
+		]);
+		let trace = MerkleTreeTrace::generate(vec![tree.root], &[]);
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		witness
+			.fill_table_sequential(&root_table, &trace.root.iter().collect_vec())
+			.unwrap();
 	}
 }
