@@ -119,7 +119,7 @@ where
 pub struct HalMultilinearExtensionIndex<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	indexes: RefCell<SparseIndex<FSlice<'a, F, Hal>>>,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	pub hal: &'a Hal,
+	hal: &'a Hal,
 }
 
 impl<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> HalMultilinearExtensionIndex<'a, 'alloc, F, Hal> {
