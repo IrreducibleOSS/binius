@@ -15,6 +15,7 @@ use binius_math::{
 	EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
 	MultilinearPoly,
 };
+use binius_compute::cpu::CpuMemory;
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
@@ -224,9 +225,7 @@ where
 	Backend: ComputationBackend,
 	Hal: ComputeLayer<F> + Default,
 {
-	let hal = Hal::default();
-
-	let dev_alloc = BumpAllocator::<'_,F,Hal::DevMem>::new(dev_mem);
+	let dev_alloc = BumpAllocator::<_,Hal::DevMem>::new(dev_mem);
 
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -260,18 +259,18 @@ where
 	let mut sumcheck_provers = vec![];
 	let mut host_allocs = vec![];
 	let mut dev_allocs = vec![];
-
-	for _ in non_empty_sumcheck_descs{
+	let non_empty_sumcheck_descs_iter = non_empty_sumcheck_descs.into_iter();
+	for _ in non_empty_sumcheck_descs_iter.clone(){
 		let this_sumcheck_host_mem = host_alloc.alloc(1<<4).unwrap();
 		let this_sumcheck_host_alloc = HostBumpAllocator::new(this_sumcheck_host_mem);
 		host_allocs.push(this_sumcheck_host_alloc);
 
 		let this_sumcheck_dev_mem = dev_alloc.alloc(1<<24).unwrap();
-		let this_sumcheck_dev_alloc = BumpAllocator::new(this_sumcheck_dev_mem);
-		dev_allocs.push(this_sumcheck_host_alloc);
+		let this_sumcheck_dev_alloc = BumpAllocator::<_,Hal::DevMem>::new(this_sumcheck_dev_mem);
+		dev_allocs.push(this_sumcheck_dev_alloc);
 	} 
 
-	for (i,(_n_vars, desc)) in non_empty_sumcheck_descs.enumerate(){
+	for (i,(_n_vars, desc)) in non_empty_sumcheck_descs_iter.enumerate(){
 		let multilins = chain!(
 			packed_committed_multilins[desc.committed_indices.clone()]
 				.iter()
@@ -309,7 +308,7 @@ where
 			.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
 			.collect();
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(&hal, &dev_allocs[i], &host_allocs[i], &claim, fslices_const)?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_allocs[i], &host_allocs[i], &claim, fslices_const)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
