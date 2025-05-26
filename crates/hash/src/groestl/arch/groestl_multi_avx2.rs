@@ -15,7 +15,7 @@ use crate::{groestl::Groestl256, multi_digest::MultiDigest};
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	let mut new_state = [unsafe { _mm256_setzero_si256() }; 8];
-	let byteslice_permuatation_m256 = unsafe {
+	let byteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
 			0, 8, 16, 24, 1, 9, 17, 25, 2, 10, 18, 26, 3, 11, 19, 27, 4, 12, 20, 28, 5, 13, 21, 29,
 			6, 14, 22, 30, 7, 15, 23, 31,
@@ -35,10 +35,10 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 
 	for new_state_row in &mut new_state {
 		*new_state_row =
-			unsafe { _mm256_permutexvar_epi8(byteslice_permuatation_m256, *new_state_row) };
+			unsafe { _mm256_permutexvar_epi8(byteslice_permutation_m256, *new_state_row) };
 	}
 
-	// row-align every eigth item
+	// row-align every eighth item
 	for i in 0..8 {
 		if i % 2 == 0 {
 			(new_state[i], new_state[i + 1]) = unsafe {
@@ -86,7 +86,7 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 #[inline]
 fn get_substates_par_better(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
 	let mut new_substates = [[0; STATE_SIZE]; NUM_PARALLEL_SUBSTATES];
-	let unbyteslice_permuatation_m256 = unsafe {
+	let unbyteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
 			0, 8, 16, 24, 1, 9, 17, 25, 4, 12, 20, 28, 5, 13, 21, 29, 2, 10, 18, 26, 3, 11, 19, 27,
 			6, 14, 22, 30, 7, 15, 23, 31,
@@ -116,7 +116,7 @@ fn get_substates_par_better(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL
 	}
 
 	for state_row in &mut state {
-		*state_row = unsafe { _mm256_permutexvar_epi8(unbyteslice_permuatation_m256, *state_row) };
+		*state_row = unsafe { _mm256_permutexvar_epi8(unbyteslice_permutation_m256, *state_row) };
 	}
 
 	for i in 0..8 {
