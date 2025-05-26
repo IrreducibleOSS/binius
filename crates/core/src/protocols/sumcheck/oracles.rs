@@ -4,7 +4,7 @@ use std::iter;
 
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{Field, PackedField, TowerField};
-use binius_math::EvaluationOrder;
+use binius_math::{CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
@@ -12,7 +12,11 @@ use super::{
 	SumcheckClaim, ZerocheckClaim,
 };
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
+	composition::IndexComposition,
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, IndexCompositionConstraint,
+		IndexCompositionConstraintSet, OracleId, TypeErasedComposition,
+	},
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 
@@ -48,6 +52,42 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
 				sum,
 			}),
+			_ => bail!(Error::MixedBatchingNotSupported),
+		}
+	}
+
+	let claim = SumcheckClaim::new(meta.n_vars, n_multilinears, sums)?;
+	Ok((claim, meta))
+}
+
+// Create a sumcheck claim out of constraint set. Fails when the constraint set contains
+/// zerochecks. Returns claim and metadata used for evalcheck claim construction.
+#[allow(clippy::type_complexity)]
+pub fn index_composition_constraint_set_sumcheck_claim<
+	F: TowerField,
+	C: CompositionPoly<F>,
+	const N: usize,
+>(
+	constraint_set: IndexCompositionConstraintSet<F, C, N>,
+) -> Result<(SumcheckClaim<F, IndexComposition<C, N>>, OracleClaimMeta), Error> {
+	let IndexCompositionConstraintSet {
+		oracle_ids,
+		constraints,
+		n_vars,
+	} = constraint_set;
+	let meta = OracleClaimMeta { n_vars, oracle_ids };
+
+	let n_multilinears = meta.oracle_ids.len();
+
+	let mut sums = Vec::new();
+	for IndexCompositionConstraint {
+		composition,
+		predicate,
+		..
+	} in constraints
+	{
+		match predicate {
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim { composition, sum }),
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
@@ -245,6 +285,26 @@ pub fn constraint_set_sumcheck_claims<F: TowerField>(
 
 	for constraint_set in constraint_sets {
 		let (claim, meta) = constraint_set_sumcheck_claim(constraint_set)?;
+		metas.push(meta);
+		claims.push(claim);
+	}
+	Ok(SumcheckClaimsWithMeta { claims, metas })
+}
+
+/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+pub fn index_composition_constraint_set_sumcheck_claims<
+	F: TowerField,
+	C: CompositionPoly<F>,
+	const N: usize,
+>(
+	constraint_sets: Vec<IndexCompositionConstraintSet<F, C, N>>,
+) -> Result<SumcheckClaimsWithMeta<F, IndexComposition<C, N>>, Error> {
+	let mut claims = Vec::with_capacity(constraint_sets.len());
+	let mut metas = Vec::with_capacity(constraint_sets.len());
+
+	for constraint_set in constraint_sets {
+		let (claim, meta) =
+			index_composition_constraint_set_sumcheck_claim::<_, C, N>(constraint_set)?;
 		metas.push(meta);
 		claims.push(claim);
 	}

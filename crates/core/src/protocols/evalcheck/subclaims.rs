@@ -11,6 +11,10 @@
 
 use std::collections::HashSet;
 
+use binius_compute::{
+	ComputeLayer,
+	alloc::{BumpAllocator, HostBumpAllocator},
+};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -23,10 +27,11 @@ use tracing::instrument;
 
 use super::{EvalPoint, EvalPointOracleIdMap, error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
+	composition::BivariateProduct,
 	fiat_shamir::Challenger,
 	oracle::{
 		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, OracleId, Packed, Shifted,
+		IndexCompositionConstraintSet, MultilinearOracleSet, OracleId, Packed, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -34,14 +39,15 @@ use crate::{
 		prove::{
 			front_loaded,
 			oracles::{
-				MLECheckProverWithMeta, SumcheckProversWithMetas,
-				constraint_sets_mlecheck_prover_meta, constraint_sets_sumcheck_provers_metas,
+				BivariateSumcheckProversWithMetas, MLECheckProverWithMeta,
+				constraint_sets_bivariate_sumcheck_provers_metas,
+				constraint_sets_mlecheck_prover_meta,
 			},
 		},
 	},
 	transcript::ProverTranscript,
 	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
@@ -71,12 +77,13 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
 /// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_shifted_sumcheck<F, P>(
+pub fn process_shifted_sumcheck<'alloc, F, P, Hal: ComputeLayer<F>>(
 	shifted: &Shifted,
 	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<P>,
+	hal_witness: &HalMultilinearExtensionIndex<'_, 'alloc, F, Hal>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
@@ -86,6 +93,7 @@ where
 {
 	process_projected_bivariate_witness(
 		witness_index,
+		hal_witness,
 		meta,
 		eval_point,
 		|projected_eval_point| {
@@ -95,9 +103,7 @@ where
 				shifted.shift_variant(),
 				projected_eval_point.to_vec(),
 			)?;
-
-			let shift_ind_mle = shift_ind.multilinear_extension::<P>()?;
-			Ok(MLEDirectAdapter::from(shift_ind_mle).upcast_arc_dyn())
+			shift_ind.multilinear_extension::<P>().map_err(Error::from)
 		},
 		projected,
 	)?;
@@ -167,13 +173,14 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck
 /// constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_packed_sumcheck<F, P>(
+pub fn process_packed_sumcheck<'alloc, F, P, Hal: ComputeLayer<F>>(
 	oracles: &MultilinearOracleSet<F>,
 	packed: &Packed,
 	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<P>,
+	hal_witness: &HalMultilinearExtensionIndex<'_, 'alloc, F, Hal>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
@@ -186,12 +193,14 @@ where
 
 	process_projected_bivariate_witness(
 		witness_index,
+		hal_witness,
 		meta,
 		eval_point,
 		|_projected_eval_point| {
 			let tower_basis = TowerBasis::new(log_degree, binary_tower_level)?;
-			let tower_basis_mle = tower_basis.multilinear_extension::<P>()?;
-			Ok(MLEDirectAdapter::from(tower_basis_mle).upcast_arc_dyn())
+			tower_basis
+				.multilinear_extension::<P>()
+				.map_err(Error::from)
 		},
 		projected,
 	)?;
@@ -251,11 +260,12 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	Ok(meta)
 }
 
-fn process_projected_bivariate_witness<'a, F, P>(
+fn process_projected_bivariate_witness<'a, 'alloc, F, P, Hal: ComputeLayer<F>>(
 	witness_index: &mut MultilinearExtensionIndex<'a, P>,
+	hal_witness: &HalMultilinearExtensionIndex<'_, 'alloc, F, Hal>,
 	meta: &ProjectedBivariateMeta,
 	eval_point: &[F],
-	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, P>, Error>,
+	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearExtension<P>, Error>,
 	projected: Option<MultilinearExtension<P>>,
 ) -> Result<(), Error>
 where
@@ -266,27 +276,36 @@ where
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
-		..
+		inner_id,
 	} = meta;
 
 	let projected_eval_point = if let Some(projected_id) = projected_id {
+		let projected = projected.expect("projected should exist if projected_id exist");
+
+		hal_witness.update_multilin_poly(vec![(
+			projected_id,
+			P::iter_slice(projected.evals())
+				.collect::<Vec<_>>()
+				.as_slice(),
+		)])?;
+
 		witness_index.update_multilin_poly(vec![(
 			projected_id,
-			MLEDirectAdapter::from(
-				projected.expect("projected should exist if projected_id exist"),
-			)
-			.upcast_arc_dyn(),
+			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
 		)])?;
 
 		&eval_point[..projected_n_vars]
 	} else {
+		hal_witness.update_multilin_polys_from_witness(&[inner_id], witness_index)?;
 		eval_point
 	};
 
-	let m = multiplier_witness_ctr(projected_eval_point)?;
-
-	if !witness_index.has(multiplier_id) {
-		witness_index.update_multilin_poly([(multiplier_id, m)])?;
+	if !hal_witness.has(multiplier_id) {
+		let m = multiplier_witness_ctr(projected_eval_point)?;
+		hal_witness.update_multilin_poly([(
+			multiplier_id,
+			P::iter_slice(m.evals()).collect::<Vec<_>>().as_slice(),
+		)])?;
 	}
 	Ok(())
 }
@@ -452,31 +471,24 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 
 type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
-pub fn prove_bivariate_sumchecks_with_switchover<F, P, DomainField, Transcript, Backend>(
-	witness: &MultilinearExtensionIndex<P>,
-	constraint_sets: Vec<ConstraintSet<F>>,
+pub fn prove_bivariate_sumchecks_with_switchover<'a, 'alloc, F, Transcript, Hal: ComputeLayer<F>>(
+	constraint_sets: Vec<IndexCompositionConstraintSet<F, BivariateProduct, 2>>,
+	witness: &'a HalMultilinearExtensionIndex<'a, 'alloc, F, Hal>,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, F>,
 	transcript: &mut ProverTranscript<Transcript>,
-	switchover_fn: impl Fn(usize) -> usize + 'static,
-	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: &Backend,
 ) -> Result<SumcheckProofEvalcheckClaims<F>, SumcheckError>
 where
-	P: PackedField<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<DomainField>,
-	F: TowerField + ExtensionField<DomainField>,
-	DomainField: Field,
+	F: TowerField,
 	Transcript: Challenger,
-	Backend: ComputationBackend,
 {
-	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(
-		EvaluationOrder::HighToLow,
-		constraint_sets,
-		witness,
-		domain_factory,
-		&switchover_fn,
-		backend,
-	)?;
+	let BivariateSumcheckProversWithMetas { provers, metas } =
+		constraint_sets_bivariate_sumcheck_provers_metas(
+			constraint_sets,
+			witness,
+			dev_alloc,
+			host_alloc,
+		)?;
 
 	let batch_prover = front_loaded::BatchProver::new(provers, transcript)?;
 

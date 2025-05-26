@@ -17,6 +17,9 @@ binius_m3 = { path = "../crates/m3", default-features = false }
 binius_macros = { path = "../crates/macros", default-features = false }
 binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
+binius_compute = { path = "../crates/compute", default-features = false }
+binius_fast_compute = { path = "../crates/fast_compute", default-features = false }
+bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }

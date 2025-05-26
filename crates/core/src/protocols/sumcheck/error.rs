@@ -11,6 +11,8 @@ pub enum Error {
 		"composition polynomial has an incorrect number of variables; expected {expected}, got {actual}"
 	)]
 	InvalidComposition { actual: usize, expected: usize },
+	#[error("composition polynomial has an ivalide type")]
+	InvalidCompositionType,
 	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
 	#[error("claims have inconsistent evaluation orders")]

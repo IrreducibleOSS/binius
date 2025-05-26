@@ -347,10 +347,16 @@ mod count_multiplicity_tests {
 
 #[cfg(test)]
 mod tests {
-	use binius_core::fiat_shamir::HasherChallenger;
-	use binius_field::tower::CanonicalTowerFamily;
+	use binius_compute::{
+		ComputeLayer, FSliceMut,
+		alloc::{BumpAllocator, HostBumpAllocator},
+		cpu::CpuLayer,
+	};
+	use binius_core::{fiat_shamir::HasherChallenger, witness::HalMultilinearExtensionIndex};
+	use binius_field::{BinaryField128b, tower::CanonicalTowerFamily};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+	use bytemuck::zeroed_vec;
 
 	use super::test_plain_lookup;
 	use crate::builder::ConstraintSystemBuilder;
@@ -380,6 +386,15 @@ mod tests {
 
 			let backend = make_portable_backend();
 
+			let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+			let mut dev_mem = zeroed_vec(1 << 20);
+			let mut host_mem = hal.host_alloc(1 << 20);
+			let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+			let dev_alloc = BumpAllocator::new(
+				(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+			);
+			let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 			binius_core::constraint_system::prove::<
 				crate::builder::types::U,
 				CanonicalTowerFamily,
@@ -387,7 +402,18 @@ mod tests {
 				Groestl256ByteCompression,
 				HasherChallenger<Groestl256>,
 				_,
-			>(&constraint_system, log_inv_rate, security_bits, &[], witness, &backend)
+				_,
+			>(
+				&constraint_system,
+				log_inv_rate,
+				security_bits,
+				&[],
+				witness,
+				&hal_witness,
+				&backend,
+				&dev_alloc,
+				&host_alloc,
+			)
 			.unwrap()
 		};
 

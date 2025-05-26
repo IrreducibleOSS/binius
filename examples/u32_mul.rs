@@ -15,15 +15,23 @@ use binius_circuits::{
 	},
 	transparent,
 };
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
+use binius_compute::{
+	ComputeLayer, FSliceMut,
+	alloc::{BumpAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
+use binius_core::{
+	constraint_system, fiat_shamir::HasherChallenger, witness::HalMultilinearExtensionIndex,
+};
 use binius_field::{
-	BinaryField1b, BinaryField8b, BinaryField32b, Field,
+	BinaryField1b, BinaryField8b, BinaryField32b, BinaryField128b, Field,
 	tower::CanonicalTowerFamily,
 	tower_levels::{TowerLevel4, TowerLevel8},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
@@ -108,15 +116,34 @@ fn main() -> Result<()> {
 
 	let backend = make_portable_backend();
 
-	let proof =
-		constraint_system::prove::<
-			U,
-			CanonicalTowerFamily,
-			Groestl256,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 20);
+	let mut host_mem = hal.host_alloc(1 << 20);
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let dev_alloc = BumpAllocator::new(
+		(&mut dev_mem) as FSliceMut<BinaryField128b, CpuLayer<CanonicalTowerFamily>>,
+	);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
+	let proof = constraint_system::prove::<
+		U,
+		CanonicalTowerFamily,
+		Groestl256,
+		Groestl256ByteCompression,
+		HasherChallenger<Groestl256>,
+		_,
+		_,
+	>(
+		&constraint_system,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&[],
+		witness,
+		&hal_witness,
+		&backend,
+		&host_alloc,
+		&dev_alloc,
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 

@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use binius_compute::ComputeLayer;
 use binius_field::{Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
@@ -21,10 +22,11 @@ use super::{
 	},
 };
 use crate::{
+	composition::BivariateProduct,
 	fiat_shamir::Challenger,
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyVariant, OracleId,
+		ConstraintSet, ConstraintSetBuilder, Error as OracleError, IndexCompositionConstraintSet,
+		MultilinearOracleSet, MultilinearPolyVariant, OracleId,
 	},
 	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
@@ -36,7 +38,7 @@ use crate::{
 	},
 	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
-	witness::MultilinearExtensionIndex,
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex},
 };
 
 /// A mutable prover state.
@@ -126,10 +128,13 @@ where
 	/// A helper method to move out bivariate sumcheck constraints
 	pub fn take_new_bivariate_sumchecks_constraints(
 		&mut self,
-	) -> Result<Vec<ConstraintSet<F>>, OracleError> {
+	) -> Result<Vec<IndexCompositionConstraintSet<F, BivariateProduct, 2>>, OracleError> {
 		self.new_bivariate_sumchecks_constraints
 			.iter_mut()
-			.map(|builder| std::mem::take(builder).build_one(self.oracles))
+			.map(|builder| {
+				std::mem::take(builder)
+					.build_one_index_composition(self.oracles, BivariateProduct {})
+			})
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.collect()
 	}
@@ -167,10 +172,11 @@ where
 	///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 	///  * other multilin is a projection of one of the evalcheck claim multilins to its first
 	///    variables
-	pub fn prove<Challenger_: Challenger>(
+	pub fn prove<'alloc, Challenger_: Challenger, Hal: ComputeLayer<F>>(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
 		transcript: &mut ProverTranscript<Challenger_>,
+		hal_witness: &HalMultilinearExtensionIndex<'_, 'alloc, F, Hal>,
 	) -> Result<(), Error> {
 		// Reset the prover state for a new round.
 		self.round_claim_index = 0;
@@ -272,7 +278,7 @@ where
 		for (claim, meta, projected) in
 			izip!(&projected_bivariate_claims, &projected_bivariate_metas, projected_mles)
 		{
-			self.process_bivariate_sumcheck(claim, meta, projected)?;
+			self.process_bivariate_sumcheck(claim, meta, projected, hal_witness)?;
 		}
 
 		self.memoized_data.memoize_partial_evals(
@@ -673,11 +679,12 @@ where
 		}
 	}
 
-	fn process_bivariate_sumcheck(
+	fn process_bivariate_sumcheck<'alloc, Hal: ComputeLayer<F>>(
 		&mut self,
 		evalcheck_claim: &EvalcheckMultilinearClaim<F>,
 		meta: &ProjectedBivariateMeta,
 		projected: Option<MultilinearExtension<P>>,
+		hal_witness: &HalMultilinearExtensionIndex<'_, 'alloc, F, Hal>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
@@ -692,6 +699,7 @@ where
 				eval_point,
 				*eval,
 				self.witness_index,
+				hal_witness,
 				&mut self.new_bivariate_sumchecks_constraints,
 				projected,
 			),
@@ -703,6 +711,7 @@ where
 				eval_point,
 				*eval,
 				self.witness_index,
+				hal_witness,
 				&mut self.new_bivariate_sumchecks_constraints,
 				projected,
 			),

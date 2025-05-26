@@ -2,12 +2,13 @@
 
 use std::{array, iter::repeat_with};
 
+use binius_compute::{FSliceMut, alloc::BumpAllocator, cpu::CpuLayer};
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
-	AESTowerField128b, BinaryField1b, BinaryField128b, ByteSliced16x128x1b, ByteSlicedAES16x16x8b,
-	ByteSlicedAES16x128b, ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField16x8b,
-	PackedBinaryField128x1b, PackedField, RepackedExtension, TowerField,
+	BinaryField1b, BinaryField128b, ExtensionField, Field, PackedBinaryField1x128b,
+	PackedBinaryField16x8b, PackedBinaryField128x1b, PackedField, RepackedExtension, TowerField,
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
+	tower::{CanonicalTowerFamily, TowerFamily},
 };
 use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
@@ -16,7 +17,7 @@ use binius_math::{
 	CompositionPoly, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 	extrapolate_line,
 };
-use bytemuck::{Pod, cast_slice_mut};
+use bytemuck::{Pod, cast_slice_mut, zeroed_vec};
 use itertools::Either;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -30,7 +31,7 @@ use crate::{
 	},
 	transcript::ProverTranscript,
 	transparent::select_row::SelectRow,
-	witness::MultilinearExtensionIndex,
+	witness::{HalMultilinearExtensionIndex, MultilinearExtensionIndex},
 };
 
 type FExtension = BinaryField128b;
@@ -64,6 +65,7 @@ where
 	P: PackedField,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<P::Scalar>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension: PackedField<Scalar = FExtension> + RepackedExtension<P>,
 {
 	let mut oracles = MultilinearOracleSet::<FExtension>::new();
@@ -114,7 +116,16 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	prover_state.prove(claims.clone(), &mut transcript).unwrap();
+
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
+	prover_state
+		.prove(claims.clone(), &mut transcript, &hal_witness)
+		.unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut transcript = transcript.into_verifier();
@@ -127,17 +138,13 @@ where
 #[test]
 fn test_shifted_evaluation_whole_cube() {
 	run_test_shifted_evaluation_whole_cube::<PackedBinaryField16x8b, FExtension, PExtension>(8);
-	run_test_shifted_evaluation_whole_cube::<
-		ByteSlicedAES16x16x8b,
-		AESTowerField128b,
-		ByteSlicedAES16x128b,
-	>(16);
 }
 
 fn run_test_shifted_evaluation_subcube<P, FExtension, PExtension>(n_vars: usize)
 where
 	P: PackedField + Pod,
 	P::Scalar: TowerField,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	FExtension: TowerField + ExtensionField<P::Scalar>,
 	PExtension: PackedField<Scalar = FExtension> + RepackedExtension<P>,
 {
@@ -194,7 +201,17 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	prover_state.prove(claims.clone(), &mut transcript).unwrap();
+
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
+	prover_state
+		.prove(claims.clone(), &mut transcript, &hal_witness)
+		.unwrap();
+
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut transcript = transcript.into_verifier();
@@ -206,11 +223,6 @@ where
 #[test]
 fn test_shifted_evaluation_subcube() {
 	run_test_shifted_evaluation_subcube::<PackedBinaryField16x8b, FExtension, PExtension>(8);
-	run_test_shifted_evaluation_subcube::<
-		ByteSlicedAES16x16x8b,
-		AESTowerField128b,
-		ByteSlicedAES16x128b,
-	>(16);
 }
 
 fn run_test_evalcheck_linear_combination<P, FExtension, PExtension>(n_vars: usize)
@@ -218,6 +230,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension:
 		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
 {
@@ -293,8 +306,14 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![claim.clone()], &mut transcript)
+		.prove(vec![claim.clone()], &mut transcript, &hal_witness)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
@@ -305,11 +324,6 @@ where
 #[test]
 fn test_evalcheck_linear_combination() {
 	run_test_evalcheck_linear_combination::<PackedBinaryField128x1b, FExtension, PExtension>(8);
-	run_test_evalcheck_linear_combination::<
-		ByteSliced16x128x1b,
-		AESTowerField128b,
-		ByteSlicedAES16x128b,
-	>(16);
 }
 
 fn run_test_evalcheck_linear_combination_size_one<P, FExtension, PExtension>(n_vars: usize)
@@ -317,6 +331,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension:
 		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
 {
@@ -369,8 +384,15 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![claim.clone()], &mut transcript)
+		.prove(vec![claim.clone()], &mut transcript, &hal_witness)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
@@ -383,11 +405,6 @@ fn test_evalcheck_linear_combination_size_one() {
 	run_test_evalcheck_linear_combination_size_one::<PackedBinaryField128x1b, FExtension, PExtension>(
 		8,
 	);
-	run_test_evalcheck_linear_combination_size_one::<
-		ByteSliced16x128x1b,
-		AESTowerField128b,
-		ByteSlicedAES16x128b,
-	>(16);
 }
 
 fn run_test_evalcheck_composite<P, FExtension, PExtension>(n_vars: usize)
@@ -395,6 +412,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension:
 		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
 {
@@ -476,8 +494,14 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![claim.clone()], &mut transcript)
+		.prove(vec![claim.clone()], &mut transcript, &hal_witness)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
@@ -488,9 +512,6 @@ where
 #[test]
 fn test_evalcheck_composite() {
 	run_test_evalcheck_composite::<PackedBinaryField128x1b, FExtension, PExtension>(8);
-	run_test_evalcheck_composite::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
-		16,
-	);
 }
 
 fn run_test_evalcheck_repeating<P, FExtension, PExtension>(n_vars: usize)
@@ -498,6 +519,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension:
 		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
 {
@@ -541,8 +563,14 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![claim.clone()], &mut transcript)
+		.prove(vec![claim.clone()], &mut transcript, &hal_witness)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
@@ -553,9 +581,6 @@ where
 #[test]
 fn test_evalcheck_repeating() {
 	run_test_evalcheck_repeating::<PackedBinaryField128x1b, FExtension, PExtension>(8);
-	run_test_evalcheck_repeating::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
-		16,
-	);
 }
 
 fn run_test_evalcheck_zero_padded<P, FExtension, PExtension>(n_vars: usize, inner_n_vars: usize)
@@ -563,6 +588,7 @@ where
 	P: PackedField<Scalar = BinaryField1b> + Pod + RepackedExtension<P>,
 	P::Scalar: TowerField,
 	FExtension: TowerField + ExtensionField<BinaryField1b>,
+	CanonicalTowerFamily: TowerFamily<B128 = FExtension>,
 	PExtension:
 		PackedField<Scalar = FExtension> + RepackedExtension<P> + RepackedExtension<PExtension>,
 {
@@ -634,8 +660,14 @@ where
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![claim.clone()], &mut transcript)
+		.prove(vec![claim.clone()], &mut transcript, &hal_witness)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
@@ -647,9 +679,6 @@ where
 /// Constructs a small ZeroPadded oracle, proves and verifies it.
 fn test_evalcheck_zero_padded() {
 	run_test_evalcheck_zero_padded::<PackedBinaryField128x1b, FExtension, PExtension>(10, 8);
-	run_test_evalcheck_zero_padded::<ByteSliced16x128x1b, AESTowerField128b, ByteSlicedAES16x128b>(
-		18, 16,
-	);
 }
 
 // Test evalcheck serialization
@@ -730,8 +759,18 @@ pub fn test_zero_padded_zero_vars() {
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+	let mut dev_mem = zeroed_vec(1 << 12);
+	let dev_alloc =
+		BumpAllocator::new((&mut dev_mem) as FSliceMut<FExtension, CpuLayer<CanonicalTowerFamily>>);
+	let hal_witness = HalMultilinearExtensionIndex::new(&dev_alloc, &hal);
+
 	prover_state
-		.prove(vec![zero_eval_claim.clone(), non_zero_eval_claim.clone()], &mut transcript)
+		.prove(
+			vec![zero_eval_claim.clone(), non_zero_eval_claim.clone()],
+			&mut transcript,
+			&hal_witness,
+		)
 		.unwrap();
 
 	let mut transcript = transcript.into_verifier();
