@@ -92,8 +92,8 @@ where
 	// Partial evaluations after `evaluate_partial_high` in suffixes
 	partial_evals: EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 
-	// These oracles reuse the same suffix across multiple evaluations
-	oracles_with_suffixes: HashSet<(OracleId, EvalPoint<F>)>,
+	// Common suffixes
+	suffixes: HashSet<EvalPoint<F>>,
 }
 
 impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
@@ -128,7 +128,7 @@ where
 			round_claim_index: 0,
 
 			partial_evals: EvalPointOracleIdMap::new(),
-			oracles_with_suffixes: HashSet::new(),
+			suffixes: HashSet::new(),
 		}
 	}
 
@@ -203,29 +203,41 @@ where
 			);
 		}
 
-		let eval_points = self
+		let mut eval_points = self
 			.claims_to_be_evaluated
 			.iter()
 			.map(|(_, eval_point)| eval_point.clone())
 			.collect::<HashSet<_>>();
 
-		let suffixes = self
-			.oracles_with_suffixes
-			.iter()
-			.map(|(_, suffix)| suffix.clone())
-			.collect::<HashSet<_>>();
+		let mut suffixes = self.suffixes.iter().cloned().collect::<HashSet<_>>();
 
 		let mut prefixes = HashSet::new();
 
+		let mut to_remove = Vec::new();
 		for suffix in &suffixes {
-			for eval_points in &eval_points {
-				if let Some(prefix) = eval_points.try_get_prefix(suffix) {
+			for eval_point in &eval_points {
+				if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 					prefixes.insert(prefix);
+					to_remove.push(eval_point.clone());
 				}
 			}
 		}
+		for ep in to_remove {
+			eval_points.remove(&ep);
+		}
 
-		let eval_points = chain!(&eval_points, &suffixes, &prefixes)
+		for eval_point in eval_points {
+			let ep = eval_point.to_vec();
+			let mid = ep.len() / 2;
+			let (low, high) = ep.split_at(mid);
+			let suffix = EvalPoint::from(high);
+			let prefix = EvalPoint::from(low);
+			suffixes.insert(suffix.clone());
+			self.suffixes.insert(suffix);
+			prefixes.insert(prefix);
+		}
+
+		let eval_points = chain!(&suffixes, &prefixes)
 			.map(|p| p.as_ref())
 			.collect::<Vec<_>>();
 
@@ -241,7 +253,7 @@ where
 					self.witness_index,
 					&self.memoized_data,
 					&self.partial_evals,
-					&self.oracles_with_suffixes,
+					&self.suffixes,
 				)
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
@@ -500,7 +512,7 @@ where
 		let multilinear = self.oracles.oracle(id);
 
 		match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => {}
+			MultilinearPolyVariant::Transparent { .. } | MultilinearPolyVariant::Structured(_) => {}
 			MultilinearPolyVariant::Committed => {
 				self.committed_eval_claims.push(EvalcheckMultilinearClaim {
 					id: multilinear.id,
@@ -746,7 +758,7 @@ where
 				}
 			}
 			_ => {
-				self.oracles_with_suffixes.insert((oracle_id, suffix));
+				self.suffixes.insert(suffix);
 			}
 		}
 	}
@@ -801,7 +813,7 @@ where
 		witness_index: &MultilinearExtensionIndex<P>,
 		memoized_queries: &MemoizedData<P, Backend>,
 		partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
-		oracles_with_suffixes: &HashSet<(OracleId, EvalPoint<F>)>,
+		suffixes: &HashSet<EvalPoint<F>>,
 	) -> Result<(EvalcheckMultilinearClaim<F>, Option<OracleIdPartialEval<P>>), Error> {
 		let witness_poly = witness_index
 			.get_multilin_poly(oracle_id)
@@ -810,10 +822,7 @@ where
 		let mut eval = None;
 		let mut new_partial_eval = None;
 
-		for (_, suffix) in oracles_with_suffixes
-			.iter()
-			.filter(|(id, _)| *id == oracle_id)
-		{
+		for suffix in suffixes {
 			if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 				let partial_eval = match partial_evals.get(oracle_id, suffix) {
 					Some(partial_eval) => partial_eval,
@@ -854,11 +863,7 @@ where
 					.full_query_readonly(&eval_point)
 					.ok_or(Error::MissingQuery)?;
 
-				witness_poly
-					.evaluate_partial_high(query.to_ref())
-					.map_err(Error::from)?
-					.evaluate_on_hypercube(0)
-					.unwrap()
+				witness_poly.evaluate(query.to_ref()).map_err(Error::from)?
 			}
 		};
 

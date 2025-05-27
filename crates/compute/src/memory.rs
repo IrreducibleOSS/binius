@@ -38,6 +38,9 @@ pub trait ComputeMemory<F> {
 	/// Borrows a mutable memory slice, narrowing the lifetime.
 	fn narrow_mut<'a, 'b: 'a>(data: Self::FSliceMut<'b>) -> Self::FSliceMut<'a>;
 
+	// Converts a reference to an FSliceMut to an FSliceMut
+	fn to_owned_mut<'a>(data: &'a mut Self::FSliceMut<'_>) -> Self::FSliceMut<'a>;
+
 	/// Borrows a mutable memory slice as immutable.
 	///
 	/// This allows the immutable reference to be copied.
