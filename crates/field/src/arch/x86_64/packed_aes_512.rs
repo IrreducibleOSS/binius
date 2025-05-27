@@ -3,6 +3,8 @@
 use cfg_if::cfg_if;
 
 use super::{m512::M512, packed_macros::*};
+#[cfg(target_feature = "gfni")]
+use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 use crate::{
 	aes_field::{
 		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,

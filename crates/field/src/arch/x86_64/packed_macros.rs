@@ -33,16 +33,15 @@ macro_rules! impl_strategy {
 }
 
 macro_rules! impl_transformation {
-	($name:ident, $num:literal, $fallback:ty) => {{
+	($name:ident, $num:literal, $fallback:ty) => {
 		cfg_if::cfg_if! {
 			if #[cfg(target_feature = "gfni")] {
-				use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 				impl_transformation_with_gfni_nxn!($name, $num);
 			} else {
 				impl_transformation_with_strategy!($name, $fallback);
 			}
 		}
-	}};
+	};
 	($name:ident, $gfni_strategy:ty, $fallback:ty) => {
 		cfg_if::cfg_if! {
 			if #[cfg(target_feature = "gfni")] {
