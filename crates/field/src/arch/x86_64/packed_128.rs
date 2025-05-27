@@ -23,7 +23,7 @@ use crate::{
 };
 
 define_packed_binary_fields!(
-    underlier: M128,
+	underlier: M128,
 	packed_fields: [
 		packed_field {
 			name: PackedBinaryField128x1b,

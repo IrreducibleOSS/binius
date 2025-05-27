@@ -14,17 +14,17 @@ use crate::{
 };
 
 define_packed_binary_fields!(
-    underlier: u8,
-    packed_fields: [
-        packed_field {
-            name: PackedAESBinaryField1x8b,
-            scalar: AESTowerField8b,
-            alpha_idx: _,
-            mul: (PairwiseTableStrategy),
-            square: (PairwiseTableStrategy),
-            invert: (PairwiseTableStrategy),
-            mul_alpha: (PairwiseTableStrategy),
-            transform: (PairwiseStrategy),
-        },
-    ]
+	underlier: u8,
+	packed_fields: [
+		packed_field {
+			name: PackedAESBinaryField1x8b,
+			scalar: AESTowerField8b,
+			alpha_idx: _,
+			mul: (PairwiseTableStrategy),
+			square: (PairwiseTableStrategy),
+			invert: (PairwiseTableStrategy),
+			mul_alpha: (PairwiseTableStrategy),
+			transform: (PairwiseStrategy),
+		},
+	]
 );
