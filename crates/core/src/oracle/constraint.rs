@@ -33,6 +33,31 @@ pub enum ConstraintPredicate<F: Field> {
 }
 
 /// Constraint set is a group of constraints that operate over the same set of oracle-identified
+/// multilinears.
+///
+/// The difference from the [`ConstraintSet`] is that the latter is for the public API and this
+/// one should is supposed to be used within the core only.
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
+pub struct SizedConstraintSet<F: Field> {
+	pub n_vars: usize,
+	pub oracle_ids: Vec<OracleId>,
+	pub constraints: Vec<Constraint<F>>,
+}
+
+impl<F: Field> SizedConstraintSet<F> {
+	pub fn new(n_vars: usize, u: ConstraintSet<F>) -> Self {
+		let oracle_ids = u.oracle_ids;
+		let constraints = u.constraints;
+
+		Self {
+			n_vars,
+			oracle_ids,
+			constraints,
+		}
+	}
+}
+
+/// Constraint set is a group of constraints that operate over the same set of oracle-identified
 /// multilinears
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct ConstraintSet<F: Field> {
@@ -98,7 +123,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 	pub fn build_one(
 		self,
 		oracles: &MultilinearOracleSet<impl TowerField>,
-	) -> Result<ConstraintSet<F>, Error> {
+	) -> Result<SizedConstraintSet<F>, Error> {
 		let mut oracle_ids = self
 			.constraints
 			.iter()
@@ -147,7 +172,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 				})
 				.collect();
 
-		Ok(ConstraintSet {
+		Ok(SizedConstraintSet {
 			n_vars,
 			oracle_ids,
 			constraints,
