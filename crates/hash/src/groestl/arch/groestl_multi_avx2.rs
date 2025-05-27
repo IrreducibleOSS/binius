@@ -444,7 +444,7 @@ impl MultiDigest<4> for Groestl256Multi {
 	}
 }
 
-pub type Groestl256Parallel = ParallelMulidigestImpl<Groestl256Multi, 4>;
+pub type Groestl256Parallel = ParallelMultidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]
 mod tests {
