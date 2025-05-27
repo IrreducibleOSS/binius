@@ -1,29 +1,27 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{iter, slice};
+use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelMemMap, SizedSlice,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
-use binius_field::{Field, TowerField, util::powers};
-use binius_math::{CompositionPoly, EvaluationOrder, evaluate_univariate};
+use binius_field::{
+	Field, TowerField,
+	util::{eq, powers},
+};
+use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::bail;
 
+use super::bivariate_product::{PhaseState, SumcheckMultilinear};
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		CompositeSumClaim, Error, RoundCoeffs, SumcheckClaim, prove::SumcheckProver,
+		CompositeSumClaim, EqIndSumcheckClaim, Error, RoundCoeffs, prove::SumcheckProver,
 	},
 };
 
-/// Sumcheck prover implementation for the special case of bivariate product compositions over
-/// large-field multilinears.
-///
-/// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
-/// instance for expensive operations and the input multilinears are provided as device memory
-/// slices.
-pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
+pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: &'a HostBumpAllocator<'a, F>,
@@ -32,19 +30,27 @@ pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: PhaseState<F>,
+	eq_ind_prefix_eval: F,
+	// Wrapping it in Option is a temporary workaround for the lifetime problem
+	eq_ind_partial_evals: Option<FSliceMut<'a, F, Hal>>,
+	eq_ind_challenges: Vec<F>,
 }
 
-impl<'a, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'alloc, F, Hal>
+impl<'a, 'alloc, F, Hal> BivariateMLEcheckProver<'a, 'alloc, F, Hal>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
 {
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		hal: &'a Hal,
 		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 		host_alloc: &'a HostBumpAllocator<'a, F>,
-		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		claim: &EqIndSumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
+		eq_ind_partial_evals: Option<FSlice<'a, F, Hal>>,
+		eq_ind_challenges: Vec<F>,
+		first_round_eval_1s: Option<Vec<F>>,
 	) -> Result<Self, Error> {
 		if Hal::DevMem::MIN_SLICE_LEN != 1 {
 			todo!("support non-trivial minimum slice lengths");
@@ -67,10 +73,33 @@ where
 			.collect();
 
 		let (compositions, sums) = claim
-			.composite_sums()
+			.eq_ind_composite_sums()
 			.iter()
 			.map(|CompositeSumClaim { composition, sum }| (composition.clone(), *sum))
 			.unzip();
+
+		// Only one value of the expanded equality indicator is used per each
+		// 1-variable subcube, thus it should be twice smaller.
+		let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << (n_vars - 1))?;
+		if let Some(eq_ind_partial_evals) = eq_ind_partial_evals {
+			hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
+		} else {
+			hal.execute(|exec| {
+				hal.tensor_expand(
+					exec,
+					0,
+					&eq_ind_challenges[..n_vars.saturating_sub(1)],
+					&mut eq_ind_partial_evals_buffer,
+				)?;
+				Ok(vec![])
+			})?;
+		};
+
+		if let Some(ref first_round_eval_1s) = first_round_eval_1s {
+			if first_round_eval_1s.len() != claim.eq_ind_composite_sums().len() {
+				bail!(Error::IncorrectFirstRoundEvalOnesLength);
+			}
+		}
 
 		Ok(Self {
 			hal,
@@ -81,29 +110,39 @@ where
 			multilins,
 			compositions,
 			last_coeffs_or_sums: PhaseState::InitialSums(sums),
+			eq_ind_prefix_eval: F::ONE,
+			eq_ind_partial_evals: Some(eq_ind_partial_evals_buffer),
+			eq_ind_challenges,
 		})
+	}
+
+	fn update_eq_ind_prefix_eval(&mut self, challenge: F) {
+		// Update the running eq ind evaluation.
+		self.eq_ind_prefix_eval *= eq(self.eq_ind_challenges[self.n_vars_remaining - 1], challenge);
 	}
 
 	/// Returns the amount of host memory this sumcheck requires.
 	pub fn required_host_memory(
-		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		claim: &EqIndSumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 	) -> usize {
-		// In `finish()`, prover allocates a temporary host buffer for each of the fully folded
-		// multilinear evaluations.
-		claim.n_multilinears()
+		// In `finish()`, the prover allocates a temporary host buffer for each of the fully folded
+		// multilinear evaluations, plus `eq_ind` evaluations, which will be appended at the end.
+		claim.n_multilinears() + 1
 	}
 
 	/// Returns the amount of device memory this sumcheck requires.
 	pub fn required_device_memory(
-		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		claim: &EqIndSumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		with_eq_ind_partial_evals: bool,
 	) -> usize {
-		// In `fold()`, prover allocates device buffers for each of the folded multilinears. They
-		// are each half of the size of the original multilinears.
-		claim.n_multilinears() * (1 << (claim.n_vars() - 1))
+		// In `fold()`, the prover allocates device buffers for each of the folded multilinears,
+		// plus for `eq_ind`. Each of them is half the size of the original multilinears.
+		let n_multilinears = claim.n_multilinears() + if with_eq_ind_partial_evals { 0 } else { 1 };
+		n_multilinears * (1 << (claim.n_vars() - 1))
 	}
 }
 
-impl<'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, 'alloc, F, Hal>
+impl<'alloc, F, Hal> SumcheckProver<F> for BivariateMLEcheckProver<'_, 'alloc, F, Hal>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -122,11 +161,13 @@ where
 			.iter()
 			.map(|multilin| multilin.const_slice())
 			.collect::<Vec<_>>();
+
 		let round_evals = calculate_round_evals(
 			self.hal,
 			self.n_vars_remaining,
 			batch_coeff,
 			&multilins,
+			Hal::DevMem::as_const(self.eq_ind_partial_evals.as_ref().expect("exist")),
 			&self.compositions,
 		)?;
 
@@ -137,15 +178,34 @@ where
 			PhaseState::InitialSums(ref sums) => evaluate_univariate(sums, batch_coeff),
 			PhaseState::BatchedSum(sum) => sum,
 		};
-		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
-		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
-		Ok(round_coeffs)
+
+		let alpha = self.eq_ind_challenges[self.n_vars_remaining - 1];
+
+		let prime_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals, alpha);
+
+		self.last_coeffs_or_sums = PhaseState::Coeffs(prime_coeffs.clone());
+
+		// Convert v' polynomial into v polynomial
+		// eq(X, α) = (1 − α) + (2 α − 1) X
+
+		let prime_coeffs_scaled_by_constant_term = prime_coeffs.clone() * (F::ONE - alpha);
+
+		let mut prime_coeffs_scaled_by_linear_term = prime_coeffs * (alpha.double() - F::ONE);
+
+		prime_coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply prime polynomial by X
+
+		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
+			* self.eq_ind_prefix_eval;
+
+		Ok(coeffs)
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		if self.n_vars_remaining == 0 {
 			bail!(Error::ExpectedFinish);
 		}
+
+		self.update_eq_ind_prefix_eval(challenge);
 
 		// Update the stored multilinear sums.
 		match self.last_coeffs_or_sums {
@@ -157,6 +217,8 @@ where
 				bail!(Error::ExpectedExecution);
 			}
 		}
+
+		let mut eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
 
 		// Fold the multilinears
 		let _ = self.hal.execute(|exec| {
@@ -202,6 +264,71 @@ where
 			Ok(Vec::new())
 		})?;
 
+		if self.n_vars_remaining - 1 != 0 {
+			// Fold eq_ind
+			let split_n_vars = self.n_vars_remaining - 2;
+
+			let _ = self.hal.execute(|exec| {
+				let (evals_0, evals_1) = Hal::DevMem::split_at_mut_borrowed(
+					&mut eq_ind_partial_evals,
+					1 << split_n_vars,
+				);
+
+				let kernel_mappings = vec![
+					KernelMemMap::ChunkedMut {
+						data: evals_0,
+						log_min_chunk_size: 0,
+					},
+					KernelMemMap::ChunkedMut {
+						data: evals_1,
+						log_min_chunk_size: 0,
+					},
+					KernelMemMap::Local {
+						log_size: split_n_vars,
+					},
+				];
+
+				self.hal.accumulate_kernels(
+					exec,
+					|local_exec, log_chunks, mut buffers| {
+						let log_chunk_size = split_n_vars - log_chunks;
+
+						let Ok(
+							[
+								KernelBuffer::Mut(evals_0),
+								KernelBuffer::Mut(evals_1),
+								KernelBuffer::Mut(result),
+							],
+						) = TryInto::<&mut [_; 3]>::try_into(buffers.as_mut_slice())
+						else {
+							panic!(
+								"exec_kernels did not create the mapped buffers struct according to the mapping"
+							);
+						};
+						self.hal.kernel_add(
+							local_exec,
+							log_chunk_size,
+							Hal::DevMem::as_const(evals_0),
+							Hal::DevMem::as_const(evals_1),
+							result,
+						)?;
+
+						self.hal.copy_d2d(Hal::DevMem::as_const(result), evals_0)?;
+
+						Ok(Vec::new())
+					},
+					kernel_mappings,
+				)?;
+
+				Ok(Vec::new())
+			})?;
+
+			let (new_eq_ind_partial_evals, _) =
+				Hal::DevMem::split_at_mut(eq_ind_partial_evals, 1 << split_n_vars);
+
+			self.eq_ind_partial_evals = Some(new_eq_ind_partial_evals);
+		}
+
 		self.n_vars_remaining -= 1;
 		Ok(())
 	}
@@ -224,76 +351,58 @@ where
 			debug_assert_eq!(vals.len(), 1);
 			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
 		}
-		Ok(buffer.to_vec())
+
+		let mut res = buffer.to_vec();
+
+		res.push(self.eq_ind_prefix_eval);
+
+		Ok(res)
 	}
 }
 
-/// A multilinear polynomial that is being processed by a sumcheck prover.
-#[derive(Debug, Clone)]
-pub enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
-	PreFold(Mem::FSlice<'a>),
-	PostFold(Mem::FSliceMut<'a>),
+fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2], alpha: F) -> RoundCoeffs<F> {
+	let [y_1, y_inf] = evals;
+
+	let y_0 = (sum - y_1 * alpha) * (F::ONE - alpha).invert_or_zero();
+
+	// P(X) = c_2 x² + c_1 x + c_0
+	//
+	// P(0) =                  c_0
+	// P(1) = c_2    + c_1   + c_0
+	// P(∞) = c_2
+	let c_0 = y_0;
+	let c_2 = y_inf;
+	let c_1 = y_1 - c_0 - c_2;
+	RoundCoeffs(vec![c_0, c_1, c_2])
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
-	pub fn const_slice(&self) -> Mem::FSlice<'_> {
-		match self {
-			Self::PreFold(slice) => Mem::narrow(slice),
-			Self::PostFold(slice) => Mem::as_const(slice),
-		}
-	}
-}
-
-/// Calculates the evaluations of the products of pairs of partially specialized multilinear
-/// polynomials for sumcheck.
-///
-/// This performs round evaluation for a special case sumcheck prover for a sumcheck over bivariate
-/// products of multilinear polynomials, defined over the same field as the sumcheck challenges,
-/// using high-to-low variable binding order.
-///
-/// In more detail, this function takes a slice of multilinear polynomials over a large field `F`
-/// and a description of pairs of them, and computes the hypercube sum of the evaluations of these
-/// pairs of multilinears at select points. The evaluation points are 0 and the "infinity" point.
-/// The meaning of the infinity evaluation point is described in the documentation of
-/// [`binius_math::EvaluationDomain`].
-///
-/// The evaluations are batched by mixing with the powers of a batch coefficient.
-///
-/// ## Mathematical Definition
-///
-/// Let $\alpha$ be the batching coefficient, $P_0, \ldots, P_{m-1}$ be the multilinears, and
-/// $t \in \left(\mathbb{N}^2 \right)^k$ be a sequence of tuples of indices. This returns two
-/// values:
-///
-/// $$
-/// z_1 = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || 1) P_{t_{1,i}}(v || 1)
-/// \\\\
-/// z_\infty = \sum_{i=0}^{k-1} \alpha^i \sum_{v \in B_{m-1}} P_{t_{0,i}}(v || \infty)
-/// P_{t_{1,i}}(v || \infty)
-/// $$
-///
-/// ## Returns
-///
-/// Returns the batched, summed evaluations at 1 and infinity.
-pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
-	hal: &HAL,
+pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
+	hal: &Hal,
 	n_vars: usize,
 	batch_coeff: F,
-	multilins: &[FSlice<'a, F, HAL>],
+	multilins: &[FSlice<'a, F, Hal>],
+	eq_ind_partial_evals: FSlice<'a, F, Hal>,
 	compositions: &[IndexComposition<BivariateProduct, 2>],
 ) -> Result<[F; 2], Error> {
 	let prod_evaluators = compositions
 		.iter()
-		.map(|composition| hal.compile_expr(&CompositionPoly::<F>::expression(&composition)))
+		.map(|composition| {
+			let prod_expr = CompositionPoly::<F>::expression(&composition);
+			let mut expr = ArithExpr::from(prod_expr);
+			// add eq_ind
+			expr *= ArithExpr::Var(multilins.len());
+
+			hal.compile_expr(&expr)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	// n_vars - 1 is the number of variables in the halves of the split multilinear.
 	let split_n_vars = n_vars - 1;
-	let kernel_mappings = multilins
+	let mut kernel_mappings = multilins
 		.iter()
 		.copied()
 		.flat_map(|multilin| {
-			let (lo_half, hi_half) = HAL::DevMem::split_at(multilin, 1 << split_n_vars);
+			let (lo_half, hi_half) = Hal::DevMem::split_at(multilin, 1 << split_n_vars);
 			[
 				KernelMemMap::Chunked {
 					data: lo_half,
@@ -309,7 +418,12 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 				},
 			]
 		})
-		.collect();
+		.collect::<Vec<_>>();
+
+	kernel_mappings.push(KernelMemMap::Chunked {
+		data: eq_ind_partial_evals,
+		log_min_chunk_size: 0,
+	});
 
 	let batch_coeffs = powers(batch_coeff)
 		.take(compositions.len())
@@ -321,19 +435,24 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 			|local_exec, log_chunks, mut buffers| {
 				let log_chunk_size = split_n_vars - log_chunks;
 
+				let eq_ind = buffers.pop().expect(
+					"The presence of eq_ind in the buffer is due to it being added earlier in the code.",
+				);
+
 				// Compute the composite evaluations at the point ONE.
 				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
 				{
-					let eval_1s = SlicesBatch::new(
-						(0..multilins.len())
-							.map(|i| buffers[i * 3 + 1].to_ref())
-							.collect(),
-						1 << log_chunk_size,
-					);
+					let mut eval_1s_with_eq_ind = (0..multilins.len())
+						.map(|i| buffers[i * 3 + 1].to_ref())
+						.collect::<Vec<_>>();
+
+					eval_1s_with_eq_ind.push(eq_ind.to_ref());
+
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 						hal.sum_composition_evals(
 							local_exec,
-							&eval_1s,
+							log_chunk_size,
+							&eval_1s_with_eq_ind,
 							evaluator,
 							batch_coeff,
 							&mut acc_1,
@@ -360,16 +479,17 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 
 				// Compute the composite evaluations at the point Infinity.
 				let mut acc_inf = hal.kernel_decl_value(local_exec, F::ZERO)?;
-				let eval_infs = SlicesBatch::new(
-					(0..multilins.len())
-						.map(|i| buffers[i * 3 + 2].to_ref())
-						.collect(),
-					1 << log_chunk_size,
-				);
+				let mut eval_infs_with_eq_ind = (0..multilins.len())
+					.map(|i| buffers[i * 3 + 2].to_ref())
+					.collect::<Vec<_>>();
+
+				eval_infs_with_eq_ind.push(eq_ind.to_ref());
+
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 					hal.sum_composition_evals(
 						local_exec,
-						&eval_infs,
+						log_chunk_size,
+						&eval_infs_with_eq_ind,
 						evaluator,
 						batch_coeff,
 						&mut acc_inf,
@@ -385,64 +505,26 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 	Ok(evals)
 }
 
-fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2]) -> RoundCoeffs<F> {
-	let [y_1, y_inf] = evals;
-	let y_0 = sum - y_1;
-
-	// P(X) = c_2 x² + c_1 x + c_0
-	//
-	// P(0) =                  c_0
-	// P(1) = c_2    + c_1   + c_0
-	// P(∞) = c_2
-
-	let c_0 = y_0;
-	let c_2 = y_inf;
-	let c_1 = y_1 - c_0 - c_2;
-	RoundCoeffs(vec![c_0, c_1, c_2])
-}
-
-#[derive(Debug)]
-pub enum PhaseState<F: Field> {
-	Coeffs(RoundCoeffs<F>),
-	InitialSums(Vec<F>),
-	BatchedSum(F),
-}
-
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::CpuLayer;
-	use binius_compute_test_utils::bivariate_sumcheck::{
-		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
-	};
-	use binius_field::{BinaryField128b, tower::CanonicalTowerFamily};
+	use binius_compute_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
+	use binius_field::tower::CanonicalTowerFamily;
 	use bytemuck::zeroed_vec;
 
-	use super::*;
-
 	#[test]
-	fn test_calculate_round_evals() {
-		type Hal = CpuLayer<CanonicalTowerFamily>;
-		type F = BinaryField128b;
-
-		let hal = Hal::default();
-		let mut dev_mem = vec![F::ZERO; 1 << 10];
-		let n_vars = 8;
-		generic_test_calculate_round_evals(&hal, &mut dev_mem, n_vars)
-	}
-
-	#[test]
-	fn test_bivariate_sumcheck_prove_verify() {
+	fn test_bivariate_mlecheck_prove_verify() {
 		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
-		generic_test_bivariate_sumcheck_prove_verify(
+		generic_test_bivariate_mlecheck_prove_verify(
 			&hal,
 			&mut dev_mem,
 			n_vars,
 			n_multilins,
 			n_compositions,
-		)
+		);
 	}
 }
