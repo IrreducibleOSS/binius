@@ -334,7 +334,7 @@ impl Groestl256Multi {
 			self.state[i] = unsafe { _mm256_xor_si256(self.state[i], *state_copy_row) };
 		}
 
-		let slices = get_substates_par_better(self.state);
+		let slices = get_substates_par(self.state);
 
 		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			let slice = slices[parallel_idx];
@@ -444,7 +444,6 @@ impl MultiDigest<4> for Groestl256Multi {
 	}
 }
 
-#[allow(private_interfaces)]
 pub type Groestl256Parallel = ParallelMulidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]

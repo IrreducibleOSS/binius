@@ -6,7 +6,7 @@ use cfg_if::cfg_if;
 // machines
 
 cfg_if! {
-	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
+	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "avx2", target_feature = "gfni",))] {
 		mod groestl_multi_avx2;
 		pub use groestl_multi_avx2::Groestl256Parallel;
 	} else {
