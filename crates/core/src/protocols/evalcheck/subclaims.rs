@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_hal::ComputationBackend;
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
 	MultilinearExtension, MultilinearQuery,
@@ -308,24 +308,22 @@ pub struct OracleIdPartialEval<P: PackedField> {
 	name = "Evalcheck::calculate_projected_mles",
 	level = "debug"
 )]
-pub fn collect_projected_mles<F, P, Backend>(
+pub fn collect_projected_mles<F, P>(
 	metas: &[ProjectedBivariateMeta],
-	memoized_queries: &mut MemoizedData<P, Backend>,
+	memoized_queries: &mut MemoizedData<P>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &MultilinearExtensionIndex<P>,
-	backend: &Backend,
 	partial_evals: &mut EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	let mut queries_to_memoize = Vec::new();
 	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
 		queries_to_memoize.push(&claim.eval_point[meta.projected_n_vars..]);
 	}
-	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
+	memoized_queries.memoize_query_par(queries_to_memoize)?;
 
 	let new_partial_evals = projected_bivariate_claims
 		.par_iter()
@@ -342,8 +340,8 @@ where
 					return Ok(None);
 				}
 
-				let partial_eval = backend
-					.evaluate_partial_high(&inner_multilin, query.to_ref())
+				let partial_eval = inner_multilin
+					.evaluate_partial_high(query.to_ref())
 					.map_err(Error::from)?;
 
 				Ok(Some(OracleIdPartialEval {
@@ -371,12 +369,12 @@ where
 /// Struct for memoizing tensor expansions of evaluation points and partial evaluations of
 /// multilinears
 #[allow(clippy::type_complexity)]
-pub struct MemoizedData<'a, P: PackedField, Backend: ComputationBackend> {
-	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
+pub struct MemoizedData<'a, P: PackedField> {
+	query: Vec<(Vec<P::Scalar>, MultilinearQuery<P>)>,
 	partial_evals: EvalPointOracleIdMap<MultilinearWitness<'a, P>, P::Scalar>,
 }
 
-impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backend> {
+impl<'a, P: PackedField> MemoizedData<'a, P> {
 	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self {
@@ -388,8 +386,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
-		backend: &Backend,
-	) -> Result<&MultilinearQuery<P, Backend::Vec<P>>, binius_hal::Error> {
+	) -> Result<&MultilinearQuery<P>, binius_hal::Error> {
 		if let Some(index) = self
 			.query
 			.iter()
@@ -399,7 +396,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			return Ok(query);
 		}
 
-		let query = backend.multilinear_query(eval_point)?;
+		let query = MultilinearQuery::expand(eval_point);
 		self.query.push((eval_point.to_vec(), query));
 
 		let (_, query) = self.query.last().expect("pushed query immediately above");
@@ -407,10 +404,7 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 	}
 
 	/// Finds a `MultilinearQuery` corresponding to the given `eval_point`.
-	pub fn full_query_readonly(
-		&self,
-		eval_point: &[P::Scalar],
-	) -> Option<&MultilinearQuery<P, Backend::Vec<P>>> {
+	pub fn full_query_readonly(&self, eval_point: &[P::Scalar]) -> Option<&MultilinearQuery<P>> {
 		self.query
 			.iter()
 			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
@@ -424,7 +418,6 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 	pub fn memoize_query_par<'b>(
 		&mut self,
 		eval_points: impl IntoIterator<Item = &'b [P::Scalar]>,
-		backend: &Backend,
 	) -> Result<(), binius_hal::Error> {
 		let deduplicated_eval_points = eval_points.into_iter().collect::<HashSet<_>>();
 
@@ -432,11 +425,10 @@ impl<'a, P: PackedField, Backend: ComputationBackend> MemoizedData<'a, P, Backen
 			.into_par_iter()
 			.filter(|ep| self.full_query_readonly(ep).is_none())
 			.map(|ep| {
-				backend
-					.multilinear_query::<P>(ep)
-					.map(|res| (ep.to_vec(), res))
+				let query = MultilinearQuery::<P>::expand(ep);
+				(ep.to_vec(), query)
 			})
-			.collect::<Result<Vec<_>, binius_hal::Error>>()?;
+			.collect::<Vec<_>>();
 
 		self.query.extend(new_queries);
 
@@ -526,7 +518,7 @@ pub fn prove_mlecheck_with_switchover<'a, F, P, DomainField, Transcript, Backend
 	witness: &MultilinearExtensionIndex<P>,
 	constraint_set: ConstraintSet<F>,
 	eq_ind_challenges: EvalPoint<F>,
-	memoized_data: &mut MemoizedData<'a, P, Backend>,
+	memoized_data: &mut MemoizedData<'a, P>,
 	transcript: &mut ProverTranscript<Transcript>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
