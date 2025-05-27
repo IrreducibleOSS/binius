@@ -234,15 +234,6 @@ pub(crate) mod portable_macros {
 		};
 	}
 
-	// macro_rules! parse_strategy {
-	//     (if $cond:ident $($gfni_x86_strategy:tt)+ else $($fallback:tt)+) => {
-	//         (if $cond $($true_branch)+ else $($false_branch)+)
-	//     };
-	//     ($($tokens:tt)*) => {
-	//         ($($tokens)*)
-	//     };
-	// }
-
 	pub(crate) use impl_strategy;
 	pub(crate) use impl_transformation;
 	pub(crate) use maybe_impl_broadcast;
