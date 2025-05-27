@@ -37,7 +37,7 @@ pub trait GroestlShortInternal {
 }
 
 cfg_if! {
-	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
+	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "gfni", target_feature = "avx2",))] {
 		pub use arch::Groestl256Multi;
 	}
 }
