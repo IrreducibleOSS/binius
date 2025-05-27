@@ -64,7 +64,7 @@ mod model {
 	}
 	/// A table representing a step in verifying a merkle path for inclusion.
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 	pub struct MerklePathEvent {
 		pub root_id: u8,
 		pub left: [u8; 32],
@@ -481,21 +481,22 @@ mod model {
 }
 
 mod arithmetisation {
-	use std::{array, cell::RefMut};
+	use std::{array, cell::RefMut, os::macos::raw::stat};
 
 	use anyhow::anyhow;
 	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
 	use binius_field::{
-		ExtensionField, Field, PackedBinaryField8x8b, PackedExtension, PackedFieldIndexable,
-		PackedSubfield, arch::OptimalUnderlier128b, as_packed_field::PackedType,
-		linear_transformation::PackedTransformationFactory, packed::set_packed_slice,
-		underlier::WithUnderlier,
+		ExtensionField, Field, PackedBinaryField8x8b, PackedExtension, PackedField,
+		PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier128b,
+		as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
+		packed::set_packed_slice, underlier::WithUnderlier,
 	};
 	use binius_hash::{compression, groestl::Groestl256, permutation};
 	use binius_m3::{
 		builder::{
-			B1, B8, B32, B64, B128, Col, ConstraintSystem, Error, Table, TableBuilder, TableFiller,
-			TableId, TableWitnessSegment, WitnessIndex, upcast_col,
+			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, Error, FlushDirection, Table,
+			TableBuilder, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
+			test_utils::validate_system_witness, upcast_col,
 		},
 		gadgets::hash::groestl::{Permutation, PermutationVariant},
 	};
@@ -509,10 +510,82 @@ mod arithmetisation {
 	/// it is characterized by the tables with the column constraints, and the channels with
 	/// the flushing rules.
 	pub struct MerkleTreeCS {
-		pub merkle_path_table: NodesTable,
+		pub merkle_path_table_left: NodesTable,
+		pub merkle_path_table_right: NodesTable,
+		pub merkle_path_table_both: NodesTable,
 		pub root_table: RootTable,
 		pub nodes_channel: ChannelId,
 		pub roots_channel: ChannelId,
+	}
+
+	impl MerkleTreeCS {
+		pub fn new(cs: &mut ConstraintSystem) -> Self {
+			let nodes_channel = cs.add_channel("merkle_tree_nodes");
+			let roots_channel = cs.add_channel("merkle_tree_roots");
+
+			let merkle_path_table_left =
+				NodesTable::new(cs, MerklePathPullChild::Left, nodes_channel);
+			let merkle_path_table_right =
+				NodesTable::new(cs, MerklePathPullChild::Right, nodes_channel);
+			let merkle_path_table_both =
+				NodesTable::new(cs, MerklePathPullChild::Both, nodes_channel);
+
+			let root_table = RootTable::new(cs, nodes_channel, roots_channel);
+
+			Self {
+				merkle_path_table_left,
+				merkle_path_table_right,
+				merkle_path_table_both,
+				root_table,
+				nodes_channel,
+				roots_channel,
+			}
+		}
+
+		pub fn fill_tables(
+			&self,
+			trace: &MerkleTreeTrace,
+			witness: &mut WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
+		) {
+			// Filter the MerklePathEvents into three iterators based on the pull child type.
+			let left_events = trace
+				.nodes
+				.iter()
+				.copied()
+				.filter(|event| event.flush_left && !event.flush_right)
+				.collect::<Vec<_>>();
+			let right_events = trace
+				.nodes
+				.iter()
+				.copied()
+				.filter(|event| !event.flush_left && event.flush_right)
+				.collect::<Vec<_>>();
+			let both_events = trace
+				.nodes
+				.iter()
+				.copied()
+				.filter(|event| event.flush_left && event.flush_right)
+				.collect::<Vec<_>>();
+
+			// Fill the nodes tables based on the filtered events.
+			witness
+				.fill_table_sequential(&self.merkle_path_table_left, &left_events)
+				.expect("Failed to fill left nodes table");
+			witness
+				.fill_table_sequential(&self.merkle_path_table_right, &right_events)
+				.expect("Failed to fill right nodes table");
+			witness
+				.fill_table_sequential(&self.merkle_path_table_both, &both_events)
+				.expect("Failed to fill both nodes table");
+
+			// Fill the roots table.
+			witness
+				.fill_table_sequential(
+					&self.root_table,
+					&trace.root.clone().into_iter().collect::<Vec<_>>(),
+				)
+				.expect("Failed to fill roots table");
+		}
 	}
 
 	/// We need to implement tables for the different cases of Merkle path pulls based on aggregated
@@ -570,7 +643,7 @@ mod arithmetisation {
 			}));
 
 			let id = table.id();
-			// committed coluumns are used to store the values of the nodes in the tree.
+			// committed coluumns are used to store the values of the nodes.
 			let root_id = table.add_committed("root_id");
 			let left = array::from_fn(|i| table.add_committed(format!("left_digest{i}")));
 			let right = array::from_fn(|i| table.add_committed(format!("right_digest{i}")));
@@ -688,6 +761,7 @@ mod arithmetisation {
 		}
 	}
 
+	// Helper functions to convert the index and digest columns into a flushable format.
 	fn to_node_flush(
 		root_id: Col<B64>,
 		digest: [Col<B64>; 4],
@@ -697,6 +771,10 @@ mod arithmetisation {
 		[
 			root_id, digest[0], digest[1], digest[2], digest[3], depth, index,
 		]
+	}
+
+	fn to_root_flush(root_id: Col<B64>, digest: [Col<B64>; 4]) -> [Col<B64>; 5] {
+		[root_id, digest[0], digest[1], digest[2], digest[3]]
 	}
 
 	pub struct RootTable {
@@ -720,22 +798,8 @@ mod arithmetisation {
 
 			let zero = table.add_constant("zero", [B64::ZERO]);
 			let root_id_upcasted = upcast_col(root_id);
-			table.pull(
-				nodes_channel,
-				[
-					root_id_upcasted,
-					digest[0],
-					digest[1],
-					digest[2],
-					digest[3],
-					zero,
-					zero,
-				],
-			);
-			table.push(
-				roots_channel,
-				[root_id_upcasted, digest[0], digest[1], digest[2], digest[3]],
-			);
+			table.pull(nodes_channel, to_node_flush(root_id_upcasted, digest, zero, zero));
+			table.push(roots_channel, to_root_flush(root_id_upcasted, digest));
 			Self {
 				id,
 				root_id,
@@ -866,6 +930,18 @@ mod arithmetisation {
 		}
 	}
 
+	fn digest_to_state(digest: [u8; 32]) -> [B64; 4] {
+		let state_field = B8::from_underliers_arr(digest);
+		let mut out = [B64::ZERO; 4];
+		for i in 0..4 {
+			out[i] = <B64 as ExtensionField<B8>>::from_bases(
+				state_field[i * 8..(i + 1) * 8].iter().copied(),
+			)
+			.expect("Failed to convert digest to state");
+		}
+
+		out
+	}
 	#[test]
 	fn test_nodes_table_constructor() {
 		let mut cs = ConstraintSystem::new();
@@ -914,9 +990,9 @@ mod arithmetisation {
 		witness
 			.fill_table_sequential(&nodes_table, &trace.nodes)
 			.unwrap();
-
 	}
 
+	#[test]
 	fn test_root_table_filling() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
@@ -931,7 +1007,113 @@ mod arithmetisation {
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		witness
-			.fill_table_sequential(&root_table, &trace.root.iter().collect_vec())
+			.fill_table_sequential(&root_table, &trace.root.into_iter().collect::<Vec<_>>())
 			.unwrap();
+	}
+
+	#[test]
+	fn test_merkle_tree_cs_fill_tables() {
+		let mut cs = ConstraintSystem::new();
+		let merkle_tree_cs = MerkleTreeCS::new(&mut cs);
+
+		let tree = MerkleTree::new(&[
+			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
+		]);
+		let index = 0;
+		let path = tree.merkle_path(index);
+		let trace = MerkleTreeTrace::generate(
+			vec![tree.root],
+			&[MerklePath {
+				root_id: 0,
+				index,
+				leaf: [0u8; 32],
+				nodes: path,
+			}],
+		);
+
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		merkle_tree_cs.fill_tables(&trace, &mut witness);
+	}
+
+	#[test]
+	fn test_merkle_tree_cs_end_to_end() {
+		let mut cs = ConstraintSystem::new();
+		let merkle_tree_cs = MerkleTreeCS::new(&mut cs);
+
+		// Create a Merkle tree with 8 leaves
+		let leaves = vec![
+			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
+		];
+		let tree = MerkleTree::new(&leaves);
+
+		// Generate a Merkle path for a specific index
+		let index = 3;
+		let path = tree.merkle_path(index);
+
+		// Generate the trace for the Merkle tree
+		let trace = MerkleTreeTrace::generate(
+			vec![tree.root],
+			&[MerklePath {
+				root_id: 0,
+				index,
+				leaf: leaves[index],
+				nodes: path,
+			}],
+		);
+
+		// Allocate memory for the witness
+		let allocator = Bump::new();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+		// Fill the tables with the trace
+		merkle_tree_cs.fill_tables(&trace, &mut witness);
+
+		// Create boundary values based on the trace's boundaries
+		let mut boundaries = Vec::new();
+
+		// Add boundaries for leaf nodes
+		for leaf in &trace.boundaries.leaf {
+			let state = digest_to_state(leaf.data);
+			let values = vec![
+				B128::new(leaf.root_id as u128),
+				B128::from(state[0]),
+				B128::from(state[1]),
+				B128::from(state[2]),
+				B128::from(state[3]),
+				B128::new(leaf.depth as u128),
+				B128::new(leaf.index as u128),
+			];
+			boundaries.push(Boundary {
+				values,
+				channel_id: merkle_tree_cs.nodes_channel,
+				direction: FlushDirection::Push,
+				multiplicity: 1,
+			});
+		}
+
+		// Add boundaries for roots
+		for root in &trace.boundaries.root {
+			let state = digest_to_state(root.data);
+			let values = vec![
+				B128::new(root.root_id as u128),
+				B128::from(state[0]),
+				B128::from(state[1]),
+				B128::from(state[2]),
+				B128::from(state[3]),
+			];
+			boundaries.push(Boundary {
+				values,
+				channel_id: merkle_tree_cs.roots_channel,
+				direction: FlushDirection::Push,
+				multiplicity: 1,
+			});
+		}
+
+		// Validate the system and witness
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
 	}
 }
