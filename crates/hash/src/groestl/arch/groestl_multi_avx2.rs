@@ -93,7 +93,7 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 }
 
 #[inline]
-fn get_substates_par_better(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
+fn get_substates_par(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
 	let mut new_substates = [[0; STATE_SIZE]; NUM_PARALLEL_SUBSTATES];
 	let unbyteslice_permuatation_m256 = unsafe {
 		_mm256_setr_epi8(
@@ -343,7 +343,7 @@ impl Groestl256Multi {
 			self.state[i] = unsafe { _mm256_xor_si256(self.state[i], *state_copy_row) };
 		}
 
-		let slices = get_substates_par_better(self.state);
+		let slices = get_substates_par(self.state);
 
 		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			let slice = slices[parallel_idx];
