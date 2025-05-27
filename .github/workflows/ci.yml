@@ -91,9 +91,11 @@ jobs:
     strategy:
       matrix:
         expand:
-          - runner: "r7a-2xlarge"
+          - runner: "r5a-2xlarge" # We are intentionally using a different instance type without AVX512 for this job to test the case when AVX2 is available but AVX512 is not.
             name: "amd"
-            cmd: 'RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
+            # `-C target-feature=-avx512f` has no affect on the r5a instance type, but it prevents from sharing the same cache key with the r7a instances.
+            # Without this rust binaries that were built on r7a instances with AVX512 support could be used on r5a instance which would lead to a build failure.
+            cmd: 'RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f" ./scripts/run_tests_and_examples.sh'
           - runner: "r7a-2xlarge"
             name: "amd-portable"
             cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
