@@ -220,7 +220,7 @@ where
 			eval_points.remove(&ep);
 		}
 
-		//We don't split points whose tensor product, when halved, would be smaller than
+		// We don't split points whose tensor product, when halved, would be smaller than
 		// PackedField::WIDTH.
 		let (long, short): (Vec<_>, Vec<_>) = eval_points
 			.into_iter()
