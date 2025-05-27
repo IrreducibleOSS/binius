@@ -4,6 +4,7 @@ use std::{iter, mem, slice};
 
 use binius_compute::{
 	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelMemMap, SizedSlice,
+	SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{
@@ -448,10 +449,12 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 
 					eval_1s_with_eq_ind.push(eq_ind.to_ref());
 
+					let eval_1s_with_eq_ind =
+						SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
+
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 						hal.sum_composition_evals(
 							local_exec,
-							log_chunk_size,
 							&eval_1s_with_eq_ind,
 							evaluator,
 							batch_coeff,
@@ -485,10 +488,12 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 
 				eval_infs_with_eq_ind.push(eq_ind.to_ref());
 
+				let eval_infs_with_eq_ind =
+					SlicesBatch::new(eval_infs_with_eq_ind, 1 << log_chunk_size);
+
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 					hal.sum_composition_evals(
 						local_exec,
-						log_chunk_size,
 						&eval_infs_with_eq_ind,
 						evaluator,
 						batch_coeff,
