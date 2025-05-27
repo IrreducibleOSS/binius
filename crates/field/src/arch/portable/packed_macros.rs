@@ -214,10 +214,10 @@ pub(crate) mod portable_macros {
 
 	macro_rules! impl_strategy {
 		($impl_macro:ident $name:ident, None) => {};
-		($impl_macro:ident $name:ident, $delegate:ty, $fallback:ty) => {
+		($impl_macro:ident $name:ident, $gfni_x86_strategy:ty, $fallback:ty) => {
 			cfg_if! {
 				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
-					$impl_macro!($name => $delegate);
+					$impl_macro!($name => $gfni_x86_strategy);
 				} else {
 					$impl_macro!($name @ $fallback);
 				}
