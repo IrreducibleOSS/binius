@@ -532,10 +532,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().composite_mle(n_vars, inner, comp)
 	}
 
-	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self[id].clone()
-	}
-
 	pub fn n_vars(&self, id: OracleId) -> usize {
 		self[id].n_vars()
 	}
@@ -997,6 +993,6 @@ mod tests {
 		let projected = oracles
 			.add_projected(data, vec![F::ONE, F::ONE, F::ONE, F::ONE, F::ONE], start_index)
 			.unwrap();
-		let _ = oracles.oracle(projected);
+		let _ = &oracles[projected];
 	}
 }

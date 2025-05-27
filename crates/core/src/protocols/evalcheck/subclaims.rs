@@ -117,7 +117,7 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 ) -> Result<ProjectedBivariateMeta, Error> {
 	let n_vars = oracles.n_vars(packed.id());
 	let log_degree = packed.log_degree();
-	let binary_tower_level = oracles.oracle(packed.id()).binary_tower_level();
+	let binary_tower_level = oracles[packed.id()].binary_tower_level();
 
 	if log_degree > n_vars {
 		bail!(OracleError::NotEnoughVarsForPacking { n_vars, log_degree });
@@ -182,7 +182,7 @@ where
 	F: TowerField,
 {
 	let log_degree = packed.log_degree();
-	let binary_tower_level = oracles.oracle(packed.id()).binary_tower_level();
+	let binary_tower_level = oracles[packed.id()].binary_tower_level();
 
 	process_projected_bivariate_witness(
 		witness_index,
@@ -225,7 +225,7 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	eval_point: &[F],
 	multiplier_transparent_ctr: impl FnOnce(&[F]) -> Result<T, Error>,
 ) -> Result<ProjectedBivariateMeta, Error> {
-	let inner = oracles.oracle(inner_id);
+	let inner = &oracles[inner_id];
 
 	let (projected_eval_point, projected_id) = if projected_n_vars < inner.n_vars() {
 		let projected_id =
@@ -449,7 +449,7 @@ impl<'a, P: PackedField> MemoizedData<'a, P> {
 			.zip(metas)
 			.for_each(|(claim, meta)| {
 				let inner_id = meta.inner_id;
-				if oracles.oracle(inner_id).variant.is_committed() && meta.projected_id.is_some() {
+				if oracles[inner_id].variant.is_committed() && meta.projected_id.is_some() {
 					let eval_point = claim.eval_point[meta.projected_n_vars..].to_vec().into();
 
 					let projected_id = meta.projected_id.expect("checked above");

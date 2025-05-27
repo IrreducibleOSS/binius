@@ -358,7 +358,7 @@ where
 				.insert(multilinear_id, eval_point.clone(), eval);
 		}
 
-		let multilinear = self.oracles.oracle(multilinear_id);
+		let multilinear = &self.oracles[multilinear_id];
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Shifted(_) => {
@@ -376,7 +376,7 @@ where
 				self.collect_subclaims_for_memoization(id, inner_eval_point, eval);
 			}
 
-			MultilinearPolyVariant::Projected(projected) => {
+			MultilinearPolyVariant::Projected(ref projected) => {
 				let (id, values) = (projected.id(), projected.values());
 
 				let new_eval_point = {
@@ -390,13 +390,11 @@ where
 				self.collect_subclaims_for_memoization(id, new_eval_point.into(), eval);
 			}
 
-			MultilinearPolyVariant::LinearCombination(linear_combination) => {
+			MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
 				let n_polys = linear_combination.n_polys();
-
-				match (
-					izip!(linear_combination.polys(), linear_combination.coefficients()).next(),
-					eval,
-				) {
+				let next =
+					izip!(linear_combination.polys(), linear_combination.coefficients()).next();
+				match (next, eval) {
 					(Some((suboracle_id, coeff)), Some(eval))
 						if n_polys == 1 && !coeff.is_zero() =>
 					{
@@ -419,7 +417,11 @@ where
 						);
 					}
 					_ => {
-						for suboracle_id in linear_combination.polys() {
+						// We have to collect here to make the borrowck happy. This does not seem
+						// to be a big problem, but in case it turns out to be problematic, consider
+						// using smallvec.
+						let lincom_suboracles = linear_combination.polys().collect::<Vec<_>>();
+						for suboracle_id in lincom_suboracles {
 							self.claims_without_evals
 								.insert((suboracle_id, eval_point.clone()));
 
@@ -433,7 +435,7 @@ where
 				};
 			}
 
-			MultilinearPolyVariant::ZeroPadded(padded) => {
+			MultilinearPolyVariant::ZeroPadded(ref padded) => {
 				let id = padded.id();
 				let inner_eval_point = chain!(
 					&eval_point[..padded.start_index()],
@@ -499,7 +501,7 @@ where
 
 		self.round_claim_index += 1;
 
-		let multilinear = self.oracles.oracle(id);
+		let multilinear = &self.oracles[id];
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Transparent { .. } | MultilinearPolyVariant::Structured(_) => {}
@@ -524,7 +526,7 @@ where
 					transcript,
 				)?;
 			}
-			MultilinearPolyVariant::Projected(projected) => {
+			MultilinearPolyVariant::Projected(ref projected) => {
 				let new_eval_point = {
 					let (lo, hi) = eval_point.split_at(projected.start_index());
 					chain!(lo, projected.values(), hi)
@@ -549,7 +551,7 @@ where
 				};
 				self.projected_bivariate_claims.push(claim);
 			}
-			MultilinearPolyVariant::Composite(composite) => {
+			MultilinearPolyVariant::Composite(ref composite) => {
 				let position = self
 					.new_mlechecks_constraints
 					.iter()
@@ -562,12 +564,13 @@ where
 					position,
 					&eval_point,
 					&mut self.new_mlechecks_constraints,
-					&composite,
+					composite,
 					eval,
 				);
 			}
-			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				for suboracle_id in linear_combination.polys() {
+			MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+				let lincom_suboracles = linear_combination.polys().collect::<Vec<_>>();
+				for suboracle_id in lincom_suboracles {
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
@@ -597,7 +600,7 @@ where
 					}
 				}
 			}
-			MultilinearPolyVariant::ZeroPadded(padded) => {
+			MultilinearPolyVariant::ZeroPadded(ref padded) => {
 				let inner_eval_point = chain!(
 					&eval_point[..padded.start_index()],
 					&eval_point[padded.start_index() + padded.n_pad_vars()..],
@@ -707,12 +710,14 @@ where
 	) -> Result<ProjectedBivariateMeta, Error> {
 		let EvalcheckMultilinearClaim { id, eval_point, .. } = evalcheck_claim;
 
-		match &oracles.oracle(*id).variant {
+		match &oracles[*id].variant {
 			MultilinearPolyVariant::Shifted(shifted) => {
-				shifted_sumcheck_meta(oracles, shifted, eval_point)
+				let shifted = shifted.clone();
+				shifted_sumcheck_meta(oracles, &shifted, eval_point)
 			}
 			MultilinearPolyVariant::Packed(packed) => {
-				packed_sumcheck_meta(oracles, packed, eval_point)
+				let packed = packed.clone();
+				packed_sumcheck_meta(oracles, &packed, eval_point)
 			}
 			_ => unreachable!(),
 		}
@@ -764,9 +769,9 @@ where
 			eval,
 		} = evalcheck_claim;
 
-		match self.oracles.oracle(*id).variant {
-			MultilinearPolyVariant::Shifted(shifted) => process_shifted_sumcheck(
-				&shifted,
+		match self.oracles[*id].variant {
+			MultilinearPolyVariant::Shifted(ref shifted) => process_shifted_sumcheck(
+				shifted,
 				meta,
 				eval_point,
 				*eval,
@@ -775,9 +780,9 @@ where
 				&self.partial_evals,
 			),
 
-			MultilinearPolyVariant::Packed(packed) => process_packed_sumcheck(
+			MultilinearPolyVariant::Packed(ref packed) => process_packed_sumcheck(
 				self.oracles,
-				&packed,
+				packed,
 				meta,
 				eval_point,
 				*eval,
