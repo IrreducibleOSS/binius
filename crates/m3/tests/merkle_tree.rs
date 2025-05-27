@@ -799,7 +799,7 @@ mod arithmetisation {
 			let zero = table.add_constant("zero", [B64::ZERO]);
 			let root_id_upcasted = upcast_col(root_id);
 			table.pull(nodes_channel, to_node_flush(root_id_upcasted, digest, zero, zero));
-			table.push(roots_channel, to_root_flush(root_id_upcasted, digest));
+			table.pull(roots_channel, to_root_flush(root_id_upcasted, digest));
 			Self {
 				id,
 				root_id,
@@ -920,10 +920,8 @@ mod arithmetisation {
 				witness_root_id[i] = root_id;
 				let digest_as_field = B8::from_underliers_arr(digest);
 				for j in 0..4 {
-					for k in 0..8 {
-						let scalar = B64::from_bases(digest_as_field[j * 8..(j + 1) * 8].to_vec())?;
-						set_packed_slice(&mut witness_root_digest[j], i * 8 + k, scalar);
-					}
+					let scalar = B64::from_bases(digest_as_field[j * 8..(j + 1) * 8].to_vec())?;
+					set_packed_slice(&mut witness_root_digest[j], i, scalar);
 				}
 			}
 			Ok(())
@@ -998,10 +996,20 @@ mod arithmetisation {
 		let nodes_channel = cs.add_channel("nodes");
 		let roots_channel = cs.add_channel("roots");
 		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
-		let tree = MerkleTree::new(&[
+		let leaves = [
 			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
-		]);
-		let trace = MerkleTreeTrace::generate(vec![tree.root], &[]);
+		];
+		let tree = MerkleTree::new(&leaves);
+		let path = tree.merkle_path(0);
+		let trace = MerkleTreeTrace::generate(
+			vec![tree.root],
+			&[MerklePath {
+				root_id: 0,
+				index: 0,
+				leaf: leaves[0],
+				nodes: path,
+			}],
+		);
 		let allocator = Bump::new();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
