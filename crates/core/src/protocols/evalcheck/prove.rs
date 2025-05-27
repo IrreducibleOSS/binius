@@ -855,7 +855,6 @@ where
 		let eval = match eval {
 			Some(value) => value,
 			None => {
-				// println!("{}", eval_point.len());
 				let query = memoized_queries
 					.full_query_readonly(&eval_point)
 					.ok_or(Error::MissingQuery)?;
