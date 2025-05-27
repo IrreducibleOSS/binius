@@ -20,39 +20,39 @@ use crate::{
 };
 
 define_packed_binary_fields!(
-	packed_field {
-		name: PackedAESBinaryField4x8b,
-		scalar: AESTowerField8b,
-		underlier: u32,
-		alpha_idx: _,
-		mul: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
-		square: (PairwiseTableStrategy),
-		invert: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
-		mul_alpha: (PairwiseTableStrategy),
-		transform: (PackedStrategy),
-	},
-	packed_field {
-		name: PackedAESBinaryField2x16b,
-		scalar: AESTowerField16b,
-		underlier: u32,
-		alpha_idx: 4,
-		mul: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
-		square: (PairwiseRecursiveStrategy),
-		invert: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
-		mul_alpha: (PackedStrategy),
-		transform: (PackedStrategy),
-	},
-	packed_field {
-		name: PackedAESBinaryField1x32b,
-		scalar: AESTowerField32b,
-		underlier: u32,
-		alpha_idx: _,
-		mul: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
-		square: (PairwiseRecursiveStrategy),
-		invert: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
-		mul_alpha: (PairwiseRecursiveStrategy),
-		transform: (PairwiseStrategy),
-	},
+    underlier: u32,
+    packed_fields: [
+        packed_field {
+            name: PackedAESBinaryField4x8b,
+            scalar: AESTowerField8b,
+            alpha_idx: _,
+            mul: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
+            square: (PairwiseTableStrategy),
+            invert: (crate::PackedAESBinaryField16x8b, PairwiseTableStrategy),
+            mul_alpha: (PairwiseTableStrategy),
+            transform: (PackedStrategy),
+        },
+        packed_field {
+            name: PackedAESBinaryField2x16b,
+            scalar: AESTowerField16b,
+            alpha_idx: 4,
+            mul: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
+            square: (PairwiseRecursiveStrategy),
+            invert: (crate::PackedAESBinaryField8x16b, PairwiseRecursiveStrategy),
+            mul_alpha: (PackedStrategy),
+            transform: (PackedStrategy),
+        },
+        packed_field {
+            name: PackedAESBinaryField1x32b,
+            scalar: AESTowerField32b,
+            alpha_idx: _,
+            mul: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
+            square: (PairwiseRecursiveStrategy),
+            invert: (crate::PackedAESBinaryField4x32b, PairwiseRecursiveStrategy),
+            mul_alpha: (PairwiseRecursiveStrategy),
+            transform: (PairwiseStrategy),
+        },
+    ]
 );
 
 impl_tower_constants!(AESTowerField8b, u32, 0x00d300d3);

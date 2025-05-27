@@ -18,39 +18,39 @@ use crate::{
 };
 
 define_packed_binary_fields!(
-	packed_field {
-		name: PackedBinaryField4x1b,
-		scalar: BinaryField1b,
-		underlier: U4,
-		alpha_idx: _,
-		mul: (None),
-		square: (None),
-		invert: (None),
-		mul_alpha: (None),
-		transform: (PackedStrategy),
-	},
-	packed_field {
-		name: PackedBinaryField2x2b,
-		scalar: BinaryField2b,
-		underlier: U4,
-		alpha_idx: _,
-		mul: (PackedStrategy),
-		square: (PackedStrategy),
-		invert: (PairwiseRecursiveStrategy),
-		mul_alpha: (PackedStrategy),
-		transform: (PackedStrategy),
-	},
-	packed_field {
-		name: PackedBinaryField1x4b,
-		scalar: BinaryField4b,
-		underlier: U4,
-		alpha_idx: _,
-		mul: (PackedStrategy),
-		square: (ReuseMultiplyStrategy),
-		invert: (PairwiseRecursiveStrategy),
-		mul_alpha: (ReuseMultiplyStrategy),
-		transform: (PairwiseStrategy),
-	}
+    underlier: U4,
+    packed_fields: [
+        packed_field {
+            name: PackedBinaryField4x1b,
+            scalar: BinaryField1b,
+            alpha_idx: _,
+            mul: (None),
+            square: (None),
+            invert: (None),
+            mul_alpha: (None),
+            transform: (PackedStrategy),
+        },
+        packed_field {
+            name: PackedBinaryField2x2b,
+            scalar: BinaryField2b,
+            alpha_idx: _,
+            mul: (PackedStrategy),
+            square: (PackedStrategy),
+            invert: (PairwiseRecursiveStrategy),
+            mul_alpha: (PackedStrategy),
+            transform: (PackedStrategy),
+        },
+        packed_field {
+            name: PackedBinaryField1x4b,
+            scalar: BinaryField4b,
+            alpha_idx: _,
+            mul: (PackedStrategy),
+            square: (ReuseMultiplyStrategy),
+            invert: (PairwiseRecursiveStrategy),
+            mul_alpha: (ReuseMultiplyStrategy),
+            transform: (PairwiseStrategy),
+        }
+    ]
 );
 
 // // Define operations for height 0

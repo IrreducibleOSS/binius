@@ -73,30 +73,34 @@ macro_rules! impl_ops_for_zero_height {
 }
 
 macro_rules! define_packed_binary_fields {
-	($(
-		packed_field {
-			name: $name:ident,
-			scalar: $scalar:ident,
-			underlier: $underlier:ident,
-			alpha_idx: $alpha_idx:tt,
-			mul: ($($mul:tt)*),
-			square: ($($square:tt)*),
-			invert: ($($invert:tt)*),
-			mul_alpha: ($($mul_alpha:tt)*),
-			transform: ($($transform:tt)*),
-		}
-	),* $(,)?) => {
-		$(
-			define_packed_binary_field!(
-				$name, $scalar, $underlier, $alpha_idx,
-				($($mul)*),
-				($($square)*),
-				($($invert)*),
-				($($mul_alpha)*),
-				($($transform)*)
-			);
-		)*
-	};
+    (
+        underlier: $underlier:ident,
+        packed_fields: [
+            $(
+                packed_field {
+                    name: $name:ident,
+                    scalar: $scalar:ident,
+                    alpha_idx: $alpha_idx:tt,
+                    mul: ($($mul:tt)*),
+                    square: ($($square:tt)*),
+                    invert: ($($invert:tt)*),
+                    mul_alpha: ($($mul_alpha:tt)*),
+                    transform: ($($transform:tt)*),
+                }
+            ),* $(,)?
+        ]
+    ) => {
+        $(
+            define_packed_binary_field!(
+                $name, $scalar, $underlier, $alpha_idx,
+                ($($mul)*),
+                ($($square)*),
+                ($($invert)*),
+                ($($mul_alpha)*),
+                ($($transform)*)
+            );
+        )*
+    };
 }
 
 macro_rules! define_packed_binary_field {
@@ -212,7 +216,7 @@ pub(crate) mod portable_macros {
 		($impl_macro:ident $name:ident, None) => {};
 		($impl_macro:ident $name:ident, $delegate:ty, $fallback:ty) => {
 			cfg_if! {
-				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
+				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
 					$impl_macro!($name => $delegate);
 				} else {
 					$impl_macro!($name @ $fallback);
