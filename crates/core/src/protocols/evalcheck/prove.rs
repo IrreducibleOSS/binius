@@ -22,8 +22,8 @@ use super::{
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyVariant, OracleId,
+		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, MultilinearPolyVariant,
+		OracleId, SizedConstraintSet,
 	},
 	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
@@ -129,7 +129,7 @@ where
 	/// A helper method to move out bivariate sumcheck constraints
 	pub fn take_new_bivariate_sumchecks_constraints(
 		&mut self,
-	) -> Result<Vec<ConstraintSet<F>>, OracleError> {
+	) -> Result<Vec<SizedConstraintSet<F>>, OracleError> {
 		self.new_bivariate_sumchecks_constraints
 			.iter_mut()
 			.map(|builder| std::mem::take(builder).build_one(self.oracles))
@@ -881,5 +881,5 @@ where
 
 pub struct ConstraintSetEqIndPoint<F: Field> {
 	pub eq_ind_challenges: EvalPoint<F>,
-	pub constraint_set: ConstraintSet<F>,
+	pub constraint_set: SizedConstraintSet<F>,
 }

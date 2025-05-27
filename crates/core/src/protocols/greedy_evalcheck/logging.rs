@@ -7,7 +7,7 @@ use binius_utils::impl_debug_with_json;
 use serde::Serialize;
 use serde_json_any_key::any_key_map;
 
-use crate::oracle::ConstraintSet;
+use crate::oracle::SizedConstraintSet;
 
 #[derive(Serialize)]
 pub(super) struct RegularSumcheckDimensionsData {
@@ -17,7 +17,7 @@ pub(super) struct RegularSumcheckDimensionsData {
 
 impl RegularSumcheckDimensionsData {
 	pub(super) fn new<'a, F: Field>(
-		constraints: impl IntoIterator<Item = &'a ConstraintSet<F>>,
+		constraints: impl IntoIterator<Item = &'a SizedConstraintSet<F>>,
 	) -> Self {
 		let mut claim_n_vars = HashMap::new();
 		for constraint in constraints {

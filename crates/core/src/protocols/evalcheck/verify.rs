@@ -19,8 +19,8 @@ use super::{
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyVariant, OracleId,
+		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, MultilinearPolyVariant,
+		OracleId, SizedConstraintSet,
 	},
 	polynomial::MultivariatePoly,
 	transcript::VerifierTranscript,
@@ -70,7 +70,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	}
 
 	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumcheck_constraints(&mut self) -> Result<Vec<ConstraintSet<F>>, OracleError> {
+	pub fn take_new_sumcheck_constraints(
+		&mut self,
+	) -> Result<Vec<SizedConstraintSet<F>>, OracleError> {
 		self.new_sumcheck_constraints
 			.iter_mut()
 			.map(|builder| mem::take(builder).build_one(self.oracles))
@@ -350,5 +352,5 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 pub struct ConstraintSetsEqIndPoints<F: Field> {
 	pub eq_ind_challenges: Vec<Vec<F>>,
-	pub constraint_sets: Vec<ConstraintSet<F>>,
+	pub constraint_sets: Vec<SizedConstraintSet<F>>,
 }

@@ -11,7 +11,7 @@ use super::{
 	eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder},
 };
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
+	oracle::{Constraint, ConstraintPredicate, SizedConstraintSet},
 	protocols::{
 		evalcheck::{EvalPoint, subclaims::MemoizedData},
 		sumcheck::{
@@ -110,7 +110,7 @@ where
 /// zerochecks.
 pub fn constraint_set_sumcheck_prover<'a, F, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
@@ -158,7 +158,7 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn constraint_set_mlecheck_prover<'a, 'b, F, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 	eq_ind_challenges: &[F],
 	memoized_data: &mut MemoizedData<'b, P>,
 	witness: &MultilinearExtensionIndex<'a, P>,
@@ -172,7 +172,7 @@ where
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
-	let ConstraintSet {
+	let SizedConstraintSet {
 		oracle_ids,
 		constraints,
 		n_vars,
@@ -236,7 +236,7 @@ type ConstraintsAndMultilinears<'a, F, P> = (Vec<Constraint<F>>, Vec<Multilinear
 
 #[allow(clippy::type_complexity)]
 pub fn split_constraint_set<'a, F, P>(
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 	witness: &MultilinearExtensionIndex<'a, P>,
 ) -> Result<ConstraintsAndMultilinears<'a, F, P>, Error>
 where
@@ -244,7 +244,7 @@ where
 	P: PackedField,
 	P::Scalar: ExtensionField<F>,
 {
-	let ConstraintSet {
+	let SizedConstraintSet {
 		oracle_ids,
 		constraints,
 		n_vars,
@@ -275,10 +275,10 @@ where
 	pub metas: Vec<OracleClaimMeta>,
 }
 
-/// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
+/// Constructs sumcheck provers and metas from the vector of [`SizedConstraintSet`]
 pub fn constraint_sets_sumcheck_provers_metas<'a, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_sets: Vec<ConstraintSet<P::Scalar>>,
+	constraint_sets: Vec<SizedConstraintSet<P::Scalar>>,
 	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,
@@ -319,11 +319,11 @@ where
 	pub meta: OracleClaimMeta,
 }
 
-/// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
+/// Constructs sumcheck provers and metas from the vector of [`SizedConstraintSet`]
 #[allow(clippy::too_many_arguments)]
 pub fn constraint_sets_mlecheck_prover_meta<'a, 'b, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
-	constraint_set: ConstraintSet<P::Scalar>,
+	constraint_set: SizedConstraintSet<P::Scalar>,
 	eq_ind_challenges: EvalPoint<P::Scalar>,
 	memoized_data: &mut MemoizedData<'b, P>,
 	witness: &MultilinearExtensionIndex<'a, P>,

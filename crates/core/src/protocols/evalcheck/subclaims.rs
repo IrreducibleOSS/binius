@@ -27,8 +27,8 @@ use super::{EvalPoint, EvalPointOracleIdMap, error::Error, evalcheck::EvalcheckM
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, OracleId, Packed, Shifted,
+		CompositeMLE, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
+		Packed, Shifted, SizedConstraintSet,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -548,7 +548,7 @@ type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
 pub fn prove_bivariate_sumchecks_with_switchover<F, P, DomainField, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<P>,
-	constraint_sets: Vec<ConstraintSet<F>>,
+	constraint_sets: Vec<SizedConstraintSet<F>>,
 	transcript: &mut ProverTranscript<Transcript>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
@@ -588,7 +588,7 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn prove_mlecheck_with_switchover<'a, F, P, DomainField, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<P>,
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 	eq_ind_challenges: EvalPoint<F>,
 	memoized_data: &mut MemoizedData<'a, P>,
 	transcript: &mut ProverTranscript<Transcript>,
