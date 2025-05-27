@@ -7,7 +7,7 @@ use crate::memory::ComputeMemory;
 #[derive(Debug)]
 pub struct CpuMemory;
 
-impl<F: 'static> ComputeMemory<F> for CpuMemory {
+impl<F: 'static + Sync> ComputeMemory<F> for CpuMemory {
 	const MIN_SLICE_LEN: usize = 1;
 
 	type FSlice<'a> = &'a [F];
@@ -62,6 +62,15 @@ impl<F: 'static> ComputeMemory<F> for CpuMemory {
 
 	fn to_owned_mut<'a>(data: &'a mut &mut [F]) -> &'a mut [F] {
 		data
+	}
+
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>> {
+		assert_eq!(data.len() % chunk_len, 0, "slice length must be a multiple of chunk_len",);
+
+		data.chunks_exact_mut(chunk_len)
 	}
 }
 

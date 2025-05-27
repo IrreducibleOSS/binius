@@ -3,7 +3,7 @@
 use std::{iter, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice,
+	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
@@ -327,13 +327,15 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 				// Compute the composite evaluations at the point ONE.
 				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
 				{
-					let eval_1s = (0..multilins.len())
-						.map(|i| buffers[i * 3 + 1].to_ref())
-						.collect::<Vec<_>>();
+					let eval_1s = SlicesBatch::new(
+						(0..multilins.len())
+							.map(|i| buffers[i * 3 + 1].to_ref())
+							.collect(),
+						1 << log_chunk_size,
+					);
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 						hal.sum_composition_evals(
 							local_exec,
-							log_chunk_size,
 							&eval_1s,
 							evaluator,
 							batch_coeff,
@@ -361,13 +363,15 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 
 				// Compute the composite evaluations at the point Infinity.
 				let mut acc_inf = hal.kernel_decl_value(local_exec, F::ZERO)?;
-				let eval_infs = (0..multilins.len())
-					.map(|i| buffers[i * 3 + 2].to_ref())
-					.collect::<Vec<_>>();
+				let eval_infs = SlicesBatch::new(
+					(0..multilins.len())
+						.map(|i| buffers[i * 3 + 2].to_ref())
+						.collect(),
+					1 << log_chunk_size,
+				);
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
 					hal.sum_composition_evals(
 						local_exec,
-						log_chunk_size,
 						&eval_infs,
 						evaluator,
 						batch_coeff,
