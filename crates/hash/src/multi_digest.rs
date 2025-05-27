@@ -96,10 +96,10 @@ pub trait ParallelDigest: Send {
 
 /// A wrapper that implements the `ParallelDigest` trait for a `MultiDigest` implementation.
 #[derive(Clone)]
-pub struct ParallelMulidigestImpl<D: MultiDigest<N>, const N: usize>(D);
+pub struct ParallelMultidigestImpl<D: MultiDigest<N>, const N: usize>(D);
 
 impl<D: MultiDigest<N, Digest: Send> + Send + Sync, const N: usize> ParallelDigest
-	for ParallelMulidigestImpl<D, N>
+	for ParallelMultidigestImpl<D, N>
 {
 	type Digest = D::Digest;
 
@@ -314,14 +314,14 @@ mod tests {
 	#[test]
 	fn test_empty_data() {
 		let data = generate_mock_data(0, 16);
-		check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
+		check_parallel_digest_consistency::<ParallelMultidigestImpl<MockMultiDigest, 4>>(data);
 	}
 
 	#[test]
 	fn test_non_empty_data() {
 		for n_hashes in [1, 2, 4, 8, 9] {
 			let data = generate_mock_data(n_hashes, 16);
-			check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
+			check_parallel_digest_consistency::<ParallelMultidigestImpl<MockMultiDigest, 4>>(data);
 		}
 	}
 }

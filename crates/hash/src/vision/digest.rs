@@ -19,7 +19,7 @@ use lazy_static::lazy_static;
 
 use super::permutation::{HASHES_PER_BYTE_SLICED_PERMUTATION, PERMUTATION};
 use crate::{
-	multi_digest::{MultiDigest, ParallelMulidigestImpl},
+	multi_digest::{MultiDigest, ParallelMultidigestImpl},
 	permutation::Permutation,
 };
 
@@ -350,7 +350,7 @@ impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteS
 }
 
 pub type Vision32ParallelDigest =
-	ParallelMulidigestImpl<VisionHasherDigestByteSliced, HASHES_PER_BYTE_SLICED_PERMUTATION>;
+	ParallelMultidigestImpl<VisionHasherDigestByteSliced, HASHES_PER_BYTE_SLICED_PERMUTATION>;
 
 #[cfg(test)]
 mod tests {

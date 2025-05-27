@@ -2,7 +2,7 @@
 
 use std::{arch::x86_64::*, array};
 
-use crate::multi_digest::ParallelMulidigestImpl;
+use crate::multi_digest::ParallelMultidigestImpl;
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
