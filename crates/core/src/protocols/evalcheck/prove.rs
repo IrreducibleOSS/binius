@@ -220,7 +220,13 @@ where
 			eval_points.remove(&ep);
 		}
 
-		for eval_point in eval_points {
+		//We don't split points whose tensor product, when halved, would be smaller than
+		// PackedField::WIDTH.
+		let (long, short): (Vec<_>, Vec<_>) = eval_points
+			.into_iter()
+			.partition(|ep| ep.len().saturating_sub(1) > P::LOG_WIDTH);
+
+		for eval_point in long {
 			let ep = eval_point.to_vec();
 			let mid = ep.len() / 2;
 			let (low, high) = ep.split_at(mid);
@@ -231,7 +237,7 @@ where
 			prefixes.insert(prefix);
 		}
 
-		let eval_points = chain!(&suffixes, &prefixes)
+		let eval_points = chain!(&short, &suffixes, &prefixes)
 			.map(|p| p.as_ref())
 			.collect::<Vec<_>>();
 
@@ -849,6 +855,7 @@ where
 		let eval = match eval {
 			Some(value) => value,
 			None => {
+				// println!("{}", eval_point.len());
 				let query = memoized_queries
 					.full_query_readonly(&eval_point)
 					.ok_or(Error::MissingQuery)?;
