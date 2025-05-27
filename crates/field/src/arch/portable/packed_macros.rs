@@ -128,19 +128,19 @@ macro_rules! define_packed_binary_field {
 		maybe_impl_tower_constants!($scalar, $underlier, $alpha_idx);
 
 		// Define multiplication
-		impl_strategy!(impl_mul_with       $name, $($mul)*);
+		impl_strategy!(impl_mul_with       $name, ($($mul)*));
 
 		// Define square
-		impl_strategy!(impl_square_with    $name, $($square)*);
+		impl_strategy!(impl_square_with    $name, ($($square)*));
 
 		// Define invert
-		impl_strategy!(impl_invert_with    $name, $($invert)*);
+		impl_strategy!(impl_invert_with    $name, ($($invert)*));
 
 		// Define multiply by alpha
-		impl_strategy!(impl_mul_alpha_with $name, $($mul_alpha)*);
+		impl_strategy!(impl_mul_alpha_with $name, ($($mul_alpha)*));
 
 		// Define linear transformations
-		impl_transformation!($name, $($transform)*);
+		impl_transformation!($name, ($($transform)*));
 	};
 }
 
@@ -213,8 +213,8 @@ pub(crate) mod portable_macros {
 	}
 
 	macro_rules! impl_strategy {
-		($impl_macro:ident $name:ident, None) => {};
-		($impl_macro:ident $name:ident, $gfni_x86_strategy:ty, $fallback:ty) => {
+		($impl_macro:ident $name:ident, (None)) => {};
+		($impl_macro:ident $name:ident, (if $cond:ident ($gfni_x86_strategy:ty) else ($fallback:ty))) => {
 			cfg_if! {
 				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
 					$impl_macro!($name => $gfni_x86_strategy);
@@ -223,16 +223,25 @@ pub(crate) mod portable_macros {
 				}
 			}
 		};
-		($impl_macro:ident $name:ident, $strategy:ty) => {
+		($impl_macro:ident $name:ident, ($strategy:ty)) => {
 			$impl_macro!($name @ $strategy);
 		};
 	}
 
 	macro_rules! impl_transformation {
-		($name:ident, $strategy:ty) => {
+		($name:ident, ($strategy:ty)) => {
 			impl_transformation_with_strategy!($name, $strategy);
 		};
 	}
+
+	// macro_rules! parse_strategy {
+	//     (if $cond:ident $($gfni_x86_strategy:tt)+ else $($fallback:tt)+) => {
+	//         (if $cond $($true_branch)+ else $($false_branch)+)
+	//     };
+	//     ($($tokens:tt)*) => {
+	//         ($($tokens)*)
+	//     };
+	// }
 
 	pub(crate) use impl_strategy;
 	pub(crate) use impl_transformation;

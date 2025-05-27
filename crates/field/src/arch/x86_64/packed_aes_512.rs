@@ -3,8 +3,6 @@
 use cfg_if::cfg_if;
 
 use super::{m512::M512, packed_macros::*};
-#[cfg(target_feature = "gfni")]
-use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 use crate::{
 	aes_field::{
 		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
@@ -26,11 +24,11 @@ define_packed_binary_fields!(
 			name: PackedAESBinaryField64x8b,
 			scalar: AESTowerField8b,
 			alpha_idx: _,
-			mul: (crate::arch::GfniStrategy, crate::arch::PairwiseTableStrategy),
-			square: (ReuseMultiplyStrategy, crate::arch::PairwiseTableStrategy),
-			invert: (crate::arch::GfniStrategy, crate::arch::PairwiseTableStrategy),
-			mul_alpha: (ReuseMultiplyStrategy, crate::arch::PairwiseTableStrategy),
-			transform: (crate::arch::GfniStrategy, SimdStrategy),
+			mul:       (if gfni (crate::arch::GfniStrategy) else (crate::arch::PairwiseTableStrategy)),
+			square:    (if gfni (crate::arch::ReuseMultiplyStrategy) else (crate::arch::PairwiseTableStrategy)),
+			invert:    (if gfni (crate::arch::GfniStrategy) else (crate::arch::PairwiseTableStrategy)),
+			mul_alpha: (if gfni (crate::arch::ReuseMultiplyStrategy) else (crate::arch::PairwiseTableStrategy)),
+			transform: (if gfni (crate::arch::GfniStrategy) else (SimdStrategy)),
 		},
 		packed_field {
 			name: PackedAESBinaryField32x16b,
@@ -40,7 +38,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (2, SimdStrategy),
+			transform: (if gfni (2) else (SimdStrategy)),
 		},
 		packed_field {
 			name: PackedAESBinaryField16x32b,
@@ -50,7 +48,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (4, SimdStrategy),
+			transform: (if gfni (4) else (SimdStrategy)),
 		},
 		packed_field {
 			name: PackedAESBinaryField8x64b,
@@ -60,7 +58,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (8, SimdStrategy),
+			transform: (if gfni (8) else (SimdStrategy)),
 		},
 		packed_field {
 			name: PackedAESBinaryField4x128b,
@@ -70,7 +68,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (16, SimdStrategy),
+			transform: (if gfni (16) else (SimdStrategy)),
 		},
 	]
 );

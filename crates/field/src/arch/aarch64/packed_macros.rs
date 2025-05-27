@@ -12,14 +12,14 @@ macro_rules! maybe_impl_tower_constants {
 }
 
 macro_rules! impl_strategy {
-	($impl_macro:ident $name:ident, None) => {};
-	($impl_macro:ident $name:ident, $strategy:ty) => {
+	($impl_macro:ident $name:ident, (None)) => {};
+	($impl_macro:ident $name:ident, ($strategy:ty)) => {
 		$impl_macro!($name @ $strategy);
 	};
 }
 
 macro_rules! impl_transformation {
-	($name:ident, $strategy:ty) => {
+	($name:ident, ($strategy:ty)) => {
 		impl_transformation_with_strategy!($name, $strategy);
 	};
 }
