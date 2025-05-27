@@ -486,10 +486,11 @@ mod arithmetisation {
 	use anyhow::anyhow;
 	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
 	use binius_field::{
-		ExtensionField, Field, PackedBinaryField8x8b, PackedExtension, PackedField,
-		PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier128b,
-		as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
-		packed::set_packed_slice, underlier::WithUnderlier,
+		AESTowerField8b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x8b,
+		PackedBinaryField32x8b, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+		arch::OptimalUnderlier128b, as_packed_field::PackedType,
+		linear_transformation::PackedTransformationFactory, packed::set_packed_slice,
+		underlier::WithUnderlier,
 	};
 	use binius_hash::{compression, groestl::Groestl256, permutation};
 	use binius_m3::{
@@ -837,14 +838,24 @@ mod arithmetisation {
 				.map(|MerklePathEvent { left, right, .. }| {
 					let mut state_in = [B8::ZERO; 64];
 					let (state_left, state_right) = state_in.split_at_mut(32);
+
+					println!("Left: {:?}, Right: {:?}", left, right);
 					state_left.copy_from_slice(B8::from_underliers_arr_ref(left));
 					state_right.copy_from_slice(B8::from_underliers_arr_ref(right));
 					state_in
 				})
 				.collect::<Vec<[B8; 64]>>();
-
+			
 			self.permutation.populate_state_in(witness, states.iter())?;
 			self.permutation.populate(witness)?;
+
+			let left = self
+				.left
+				.iter()
+				.map(|&col| witness.get_mut(col))
+				.collect::<Result<Vec<_>, _>>()?;
+
+			println!("Left digest columns: {:?}", left[0]);
 
 			// Populating the parent digest witness, which should be the output of the permutation +
 			// xor with the input state and trimmed to the latter half of the final state.
@@ -854,7 +865,14 @@ mod arithmetisation {
 				let state_in = witness.get_mut(self.permutation.state_in()[i + 4])?;
 
 				for j in 0..witness_parent.len() {
-					witness_parent[j] = state_in[j] + state_out[j]
+					witness_parent[j] = state_in[j] + state_out[j];
+				}
+			}
+
+			for j in 0..4 {
+				let parent = witness.get_mut(self.parent[j])?;
+				for i in 0..parent.len() {
+					println!("Parent digest column {}: {:?}", j, parent[i]);
 				}
 			}
 
@@ -918,11 +936,14 @@ mod arithmetisation {
 			for (i, event) in rows.enumerate() {
 				let &MerkleRootEvent { root_id, digest } = event;
 				witness_root_id[i] = root_id;
-				let digest_as_field = B8::from_underliers_arr(digest);
+				let digest_as_field = digest_to_state(digest);
 				for j in 0..4 {
-					let scalar = B64::from_bases(digest_as_field[j * 8..(j + 1) * 8].to_vec())?;
+					let scalar = digest_as_field[j];
 					set_packed_slice(&mut witness_root_digest[j], i, scalar);
 				}
+			}
+			for j in 0..4 {
+				println!("Root digest column {}: {:?}", j, witness_root_digest[j]);
 			}
 			Ok(())
 		}
@@ -970,6 +991,7 @@ mod arithmetisation {
 		let tree = MerkleTree::new(&[
 			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
 		]);
+
 		let index = 0;
 		let path = tree.merkle_path(0);
 		let trace = MerkleTreeTrace::generate(
@@ -1029,6 +1051,8 @@ mod arithmetisation {
 		]);
 		let index = 0;
 		let path = tree.merkle_path(index);
+		let vals = B8::from_underliers_arr(tree.root);
+
 		let trace = MerkleTreeTrace::generate(
 			vec![tree.root],
 			&[MerklePath {
