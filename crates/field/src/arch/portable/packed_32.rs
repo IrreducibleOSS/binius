@@ -21,7 +21,6 @@ use crate::{
 	target_arch = "x86_64",
 	target_feature = "sse2",
 	target_feature = "gfni",
-	feature = "nightly_features"
 ))]
 use crate::{PackedBinaryField4x32b, PackedBinaryField8x16b, PackedBinaryField16x8b};
 
