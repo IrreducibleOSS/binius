@@ -24,8 +24,6 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 		)
 	};
 
-		let byte_position_in_row = col_num + 8 * substate_idx;
-
 	for new_state_row in &mut new_state {
 		let permuted = unsafe { _mm256_shuffle_epi8(*new_state_row, byteslice_permutation_m256) };
 
