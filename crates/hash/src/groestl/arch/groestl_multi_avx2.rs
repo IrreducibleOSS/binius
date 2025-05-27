@@ -24,6 +24,17 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 		)
 	};
 
+	for i in 0..4 {
+		new_state[2 * i] = unsafe {
+			_mm256_loadu_si256(substate_vals[i][0..HALF_STATE_SIZE].as_ptr() as *const __m256i)
+		};
+		new_state[2 * i + 1] = unsafe {
+			_mm256_loadu_si256(
+				substate_vals[i][HALF_STATE_SIZE..STATE_SIZE].as_ptr() as *const __m256i
+			)
+		};
+	}
+
 	for new_state_row in &mut new_state {
 		let permuted = unsafe { _mm256_shuffle_epi8(*new_state_row, byteslice_permutation_m256) };
 
