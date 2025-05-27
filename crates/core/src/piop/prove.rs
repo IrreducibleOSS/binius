@@ -252,15 +252,29 @@ where
 	let packed_committed_fslices_mut = packed_committed_multilins
 		.iter()
 		.map(|packed_committed_multilin| {
-			let hypercube_evals = packed_committed_multilin.packed_evals();
+			let hypercube_evals = packed_committed_multilin.packed_evals().unwrap();
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let allocated_mem = dev_alloc.alloc(1 << 20).unwrap();
-			hal.copy_h2d(packed_committed_multilin,&mut allocated_mem);
+			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
+			let _ = hal.copy_h2d(unpacked_hypercube_evals,&mut allocated_mem).unwrap();
 			allocated_mem
 		})
 		.collect::<Vec<_>>();
 
-	let fslices = packed_committed_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+	let packed_committed_fslices = packed_committed_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+
+	let transparent_fslices_mut = transparent_multilins
+		.iter()
+		.map(|transparent_multilin| {
+			let hypercube_evals = transparent_multilin.packed_evals().unwrap();
+			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
+			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
+			let _ = hal.copy_h2d(unpacked_hypercube_evals,&mut allocated_mem).unwrap();
+			allocated_mem
+		})
+		.collect::<Vec<_>>();
+
+	let transparent_fslices = transparent_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+
 
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
@@ -274,12 +288,12 @@ where
 
 	for (_n_vars, desc) in non_empty_sumcheck_descs{
 		let multilins = chain!(
-			packed_committed_multilins[desc.committed_indices.clone()]
+			packed_committed_fslices[desc.committed_indices.clone()]
 				.iter()
-				.map(Either::Left),
-			transparent_multilins[desc.transparent_indices.clone()]
+				.map(|fslice| Hal::DevMem::narrow(fslice)),
+			transparent_fslices[desc.transparent_indices.clone()]
 				.iter()
-				.map(Either::Right),
+				.map(|fslice| Hal::DevMem::narrow(fslice))
 		)
 		.collect::<Vec<_>>();
 		// RegularSumcheckProver::new(
@@ -302,7 +316,7 @@ where
 		// }).collect();
 		
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, fslices.clone())?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, multilins)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
