@@ -16,10 +16,7 @@ use super::{
 };
 use crate::{
 	BinaryField8b, PackedAESBinaryField16x8b,
-	arch::{
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
-		portable::packed_macros::*,
-	},
+	arch::portable::packed_macros::*,
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
 		impl_square_with, impl_transformation_with_strategy,
@@ -139,7 +136,7 @@ impl MulAlpha for PackedBinaryField16x8b {
 	}
 }
 
-impl_transformation_with_strategy!(PackedBinaryField16x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField16x8b, crate::arch::PackedStrategy);
 
 impl From<PackedAESBinaryField16x8b> for PackedBinaryField16x8b {
 	fn from(value: PackedAESBinaryField16x8b) -> Self {

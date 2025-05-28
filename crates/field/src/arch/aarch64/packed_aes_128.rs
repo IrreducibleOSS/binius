@@ -13,13 +13,10 @@ use super::{
 use crate::{
 	PackedBinaryField16x8b,
 	aes_field::AESTowerField8b,
-	arch::{
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
-		portable::{
-			packed::PackedPrimitiveType,
-			packed_arithmetic::{alphas, impl_tower_constants},
-			packed_macros::*,
-		},
+	arch::portable::{
+		packed::PackedPrimitiveType,
+		packed_arithmetic::{alphas, impl_tower_constants},
+		packed_macros::*,
 	},
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
@@ -110,7 +107,7 @@ impl MulAlpha for PackedAESBinaryField16x8b {
 		self.mutate_underlier(packed_aes_16x8b_mul_alpha)
 	}
 }
-impl_transformation_with_strategy!(PackedAESBinaryField16x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField16x8b, crate::arch::PackedStrategy);
 impl From<PackedBinaryField16x8b> for PackedAESBinaryField16x8b {
 	fn from(value: PackedBinaryField16x8b) -> Self {
 		Self::from_underlier(packed_tower_16x8b_into_aes(value.to_underlier()))
