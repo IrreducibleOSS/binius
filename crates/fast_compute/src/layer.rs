@@ -295,23 +295,46 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			})
 		}
 
-		let result = each_tower_subfield!(
+		each_tower_subfield!(
 			mat.tower_level,
 			T,
 			fold_left::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out,)
-		);
-		result
-			.map_err(|_| Error::InputValidation("the input data dimensions are wrong".to_string()))
+		)
 	}
 
 	fn fold_right<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		_mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		_vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
-		_out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		unimplemented!()
+		let log_evals_size = strict_log_2(mat.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		fn fold_right<FSub: Field, P: PackedExtension<FSub>>(
+			mat: &[P],
+			log_evals_size: usize,
+			vec: &[P],
+			log_query_size: usize,
+			out: &mut [P],
+		) -> Result<(), Error> {
+			let mat = PackedExtension::cast_bases(mat);
+
+			binius_math::fold_right(mat, log_evals_size, vec, log_query_size, out).map_err(|_| {
+				Error::InputValidation("the input data dimensions are wrong".to_string())
+			})
+		}
+
+		each_tower_subfield!(
+			mat.tower_level,
+			T,
+			fold_right::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out.data)
+		)
 	}
 
 	fn sum_composition_evals(
