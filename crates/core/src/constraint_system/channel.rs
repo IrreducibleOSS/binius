@@ -93,13 +93,14 @@ pub fn validate_witness<F, P>(
 	witness: &MultilinearExtensionIndex<P>,
 	flushes: &[Flush<F>],
 	boundaries: &[Boundary<F>],
-	max_channel_id: ChannelId,
+	channel_count: usize,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
-	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
+	let mut channels = vec![Channel::<F>::new(); channel_count];
+	let max_channel_id = channel_count.saturating_sub(1);
 
 	for boundary in boundaries.iter().cloned() {
 		let Boundary {

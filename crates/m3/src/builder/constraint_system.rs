@@ -355,7 +355,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			table_constraints,
 			flushes: compiled_flushes,
 			non_zero_oracle_ids,
-			max_channel_id: self.channels.len().saturating_sub(1),
+			channel_count: self.channels.len(),
 			exponents,
 		})
 	}

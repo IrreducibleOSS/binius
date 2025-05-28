@@ -10,7 +10,7 @@ mod verify;
 
 use binius_field::{BinaryField128b, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use channel::{ChannelId, Flush};
+use channel::Flush;
 use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
@@ -32,7 +32,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush<F>>,
 	pub exponents: Vec<Exp<F>>,
-	pub max_channel_id: ChannelId,
+	pub channel_count: usize,
 }
 
 impl<F: TowerField> ConstraintSystem<F> {}

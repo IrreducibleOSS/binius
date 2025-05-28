@@ -58,7 +58,7 @@ where
 		table_constraints,
 		mut flushes,
 		non_zero_oracle_ids,
-		max_channel_id,
+		channel_count,
 		mut exponents,
 		..
 	} = constraint_system.clone();
@@ -134,7 +134,7 @@ where
 	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
 	// TODO(cryptographers): Find a way to sample less randomness
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	let permutation_challenges = transcript.sample_vec(channel_count);
 
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let flush_oracle_ids =
