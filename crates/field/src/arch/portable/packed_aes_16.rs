@@ -5,7 +5,7 @@ use super::{
 	packed_macros::impl_broadcast,
 };
 use crate::{
-	AESTowerField8b, AESTowerField16b,
+	AESTowerField8b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
 		portable::packed_macros::{portable_macros::*, *},

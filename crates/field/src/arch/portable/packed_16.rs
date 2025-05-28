@@ -5,7 +5,6 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
 		portable::packed_macros::{portable_macros::*, *},

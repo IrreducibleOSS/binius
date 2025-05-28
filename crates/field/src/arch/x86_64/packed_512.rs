@@ -4,8 +4,6 @@ use cfg_if::cfg_if;
 
 use super::{m512::M512, packed_macros::*};
 use crate::{
-	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
-	BinaryField64b, BinaryField128b,
 	arch::{
 		PackedStrategy, SimdStrategy,
 		portable::{

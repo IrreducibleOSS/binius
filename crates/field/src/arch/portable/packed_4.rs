@@ -53,7 +53,7 @@ define_packed_binary_fields!(
 	]
 );
 
-// // Define operations for height 0
+// Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField4x1b);
 
 // Define constants
@@ -67,7 +67,7 @@ impl TowerConstants<U4> for BinaryField4b {
 	const ALPHAS_ODD: U4 = U4::new(<Self as TowerConstants<u8>>::ALPHAS_ODD);
 }
 
-// // Define multiply by alpha
+// Define multiply by alpha
 impl Alpha for PackedBinaryField1x4b {
 	#[inline]
 	fn alpha() -> Self {

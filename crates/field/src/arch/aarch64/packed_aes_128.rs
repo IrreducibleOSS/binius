@@ -12,9 +12,7 @@ use super::{
 };
 use crate::{
 	PackedBinaryField16x8b,
-	aes_field::{
-		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
-	},
+	aes_field::AESTowerField8b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 		portable::{

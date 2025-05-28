@@ -6,9 +6,7 @@ use super::{
 	packed_macros::impl_broadcast,
 };
 use crate::{
-	aes_field::{
-		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
-	},
+	aes_field::AESTowerField8b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
 		portable::packed_macros::{portable_macros::*, *},

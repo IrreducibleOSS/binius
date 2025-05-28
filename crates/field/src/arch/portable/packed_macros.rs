@@ -13,7 +13,7 @@ macro_rules! impl_broadcast {
 			}
 		}
 	};
-	($name:ty, $scalar_type:ty) => {
+	($name:ty, $scalar_type:path) => {
 		impl $crate::arithmetic_traits::Broadcast<$scalar_type>
 			for PackedPrimitiveType<$name, $scalar_type>
 		{
@@ -92,7 +92,10 @@ macro_rules! define_packed_binary_fields {
     ) => {
         $(
             define_packed_binary_field!(
-                $name, $scalar, $underlier, $alpha_idx,
+                $name,
+                $crate::$scalar,
+                $underlier,
+                $alpha_idx,
                 ($($mul)*),
                 ($($square)*),
                 ($($invert)*),
@@ -105,7 +108,7 @@ macro_rules! define_packed_binary_fields {
 
 macro_rules! define_packed_binary_field {
 	(
-		$name:ident, $scalar:ident, $underlier:ident, $alpha_idx:tt,
+		$name:ident, $scalar:path, $underlier:ident, $alpha_idx:tt,
 		($($mul:tt)*),
 		($($square:tt)*),
 		($($invert:tt)*),
@@ -200,14 +203,14 @@ pub(crate) use maybe_impl_ops;
 
 pub(crate) mod portable_macros {
 	macro_rules! maybe_impl_broadcast {
-		($underlier:ty, $scalar:ident) => {
+		($underlier:ty, $scalar:path) => {
 			impl_broadcast!($underlier, $scalar);
 		};
 	}
 
 	macro_rules! maybe_impl_tower_constants {
-		($scalar:ident, $underlier:ty, _) => {};
-		($scalar:ident, $underlier:ty, $alpha_idx:tt) => {
+		($scalar:path, $underlier:ty, _) => {};
+		($scalar:path, $underlier:ty, $alpha_idx:tt) => {
 			impl_tower_constants!($scalar, $underlier, { alphas!($underlier, $alpha_idx) });
 		};
 	}

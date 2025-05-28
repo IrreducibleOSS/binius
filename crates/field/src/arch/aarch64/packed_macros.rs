@@ -1,12 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 macro_rules! maybe_impl_broadcast {
-	(M128, $scalar:ident) => {};
+	(M128, $scalar:path) => {};
 }
 
 macro_rules! maybe_impl_tower_constants {
-	($scalar:ident, $underlier:ty, _) => {};
-	($scalar:ident, M128, $alpha_idx:tt) => {
+	($scalar:path, $underlier:ty, _) => {};
+	($scalar:path, M128, $alpha_idx:tt) => {
 		impl_tower_constants!($scalar, M128, { M128(alphas!(u128, $alpha_idx)) });
 	};
 }

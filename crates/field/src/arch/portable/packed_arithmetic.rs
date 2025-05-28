@@ -93,7 +93,7 @@ pub(crate) trait TowerConstants<U> {
 }
 
 macro_rules! impl_tower_constants {
-	($tower_field:ty, $underlier:ty, $value:tt) => {
+	($tower_field:path, $underlier:ty, $value:tt) => {
 		impl $crate::arch::portable::packed_arithmetic::TowerConstants<$underlier>
 			for $tower_field
 		{

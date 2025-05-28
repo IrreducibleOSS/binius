@@ -2,7 +2,6 @@
 
 use super::{packed::PackedPrimitiveType, packed_macros::impl_broadcast};
 use crate::{
-	AESTowerField8b,
 	arch::{
 		PairwiseStrategy, PairwiseTableStrategy,
 		portable::packed_macros::{portable_macros::*, *},

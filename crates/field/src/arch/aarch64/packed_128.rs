@@ -15,8 +15,7 @@ use super::{
 	},
 };
 use crate::{
-	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
-	BinaryField64b, BinaryField128b, PackedAESBinaryField16x8b,
+	BinaryField8b, PackedAESBinaryField16x8b,
 	arch::{
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 		portable::packed_macros::*,

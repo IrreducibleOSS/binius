@@ -4,9 +4,7 @@ use cfg_if::cfg_if;
 
 use super::{m128::M128, packed_macros::*};
 use crate::{
-	aes_field::{
-		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
-	},
+	self,
 	arch::{
 		SimdStrategy,
 		portable::{packed::PackedPrimitiveType, packed_macros::*},
