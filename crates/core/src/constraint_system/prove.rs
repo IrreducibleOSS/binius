@@ -12,7 +12,7 @@ use binius_field::{
 	util::powers,
 };
 use binius_hal::ComputationBackend;
-use binius_hash::PseudoCompressionFunction;
+use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
@@ -70,8 +70,10 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
-	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
+	Hash: ParallelDigest,
+	<Hash as ParallelDigest>::Digest:
+		Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
