@@ -190,7 +190,7 @@ impl<F: Field> EvalPoint<F> {
 	}
 
 	pub fn to_vec(&self) -> Vec<F> {
-		self.data.to_vec()
+		self.data[self.range.clone()].to_vec()
 	}
 
 	pub fn try_get_prefix(&self, suffix: &Self) -> Option<Self> {

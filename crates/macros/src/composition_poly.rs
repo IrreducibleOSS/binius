@@ -35,7 +35,7 @@ impl ToTokens for CompositionPolyItem {
 		subst_vars(
 			&mut eval_batch,
 			vars,
-			&|i| parse_quote!(unsafe {*batch_query.rows().get_unchecked(#i).get_unchecked(row)}),
+			&|i| parse_quote!(unsafe {*batch_query.row(#i).get_unchecked(row)}),
 		)
 		.expect("Failed to substitute vars");
 
