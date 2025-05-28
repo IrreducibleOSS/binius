@@ -4,9 +4,8 @@ use cfg_if::cfg_if;
 
 use super::{m512::M512, packed_macros::*};
 use crate::{
-	self,
 	arch::{
-		ReuseMultiplyStrategy, SimdStrategy,
+		SimdStrategy,
 		portable::{packed::PackedPrimitiveType, packed_macros::*},
 	},
 	arithmetic_traits::{
