@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{env, iter, marker::PhantomData};
-
+use binius_hash::multi_digest::ParallelDigest;
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -20,7 +20,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
-use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
+use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser, OutputSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
@@ -70,8 +70,9 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
-	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
+	Hash: ParallelDigest,
+	<Hash as ParallelDigest>::Digest: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
@@ -451,12 +452,11 @@ where
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _, _>(
+	} = ring_switch::prove::<_, _, _, Tower, _>(
 		&system,
 		&committed_multilins,
 		&mut transcript,
 		memoized_data,
-		backend,
 	)?;
 	drop(ring_switch_span);
 

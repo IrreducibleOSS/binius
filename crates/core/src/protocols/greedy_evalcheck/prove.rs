@@ -18,9 +18,9 @@ use crate::{
 	witness::MultilinearExtensionIndex,
 };
 
-pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField, Backend: ComputationBackend> {
+pub struct GreedyEvalcheckProveOutput<'a, F: Field, P: PackedField> {
 	pub eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
-	pub memoized_data: MemoizedData<'a, P, Backend>,
+	pub memoized_data: MemoizedData<'a, P>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -32,7 +32,7 @@ pub fn prove<'a, F, P, DomainField, Challenger_, Backend>(
 	transcript: &mut ProverTranscript<Challenger_>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
-) -> Result<GreedyEvalcheckProveOutput<'a, F, P, Backend>, Error>
+) -> Result<GreedyEvalcheckProveOutput<'a, F, P>, Error>
 where
 	F: TowerField + ExtensionField<DomainField>,
 	P: PackedField<Scalar = F>
@@ -42,8 +42,7 @@ where
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
-	let mut evalcheck_prover =
-		EvalcheckProver::<F, P, Backend>::new(oracles, witness_index, backend);
+	let mut evalcheck_prover = EvalcheckProver::<F, P>::new(oracles, witness_index);
 
 	let claims: Vec<_> = claims.into_iter().collect();
 

@@ -245,18 +245,10 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	with_test_instance_from_oracles::<U, Tower, _>(rng, &oracles, |_rng, system, witnesses| {
 		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-		let backend = make_portable_backend();
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove::<_, _, _, Tower, _, _>(
-			&system,
-			&witnesses,
-			&mut proof,
-			MemoizedData::new(),
-			&backend,
-		)
-		.unwrap();
+		} = prove::<_, _, _, Tower, _>(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
@@ -330,14 +322,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove::<_, _, _, Tower, _, _>(
-		&system,
-		&committed_multilins,
-		&mut proof,
-		MemoizedData::new(),
-		&backend,
-	)
-	.unwrap();
+	} = prove::<_, _, _, Tower, _>(&system, &committed_multilins, &mut proof, MemoizedData::new())
+		.unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(

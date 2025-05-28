@@ -109,7 +109,7 @@ fn main() -> Result<()> {
 		constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
-			Groestl256,
+			Groestl256Parallel,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,

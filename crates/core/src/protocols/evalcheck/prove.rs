@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
@@ -45,11 +44,10 @@ use crate::{
 /// `new_sumchecks` bivariate sumcheck instances, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during proving)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckProver<'a, 'b, F, P, Backend>
+pub struct EvalcheckProver<'a, 'b, F, P>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	/// Mutable reference to the oracle set which is modified to create new claims arising from
 	/// sumchecks
@@ -76,8 +74,7 @@ where
 	// The new mle sumcheck constraints arising in this round
 	new_mlechecks_constraints: Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 	// Tensor expansion of evaluation points and partial evaluations of multilinears
-	pub memoized_data: MemoizedData<'b, P, Backend>,
-	backend: &'a Backend,
+	pub memoized_data: MemoizedData<'b, P>,
 
 	// The unique index of a claim in this round.
 	claim_to_index: EvalPointOracleIdMap<usize, F>,
@@ -96,11 +93,10 @@ where
 	suffixes: HashSet<EvalPoint<F>>,
 }
 
-impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
+impl<'a, 'b, F, P> EvalcheckProver<'a, 'b, F, P>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and
 	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles
@@ -108,7 +104,6 @@ where
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
 		witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
-		backend: &'a Backend,
 	) -> Self {
 		Self {
 			oracles,
@@ -120,7 +115,6 @@ where
 			claims_to_be_evaluated: HashSet::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
-			backend,
 
 			claim_to_index: EvalPointOracleIdMap::new(),
 			visited_claims: EvalPointOracleIdMap::new(),
@@ -241,8 +235,7 @@ where
 			.map(|p| p.as_ref())
 			.collect::<Vec<_>>();
 
-		self.memoized_data
-			.memoize_query_par(eval_points, self.backend)?;
+		self.memoized_data.memoize_query_par(eval_points)?;
 
 		let subclaims_partial_evals = std::mem::take(&mut self.claims_to_be_evaluated)
 			.into_par_iter()
@@ -316,20 +309,17 @@ where
 			&mut self.memoized_data,
 			&projected_bivariate_claims,
 			self.witness_index,
-			self.backend,
 			&mut self.partial_evals,
 		)?;
 
 		drop(evalcheck_mle_fold_high_span);
 
 		// memoize eq_ind_partial_evals for HighToLow case
-		self.memoized_data.memoize_query_par(
-			self.new_mlechecks_constraints.iter().map(|(ep, _)| {
+		self.memoized_data
+			.memoize_query_par(self.new_mlechecks_constraints.iter().map(|(ep, _)| {
 				let ep = ep.as_ref();
 				&ep[0..ep.len().saturating_sub(1)]
-			}),
-			self.backend,
-		)?;
+			}))?;
 
 		for (claim, meta) in izip!(&projected_bivariate_claims, &projected_bivariate_metas) {
 			self.process_bivariate_sumcheck(claim, meta)?;
@@ -811,7 +801,7 @@ where
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
 		witness_index: &MultilinearExtensionIndex<P>,
-		memoized_queries: &MemoizedData<P, Backend>,
+		memoized_queries: &MemoizedData<P>,
 		partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 		suffixes: &HashSet<EvalPoint<F>>,
 	) -> Result<(EvalcheckMultilinearClaim<F>, Option<OracleIdPartialEval<P>>), Error> {
