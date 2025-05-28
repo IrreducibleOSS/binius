@@ -1,17 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{arch::x86_64::*, array};
+use std::{arch::x86_64::*, array, mem::MaybeUninit};
 
-use crate::multi_digest::ParallelMultidigestImpl;
+use crate::{
+	groestl::Groestl256,
+	multi_digest::{MultiDigest, ParallelMulidigestImpl},
+};
+
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
 const STATE_SIZE: usize = 64;
 const HALF_STATE_SIZE: usize = STATE_SIZE / 2;
-
-use std::mem::MaybeUninit;
-
-use crate::{groestl::Groestl256, multi_digest::MultiDigest};
 
 // These getters/setters are still prototypes
 #[inline]
@@ -198,27 +198,72 @@ fn sub_bytes(state: &mut State) {
 }
 
 #[inline]
+fn rotate_bytes_right_epi64(value: __m256i, shift: usize) -> __m256i {
+	let permutation = unsafe {
+		match shift {
+			0 => _mm256_setr_epi8(
+				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+				10, 11, 12, 13, 14, 15,
+			),
+			1 => _mm256_setr_epi8(
+				1, 2, 3, 4, 5, 6, 7, 0, 9, 10, 11, 12, 13, 14, 15, 8, 1, 2, 3, 4, 5, 6, 7, 0, 9,
+				10, 11, 12, 13, 14, 15, 8,
+			),
+			2 => _mm256_setr_epi8(
+				2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9, 2, 3, 4, 5, 6, 7, 0, 1, 10,
+				11, 12, 13, 14, 15, 8, 9,
+			),
+			3 => _mm256_setr_epi8(
+				3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10, 3, 4, 5, 6, 7, 0, 1, 2, 11,
+				12, 13, 14, 15, 8, 9, 10,
+			),
+			4 => _mm256_setr_epi8(
+				4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3, 12,
+				13, 14, 15, 8, 9, 10, 11,
+			),
+			5 => _mm256_setr_epi8(
+				5, 6, 7, 0, 1, 2, 3, 4, 13, 14, 15, 8, 9, 10, 11, 12, 5, 6, 7, 0, 1, 2, 3, 4, 13,
+				14, 15, 8, 9, 10, 11, 12,
+			),
+			6 => _mm256_setr_epi8(
+				6, 7, 0, 1, 2, 3, 4, 5, 14, 15, 8, 9, 10, 11, 12, 13, 6, 7, 0, 1, 2, 3, 4, 5, 14,
+				15, 8, 9, 10, 11, 12, 13,
+			),
+			7 => _mm256_setr_epi8(
+				7, 0, 1, 2, 3, 4, 5, 6, 15, 8, 9, 10, 11, 12, 13, 14, 7, 0, 1, 2, 3, 4, 5, 6, 15,
+				8, 9, 10, 11, 12, 13, 14,
+			),
+			_ => {
+				unreachable!("invalid shift value")
+			}
+		}
+	};
+
+	unsafe { _mm256_shuffle_epi8(value, permutation) }
+}
+
+#[inline]
 #[allow(clippy::identity_op)]
 fn shift_bytes_p(state: &mut State) {
-	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 1) };
-	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 2) };
-	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 3) };
-	state[4] = unsafe { _mm256_ror_epi64(state[4], 8 * 4) };
-	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 5) };
-	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 6) };
-	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 7) };
+	state[1] = rotate_bytes_right_epi64(state[1], 1);
+	state[2] = rotate_bytes_right_epi64(state[2], 2);
+	state[3] = rotate_bytes_right_epi64(state[3], 3);
+	state[4] = rotate_bytes_right_epi64(state[4], 4);
+	state[5] = rotate_bytes_right_epi64(state[5], 5);
+	state[6] = rotate_bytes_right_epi64(state[6], 6);
+	state[7] = rotate_bytes_right_epi64(state[7], 7);
 }
 
 #[inline]
 #[allow(clippy::identity_op)]
 fn shift_bytes_q(state: &mut State) {
-	state[0] = unsafe { _mm256_ror_epi64(state[0], 8 * 1) };
-	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 3) };
-	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 5) };
-	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 7) };
-	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 2) };
-	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 4) };
-	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 6) };
+	state[0] = rotate_bytes_right_epi64(state[0], 1);
+	state[1] = rotate_bytes_right_epi64(state[1], 3);
+	state[2] = rotate_bytes_right_epi64(state[2], 5);
+	state[3] = rotate_bytes_right_epi64(state[3], 7);
+	state[5] = rotate_bytes_right_epi64(state[5], 2);
+	state[6] = rotate_bytes_right_epi64(state[6], 4);
+	state[7] = rotate_bytes_right_epi64(state[7], 6);
 }
 
 #[inline]
@@ -380,12 +425,9 @@ impl MultiDigest<4> for Groestl256Multi {
 		Self::default()
 	}
 
-	// If only some lanes are full, the hasher fills the rest of the lanes with zeroes
-	// All full lanes must have equal length
-	// data[0] must be a full lane
 	fn update(&mut self, data: [&[u8]; NUM_PARALLEL_SUBSTATES]) {
 		for parallel_idx in 1..NUM_PARALLEL_SUBSTATES {
-			assert!(data[parallel_idx].len() == data[0].len() || data[parallel_idx].len() == 0);
+			assert_eq!(data[parallel_idx].len(), data[0].len());
 		}
 
 		let mut i = 0;
@@ -394,11 +436,9 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		if data[0].len() + self.num_unfinished_bytes < STATE_SIZE {
 			for (parallel_idx, data_lane) in data.iter().enumerate() {
-				if data[parallel_idx].len() > 0 {
-					self.unfinished_block[parallel_idx]
-						[self.num_unfinished_bytes..new_num_unfinished_bytes]
-						.copy_from_slice(data_lane);
-				}
+				self.unfinished_block[parallel_idx]
+					[self.num_unfinished_bytes..new_num_unfinished_bytes]
+					.copy_from_slice(data_lane);
 			}
 			self.num_unfinished_bytes = new_num_unfinished_bytes;
 			return;
@@ -407,10 +447,8 @@ impl MultiDigest<4> for Groestl256Multi {
 		if self.num_unfinished_bytes != 0 {
 			let mut initial_block = self.unfinished_block;
 			for (parallel_idx, data_lane) in data.iter().enumerate() {
-				if data[parallel_idx].len() > 0 {
-					initial_block[parallel_idx][self.num_unfinished_bytes..]
-						.copy_from_slice(&data_lane[..(STATE_SIZE - self.num_unfinished_bytes)]);
-				}
+				initial_block[parallel_idx][self.num_unfinished_bytes..]
+					.copy_from_slice(&data_lane[..(STATE_SIZE - self.num_unfinished_bytes)]);
 			}
 
 			let unfinished_block_as_input = array::from_fn(|i| &initial_block[i][..]);
@@ -422,22 +460,19 @@ impl MultiDigest<4> for Groestl256Multi {
 		}
 
 		while i + STATE_SIZE <= data[0].len() {
-			self.consume_single_block_parallel(array::from_fn(|parallel_idx| {
-				if data[parallel_idx].len() > 0 {
-					&data[parallel_idx][i..i + STATE_SIZE]
-				} else {
-					&[0u8; 64]
-				}
-			}));
+			self.consume_single_block_parallel([
+				&data[0][i..i + STATE_SIZE],
+				&data[1][i..i + STATE_SIZE],
+				&data[2][i..i + STATE_SIZE],
+				&data[3][i..i + STATE_SIZE],
+			]);
 
 			i += STATE_SIZE;
 		}
 
 		for (parallel_idx, data_lane) in data.iter().enumerate() {
-			if (data[parallel_idx].len() > 0) {
-				self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
-					.copy_from_slice(&data_lane[i..]);
-			}
+			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
+				.copy_from_slice(&data_lane[i..]);
 		}
 
 		self.num_unfinished_bytes = new_num_unfinished_bytes;
@@ -463,7 +498,7 @@ impl MultiDigest<4> for Groestl256Multi {
 	}
 }
 
-pub type Groestl256Parallel = ParallelMultidigestImpl<Groestl256Multi, 4>;
+pub type Groestl256Parallel = ParallelMulidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]
 mod tests {
