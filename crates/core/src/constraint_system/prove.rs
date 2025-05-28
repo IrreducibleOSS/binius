@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{env, iter, marker::PhantomData};
-use binius_hash::multi_digest::ParallelDigest;
+
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -12,7 +12,7 @@ use binius_field::{
 	util::powers,
 };
 use binius_hal::ComputationBackend;
-use binius_hash::PseudoCompressionFunction;
+use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
@@ -20,7 +20,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
-use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser, OutputSizeUser};
+use digest::{Digest, FixedOutputReset, Output, OutputSizeUser, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
@@ -71,7 +71,8 @@ where
 	Tower: ProverTowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	Hash: ParallelDigest,
-	<Hash as ParallelDigest>::Digest: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	<Hash as ParallelDigest>::Digest:
+		Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
