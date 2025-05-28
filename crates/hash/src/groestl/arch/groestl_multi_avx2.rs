@@ -4,7 +4,7 @@ use std::{arch::x86_64::*, array, mem::MaybeUninit};
 
 use crate::{
 	groestl::Groestl256,
-	multi_digest::{MultiDigest, ParallelMulidigestImpl},
+	multi_digest::{MultiDigest, ParallelMultidigestImpl},
 };
 
 pub type State = [__m256i; 8];
@@ -498,7 +498,7 @@ impl MultiDigest<4> for Groestl256Multi {
 	}
 }
 
-pub type Groestl256Parallel = ParallelMulidigestImpl<Groestl256Multi, 4>;
+pub type Groestl256Parallel = ParallelMultidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]
 mod tests {
