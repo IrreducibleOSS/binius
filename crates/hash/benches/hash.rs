@@ -8,7 +8,7 @@ use binius_hash::{
 	groestl::{Groestl256, Groestl256Parallel},
 	multi_digest::{MultiDigest, ParallelDigest},
 };
-use binius_maybe_rayon::iter::IntoParallelIterator;
+use binius_maybe_rayon::{iter::IntoParallelRefIterator, prelude::ParallelIterator};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use digest::{Digest, consts::U32, generic_array::GenericArray};
 use rand::{RngCore, thread_rng};
@@ -19,31 +19,28 @@ fn bench_groestl(c: &mut Criterion) {
 	let mut rng = thread_rng();
 
 	const N: usize = 1 << 16;
-	let mut data = [0u8; N];
+	let mut data = vec![0u8; N];
 	rng.fill_bytes(&mut data);
 	group.throughput(Throughput::Bytes(N as u64));
-	group.bench_function("Groestl256", |bench| {
-		let data2 = [[BinaryField8b::ZERO; N]; 1];
-
-		let parallel_borrowed_slices = data2.into_par_iter();
-		std::hint::black_box(parallel_borrowed_slices);
-		bench.iter(|| <Groestl256 as Digest>::digest(data))
-	});
+	group
+		.bench_function("Groestl256", |bench| bench.iter(|| <Groestl256 as Digest>::digest(&data)));
 
 	let hasher = <Groestl256 as ParallelDigest>::new();
 	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 1] =
 		unsafe { MaybeUninit::uninit().assume_init() };
+	let data = vec![vec![BinaryField8b::ZERO; N]; 1];
+
 	group.bench_function("Groestl256 Parallel Default", |bench| {
 		bench.iter(|| {
-			let data = [[BinaryField8b::ZERO; N]; 1];
-
-			let parallel_borrowed_slices = data.into_par_iter();
+			let parallel_borrowed_slices = data.par_iter().map(|x| x.as_slice().iter().copied());
 			hasher.digest(parallel_borrowed_slices, &mut multi_digest)
 		})
 	});
 
+	let data = vec![0; N];
+
 	group.bench_function("Groestl256-RustCrypto", |bench| {
-		bench.iter(|| <groestl_crypto::Groestl256 as groestl_crypto::Digest>::digest(data))
+		bench.iter(|| <groestl_crypto::Groestl256 as groestl_crypto::Digest>::digest(&data))
 	});
 
 	group.finish()
@@ -57,12 +54,12 @@ fn bench_groestl_multi(c: &mut Criterion) {
 	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
 		unsafe { MaybeUninit::uninit().assume_init() };
 	let hasher = <Groestl256Parallel as ParallelDigest>::new();
+	let data = vec![vec![BinaryField8b::ZERO; N]; 4];
 
 	group.throughput(Throughput::Bytes(4 * N as u64));
 	group.bench_function("Groestl256Parallel", |bench| {
 		bench.iter(|| {
-			let data = [[BinaryField8b::ZERO; N]; 4];
-			let parallel_borrowed_slices = data.into_par_iter();
+			let parallel_borrowed_slices = data.par_iter().map(|x| x.as_slice().iter().copied());
 			hasher.digest(parallel_borrowed_slices, &mut multi_digest)
 		})
 	});
