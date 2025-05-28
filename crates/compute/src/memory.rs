@@ -2,6 +2,7 @@
 
 use std::ops::RangeBounds;
 
+use binius_field::TowerField;
 use binius_utils::checked_arithmetics::checked_int_div;
 
 pub trait SizedSlice {
@@ -189,6 +190,21 @@ pub struct SubfieldSlice<'a, F, Mem: ComputeMemory<F>> {
 impl<'a, F, Mem: ComputeMemory<F>> SubfieldSlice<'a, F, Mem> {
 	pub fn new(slice: Mem::FSlice<'a>, tower_level: usize) -> Self {
 		Self { slice, tower_level }
+	}
+
+	/// Returns the length of the slice in terms of the number of subfield elements it contains.
+	pub fn len(&self) -> usize
+	where
+		F: TowerField,
+	{
+		self.slice.len() << (F::TOWER_LEVEL - self.tower_level)
+	}
+
+	pub fn is_empty(&self) -> bool
+	where
+		F: TowerField,
+	{
+		self.slice.is_empty()
 	}
 }
 

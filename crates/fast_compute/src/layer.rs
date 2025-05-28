@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, slice};
+use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
@@ -24,7 +24,10 @@ use binius_maybe_rayon::{
 	slice::{ParallelSlice, ParallelSliceMut},
 };
 use binius_ntt::AdditiveNTT;
-use binius_utils::{checked_arithmetics::checked_int_div, rayon::get_log_max_threads};
+use binius_utils::{
+	checked_arithmetics::{checked_int_div, strict_log_2},
+	rayon::get_log_max_threads,
+};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 
@@ -265,11 +268,40 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	fn fold_left<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		_mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		_vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		_out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		unimplemented!()
+		let log_evals_size = strict_log_2(mat.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		let out = binius_utils::mem::slice_uninit_mut(out.data);
+
+		fn fold_left<FSub: Field, P: PackedExtension<FSub>>(
+			mat: &[P],
+			log_evals_size: usize,
+			vec: &[P],
+			log_query_size: usize,
+			out: &mut [MaybeUninit<P>],
+		) -> Result<(), Error> {
+			let mat = PackedExtension::cast_bases(mat);
+
+			binius_math::fold_left(mat, log_evals_size, vec, log_query_size, out).map_err(|_| {
+				Error::InputValidation("the input data dimensions are wrong".to_string())
+			})
+		}
+
+		let result = each_tower_subfield!(
+			mat.tower_level,
+			T,
+			fold_left::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out,)
+		);
+		result
+			.map_err(|_| Error::InputValidation("the input data dimensions are wrong".to_string()))
 	}
 
 	fn fold_right<'a>(
