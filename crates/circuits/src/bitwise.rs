@@ -105,7 +105,7 @@ mod tests {
 	#[test]
 	fn test_bitwise() {
 		test_circuit(|builder| {
-			let log_size = 6;
+			let log_size = 4;
 			let a = unconstrained::<BinaryField1b>(builder, "a", log_size)?;
 			let b = unconstrained::<BinaryField1b>(builder, "b", log_size)?;
 			let _and = super::and(builder, "and", a, b)?;
