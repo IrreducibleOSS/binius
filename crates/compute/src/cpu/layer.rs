@@ -225,8 +225,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			return Err(Error::InputValidation(format!("invalid data length: {}", data.len())));
 		}
 
-		data[0] = T::B128::ONE;
-
 		for (i, r_i) in coordinates.iter().enumerate() {
 			let (lhs, rest) = data.split_at_mut(1 << (log_n + i));
 			let (rhs, _rest) = rest.split_at_mut(1 << (log_n + i));

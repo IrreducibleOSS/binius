@@ -85,6 +85,17 @@ where
 		if let Some(eq_ind_partial_evals) = eq_ind_partial_evals {
 			hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
 		} else {
+			{
+				let host_min_slice = host_alloc.alloc(Hal::DevMem::MIN_SLICE_LEN)?;
+				let mut dev_min_slice = Hal::DevMem::slice_mut(
+					&mut eq_ind_partial_evals_buffer,
+					0..Hal::DevMem::MIN_SLICE_LEN,
+				);
+				host_min_slice[0] = F::ONE;
+
+				hal.copy_h2d(host_min_slice, &mut dev_min_slice)?;
+			}
+
 			hal.execute(|exec| {
 				hal.tensor_expand(
 					exec,
