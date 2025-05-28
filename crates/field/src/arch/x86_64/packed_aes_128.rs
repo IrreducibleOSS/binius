@@ -4,7 +4,6 @@ use cfg_if::cfg_if;
 
 use super::{m128::M128, packed_macros::*};
 use crate::{
-	self,
 	arch::{
 		SimdStrategy,
 		portable::{packed::PackedPrimitiveType, packed_macros::*},
