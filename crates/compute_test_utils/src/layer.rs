@@ -505,7 +505,6 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	for x_i in data_in.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
-	let data_in = data_in.to_vec();
 
 	// Copy the buffer to device slice
 	let device_allocator =
