@@ -35,6 +35,7 @@ pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	// Wrapping it in Option is a temporary workaround for the lifetime problem
 	eq_ind_partial_evals: Option<FSliceMut<'a, F, Hal>>,
 	eq_ind_challenges: Vec<F>,
+	first_round_eval_1s: Option<Vec<F>>,
 }
 
 impl<'a, 'alloc, F, Hal> BivariateMLEcheckProver<'a, 'alloc, F, Hal>
@@ -125,6 +126,7 @@ where
 			eq_ind_prefix_eval: F::ONE,
 			eq_ind_partial_evals: Some(eq_ind_partial_evals_buffer),
 			eq_ind_challenges,
+			first_round_eval_1s,
 		})
 	}
 
@@ -152,88 +154,9 @@ where
 		let n_multilinears = claim.n_multilinears() + if with_eq_ind_partial_evals { 0 } else { 1 };
 		n_multilinears * (1 << (claim.n_vars() - 1))
 	}
-}
 
-impl<'alloc, F, Hal> SumcheckProver<F> for BivariateMLEcheckProver<'_, 'alloc, F, Hal>
-where
-	F: TowerField,
-	Hal: ComputeLayer<F>,
-{
-	fn n_vars(&self) -> usize {
-		self.n_vars_initial
-	}
-
-	fn evaluation_order(&self) -> EvaluationOrder {
-		EvaluationOrder::HighToLow
-	}
-
-	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
-		let multilins = self
-			.multilins
-			.iter()
-			.map(|multilin| multilin.const_slice())
-			.collect::<Vec<_>>();
-
-		let round_evals = calculate_round_evals(
-			self.hal,
-			self.n_vars_remaining,
-			batch_coeff,
-			&multilins,
-			Hal::DevMem::as_const(self.eq_ind_partial_evals.as_ref().expect("exist")),
-			&self.compositions,
-		)?;
-
-		let batched_sum = match self.last_coeffs_or_sums {
-			PhaseState::Coeffs(_) => {
-				bail!(Error::ExpectedFold);
-			}
-			PhaseState::InitialSums(ref sums) => evaluate_univariate(sums, batch_coeff),
-			PhaseState::BatchedSum(sum) => sum,
-		};
-
-		let alpha = self.eq_ind_challenges[self.n_vars_remaining - 1];
-
-		let prime_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals, alpha);
-
-		self.last_coeffs_or_sums = PhaseState::Coeffs(prime_coeffs.clone());
-
-		// Convert v' polynomial into v polynomial
-		// eq(X, α) = (1 − α) + (2 α − 1) X
-
-		let prime_coeffs_scaled_by_constant_term = prime_coeffs.clone() * (F::ONE - alpha);
-
-		let mut prime_coeffs_scaled_by_linear_term = prime_coeffs * (alpha.double() - F::ONE);
-
-		prime_coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply prime polynomial by X
-
-		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
-			* self.eq_ind_prefix_eval;
-
-		Ok(coeffs)
-	}
-
-	fn fold(&mut self, challenge: F) -> Result<(), Error> {
-		if self.n_vars_remaining == 0 {
-			bail!(Error::ExpectedFinish);
-		}
-
-		self.update_eq_ind_prefix_eval(challenge);
-
-		// Update the stored multilinear sums.
-		match self.last_coeffs_or_sums {
-			PhaseState::Coeffs(ref coeffs) => {
-				let new_sum = evaluate_univariate(&coeffs.0, challenge);
-				self.last_coeffs_or_sums = PhaseState::BatchedSum(new_sum);
-			}
-			PhaseState::InitialSums(_) | PhaseState::BatchedSum(_) => {
-				bail!(Error::ExpectedExecution);
-			}
-		}
-
-		let mut eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
-
-		// Fold the multilinears
-		let _ = self.hal.execute(|exec| {
+	pub fn fold_multilinears(&mut self, challenge: F) -> Result<(), Error> {
+		self.hal.execute(|exec| {
 			self.multilins = self
 				.hal
 				.map(exec, self.multilins.drain(..), |exec, multilin| {
@@ -275,70 +198,156 @@ where
 
 			Ok(Vec::new())
 		})?;
+		Ok(())
+	}
+
+	pub fn fold_eq_ind(&mut self) -> Result<(), Error> {
+		let split_n_vars = self.n_vars_remaining - 2;
+
+		let mut eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
+
+		let _ = self.hal.execute(|exec| {
+			let (evals_0, evals_1) =
+				Hal::DevMem::split_at_mut_borrowed(&mut eq_ind_partial_evals, 1 << split_n_vars);
+
+			let kernel_mappings = vec![
+				KernelMemMap::ChunkedMut {
+					data: evals_0,
+					log_min_chunk_size: 0,
+				},
+				KernelMemMap::ChunkedMut {
+					data: evals_1,
+					log_min_chunk_size: 0,
+				},
+				KernelMemMap::Local {
+					log_size: split_n_vars,
+				},
+			];
+
+			self.hal.accumulate_kernels(
+				exec,
+				|local_exec, log_chunks, mut buffers| {
+					let log_chunk_size = split_n_vars - log_chunks;
+
+					let Ok(
+						[
+							KernelBuffer::Mut(evals_0),
+							KernelBuffer::Mut(evals_1),
+							KernelBuffer::Mut(result),
+						],
+					) = TryInto::<&mut [_; 3]>::try_into(buffers.as_mut_slice())
+					else {
+						panic!(
+							"exec_kernels did not create the mapped buffers struct according to the mapping"
+						);
+					};
+					self.hal.kernel_add(
+						local_exec,
+						log_chunk_size,
+						Hal::DevMem::as_const(evals_0),
+						Hal::DevMem::as_const(evals_1),
+						result,
+					)?;
+
+					self.hal.copy_d2d(Hal::DevMem::as_const(result), evals_0)?;
+
+					Ok(Vec::new())
+				},
+				kernel_mappings,
+			)?;
+
+			Ok(Vec::new())
+		})?;
+
+		let (new_eq_ind_partial_evals, _) =
+			Hal::DevMem::split_at_mut(eq_ind_partial_evals, 1 << split_n_vars);
+
+		self.eq_ind_partial_evals = Some(new_eq_ind_partial_evals);
+
+		Ok(())
+	}
+}
+
+impl<'alloc, F, Hal> SumcheckProver<F> for BivariateMLEcheckProver<'_, 'alloc, F, Hal>
+where
+	F: TowerField,
+	Hal: ComputeLayer<F>,
+{
+	fn n_vars(&self) -> usize {
+		self.n_vars_initial
+	}
+
+	fn evaluation_order(&self) -> EvaluationOrder {
+		EvaluationOrder::HighToLow
+	}
+
+	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		let multilins = self
+			.multilins
+			.iter()
+			.map(|multilin| multilin.const_slice())
+			.collect::<Vec<_>>();
+
+		let round_evals = calculate_round_evals(
+			self.hal,
+			self.n_vars_remaining,
+			batch_coeff,
+			&multilins,
+			Hal::DevMem::as_const(self.eq_ind_partial_evals.as_ref().expect("exist")),
+			&self.compositions,
+			self.first_round_eval_1s.as_ref(),
+		)?;
+
+		let batched_sum = match self.last_coeffs_or_sums {
+			PhaseState::Coeffs(_) => {
+				bail!(Error::ExpectedFold);
+			}
+			PhaseState::InitialSums(ref sums) => evaluate_univariate(sums, batch_coeff),
+			PhaseState::BatchedSum(sum) => sum,
+		};
+
+		let alpha = self.eq_ind_challenges[self.n_vars_remaining - 1];
+
+		let prime_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals, alpha);
+
+		self.last_coeffs_or_sums = PhaseState::Coeffs(prime_coeffs.clone());
+
+		// Convert v' polynomial into v polynomial
+		// eq(X, α) = (1 − α) + (2 α − 1) X
+		let prime_coeffs_scaled_by_constant_term = prime_coeffs.clone() * (F::ONE - alpha);
+
+		let mut prime_coeffs_scaled_by_linear_term = prime_coeffs * (alpha.double() - F::ONE);
+
+		prime_coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply prime polynomial by X
+
+		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
+			* self.eq_ind_prefix_eval;
+
+		Ok(coeffs)
+	}
+
+	fn fold(&mut self, challenge: F) -> Result<(), Error> {
+		if self.n_vars_remaining == 0 {
+			bail!(Error::ExpectedFinish);
+		}
+
+		// Update the stored multilinear sums.
+		match self.last_coeffs_or_sums {
+			PhaseState::Coeffs(ref coeffs) => {
+				let new_sum = evaluate_univariate(&coeffs.0, challenge);
+				self.last_coeffs_or_sums = PhaseState::BatchedSum(new_sum);
+			}
+			PhaseState::InitialSums(_) | PhaseState::BatchedSum(_) => {
+				bail!(Error::ExpectedExecution);
+			}
+		}
+
+		self.update_eq_ind_prefix_eval(challenge);
+
+		self.fold_multilinears(challenge)?;
 
 		if self.n_vars_remaining - 1 != 0 {
-			// Fold eq_ind
-			let split_n_vars = self.n_vars_remaining - 2;
-
-			let _ = self.hal.execute(|exec| {
-				let (evals_0, evals_1) = Hal::DevMem::split_at_mut_borrowed(
-					&mut eq_ind_partial_evals,
-					1 << split_n_vars,
-				);
-
-				let kernel_mappings = vec![
-					KernelMemMap::ChunkedMut {
-						data: evals_0,
-						log_min_chunk_size: 0,
-					},
-					KernelMemMap::ChunkedMut {
-						data: evals_1,
-						log_min_chunk_size: 0,
-					},
-					KernelMemMap::Local {
-						log_size: split_n_vars,
-					},
-				];
-
-				self.hal.accumulate_kernels(
-					exec,
-					|local_exec, log_chunks, mut buffers| {
-						let log_chunk_size = split_n_vars - log_chunks;
-
-						let Ok(
-							[
-								KernelBuffer::Mut(evals_0),
-								KernelBuffer::Mut(evals_1),
-								KernelBuffer::Mut(result),
-							],
-						) = TryInto::<&mut [_; 3]>::try_into(buffers.as_mut_slice())
-						else {
-							panic!(
-								"exec_kernels did not create the mapped buffers struct according to the mapping"
-							);
-						};
-						self.hal.kernel_add(
-							local_exec,
-							log_chunk_size,
-							Hal::DevMem::as_const(evals_0),
-							Hal::DevMem::as_const(evals_1),
-							result,
-						)?;
-
-						self.hal.copy_d2d(Hal::DevMem::as_const(result), evals_0)?;
-
-						Ok(Vec::new())
-					},
-					kernel_mappings,
-				)?;
-
-				Ok(Vec::new())
-			})?;
-
-			let (new_eq_ind_partial_evals, _) =
-				Hal::DevMem::split_at_mut(eq_ind_partial_evals, 1 << split_n_vars);
-
-			self.eq_ind_partial_evals = Some(new_eq_ind_partial_evals);
+			self.fold_eq_ind()?;
 		}
 
 		self.n_vars_remaining -= 1;
@@ -395,6 +404,7 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 	multilins: &[FSlice<'a, F, Hal>],
 	eq_ind_partial_evals: FSlice<'a, F, Hal>,
 	compositions: &[IndexComposition<BivariateProduct, 2>],
+	first_round_eval_1s: Option<&Vec<F>>,
 ) -> Result<[F; 2], Error> {
 	let prod_evaluators = compositions
 		.iter()
@@ -441,37 +451,52 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 		.take(compositions.len())
 		.collect::<Vec<_>>();
 
-	let evals = hal.execute(|exec| {
+	let eval1 = first_round_eval_1s.map(|evals| {
+		evals
+			.iter()
+			.zip(&batch_coeffs)
+			.map(|(e, c)| *c * e)
+			.sum::<F>()
+	});
+
+	let mut evals = hal.execute(|exec| {
 		hal.accumulate_kernels(
 			exec,
 			|local_exec, log_chunks, mut buffers| {
 				let log_chunk_size = split_n_vars - log_chunks;
 
+				let mut res = Vec::new();
+
 				let eq_ind = buffers.pop().expect(
 					"The presence of eq_ind in the buffer is due to it being added earlier in the code.",
 				);
 
-				// Compute the composite evaluations at the point ONE.
-				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
-				{
-					let mut eval_1s_with_eq_ind = (0..multilins.len())
-						.map(|i| buffers[i * 3 + 1].to_ref())
-						.collect::<Vec<_>>();
+				if eval1.is_none() {
+					// Compute the composite evaluations at the point ONE.
+					let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
+					{
+						let mut eval_1s_with_eq_ind = (0..multilins.len())
+							.map(|i| buffers[i * 3 + 1].to_ref())
+							.collect::<Vec<_>>();
 
-					eval_1s_with_eq_ind.push(eq_ind.to_ref());
+						eval_1s_with_eq_ind.push(eq_ind.to_ref());
 
-					let eval_1s_with_eq_ind =
-						SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
+						let eval_1s_with_eq_ind =
+							SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
 
-					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						hal.sum_composition_evals(
-							local_exec,
-							&eval_1s_with_eq_ind,
-							evaluator,
-							batch_coeff,
-							&mut acc_1,
-						)?;
+						for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators)
+						{
+							hal.sum_composition_evals(
+								local_exec,
+								&eval_1s_with_eq_ind,
+								evaluator,
+								batch_coeff,
+								&mut acc_1,
+							)?;
+						}
 					}
+
+					res.push(acc_1);
 				}
 
 				// Extrapolate the multilinear evaluations at the point Infinity.
@@ -512,11 +537,18 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 					)?;
 				}
 
-				Ok(vec![acc_1, acc_inf])
+				res.push(acc_inf);
+
+				Ok(res)
 			},
 			kernel_mappings,
 		)
 	})?;
+
+	if let Some(eval1) = eval1 {
+		evals.insert(0, eval1);
+	}
+
 	let evals = TryInto::<[F; 2]>::try_into(evals).expect("kernel returns two values");
 	Ok(evals)
 }
