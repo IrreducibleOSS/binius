@@ -510,7 +510,7 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	let device_allocator =
 		BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
 	let mut data_in_slice = device_allocator.alloc(data_in.len()).unwrap();
-	compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
+	compute.copy_h2d(data_in, &mut data_in_slice).unwrap();
 	let data_in_slice = C::DevMem::as_const(&data_in_slice);
 
 	let mut data_out = compute.host_alloc(1 << (log_len - log_fold_challenges));
@@ -548,7 +548,7 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	compute.copy_d2h(data_out_slice, data_out).unwrap();
 
 	// Compute the expected result and compare
-	let expected_result = fold_interleaved(&ntt, &data_in, &challenges, log_len, log_batch_size);
+	let expected_result = fold_interleaved(&ntt, data_in, &challenges, log_len, log_batch_size);
 	assert_eq!(data_out, &expected_result);
 }
 
