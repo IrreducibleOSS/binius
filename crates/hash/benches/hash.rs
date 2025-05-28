@@ -43,20 +43,11 @@ fn bench_groestl(c: &mut Criterion) {
 		bench.iter(|| <groestl_crypto::Groestl256 as groestl_crypto::Digest>::digest(&data))
 	});
 
-	group.finish()
-}
-
-fn bench_groestl_multi(c: &mut Criterion) {
-	let mut group = c.benchmark_group("Grøstl");
-
-	const N: usize = 1 << 14;
-
 	let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
 		unsafe { MaybeUninit::uninit().assume_init() };
 	let hasher = <Groestl256Parallel as ParallelDigest>::new();
-	let data = vec![vec![BinaryField8b::ZERO; N]; 4];
+	let data = vec![vec![BinaryField8b::ZERO; N / 4]; 4];
 
-	group.throughput(Throughput::Bytes(4 * N as u64));
 	group.bench_function("Groestl256Parallel", |bench| {
 		bench.iter(|| {
 			let parallel_borrowed_slices = data.par_iter().map(|x| x.as_slice().iter().copied());
@@ -96,5 +87,5 @@ fn bench_vision32(c: &mut Criterion) {
 	group.finish()
 }
 
-criterion_group!(hash, bench_groestl, bench_groestl_multi, bench_vision32);
+criterion_group!(hash, bench_groestl, bench_vision32);
 criterion_main!(hash);
