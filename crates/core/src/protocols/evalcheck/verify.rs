@@ -51,6 +51,9 @@ where
 	// The new mle sumcheck constraints arising in this round
 	new_mlechecks_constraints: Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 
+	/// The memoization of triples (ep, sqrt_ep, _) with sqrt_ep^2 = ep
+	square_roots_memoization: Vec<(EvalPoint<F>, EvalPoint<F>, F)>,
+
 	/// The list of claims that have been verified in this round
 	round_claims: Vec<EvalcheckMultilinearClaim<F>>,
 }
@@ -65,6 +68,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			committed_eval_claims: Vec::new(),
 			new_sumcheck_constraints: Vec::new(),
 			new_mlechecks_constraints: Vec::new(),
+			square_roots_memoization: Vec::new(),
 			round_claims: Vec::new(),
 		}
 	}
@@ -287,14 +291,64 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					transcript,
 				)?;
 			}
+			MultilinearPolyVariant::Squared(id) => {
+				let position = transcript.message().read::<u32>()? as usize;
+
+				if position > self.square_roots_memoization.len() {
+					return Err(VerificationError::SquareRootPositionMismatch.into());
+				}
+
+				if position == self.square_roots_memoization.len() {
+					let sqrt_eval_point = transcript
+						.message()
+						.read_scalar_slice::<F>(eval_point.len())?;
+
+					if sqrt_eval_point
+						.iter()
+						.zip(eval_point.iter())
+						.any(|(sqrt_value, value)| sqrt_value.square() != *value)
+					{
+						return Err(VerificationError::SquareRootWrongSqrtEvalPoint.into());
+					}
+
+					let sqrt_eval = transcript.message().read_scalar::<F>()?;
+					self.square_roots_memoization.push((
+						eval_point.clone(),
+						sqrt_eval_point.into(),
+						sqrt_eval,
+					));
+				}
+
+				let (same_eval_point, sqrt_eval_point, sqrt_eval) =
+					&self.square_roots_memoization[position];
+
+				if *same_eval_point != eval_point || sqrt_eval.square() != eval {
+					return Err(VerificationError::SquareRootWrongSqrtEvalPoint.into());
+				}
+
+				self.verify_multilinear(
+					EvalcheckMultilinearClaim {
+						id,
+						eval_point: sqrt_eval_point.clone(),
+						eval: *sqrt_eval,
+					},
+					transcript,
+				)?;
+			}
 			MultilinearPolyVariant::Composite(composite) => {
 				let position = transcript.message().read::<u32>()? as usize;
+
+				if position > self.new_mlechecks_constraints.len() {
+					return Err(VerificationError::MLECheckConstraintSetPositionMismatch.into());
+				}
 
 				if let Some((constraints_eval_point, _)) =
 					self.new_mlechecks_constraints.get(position)
 				{
 					if *constraints_eval_point != eval_point {
-						return Err(VerificationError::MLECheckConstraintSetPositionMismatch.into());
+						return Err(
+							VerificationError::MLECheckConstraintSetEvalPointMismatch.into()
+						);
 					}
 				}
 

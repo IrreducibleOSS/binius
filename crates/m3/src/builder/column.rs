@@ -153,6 +153,9 @@ pub enum ColumnDef<F: TowerField = B128> {
 		col: ColumnId,
 		log_degree: usize,
 	},
+	Squared {
+		col: ColumnId,
+	},
 	Computed {
 		cols: Vec<ColumnId>,
 		expr: ArithCircuit<F>,
