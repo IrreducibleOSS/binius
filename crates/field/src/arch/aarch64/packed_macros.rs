@@ -14,13 +14,13 @@ macro_rules! maybe_impl_tower_constants {
 macro_rules! impl_strategy {
 	($impl_macro:ident $name:ident, (None)) => {};
 	($impl_macro:ident $name:ident, ($strategy:ty)) => {
-		$impl_macro!($name @ $strategy);
+		$impl_macro!($name @ $crate::$strategy);
 	};
 }
 
 macro_rules! impl_transformation {
 	($name:ident, ($strategy:ty)) => {
-		impl_transformation_with_strategy!($name, $strategy);
+		impl_transformation_with_strategy!($name, $crate::$strategy);
 	};
 }
 

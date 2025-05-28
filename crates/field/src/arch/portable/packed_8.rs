@@ -5,10 +5,7 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy,
-		portable::packed_macros::{portable_macros::*, *},
-	},
+	arch::portable::packed_macros::{portable_macros::*, *},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,

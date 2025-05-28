@@ -220,20 +220,20 @@ pub(crate) mod portable_macros {
 		($impl_macro:ident $name:ident, (if $cond:ident ($gfni_x86_strategy:ty) else ($fallback:ty))) => {
 			cfg_if! {
 				if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni", feature = "nightly_features"))] {
-					$impl_macro!($name => $gfni_x86_strategy);
+					$impl_macro!($name => $crate::$gfni_x86_strategy);
 				} else {
-					$impl_macro!($name @ $fallback);
+					$impl_macro!($name @ $crate::arch::$fallback);
 				}
 			}
 		};
 		($impl_macro:ident $name:ident, ($strategy:ty)) => {
-			$impl_macro!($name @ $strategy);
+			$impl_macro!($name @ $crate::arch::$strategy);
 		};
 	}
 
 	macro_rules! impl_transformation {
 		($name:ident, ($strategy:ty)) => {
-			impl_transformation_with_strategy!($name, $strategy);
+			impl_transformation_with_strategy!($name, $crate::arch::$strategy);
 		};
 	}
 

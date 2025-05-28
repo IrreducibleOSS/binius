@@ -4,10 +4,7 @@ use cfg_if::cfg_if;
 
 use super::{m256::M256, packed_macros::*};
 use crate::{
-	arch::{
-		SimdStrategy,
-		portable::{packed::PackedPrimitiveType, packed_macros::*},
-	},
+	arch::portable::{packed::PackedPrimitiveType, packed_macros::*},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
