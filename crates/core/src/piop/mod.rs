@@ -36,7 +36,7 @@ mod error;
 mod logging;
 mod prove;
 #[cfg(test)]
-mod tests;
+pub mod tests;
 mod util;
 mod verify;
 
