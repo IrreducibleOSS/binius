@@ -67,7 +67,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		}
 
 		unpack_if_possible_mut(
-			dst.data,
+			dst.as_slice_mut(),
 			|scalars| {
 				scalars.copy_from_slice(src);
 				Ok(())
@@ -93,7 +93,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 		let dst = RefCell::new(dst);
 		unpack_if_possible(
-			src.data,
+			src.as_slice(),
 			|scalars| {
 				dst.borrow_mut().copy_from_slice(scalars);
 				Ok(())
@@ -129,7 +129,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			));
 		}
 
-		dst.data.copy_from_slice(src.data);
+		dst.as_slice_mut().copy_from_slice(src.as_slice());
 
 		Ok(())
 	}
@@ -165,7 +165,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		let result = each_tower_subfield!(
 			a_in.tower_level,
 			T,
-			inner_product_par_impl::<_, P>(a_in.slice.data, b_in.data)
+			inner_product_par_impl::<_, P>(a_in.slice.as_slice(), b_in.as_slice())
 		);
 
 		Ok(result)
@@ -178,7 +178,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		coordinates: &[T::B128],
 		data: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		tensor_prod_eq_ind(log_n, data.data, coordinates)
+		tensor_prod_eq_ind(log_n, data.as_slice_mut(), coordinates)
 			.map_err(|_| Error::InputValidation("tensor dimensions are invalid".to_string()))
 	}
 
@@ -231,7 +231,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		memory_chunks
 			.par_chunks_exact_mut(mem_maps_count)
 			.map_with(zeroed_vec::<P>(total_alloc), |buffer, chunk| {
-				let buffer = PackedMemorySliceMut::new(buffer);
+				let buffer = PackedMemorySliceMut::new_slice(buffer);
 				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
 
 				let kernel_data = chunk
@@ -279,7 +279,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
 		})?;
 
-		let out = binius_utils::mem::slice_uninit_mut(out.data);
+		let out = binius_utils::mem::slice_uninit_mut(out.as_slice_mut());
 
 		fn fold_left<FSub: Field, P: PackedExtension<FSub>>(
 			mat: &[P],
@@ -298,7 +298,13 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		each_tower_subfield!(
 			mat.tower_level,
 			T,
-			fold_left::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out,)
+			fold_left::<_, P>(
+				mat.slice.as_slice(),
+				log_evals_size,
+				vec.as_slice(),
+				log_query_size,
+				out,
+			)
 		)
 	}
 
@@ -333,7 +339,13 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		each_tower_subfield!(
 			mat.tower_level,
 			T,
-			fold_right::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out.data)
+			fold_right::<_, P>(
+				mat.slice.as_slice(),
+				log_evals_size,
+				vec.as_slice(),
+				log_query_size,
+				out.as_slice_mut()
+			)
 		)
 	}
 
@@ -351,7 +363,10 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		// based on the performance measurements.
 		const BATCH_SIZE: usize = 64;
 
-		let rows = inputs.iter().map(|slice| slice.data).collect::<Vec<_>>();
+		let rows = inputs
+			.iter()
+			.map(|slice| slice.as_slice())
+			.collect::<Vec<_>>();
 		if inputs.row_len() >= P::WIDTH {
 			let packed_row_len = checked_int_div(inputs.row_len(), P::WIDTH);
 
@@ -410,7 +425,9 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			));
 		}
 
-		for (dst_i, &src1_i, &src2_i) in izip!(dst.data.iter_mut(), src1.data, src2.data) {
+		for (dst_i, &src1_i, &src2_i) in
+			izip!(dst.as_slice_mut().iter_mut(), src1.as_slice(), src2.as_slice())
+		{
 			*dst_i = src1_i + src2_i;
 		}
 
@@ -432,11 +449,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		T::B128: binius_field::ExtensionField<FSub>,
 	{
 		unpack_if_possible_mut(
-			data_out.data,
+			data_out.as_slice_mut(),
 			|out| {
 				fold_interleaved_allocated(
 					ntt,
-					data_in.data,
+					data_in.as_slice(),
 					challenges,
 					log_len,
 					log_batch_size,
@@ -479,9 +496,9 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		}
 
 		evals_0
-			.data
+			.as_slice_mut()
 			.par_iter_mut()
-			.zip(evals_1.data.par_iter())
+			.zip(evals_1.as_slice().par_iter())
 			.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
 		Ok(())
 	}
@@ -501,7 +518,10 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			return Err(Error::InputValidation("composition not match with inputs".into()));
 		}
 
-		let rows = inputs.iter().map(|slice| slice.data).collect::<Vec<_>>();
+		let rows = inputs
+			.iter()
+			.map(|slice| slice.as_slice())
+			.collect::<Vec<_>>();
 
 		let log_chunks = get_log_max_threads() + 1;
 
@@ -512,7 +532,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, packed_row_len) };
 
 		output
-			.data
+			.as_slice_mut()
 			.par_chunks_mut(chunk_size)
 			.enumerate()
 			.for_each(|(chunk_idx, output_chunk)| {

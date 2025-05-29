@@ -60,7 +60,7 @@ where
 		eq_ind_partial_evals: FSlice<'a, F, Hal>,
 		eq_ind_challenges: Vec<F>,
 	) -> Result<Self, Error> {
-		if Hal::DevMem::MIN_SLICE_LEN != 1 {
+		if Hal::DevMem::ALIGNMENT != 1 {
 			todo!("support non-trivial minimum slice lengths");
 		}
 

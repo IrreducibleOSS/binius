@@ -67,7 +67,7 @@ impl<Slice: SizedSlice> SlicesBatch<Slice> {
 
 /// Interface for manipulating handles to memory in a compute device.
 pub trait ComputeMemory<F> {
-	const MIN_SLICE_LEN: usize;
+	const ALIGNMENT: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
 	type FSlice<'a>: Copy + SizedSlice + Sync;
@@ -93,14 +93,14 @@ pub trait ComputeMemory<F> {
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the range bounds must be multiples of [`Self::ALIGNMENT`]
 	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
 
 	/// Borrows a subslice of a mutable memory slice.
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the range bounds must be multiples of [`Self::ALIGNMENT`]
 	fn slice_mut<'a>(
 		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
@@ -110,7 +110,7 @@ pub trait ComputeMemory<F> {
 	///
 	/// ## Preconditions
 	///
-	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `mid` must be a multiple of [`Self::ALIGNMENT`]
 	fn split_at(data: Self::FSlice<'_>, mid: usize) -> (Self::FSlice<'_>, Self::FSlice<'_>) {
 		let head = Self::slice(data, ..mid);
 		let tail = Self::slice(data, mid..);
@@ -121,7 +121,7 @@ pub trait ComputeMemory<F> {
 	///
 	/// ## Preconditions
 	///
-	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `mid` must be a multiple of [`Self::ALIGNMENT`]
 	fn split_at_mut(
 		data: Self::FSliceMut<'_>,
 		mid: usize,
@@ -140,7 +140,7 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the length of the slice must be a multiple of `chunk_len`
-	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `chunk_len` must be a multiple of [`Self::ALIGNMENT`]
 	fn slice_chunks<'a>(
 		data: Self::FSlice<'a>,
 		chunk_len: usize,
@@ -154,11 +154,43 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the length of the slice must be a multiple of `chunk_len`
-	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `chunk_len` must be a multiple of [`Self::ALIGNMENT`]
 	fn slice_chunks_mut<'a>(
 		data: Self::FSliceMut<'a>,
 		chunk_len: usize,
 	) -> impl Iterator<Item = Self::FSliceMut<'a>>;
+
+	/// Splits an immutable slice of power-two length into two equal halves.
+	///
+	/// Unlike all other splitting methods, this method does not require input or output slices
+	/// to be a multiple of [`Self::ALIGNMENT`].
+	fn split_half<'a>(data: Self::FSlice<'a>) -> (Self::FSlice<'a>, Self::FSlice<'a>) {
+		// This default implementation works only for slices with alignment of 1.
+		assert_eq!(Self::ALIGNMENT, 1);
+
+		assert!(
+			data.len().is_power_of_two() && data.len() > 1,
+			"data length must be a power of two greater than 1"
+		);
+		let mid = data.len() / 2;
+		Self::split_at(data, mid)
+	}
+
+	/// Splits a mutable slice of power-two length into two equal halves.
+	///
+	/// Unlike all other splitting methods, this method does not require input or output slices
+	/// to be a multiple of [`Self::ALIGNMENT`].
+	fn split_half_mut<'a>(data: Self::FSliceMut<'a>) -> (Self::FSliceMut<'a>, Self::FSliceMut<'a>) {
+		// This default implementation works only for slices with alignment of 1.
+		assert_eq!(Self::ALIGNMENT, 1);
+
+		assert!(
+			data.len().is_power_of_two() && data.len() > 1,
+			"data length must be a power of two greater than 1"
+		);
+		let mid = data.len() / 2;
+		Self::split_at_mut(data, mid)
+	}
 }
 
 /// `SubfieldSlice` is a structure that represents a slice of elements stored in a compute memory,
