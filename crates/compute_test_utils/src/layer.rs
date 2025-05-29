@@ -623,7 +623,7 @@ pub fn test_generic_single_left_fold<
 	binius_math::fold_left(
 		&evals_as_f1_slice,
 		log_evals_size,
-		&query,
+		query,
 		log_query_size,
 		expected_out.as_mut_slice(),
 	)
