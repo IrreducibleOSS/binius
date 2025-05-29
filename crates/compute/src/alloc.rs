@@ -14,7 +14,7 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	///
 	/// ## Pre-conditions
 	///
-	/// - `n` must be a multiple of `Mem::MIN_SLICE_LEN`
+	/// - `n` must be a multiple of `Mem::ALIGNMENT`
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error>;
 
 	/// Borrow the remaining unallocated capacity.
@@ -64,7 +64,7 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			// buffer contains Some, invariant restored
 			Err(Error::OutOfMemory)
 		} else {
-			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::MIN_SLICE_LEN));
+			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::ALIGNMENT));
 			self.buffer.set(Some(rhs));
 			// buffer contains Some, invariant restored
 			Ok(Mem::narrow_mut(lhs))

@@ -67,7 +67,13 @@ impl<Slice: SizedSlice> SlicesBatch<Slice> {
 
 /// Interface for manipulating handles to memory in a compute device.
 pub trait ComputeMemory<F> {
-	const MIN_SLICE_LEN: usize;
+	/// A constant that defines the alignment of elements in the [`Self::FSlice`] and
+	/// [`Self::FSliceMut`].
+	///
+	/// We are able to split slices by this alignment. We can also split into slices that have a
+	/// length strictly less than this alignment but for example we cannot have a slice of length
+	/// `Self::ALIGNMENT + 1` (if `Self::ALIGNMENT` is not 1).
+	const ALIGNMENT: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
 	type FSlice<'a>: Copy + SizedSlice + Sync;
@@ -89,18 +95,20 @@ pub trait ComputeMemory<F> {
 	/// This allows the immutable reference to be copied.
 	fn as_const<'a>(data: &'a Self::FSliceMut<'_>) -> Self::FSlice<'a>;
 
-	/// Borrows a subslice of an immutable memory slice.
+	/// Borrows a subslice of an immutable memory slice
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the resulting slice must be either aligned by [`Self::ALIGNMENT`] or have a length
+	///   strictly less than [`Self::ALIGNMENT`].
 	fn slice(data: Self::FSlice<'_>, range: impl RangeBounds<usize>) -> Self::FSlice<'_>;
 
 	/// Borrows a subslice of a mutable memory slice.
 	///
 	/// ## Preconditions
 	///
-	/// - the range bounds must be multiples of [`Self::MIN_SLICE_LEN`]
+	/// - the resulting slice must be either aligned by [`Self::ALIGNMENT`] or have a length
+	///   strictly less than [`Self::ALIGNMENT`].
 	fn slice_mut<'a>(
 		data: &'a mut Self::FSliceMut<'_>,
 		range: impl RangeBounds<usize>,
@@ -110,7 +118,8 @@ pub trait ComputeMemory<F> {
 	///
 	/// ## Preconditions
 	///
-	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - each of the resulting slices must be either aligned by [`Self::ALIGNMENT`] or have a
+	///   length strictly less than [`Self::ALIGNMENT`].
 	fn split_at(data: Self::FSlice<'_>, mid: usize) -> (Self::FSlice<'_>, Self::FSlice<'_>) {
 		let head = Self::slice(data, ..mid);
 		let tail = Self::slice(data, mid..);
@@ -121,7 +130,8 @@ pub trait ComputeMemory<F> {
 	///
 	/// ## Preconditions
 	///
-	/// - `mid` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - each of the resulting slices must be either aligned by [`Self::ALIGNMENT`] or have a
+	///   length strictly less than [`Self::ALIGNMENT`].
 	fn split_at_mut(
 		data: Self::FSliceMut<'_>,
 		mid: usize,
@@ -140,7 +150,8 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the length of the slice must be a multiple of `chunk_len`
-	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `chunk_len` must be a multiple of [`Self::ALIGNMENT`] or strictly less than
+	///   [`Self::ALIGNMENT`]
 	fn slice_chunks<'a>(
 		data: Self::FSlice<'a>,
 		chunk_len: usize,
@@ -154,7 +165,8 @@ pub trait ComputeMemory<F> {
 	/// ## Preconditions
 	///
 	/// - the length of the slice must be a multiple of `chunk_len`
-	/// - `chunk_len` must be a multiple of [`Self::MIN_SLICE_LEN`]
+	/// - `chunk_len` must be a multiple of [`Self::ALIGNMENT`] or strictly less than
+	///   [`Self::ALIGNMENT`]
 	fn slice_chunks_mut<'a>(
 		data: Self::FSliceMut<'a>,
 		chunk_len: usize,
