@@ -23,7 +23,7 @@ use binius_maybe_rayon::{
 	},
 	slice::{ParallelSlice, ParallelSliceMut},
 };
-use binius_ntt::AdditiveNTT;
+use binius_ntt::{AdditiveNTT, fri::fold_interleaved_allocated};
 use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
 	rayon::get_log_max_threads,
@@ -420,18 +420,49 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
-		_ntt: &impl AdditiveNTT<FSub>,
-		_log_len: usize,
-		_log_batch_size: usize,
-		_challenges: &[T::B128],
-		_data_in: FSlice<T::B128, Self>,
-		_data_out: &mut FSliceMut<T::B128, Self>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
+		log_len: usize,
+		log_batch_size: usize,
+		challenges: &[T::B128],
+		data_in: FSlice<T::B128, Self>,
+		data_out: &mut FSliceMut<T::B128, Self>,
 	) -> Result<(), Error>
 	where
 		FSub: binius_field::BinaryField,
 		T::B128: binius_field::ExtensionField<FSub>,
 	{
-		unimplemented!()
+		unpack_if_possible_mut(
+			data_out.data,
+			|out| {
+				fold_interleaved_allocated(
+					ntt,
+					data_in.data,
+					challenges,
+					log_len,
+					log_batch_size,
+					out,
+				);
+			},
+			|packed| {
+				let mut out_scalars =
+					zeroed_vec(1 << (log_len - (challenges.len() - log_batch_size)));
+				fold_interleaved_allocated(
+					ntt,
+					packed,
+					challenges,
+					log_len,
+					log_batch_size,
+					&mut out_scalars,
+				);
+
+				let mut iter = out_scalars.iter().copied();
+				for p in packed {
+					*p = PackedField::from_scalars(&mut iter);
+				}
+			},
+		);
+
+		Ok(())
 	}
 
 	fn extrapolate_line(

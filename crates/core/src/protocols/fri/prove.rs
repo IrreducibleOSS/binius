@@ -4,9 +4,8 @@ use binius_field::{
 	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
 };
-use binius_math::MultilinearQuery;
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::AdditiveNTT;
+use binius_ntt::{AdditiveNTT, fri::fold_interleaved};
 use binius_utils::{SerializeBytes, bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
@@ -22,67 +21,10 @@ use super::{
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	protocols::fri::{common::fold_interleaved_chunk, logging::FRIFoldData},
+	protocols::fri::logging::FRIFoldData,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{ProverTranscript, TranscriptWriter},
 };
-
-/// FRI-fold the interleaved codeword using the given challenges.
-///
-/// ## Arguments
-///
-/// * `ntt` - the NTT instance, used to look up the twiddle values.
-/// * `codeword` - an interleaved codeword.
-/// * `challenges` - the folding challenges. The length must be at least `log_batch_size`.
-/// * `log_len` - the binary logarithm of the code length.
-/// * `log_batch_size` - the binary logarithm of the interleaved code batch size.
-///
-/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
-///
-/// [DP24]: <https://eprint.iacr.org/2024/504>
-#[instrument(skip_all, level = "debug")]
-pub fn fold_interleaved<F, FS, NTT, P>(
-	ntt: &NTT,
-	codeword: &[P],
-	challenges: &[F],
-	log_len: usize,
-	log_batch_size: usize,
-) -> Vec<F>
-where
-	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
-	NTT: AdditiveNTT<FS> + Sync,
-	P: PackedField<Scalar = F>,
-{
-	assert_eq!(codeword.len(), 1 << (log_len + log_batch_size).saturating_sub(P::LOG_WIDTH));
-	assert!(challenges.len() >= log_batch_size);
-
-	let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
-	let tensor = MultilinearQuery::expand(interleave_challenges);
-
-	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
-	let fold_chunk_size = 1 << fold_challenges.len();
-	let chunk_size = 1 << challenges.len().saturating_sub(P::LOG_WIDTH);
-	codeword
-		.par_chunks(chunk_size)
-		.enumerate()
-		.map_init(
-			|| vec![F::default(); fold_chunk_size],
-			|scratch_buffer, (i, chunk)| {
-				fold_interleaved_chunk(
-					ntt,
-					log_len,
-					log_batch_size,
-					i,
-					chunk,
-					tensor.expansion(),
-					fold_challenges,
-					scratch_buffer,
-				)
-			},
-		)
-		.collect()
-}
 
 #[derive(Debug)]
 pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {

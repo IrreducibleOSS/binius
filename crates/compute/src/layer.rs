@@ -369,7 +369,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	fn fri_fold<FSub>(
 		&self,
 		exec: &mut Self::Exec,
-		ntt: &impl AdditiveNTT<FSub>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[F],
