@@ -13,7 +13,7 @@ on:
       benchmark:
         description: "Benchmark to run (choose a specific benchmark or 'all')"
         type: choice
-        options: [all, keccakf, groestl, vision32b, sha256, b32_mul, u32_add, u32_mul, xor, and, or]   # Example options; replace with actual benchmark names
+        options: [all, keccakf, groestl, vision32b, sha256, b32_mul, u32_add, u32_mul_gkr, xor, and, or]   # Example options; replace with actual benchmark names
         default: all
       publish_results:
         description: "Publish results to Bencher and GH Pages (Warning: run only if needed for main branch)"
