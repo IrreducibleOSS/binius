@@ -20,6 +20,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
@@ -53,7 +54,7 @@ use crate::{
 	},
 	ring_switch,
 	transcript::ProverTranscript,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
@@ -222,7 +223,7 @@ where
 	)
 	.entered();
 	let non_zero_fast_witnesses =
-		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -281,7 +282,7 @@ where
 
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
-		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -727,12 +728,38 @@ fn count_zero_suffixes<P: PackedField, M: MultilinearPoly<P>>(poly: &M) -> usize
 	}
 }
 
+/// Converts specified oracles' witness representations from the base extension field
+/// to the fast extension field format for optimized grand product calculations.
+///
+/// This function processes the provided list of oracle IDs, extracting the corresponding
+/// multilinear polynomials from the witness index, and converting their evaluations
+/// to the fast field representation. The conversion is performed efficiently using
+/// the tower transformation infrastructure.
+///
+/// # Performance Considerations
+/// - This function is optimized for parallel execution as it's on the critical path of the proving
+///   system.
+///
+/// # Arguments
+/// * `oracles` - Reference to the multilinear oracle set containing metadata for all oracles
+/// * `witness` - Reference to the witness index containing the multilinear polynomial evaluations
+/// * `oracle_ids` - Slice of oracle IDs for which to generate fast field representations
+///
+/// # Returns
+/// A vector of tuples, where each tuple contains:
+/// - The number of variables in the oracle's multilinear polynomial
+/// - A vector of packed field elements representing the polynomial's evaluations in the fast field
+///
+/// # Errors
+/// Returns an error if:
+/// - Any oracle ID is invalid or not found in the witness index
+/// - Subcube evaluation fails for any polynomial
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-fn make_fast_unmasked_flush_witnesses<'a, U, Tower>(
+fn convert_witnesses_to_fast_ext<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
-	flush_oracles: &[OracleId],
+	oracle_ids: &[OracleId],
 ) -> Result<Vec<(usize, Vec<PackedType<U, FFastExt<Tower>>>)>, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
@@ -742,26 +769,25 @@ where
 	let to_fast = Tower::packed_transformation_to_fast();
 
 	// The function is on the critical path, parallelize.
-	flush_oracles
+	oracle_ids
 		.into_par_iter()
 		.map(|&flush_oracle_id| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
 
-			let poly = witness.get_multilin_poly(flush_oracle_id)?;
+			let IndexEntry {
+				multilin_poly: poly,
+				nonzero_scalars_prefix,
+			} = witness.get_index_entry(flush_oracle_id)?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
 			let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
 			let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
-			let non_const_scalars = 1usize << n_vars;
+			let non_const_scalars = nonzero_scalars_prefix;
 			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
 
-			let mut fast_ext_result = vec![
-				PackedType::<U, FFastExt<Tower>>::one();
-				non_const_subcubes * subcube_packed_size
-			];
-
+			let mut fast_ext_result = zeroed_vec(non_const_subcubes * subcube_packed_size);
 			fast_ext_result
 				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
