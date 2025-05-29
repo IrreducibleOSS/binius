@@ -86,12 +86,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	pub fn repeating(self, inner_id: OracleId, log_count: usize) -> Result<OracleId, Error> {
 		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 
+		let tower_level = inner.tower_level;
+		let n_vars = inner.n_vars + log_count;
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars: inner.n_vars + log_count,
-			tower_level: inner.tower_level,
+			n_vars,
+			tower_level,
 			name: self.name,
 			variant: MultilinearPolyVariant::Repeating {
 				id: inner_id,
@@ -111,7 +113,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	) -> Result<OracleId, Error> {
 		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		if block_bits > inner.n_vars {
 			bail!(PolynomialError::InvalidBlockSize {
 				n_vars: inner.n_vars,
@@ -125,12 +127,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let shifted = Shifted::new(&inner, offset, block_bits, variant)?;
+		let shifted = Shifted::new(inner, offset, block_bits, variant)?;
 
+		let tower_level = inner.tower_level;
+		let n_vars = inner.n_vars;
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars: inner.n_vars,
-			tower_level: inner.tower_level,
+			n_vars,
+			tower_level,
 			name: self.name,
 			variant: MultilinearPolyVariant::Shifted(shifted),
 		};
@@ -184,10 +188,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(&inner, values, start_index)?;
+		let projected = Projected::new(inner, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -217,10 +221,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(&inner, values, start_index)?;
+		let projected = Projected::new(inner, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -257,7 +261,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
-				Ok((self.mut_ref.get_from_set(inner_id), coeff))
+				Ok((self.mut_ref[inner_id].clone(), coeff))
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -297,7 +301,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
-				Ok(self.mut_ref.get_from_set(inner_id))
+				Ok(self.mut_ref[inner_id].clone())
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -334,9 +338,9 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		let tower_level = inner.binary_tower_level();
-		let padded = ZeroPadded::new(&inner, n_pad_vars, nonzero_index, start_index)?;
+		let padded = ZeroPadded::new(inner, n_pad_vars, nonzero_index, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -432,10 +436,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		let id = OracleId::from_index(self.oracles.len());
 		self.oracles.push(oracle(id));
 		id
-	}
-
-	fn get_from_set(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self[id].clone()
 	}
 
 	pub fn add_transparent(
