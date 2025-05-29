@@ -6,7 +6,6 @@ use binius_field::{
 	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	tower::{PackedTop, TowerFamily},
 };
-use binius_hal::ComputationBackend;
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -38,12 +37,11 @@ pub struct ReducedWitness<P: PackedField> {
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
 }
 
-pub fn prove<F, P, M, Tower, Challenger_, Backend>(
+pub fn prove<F, P, M, Tower, Challenger_>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
-	memoized_data: MemoizedData<P, Backend>,
-	backend: &Backend,
+	memoized_data: MemoizedData<P>,
 ) -> Result<ReducedWitness<P>, Error>
 where
 	F: TowerField + PackedTop<Tower>,
@@ -57,7 +55,6 @@ where
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
 	Challenger_: Challenger,
-	Backend: ComputationBackend,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
 		return Err(Error::InvalidWitness(
@@ -81,8 +78,7 @@ where
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
-	let tensor_elems =
-		compute_partial_evals::<_, _, _, Tower, _>(system, witnesses, memoized_data, backend)?;
+	let tensor_elems = compute_partial_evals::<_, _, _, Tower>(system, witnesses, memoized_data)?;
 	let scaled_tensor_elems = scale_tensor_elems(tensor_elems, &mixing_coeffs);
 	let mixed_tensor_elems = mix_tensor_elems_for_prefixes(
 		&scaled_tensor_elems,
@@ -144,18 +140,16 @@ where
 }
 
 #[instrument(skip_all)]
-fn compute_partial_evals<F, P, M, Tower, Backend>(
+fn compute_partial_evals<F, P, M, Tower>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
-	mut memoized_data: MemoizedData<P, Backend>,
-	backend: &Backend,
+	mut memoized_data: MemoizedData<P>,
 ) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
-	Backend: ComputationBackend,
 {
 	let suffixes = system
 		.suffix_descs
@@ -163,7 +157,7 @@ where
 		.map(|desc| Arc::as_ref(&desc.suffix))
 		.collect::<Vec<_>>();
 
-	memoized_data.memoize_query_par(suffixes, backend)?;
+	memoized_data.memoize_query_par(suffixes)?;
 
 	let tensor_elems = system
 		.sumcheck_claim_descs

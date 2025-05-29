@@ -78,7 +78,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 		// Sort evaluation claims in ascending order by number of packed variables. This must
 		// happen before we do any further index mapping.
 		let mut eval_claims = eval_claims.iter().collect::<Vec<_>>();
-		eval_claims.sort_by_key(|claim| match oracles.oracle(claim.id) {
+		eval_claims.sort_by_key(|claim| match oracles[claim.id] {
 			// The number of packed variables is n_vars + tower_level - F::TOWER_LEVEL. Just use
 			// n_vars + tower_level as the sort key because we haven't checked that the subtraction
 			// wouldn't underflow yet.
@@ -104,8 +104,8 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 			.into_iter()
 			.enumerate()
 			.map(|(i, eval_claim)| {
-				let oracle = oracles.oracle(eval_claim.id);
-				if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+				let oracle = &oracles[eval_claim.id];
+				if !oracle.variant.is_committed() {
 					return Err(Error::EvalcheckClaimForDerivedPoly { id: eval_claim.id });
 				}
 				let committed_idx = oracle_to_commit_index
@@ -150,12 +150,12 @@ fn group_claims_by_eval_point<F: TowerField>(
 	let mut claim_to_prefix_index = Vec::with_capacity(claims.len());
 	let mut claim_to_suffix_index = Vec::with_capacity(claims.len());
 	for claim in claims {
-		let MultilinearPolyOracle {
+		let &MultilinearPolyOracle {
 			id,
 			tower_level,
 			variant: MultilinearPolyVariant::Committed,
 			..
-		} = oracles.oracle(claim.id)
+		} = &oracles[claim.id]
 		else {
 			return Err(Error::EvalcheckClaimForDerivedPoly { id: claim.id });
 		};

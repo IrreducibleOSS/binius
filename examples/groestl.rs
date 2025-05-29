@@ -1,5 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
+// Uses binius_circuits which is being phased out.
+//
+// See crates/m3/tests/groestl.rs
+#![allow(deprecated)]
+
 use std::{array, iter::repeat_with};
 
 use anyhow::Result;

@@ -156,6 +156,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// Creates and allocates the witness index.
 	///
 	/// **Deprecated**: This is a thin wrapper over [`WitnessIndex::new`] now, which is preferred.
+	#[deprecated]
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
 		allocator: &'alloc Bump,
@@ -636,10 +637,11 @@ fn add_oracle_for_column<F: TowerField>(
 			oracle_lookup.register_transparent(*column_id, oracle_id_original, oracle_id_repeating);
 		}
 		ColumnDef::StructuredDynSize(structured) => {
-			let expr = structured.expr(n_vars)?;
+			structured.check_nvars(n_vars)?;
+			let expr = structured.expr()?;
 			let oracle_id = oracles
 				.add_named(name)
-				.transparent(ArithCircuit::from(&expr))?;
+				.structured(n_vars, ArithCircuit::from(&expr))?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::StructuredFixedSize { expr } => {

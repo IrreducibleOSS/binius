@@ -84,6 +84,12 @@ where
 		.unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
+		let _layer_span = tracing::info_span!(
+			"[task] GKR Exp Layer Sumcheck",
+			phase = "exp",
+			perfetto_category = "task.main"
+		)
+		.entered();
 		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
 			evaluation_order,
 			&mut provers,

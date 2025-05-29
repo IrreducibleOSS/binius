@@ -26,8 +26,10 @@ pub fn test_flush_multiple_selectors() {
 
 	table.require_power_of_two_size();
 
-	let structured_col =
-		table.add_structured::<B32>("incrementing", StructuredDynSize::Incrementing);
+	let structured_col = table.add_structured::<B32>(
+		"incrementing",
+		StructuredDynSize::Incrementing { max_size_log: 32 },
+	);
 
 	let selector1_col = table.add_committed::<B1, 1>("selector1");
 

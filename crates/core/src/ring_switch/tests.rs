@@ -27,7 +27,7 @@ use super::{
 use crate::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
-	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
+	oracle::{MultilinearOracleSet, OracleId},
 	piop,
 	protocols::{
 		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
@@ -69,7 +69,7 @@ where
 	let mut witness_index = MultilinearExtensionIndex::new();
 
 	for oracle in oracles.polys() {
-		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+		if oracle.variant.is_committed() {
 			let n_vars = oracle.n_vars();
 			let witness = match oracle.binary_tower_level() {
 				0 => generate_multilinear::<U, Tower::B1, FExt<Tower>>(&mut rng, n_vars),
@@ -142,7 +142,7 @@ where
 {
 	let max_n_vars = oracles
 		.polys()
-		.filter(|oracle| matches!(oracle.variant, MultilinearPolyVariant::Committed))
+		.filter(|oracle| oracle.variant.is_committed())
 		.map(|oracle| oracle.n_vars())
 		.max()
 		.unwrap();
@@ -152,7 +152,7 @@ where
 
 	let mut eval_claims = Vec::new();
 	for oracle in oracles.polys() {
-		if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+		if !oracle.variant.is_committed() {
 			continue;
 		}
 
@@ -245,18 +245,10 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	with_test_instance_from_oracles::<U, Tower, _>(rng, &oracles, |_rng, system, witnesses| {
 		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-		let backend = make_portable_backend();
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove::<_, _, _, Tower, _, _>(
-			&system,
-			&witnesses,
-			&mut proof,
-			MemoizedData::new(),
-			&backend,
-		)
-		.unwrap();
+		} = prove::<_, _, _, Tower, _>(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
@@ -330,14 +322,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove::<_, _, _, Tower, _, _>(
-		&system,
-		&committed_multilins,
-		&mut proof,
-		MemoizedData::new(),
-		&backend,
-	)
-	.unwrap();
+	} = prove::<_, _, _, Tower, _>(&system, &committed_multilins, &mut proof, MemoizedData::new())
+		.unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(

@@ -83,6 +83,13 @@ where
 			challenges,
 			multilinear_evals,
 		} = {
+			let _layer_span = tracing::info_span!(
+				"[task] GKR GPA Layer Sumcheck",
+				phase = "exp",
+				perfetto_category = "task.main"
+			)
+			.entered();
+
 			let eq_ind_sumcheck_prover = GrandProductProverState::stage_sumcheck_provers(
 				evaluation_order,
 				&mut sorted_prover_states,

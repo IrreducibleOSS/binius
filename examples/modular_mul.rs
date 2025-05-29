@@ -1,5 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+// Uses binius_circuits which is being phased out.
+#![allow(deprecated)]
+
 use std::array;
 
 use alloy_primitives::U512;
@@ -128,13 +131,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&constraint_system.no_base_constraints(),
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&[],
-		proof,
-	)?;
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }

@@ -77,7 +77,7 @@ fn create_claims_witnesses_helper<
 	let multilin_oracles = (0..n_multilins)
 		.map(|_| {
 			let id = oracle_set.add_committed(n_vars, F::TOWER_LEVEL);
-			oracle_set.oracle(id)
+			oracle_set[id].clone()
 		})
 		.collect::<Vec<_>>();
 

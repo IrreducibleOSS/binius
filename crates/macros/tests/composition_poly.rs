@@ -17,6 +17,7 @@ macro_rules! test_arithmetic_poly {
             #[allow(non_snake_case)]
             #[test]
             fn [<evaluate _ $field _ $packed>] () {
+            	#[allow(deprecated)]
                 let circuit = composition_poly!([x0, x1] = x0 + x0 * x1 + 1, $field);
 
                 let mut rng = StdRng::seed_from_u64(0);

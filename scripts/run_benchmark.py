@@ -46,7 +46,7 @@ _RAW_BENCH_ROWS = [
     ("sha256",    "SHA-256",            ["sha256_circuit", "--", "--n-compressions"],         1 << 14, True),
     ("b32_mul",   "BinaryField32b mul", ["b32_mul", "--", "--n-ops"],                         1 << 20, False),
     ("u32_add",   "u32 add",            ["u32_add", "--", "--n-additions"],                   1 << 22, False),
-    ("u32_mul",   "u32 mul",            ["u32_mul", "--", "--n-muls"],                        1 << 20, False),
+    ("u32_mul_gkr","u32 mul gkr",       ["u32_mul_gkr", "--", "--n-muls"],                    1 << 20, True),
     ("xor",       "XOR (32-bit)",       ["bitwise_ops", "--", "--op", "xor",  "--n-u32-ops"], 1 << 22, False),
     ("and",       "AND (32-bit)",       ["bitwise_ops", "--", "--op", "and",  "--n-u32-ops"], 1 << 22, False),
     ("or",        "OR (32-bit)",        ["bitwise_ops", "--", "--op", "or",   "--n-u32-ops"], 1 << 22, False),
@@ -112,6 +112,11 @@ LABEL_TO_METRIC = {
     "generating trace":          "trace-gen-time",
     "constraint_system::prove":  "prove-time",
     "constraint_system::verify": "verify-time",
+    "[phase] Commit":            "phase-commit-time",
+    "[phase] Zerocheck":         "phase-zerocheck-time",
+    "[phase] Evalcheck":         "phase-evalcheck-time",
+    "[phase] Ring Switch":       "phase-ring-switch-time",
+    "[phase] PIOP Compiler":     "phase-piop-compiler-time",
 }
 
 

@@ -1,5 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder, MultilinearPoly};
@@ -11,7 +12,6 @@ use super::{
 };
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
-	polynomial::ArithCircuitPoly,
 	protocols::{
 		evalcheck::{EvalPoint, subclaims::MemoizedData},
 		sumcheck::{
@@ -160,7 +160,7 @@ pub fn constraint_set_mlecheck_prover<'a, 'b, F, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
 	constraint_set: ConstraintSet<F>,
 	eq_ind_challenges: &[F],
-	memoized_data: &mut MemoizedData<'b, P, Backend>,
+	memoized_data: &mut MemoizedData<'b, P>,
 	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
@@ -220,7 +220,7 @@ where
 	};
 
 	let eq_ind_partial_evals = memoized_data
-		.full_query(eq_ind_partial, backend)?
+		.full_query(eq_ind_partial)?
 		.expansion()
 		.to_vec();
 
@@ -325,7 +325,7 @@ pub fn constraint_sets_mlecheck_prover_meta<'a, 'b, P, FDomain, Backend>(
 	evaluation_order: EvaluationOrder,
 	constraint_set: ConstraintSet<P::Scalar>,
 	eq_ind_challenges: EvalPoint<P::Scalar>,
-	memoized_data: &mut MemoizedData<'b, P, Backend>,
+	memoized_data: &mut MemoizedData<'b, P>,
 	witness: &MultilinearExtensionIndex<'a, P>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,

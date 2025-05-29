@@ -15,3 +15,12 @@ macro_rules! bail {
 		return Err($err.into());
 	};
 }
+
+#[macro_export]
+macro_rules! ensure {
+	($cond:expr, $err:expr) => {
+		if !$cond {
+			bail!($err);
+		}
+	};
+}

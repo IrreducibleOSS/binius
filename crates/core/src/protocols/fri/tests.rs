@@ -13,13 +13,13 @@ use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MultilinearExtension, MultilinearQuery, fold_right};
 use binius_maybe_rayon::prelude::ParallelIterator;
-use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT, fri::fold_interleaved};
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use bytemuck::zeroed_vec;
 use proptest::prelude::*;
 use rand::prelude::*;
 
-use super::{fold_interleaved, to_par_scalar_big_chunks};
+use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},

@@ -1,5 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{BinaryField1b, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackendExt;
 use binius_math::MultilinearPoly;
@@ -15,9 +16,7 @@ use crate::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ShiftVariant,
 	},
-	polynomial::{
-		ArithCircuitPoly, MultilinearComposite, test_utils::decompose_index_to_hypercube_point,
-	},
+	polynomial::{MultilinearComposite, test_utils::decompose_index_to_hypercube_point},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };
@@ -92,12 +91,24 @@ where
 	let n_vars = oracle.n_vars();
 	let poly = witness.get_multilin_poly(oracle.id())?;
 
-	if poly.n_vars() != n_vars {
-		bail!(Error::VirtualOracleNvarsMismatch {
-			oracle: oracle_label.into(),
-			oracle_num_vars: n_vars,
-			witness_num_vars: poly.n_vars(),
-		})
+	match oracle.variant {
+		MultilinearPolyVariant::Structured(_) if poly.n_vars() > n_vars => {
+			bail!(Error::VirtualOracleNvarsMismatch {
+				oracle: oracle_label.into(),
+				condition: '<',
+				oracle_num_vars: n_vars,
+				witness_num_vars: poly.n_vars(),
+			})
+		}
+		_ if poly.n_vars() != n_vars => {
+			bail!(Error::VirtualOracleNvarsMismatch {
+				oracle: oracle_label.into(),
+				condition: '=',
+				oracle_num_vars: n_vars,
+				witness_num_vars: poly.n_vars(),
+			})
+		}
+		_ => (),
 	}
 
 	match &oracle.variant {
@@ -111,6 +122,16 @@ where
 				let expected = inner
 					.poly()
 					.evaluate(&decompose_index_to_hypercube_point(n_vars, i))?;
+				check_eval(oracle_label, i, expected, got)?;
+			}
+		}
+		MultilinearPolyVariant::Structured(inner) => {
+			for i in 0..1 << n_vars {
+				let got = poly.evaluate_on_hypercube(i)?;
+				// NOTE: that the arith circuit can have more query parameters than `n_vars`, that's
+				//       the reason we use the arith circuit's n_vars here.
+				let eval_point = decompose_index_to_hypercube_point(inner.n_vars(), i);
+				let expected = inner.evaluate(&eval_point)?;
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}

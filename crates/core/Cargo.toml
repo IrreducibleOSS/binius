@@ -12,6 +12,7 @@ assert_matches.workspace = true
 auto_impl.workspace = true
 binius_macros = { path = "../macros", default-features = false }
 binius_compute = { path = "../compute", default-features = false }
+binius_fast_compute = { path = "../fast_compute", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_hal = { path = "../hal", default-features = false }
 binius_hash = { path = "../hash", default-features = false }
@@ -35,6 +36,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
 binius_macros = { path = "../macros", default-features = false }
 criterion.workspace = true
 proptest.workspace = true
@@ -68,8 +70,9 @@ name = "sumcheck"
 harness = false
 
 [features]
-debug_validate_sumcheck = []
 default = ["nightly_features"]
+debug_validate_sumcheck = []
+rayon = ["binius_maybe_rayon/rayon"]
 nightly_features = [
     "binius_field/nightly_features",
     "binius_hal/nightly_features",

@@ -78,6 +78,7 @@ where
 	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
 
+	#[allow(deprecated)]
 	let comp = arith_expr!(FExtension[x, y, z] = x*y + x*z +  z);
 
 	let composite_id = oracles

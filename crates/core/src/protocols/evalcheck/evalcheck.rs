@@ -95,6 +95,7 @@ pub fn deserialize_evalcheck_proof<B: Buf>(
 /// Equivalent to a `HashMap<(OracleId, EvalPoint<F>), T>` but uses vectors of vectors to store the
 /// data. This data structure is more memory efficient for small number of evaluation points and
 /// OracleIds which are grouped together.
+#[derive(Clone, Debug)]
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
 	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
@@ -118,14 +119,19 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 	}
 
 	/// Insert a new evaluation point for a given oracle id.
-	///
-	/// We do not replace existing values.
 	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id.index() >= self.data.len() {
 			self.data.resize(id.index() + 1, Vec::new());
 		}
 
-		self.data[id.index()].push((eval_point, val))
+		if self.get(id, &eval_point).is_none() {
+			self.data[id.index()].push((eval_point, val))
+		}
+	}
+
+	/// Returns `true` if the map contains a value.
+	pub fn contains(&self, id: OracleId, eval_point: &EvalPoint<F>) -> bool {
+		self.get(id, eval_point).is_some()
 	}
 
 	/// Flatten the data structure into a vector of values.
@@ -184,7 +190,21 @@ impl<F: Field> EvalPoint<F> {
 	}
 
 	pub fn to_vec(&self) -> Vec<F> {
-		self.data.to_vec()
+		self.data[self.range.clone()].to_vec()
+	}
+
+	pub fn try_get_prefix(&self, suffix: &Self) -> Option<Self> {
+		let suffix_len = suffix.len();
+		let self_len = self.len();
+
+		if suffix_len > self_len {
+			return None;
+		}
+
+		if self.slice(self_len - suffix_len..self_len) == *suffix {
+			return Some(self.slice(0..self_len - suffix_len));
+		}
+		None
 	}
 }
 
