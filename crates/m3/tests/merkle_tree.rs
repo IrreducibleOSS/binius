@@ -484,25 +484,35 @@ mod arithmetisation {
 	use std::{array, cell::RefMut, os::macos::raw::stat};
 
 	use anyhow::anyhow;
+	use array_util::ArrayExt;
 	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
 	use binius_field::{
-		AESTowerField8b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x8b,
-		PackedBinaryField32x8b, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
-		arch::OptimalUnderlier128b, as_packed_field::PackedType,
-		linear_transformation::PackedTransformationFactory, packed::set_packed_slice,
+		AESTowerField8b, BinaryField8b, ExtensionField, Field, PackedBinaryField4x8b,
+		PackedBinaryField8x8b, PackedBinaryField32x8b, PackedExtension, PackedField,
+		PackedFieldIndexable, PackedSubfield,
+		arch::OptimalUnderlier128b,
+		as_packed_field::{AsSinglePacked, PackedType},
+		linear_transformation::PackedTransformationFactory,
+		packed::{get_packed_slice, set_packed_slice},
 		underlier::WithUnderlier,
 	};
-	use binius_hash::{compression, groestl::Groestl256, permutation};
+	use binius_hash::{
+		compression,
+		groestl::{Groestl256, GroestlShortImpl, GroestlShortInternal},
+		permutation,
+	};
 	use binius_m3::{
 		builder::{
-			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, Error, FlushDirection, Table,
-			TableBuilder, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
+			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, Error, Expr, FlushDirection,
+			Table, TableBuilder, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
 			test_utils::validate_system_witness, upcast_col,
 		},
 		gadgets::hash::groestl::{Permutation, PermutationVariant},
 	};
 	use bumpalo::Bump;
+	use either::Either::Left;
 	use itertools::Itertools;
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::model::{MerklePath, MerklePathEvent, MerkleRootEvent, MerkleTree, MerkleTreeTrace};
@@ -610,12 +620,19 @@ mod arithmetisation {
 		id: TableId,
 		// The root id field is used to identify the root the node is associated with.
 		root_id: Col<B8>,
-
-		// Digests of the left, right and parent nodes.
-		// These are the digests of the nodes in the tree, which are used to verify the inclusion
-		left: [Col<B8, 8>; 4],
-		right: [Col<B8, 8>; 4],
-		parent: [Col<B8, 8>; 4],
+		// Concatenated bytes of the left and right digests of the Merkle tree node. Organised
+		// in a packed row of the Groestl-256 permutation state.
+		state_in: [Col<B8, 8>; 8],
+		state_out_shifted: [Col<B8, 8>; 8],
+		// These are the selected columns that correspond to the bytes that would be obtained after
+		// trimming the output transformation of Groestl-256 (P-permutation + XOR with input).
+		permutation_output_columns: [Col<B8, 4>; 8],
+		// Left, right and parent columns are used to store derive the values of the columns
+		// of the permutation states corresponding to the left and right digests of the
+		// Merkle tree nodes as the gadget packs rows of the state as opposed to the columns.
+		left_columns: [Col<B8, 4>; 8],
+		right_columns: [Col<B8, 4>; 8],
+		parent_columns: [Col<B8, 4>; 8],
 		pub parent_depth: Col<B32>,
 		pub child_depth: Col<B32>,
 		parent_index: Col<B1, 32>,
@@ -646,40 +663,75 @@ mod arithmetisation {
 			let id = table.id();
 			// committed coluumns are used to store the values of the nodes.
 			let root_id = table.add_committed("root_id");
-			let left = array::from_fn(|i| table.add_committed(format!("left_digest{i}")));
-			let right = array::from_fn(|i| table.add_committed(format!("right_digest{i}")));
 
-			let state_in = [left, right]
-				.concat()
-				.try_into()
-				.expect("Should be 8 elements");
+			// The concatanated bytes of the left and right digests are used for the permutation
+			// gadget. Note these are packed rows of the Groestl-P permutation state. Where as the
+			// right and left digests would correspond to the first 4 and last 4 columns of the
+			// state.
 
+			let left_columns: [Col<BinaryField8b, 4>; 8] =
+				array::from_fn(|i| table.add_committed(format!("left_columns_{i}")));
+			let right_columns: [Col<BinaryField8b, 4>; 8] =
+				array::from_fn(|i| table.add_committed(format!("right_columns_{i}")));
+			let state_in = array::from_fn(|i| table.add_committed(format!("state_in_{i}")));
+
+			let left_packed: [Col<B32>; 8] =
+				array::from_fn(|i| table.add_packed(format!("left_packed{i}"), left_columns[i]));
+			let right_packed: [Col<B32>; 8] =
+				array::from_fn(|i| table.add_packed(format!("right_packed{i}"), right_columns[i]));
+			let state_in_packed: [Col<B64>; 8] =
+				array::from_fn(|i| table.add_packed(format!("state_in_packed_{i}"), state_in[i]));
+
+			for i in 0..8 {
+				table.assert_zero(
+					format!("state_in_assert{i}"),
+					state_in_packed[i]
+						- upcast_col(left_packed[i])
+						- upcast_col(right_packed[i]) * B64::from(1 << 32),
+				);
+			}
 			let permutation = Permutation::new(
 				&mut table.with_namespace("permutation"),
 				PermutationVariant::P,
 				state_in,
 			);
 
-			let parent = array::from_fn(|i| {
-				table.add_computed(
-					format!("parent_digest{i}"),
-					permutation.state_out()[i + 4] + right[i],
+			let state_out = permutation.state_out();
+
+			let state_out_shifted: [Col<BinaryField8b, 8>; 8] = array::from_fn(|i| {
+				table.add_shifted(
+					format!("state_in_shifted_{i}"),
+					state_out[i],
+					3,
+					4,
+					ShiftVariant::LogicalRight,
 				)
 			});
 
-			let left_packed: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("left_{i}"), left[i]));
-			let right_packed: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("right_{i}"), right[i]));
-			let parent_packed: [Col<B64>; 4] =
-				array::from_fn(|i| table.add_packed(format!("parent_{i}"), parent[i]));
+			let permutation_output_columns: [Col<BinaryField8b, 4>; 8] = array::from_fn(|i| {
+				table.add_selected_block(
+					format!("permutation_output_columns_{i}"),
+					state_out_shifted[i],
+					4,
+				)
+			});
+
+			let parent_columns: [Col<B8, 4>; 8] = array::from_fn(|i| {
+				table.add_computed(
+					format!("parent_columns_{i}"),
+					permutation_output_columns[i] + right_columns[i],
+				)
+			});
+
+			let parent_packed: [Col<B32>; 8] = array::from_fn(|i| {
+				table.add_packed(format!("parent_packed{i}"), parent_columns[i])
+			});
 
 			let parent_depth = table.add_committed("parent_depth");
-			let child_depth = table.add_computed("child_depth", parent_depth + B32::ONE);
+			let child_depth = table.add_committed("child_depth");
 			let parent_index: Col<B1, 32> = table.add_committed("parent_index");
 			let left_index: Col<B1, 32> =
-				table.add_shifted("left_index", parent_index, 5, 1, ShiftVariant::LogicalRight);
-
+				table.add_shifted("left_index", parent_index, 5, 1, ShiftVariant::LogicalLeft);
 			// The indexes need to be packed and upcasted to agree with the flushing rules of the
 			// channel.
 			let left_index_packed = table.add_packed("left_index_packed", left_index);
@@ -748,9 +800,12 @@ mod arithmetisation {
 			Self {
 				id,
 				root_id,
-				left,
-				right,
-				parent,
+				state_in,
+				state_out_shifted,
+				permutation_output_columns,
+				left_columns,
+				right_columns,
+				parent_columns,
 				parent_depth,
 				child_depth,
 				parent_index,
@@ -764,24 +819,28 @@ mod arithmetisation {
 
 	// Helper functions to convert the index and digest columns into a flushable format.
 	fn to_node_flush(
-		root_id: Col<B64>,
-		digest: [Col<B64>; 4],
-		depth: Col<B64>,
-		index: Col<B64>,
-	) -> [Col<B64>; 7] {
+		root_id: Col<B32>,
+		digest: [Col<B32>; 8],
+		depth: Col<B32>,
+		index: Col<B32>,
+	) -> [Col<B32>; 11] {
 		[
-			root_id, digest[0], digest[1], digest[2], digest[3], depth, index,
+			root_id, digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6],
+			digest[7], depth, index,
 		]
 	}
 
-	fn to_root_flush(root_id: Col<B64>, digest: [Col<B64>; 4]) -> [Col<B64>; 5] {
-		[root_id, digest[0], digest[1], digest[2], digest[3]]
+	fn to_root_flush(root_id: Col<B32>, digest: [Col<B32>; 8]) -> [Col<B32>; 9] {
+		[
+			root_id, digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6],
+			digest[7],
+		]
 	}
 
 	pub struct RootTable {
 		pub id: TableId,
 		pub root_id: Col<B8>,
-		pub digest: [Col<B64>; 4],
+		pub digest: [Col<B32>; 8],
 		pub nodes_channel: ChannelId,
 		pub roots_channel: ChannelId,
 	}
@@ -797,7 +856,7 @@ mod arithmetisation {
 			let root_id = table.add_committed("root_id");
 			let digest = array::from_fn(|i| table.add_committed(format!("digest_{i}")));
 
-			let zero = table.add_constant("zero", [B64::ZERO]);
+			let zero = table.add_constant("zero", [B32::ZERO]);
 			let root_id_upcasted = upcast_col(root_id);
 			table.pull(nodes_channel, to_node_flush(root_id_upcasted, digest, zero, zero));
 			table.pull(roots_channel, to_root_flush(root_id_upcasted, digest));
@@ -832,51 +891,23 @@ mod arithmetisation {
 			rows: impl Iterator<Item = &'a Self::Event> + Clone,
 			witness: &'a mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
-			// Creating the state_in for the Permutation gadget.
-			let states = rows
+			let state_ins = rows
 				.clone()
 				.map(|MerklePathEvent { left, right, .. }| {
-					let mut state_in = [B8::ZERO; 64];
-					let (state_left, state_right) = state_in.split_at_mut(32);
+					let mut digest = [B8::ZERO; 64];
+					let (left_bytes, right_bytes) =
+						(B8::from_underliers_arr_ref(&left), B8::from_underliers_arr_ref(&right));
 
-					println!("Left: {:?}, Right: {:?}", left, right);
-					state_left.copy_from_slice(B8::from_underliers_arr_ref(left));
-					state_right.copy_from_slice(B8::from_underliers_arr_ref(right));
-					state_in
+					digest[..32].copy_from_slice(left_bytes);
+					digest[32..].copy_from_slice(right_bytes);
+					digest
 				})
-				.collect::<Vec<[B8; 64]>>();
-			
-			self.permutation.populate_state_in(witness, states.iter())?;
+				.collect::<Vec<_>>();
+
+			self.permutation.populate_state_in(witness, &state_ins)?;
 			self.permutation.populate(witness)?;
 
-			let left = self
-				.left
-				.iter()
-				.map(|&col| witness.get_mut(col))
-				.collect::<Result<Vec<_>, _>>()?;
-
-			println!("Left digest columns: {:?}", left[0]);
-
-			// Populating the parent digest witness, which should be the output of the permutation +
-			// xor with the input state and trimmed to the latter half of the final state.
-			for i in 0..4 {
-				let mut witness_parent = witness.get_mut(self.parent[i])?;
-				let state_out = witness.get_mut(self.permutation.state_out()[i + 4])?;
-				let state_in = witness.get_mut(self.permutation.state_in()[i + 4])?;
-
-				for j in 0..witness_parent.len() {
-					witness_parent[j] = state_in[j] + state_out[j];
-				}
-			}
-
-			for j in 0..4 {
-				let parent = witness.get_mut(self.parent[j])?;
-				for i in 0..parent.len() {
-					println!("Parent digest column {}: {:?}", j, parent[i]);
-				}
-			}
-
-			let mut witness_root_id = witness.get_mut_as(self.root_id)?;
+			let mut witness_root_id: RefMut<'_, [u8]> = witness.get_mut_as(self.root_id)?;
 			let mut witness_parent_depth: RefMut<'_, [u32]> =
 				witness.get_mut_as(self.parent_depth)?;
 			let mut witness_child_depth: RefMut<'_, [u32]> =
@@ -888,11 +919,36 @@ mod arithmetisation {
 			let mut witness_right_index_packed: RefMut<'_, [u32]> =
 				witness.get_mut_as(self.right_index_packed)?;
 
+			let mut witness_state_out: [RefMut<'_, [PackedBinaryField8x8b]>; 8] = self
+				.permutation
+				.state_out()
+				.try_map_ext(|col| witness.get_mut_as(col))?;
+
+			let mut witness_state_out_shifted: [RefMut<'_, [PackedBinaryField8x8b]>; 8] = self
+				.state_out_shifted
+				.try_map_ext(|col| witness.get_mut_as(col))?;
+
+			let mut witness_permutation_output_columns: [RefMut<'_, [PackedBinaryField4x8b]>; 8] =
+				self.permutation_output_columns
+					.try_map_ext(|col| witness.get_mut_as(col))?;
+
+			let mut left_columns: [RefMut<'_, [PackedBinaryField4x8b]>; 8] = self
+				.left_columns
+				.try_map_ext(|col| witness.get_mut_as(col))?;
+			let mut right_columns: [RefMut<'_, [PackedBinaryField4x8b]>; 8] = self
+				.right_columns
+				.try_map_ext(|col| witness.get_mut_as(col))?;
+			let mut parent_columns: [RefMut<'_, [PackedBinaryField4x8b]>; 8] = self
+				.parent_columns
+				.try_map_ext(|col| witness.get_mut_as(col))?;
 			for (i, event) in rows.enumerate() {
 				let MerklePathEvent {
 					root_id,
 					parent_depth,
 					parent_index,
+					left,
+					right,
+					parent,
 					..
 				} = event;
 
@@ -902,8 +958,35 @@ mod arithmetisation {
 				witness_child_depth[i] = *parent_depth as u32 + 1;
 				witness_left_index[i] = (parent_index << 1) as u32;
 				witness_right_index_packed[i] = (parent_index << 1 | 1) as u32;
-			}
+				let left_bytes = B8::from_underliers_arr_ref(&left);
+				let right_bytes = B8::from_underliers_arr_ref(&right);
+				let parent_bytes = B8::from_underliers_arr_ref(&parent);
 
+				for jk in 0..32 {
+					// Row in the state
+					let j = jk % 8;
+					// Col in the state
+					let k = jk / 8;
+
+					// Set the packed slice for the rows.
+					set_packed_slice(&mut left_columns[j], i * 4 + k, left_bytes[8 * k + j]);
+					set_packed_slice(&mut right_columns[j], i * 4 + k, right_bytes[8 * k + j]);
+					set_packed_slice(&mut parent_columns[j], i * 4 + k, parent_bytes[8 * k + j]);
+
+					// Filling the shifted state output, and trimmed out columns.
+					let permutation_output = get_packed_slice(&witness_state_out[j], i * 8 + 4 + k);
+					set_packed_slice(
+						&mut witness_state_out_shifted[j],
+						i * 8 + k,
+						permutation_output,
+					);
+					set_packed_slice(
+						&mut witness_permutation_output_columns[j],
+						i * 4 + k,
+						permutation_output,
+					);
+				}
+			}
 			Ok(())
 		}
 	}
@@ -929,17 +1012,20 @@ mod arithmetisation {
 			witness: &'a mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
 			let mut witness_root_id = witness.get_mut_as(self.root_id)?;
-			let mut witness_root_digest = (0..4)
-				.map(|i| witness.get_mut(self.digest[i]))
+			let mut witness_root_digest: Vec<RefMut<'_, [PackedBinaryField4x8b]>> = (0..8)
+				.map(|i| witness.get_mut_as(self.digest[i]))
 				.collect::<Result<Vec<_>, _>>()?;
 
 			for (i, event) in rows.enumerate() {
-				let &MerkleRootEvent { root_id, digest } = event;
-				witness_root_id[i] = root_id;
-				let digest_as_field = digest_to_state(digest);
-				for j in 0..4 {
-					let scalar = digest_as_field[j];
-					set_packed_slice(&mut witness_root_digest[j], i, scalar);
+				let MerkleRootEvent { root_id, digest } = event;
+				witness_root_id[i] = *root_id;
+				let digest_as_field = B8::from_underliers_arr_ref(&digest);
+				for jk in 0..32 {
+					// Row in the state
+					let j = jk % 8;
+					// Col in the state
+					let k = jk / 8;
+					set_packed_slice(&mut witness_root_digest[j], i * 4 + k, digest_as_field[jk]);
 				}
 			}
 			for j in 0..4 {
@@ -961,15 +1047,99 @@ mod arithmetisation {
 
 		out
 	}
+
+	fn digest_to_cols(bytes: &[B8; 32]) -> [PackedBinaryField4x8b; 8] {
+		let mut cols = [PackedBinaryField4x8b::zero(); 8];
+		for ij in 0..32 {
+			// Row in the state
+			let i = ij % 8;
+			// Col in the state
+			let j = ij / 8;
+
+			// Set the packed slice for the row.
+			set_packed_slice(&mut cols, 8 * i + j, bytes[8 * j + i]);
+		}
+		cols
+	}
+
+	fn bytes_to_boundary(bytes: &[u8; 32]) -> [B32; 8] {
+		let mut cols = [PackedBinaryField4x8b::zero(); 8];
+		for ij in 0..32 {
+			// Row in the state
+			let i = ij % 8;
+			// Col in the state
+			let j = ij / 8;
+
+			// Set the packed slice for the row.
+			set_packed_slice(
+				&mut cols,
+				4 * i + j,
+				B8::from(AESTowerField8b::new(bytes[8 * j + i])),
+			);
+		}
+		cols.map(|col| B32::from(col.to_underlier()))
+	}
+
+	// A function to get the left and right columns of the Groestl-256 state from the
+	// concatenated bytes of the left and right digests.
+
+	fn bytes_to_cols(
+		left_bytes: &[B8; 32],
+		right_bytes: &[B8; 32],
+	) -> ([PackedBinaryField4x8b; 8], [PackedBinaryField4x8b; 8]) {
+		let (mut left_cols, mut right_cols) =
+			([PackedBinaryField4x8b::zero(); 8], [PackedBinaryField4x8b::zero(); 8]);
+
+		for ij in 0..32 {
+			// Row in the state
+			let i = ij % 8;
+			// Col in the state
+			let j = ij / 8;
+
+			set_packed_slice(&mut left_cols, 8 * i + j, left_bytes[8 * j + i]);
+			set_packed_slice(&mut right_cols, 8 * i + j, right_bytes[8 * j + i]);
+		}
+		(left_cols, right_cols)
+	}
+
+	#[test]
+	fn check_ordering() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let bytes: [u8; 64] = array::from_fn(|_| rng.r#gen());
+		let state = GroestlShortImpl::state_from_bytes(&bytes);
+		let mut state_out = GroestlShortImpl::state_from_bytes(&bytes);
+		let packed_state = PackedBinaryField8x8b::from_underliers_arr(state_out);
+		let gadget_state_out: [BinaryField8b; 64] = array::from_fn(|ij| {
+			let i = ij % 8;
+			let j = ij / 8;
+			packed_state[i].get(j)
+		});
+
+		let bytes = GroestlShortImpl::state_to_bytes(&state_out);
+		println!("state {:?}", bytes);
+		println!("gadget_state {:?}", B8::to_underliers_arr(gadget_state_out));
+	}
+
+	#[test]
+	fn check_state_orientation() {
+		let mut bytes: [u8; 64] = [0u8; 64];
+
+		bytes[32..].copy_from_slice(&[1u8; 32]);
+		println!("Bytes: {:?}", bytes);
+		let state = GroestlShortImpl::state_from_bytes(&bytes);
+		for col in state.iter() {
+			println!("{:?}", col.to_be_bytes());
+		}
+	}
 	#[test]
 	fn test_nodes_table_constructor() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
 		let pull_child = MerklePathPullChild::Left;
 		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
-		assert_eq!(nodes_table.left.len(), 4);
-		assert_eq!(nodes_table.right.len(), 4);
-		assert_eq!(nodes_table.parent.len(), 4);
+		assert_eq!(nodes_table.left_columns.len(), 8);
+		assert_eq!(nodes_table.right_columns.len(), 8);
+		assert_eq!(nodes_table.parent_columns.len(), 8);
 	}
 	#[test]
 	fn test_root_table_constructor() {
@@ -977,7 +1147,7 @@ mod arithmetisation {
 		let nodes_channel = cs.add_channel("nodes");
 		let roots_channel = cs.add_channel("roots");
 		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
-		assert_eq!(root_table.digest.len(), 4);
+		assert_eq!(root_table.digest.len(), 8);
 	}
 	#[test]
 	fn test_node_table_filling() {
@@ -1109,13 +1279,17 @@ mod arithmetisation {
 
 		// Add boundaries for leaf nodes
 		for leaf in &trace.boundaries.leaf {
-			let state = digest_to_state(leaf.data);
+			let leaf_state = bytes_to_boundary(&leaf.data);
 			let values = vec![
 				B128::new(leaf.root_id as u128),
-				B128::from(state[0]),
-				B128::from(state[1]),
-				B128::from(state[2]),
-				B128::from(state[3]),
+				B128::from(leaf_state[0]),
+				B128::from(leaf_state[1]),
+				B128::from(leaf_state[2]),
+				B128::from(leaf_state[3]),
+				B128::from(leaf_state[4]),
+				B128::from(leaf_state[5]),
+				B128::from(leaf_state[6]),
+				B128::from(leaf_state[7]),
 				B128::new(leaf.depth as u128),
 				B128::new(leaf.index as u128),
 			];
@@ -1129,13 +1303,17 @@ mod arithmetisation {
 
 		// Add boundaries for roots
 		for root in &trace.boundaries.root {
-			let state = digest_to_state(root.data);
+			let state = bytes_to_boundary(&root.data);
 			let values = vec![
 				B128::new(root.root_id as u128),
 				B128::from(state[0]),
 				B128::from(state[1]),
 				B128::from(state[2]),
 				B128::from(state[3]),
+				B128::from(state[4]),
+				B128::from(state[5]),
+				B128::from(state[6]),
+				B128::from(state[7]),
 			];
 			boundaries.push(Boundary {
 				values,
