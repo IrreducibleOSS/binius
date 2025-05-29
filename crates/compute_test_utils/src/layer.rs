@@ -572,12 +572,16 @@ pub fn test_generic_single_left_fold<
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
-	let evals = repeat_with(|| F2::random(&mut rng))
-		.take(1 << log_evals_size_f2)
-		.collect::<Vec<_>>();
-	let query = repeat_with(|| F2::random(&mut rng))
-		.take(1 << log_query_size)
-		.collect::<Vec<_>>();
+	let mut evals = compute.host_alloc(1 << log_evals_size_f2);
+	let evals = evals.as_mut();
+	for eval in evals.iter_mut() {
+		*eval = F2::random(&mut rng);
+	}
+	let mut query = compute.host_alloc(1 << log_query_size);
+	let query = query.as_mut();
+	for query_elem in query.iter_mut() {
+		*query_elem = F2::random(&mut rng);
+	}
 	let mut out = compute.host_alloc(1 << (log_evals_size - log_query_size));
 	let out = out.as_mut();
 	for x_i in out.iter_mut() {
@@ -590,12 +594,8 @@ pub fn test_generic_single_left_fold<
 	let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
 	let mut query_slice = device_allocator.alloc(query.len()).unwrap();
 	compute.copy_h2d(out, &mut out_slice).unwrap();
-	compute
-		.copy_h2d(evals.as_slice(), &mut evals_slice)
-		.unwrap();
-	compute
-		.copy_h2d(query.as_slice(), &mut query_slice)
-		.unwrap();
+	compute.copy_h2d(evals, &mut evals_slice).unwrap();
+	compute.copy_h2d(query, &mut query_slice).unwrap();
 	let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
 	let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
 	let evals_slice_with_tower_level =
