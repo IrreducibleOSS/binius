@@ -8,8 +8,9 @@ mod model {
 		hash::Hash,
 	};
 
+	use binius_field::AESTowerField8b;
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
-	use binius_m3::emulate::Channel;
+	use binius_m3::{builder::B8, emulate::Channel};
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	/// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
@@ -96,11 +97,13 @@ mod model {
 		let (half0, half1) = state_bytes.split_at_mut(32);
 		half0.copy_from_slice(left);
 		half1.copy_from_slice(right);
+		state_bytes = state_bytes.map(|b| AESTowerField8b::from(B8::new(b)).val());
 		let input = GroestlShortImpl::state_from_bytes(&state_bytes);
 		let mut state = input;
 		GroestlShortImpl::p_perm(&mut state);
 		GroestlShortImpl::xor_state(&mut state, &input);
 		state_bytes = GroestlShortImpl::state_to_bytes(&state);
+		state_bytes = state_bytes.map(|b| B8::from(AESTowerField8b::new(b)).val());
 		output.copy_from_slice(&state_bytes[32..]);
 	}
 
@@ -316,7 +319,7 @@ mod model {
 						}
 						None => {
 							if (index >> i) & 1 == 0 {
-								compress(&node, &current_child, &mut parent_node);
+								compress(&current_child, &node, &mut parent_node);
 								filled_nodes.insert(
 									(*root_id, index >> (i + 1), nodes.len() - i - 1),
 									(current_child, node, parent_node, true, false),
@@ -485,7 +488,11 @@ mod arithmetisation {
 
 	use anyhow::anyhow;
 	use array_util::ArrayExt;
-	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant, witness};
+	use binius_core::{
+		constraint_system::channel::ChannelId,
+		oracle::{Packed, ShiftVariant},
+		witness,
+	};
 	use binius_field::{
 		AESTowerField8b, BinaryField8b, ExtensionField, Field, PackedBinaryField4x8b,
 		PackedBinaryField8x8b, PackedBinaryField32x8b, PackedExtension, PackedField,
@@ -515,7 +522,10 @@ mod arithmetisation {
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
-	use crate::model::{MerklePath, MerklePathEvent, MerkleRootEvent, MerkleTree, MerkleTreeTrace};
+	use crate::model::{
+		MerkleBoundaries, MerklePath, MerklePathEvent, MerkleRootEvent, MerkleTree,
+		MerkleTreeTrace, NodeFlushToken, RootFlushToken,
+	};
 
 	/// A struct representing the constraint system for the Merkle tree. Like any M3 instance,
 	/// it is characterized by the tables with the column constraints, and the channels with
@@ -597,6 +607,62 @@ mod arithmetisation {
 				)
 				.expect("Failed to fill roots table");
 		}
+
+		pub fn make_boundaries(&self, trace: &MerkleTreeTrace) -> Vec<Boundary<B128>> {
+			let mut boundaries = Vec::new();
+			// Add boundaries for leaf nodes
+			for &NodeFlushToken {
+				root_id,
+				data,
+				depth,
+				index,
+			} in &trace.boundaries.leaf
+			{
+				let leaf_state = bytes_to_boundary(&data);
+				let values = vec![
+					B128::from(root_id as u128),
+					leaf_state[0],
+					leaf_state[1],
+					leaf_state[2],
+					leaf_state[3],
+					leaf_state[4],
+					leaf_state[5],
+					leaf_state[6],
+					leaf_state[7],
+					B128::from(depth as u128),
+					B128::from(index as u128),
+				];
+				boundaries.push(Boundary {
+					values,
+					channel_id: self.nodes_channel,
+					direction: FlushDirection::Push,
+					multiplicity: 1,
+				});
+			}
+
+			// Add boundaries for roots
+			for &RootFlushToken { root_id, data } in &trace.boundaries.root {
+				let state = bytes_to_boundary(&data);
+				let values = vec![
+					B128::new(root_id as u128),
+					state[0],
+					state[1],
+					state[2],
+					state[3],
+					state[4],
+					state[5],
+					state[6],
+					state[7],
+				];
+				boundaries.push(Boundary {
+					values,
+					channel_id: self.roots_channel,
+					direction: FlushDirection::Push,
+					multiplicity: 1,
+				});
+			}
+			boundaries
+		}
 	}
 
 	/// We need to implement tables for the different cases of Merkle path pulls based on aggregated
@@ -607,12 +673,6 @@ mod arithmetisation {
 		Left,
 		Right,
 		Both,
-	}
-
-	pub struct MerkleTreeTables {
-		pull_left: NodesTable,
-		pull_right: NodesTable,
-		pull_both: NodesTable,
 	}
 
 	//TODO: Break into cases to reduce the number of packs.
@@ -941,6 +1001,7 @@ mod arithmetisation {
 			let mut parent_columns: [RefMut<'_, [PackedBinaryField4x8b]>; 8] = self
 				.parent_columns
 				.try_map_ext(|col| witness.get_mut_as(col))?;
+
 			for (i, event) in rows.enumerate() {
 				let MerklePathEvent {
 					root_id,
@@ -956,8 +1017,8 @@ mod arithmetisation {
 				witness_parent_depth[i] = *parent_depth as u32;
 				witness_parent_index[i] = *parent_index as u32;
 				witness_child_depth[i] = *parent_depth as u32 + 1;
-				witness_left_index[i] = (parent_index << 1) as u32;
-				witness_right_index_packed[i] = (parent_index << 1 | 1) as u32;
+				witness_left_index[i] = 2 * *parent_index as u32;
+				witness_right_index_packed[i] = 2 * *parent_index as u32 + 1;
 				let left_bytes = B8::from_underliers_arr_ref(&left);
 				let right_bytes = B8::from_underliers_arr_ref(&right);
 				let parent_bytes = B8::from_underliers_arr_ref(&parent);
@@ -987,6 +1048,7 @@ mod arithmetisation {
 					);
 				}
 			}
+
 			Ok(())
 		}
 	}
@@ -1028,24 +1090,8 @@ mod arithmetisation {
 					set_packed_slice(&mut witness_root_digest[j], i * 4 + k, digest_as_field[jk]);
 				}
 			}
-			for j in 0..4 {
-				println!("Root digest column {}: {:?}", j, witness_root_digest[j]);
-			}
 			Ok(())
 		}
-	}
-
-	fn digest_to_state(digest: [u8; 32]) -> [B64; 4] {
-		let state_field = B8::from_underliers_arr(digest);
-		let mut out = [B64::ZERO; 4];
-		for i in 0..4 {
-			out[i] = <B64 as ExtensionField<B8>>::from_bases(
-				state_field[i * 8..(i + 1) * 8].iter().copied(),
-			)
-			.expect("Failed to convert digest to state");
-		}
-
-		out
 	}
 
 	fn digest_to_cols(bytes: &[B8; 32]) -> [PackedBinaryField4x8b; 8] {
@@ -1062,7 +1108,7 @@ mod arithmetisation {
 		cols
 	}
 
-	fn bytes_to_boundary(bytes: &[u8; 32]) -> [B32; 8] {
+	fn bytes_to_boundary(bytes: &[u8; 32]) -> [B128; 8] {
 		let mut cols = [PackedBinaryField4x8b::zero(); 8];
 		for ij in 0..32 {
 			// Row in the state
@@ -1071,13 +1117,9 @@ mod arithmetisation {
 			let j = ij / 8;
 
 			// Set the packed slice for the row.
-			set_packed_slice(
-				&mut cols,
-				4 * i + j,
-				B8::from(AESTowerField8b::new(bytes[8 * j + i])),
-			);
+			set_packed_slice(&mut cols, 4 * i + j, B8::from(bytes[8 * j + i]));
 		}
-		cols.map(|col| B32::from(col.to_underlier()))
+		cols.map(|col| B128::from(col.to_underlier() as u128))
 	}
 
 	// A function to get the left and right columns of the Groestl-256 state from the
@@ -1157,7 +1199,6 @@ mod arithmetisation {
 		// Create a nodes table with the left child pull.
 		let pull_child = MerklePathPullChild::Left;
 		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
-		let root_table = RootTable::new(&mut cs, nodes_channel, roots_channel);
 		let tree = MerkleTree::new(&[
 			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
 		]);
@@ -1221,7 +1262,6 @@ mod arithmetisation {
 		]);
 		let index = 0;
 		let path = tree.merkle_path(index);
-		let vals = B8::from_underliers_arr(tree.root);
 
 		let trace = MerkleTreeTrace::generate(
 			vec![tree.root],
@@ -1245,26 +1285,33 @@ mod arithmetisation {
 		let mut cs = ConstraintSystem::new();
 		let merkle_tree_cs = MerkleTreeCS::new(&mut cs);
 
+		let mut rng = StdRng::seed_from_u64(0);
 		// Create a Merkle tree with 8 leaves
-		let leaves = vec![
-			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
-		];
-		let tree = MerkleTree::new(&leaves);
+		let index = rng.gen_range(0..1 << 10);
+		let leaves = (0..3)
+			.map(|_| {
+				(0..1 << 10)
+					.map(|_| rng.r#gen::<[u8; 32]>())
+					.collect::<Vec<_>>()
+			})
+			.collect::<Vec<_>>();
 
-		// Generate a Merkle path for a specific index
-		let index = 3;
-		let path = tree.merkle_path(index);
-
-		// Generate the trace for the Merkle tree
-		let trace = MerkleTreeTrace::generate(
-			vec![tree.root],
-			&[MerklePath {
-				root_id: 0,
+		let trees = (0..3)
+			.map(|i| MerkleTree::new(&leaves[i]))
+			.collect::<Vec<_>>();
+		let roots = (0..3).map(|i| trees[i].root).collect::<Vec<_>>();
+		let paths = trees
+			.iter()
+			.enumerate()
+			.map(|(i, tree)| MerklePath {
+				root_id: i as u8,
 				index,
-				leaf: leaves[index],
-				nodes: path,
-			}],
-		);
+				leaf: leaves[i][index],
+				nodes: tree.merkle_path(index),
+			})
+			.collect::<Vec<_>>();
+
+		let trace = MerkleTreeTrace::generate(roots, &paths);
 
 		// Allocate memory for the witness
 		let allocator = Bump::new();
@@ -1275,53 +1322,7 @@ mod arithmetisation {
 		merkle_tree_cs.fill_tables(&trace, &mut witness);
 
 		// Create boundary values based on the trace's boundaries
-		let mut boundaries = Vec::new();
-
-		// Add boundaries for leaf nodes
-		for leaf in &trace.boundaries.leaf {
-			let leaf_state = bytes_to_boundary(&leaf.data);
-			let values = vec![
-				B128::new(leaf.root_id as u128),
-				B128::from(leaf_state[0]),
-				B128::from(leaf_state[1]),
-				B128::from(leaf_state[2]),
-				B128::from(leaf_state[3]),
-				B128::from(leaf_state[4]),
-				B128::from(leaf_state[5]),
-				B128::from(leaf_state[6]),
-				B128::from(leaf_state[7]),
-				B128::new(leaf.depth as u128),
-				B128::new(leaf.index as u128),
-			];
-			boundaries.push(Boundary {
-				values,
-				channel_id: merkle_tree_cs.nodes_channel,
-				direction: FlushDirection::Push,
-				multiplicity: 1,
-			});
-		}
-
-		// Add boundaries for roots
-		for root in &trace.boundaries.root {
-			let state = bytes_to_boundary(&root.data);
-			let values = vec![
-				B128::new(root.root_id as u128),
-				B128::from(state[0]),
-				B128::from(state[1]),
-				B128::from(state[2]),
-				B128::from(state[3]),
-				B128::from(state[4]),
-				B128::from(state[5]),
-				B128::from(state[6]),
-				B128::from(state[7]),
-			];
-			boundaries.push(Boundary {
-				values,
-				channel_id: merkle_tree_cs.roots_channel,
-				direction: FlushDirection::Push,
-				multiplicity: 1,
-			});
-		}
+		let boundaries = merkle_tree_cs.make_boundaries(&trace);
 
 		// Validate the system and witness
 		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
