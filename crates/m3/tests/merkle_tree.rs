@@ -520,7 +520,6 @@ mod arithmetisation {
 		packed::{get_packed_slice, set_packed_slice},
 		underlier::WithUnderlier,
 	};
-	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
 	use binius_m3::{
 		builder::{
 			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, FlushDirection, TableFiller,
@@ -960,7 +959,7 @@ mod arithmetisation {
 				.map(|MerklePathEvent { left, right, .. }| {
 					let mut digest = [B8::ZERO; 64];
 					let (left_bytes, right_bytes) =
-						(B8::from_underliers_arr_ref(&left), B8::from_underliers_arr_ref(&right));
+						(B8::from_underliers_arr_ref(left), B8::from_underliers_arr_ref(right));
 
 					digest[..32].copy_from_slice(left_bytes);
 					digest[32..].copy_from_slice(right_bytes);
@@ -1007,7 +1006,7 @@ mod arithmetisation {
 				.try_map_ext(|col| witness.get_mut_as(col))?;
 
 			for (i, event) in rows.enumerate() {
-				let MerklePathEvent {
+				let &MerklePathEvent {
 					root_id,
 					parent_depth,
 					parent_index,
@@ -1017,15 +1016,15 @@ mod arithmetisation {
 					..
 				} = event;
 
-				witness_root_id[i] = *root_id;
-				witness_parent_depth[i] = *parent_depth as u32;
-				witness_parent_index[i] = *parent_index as u32;
-				witness_child_depth[i] = *parent_depth as u32 + 1;
-				witness_left_index[i] = 2 * *parent_index as u32;
-				witness_right_index_packed[i] = 2 * *parent_index as u32 + 1;
-				let left_bytes = B8::from_underliers_arr_ref(&left);
-				let right_bytes = B8::from_underliers_arr_ref(&right);
-				let parent_bytes = B8::from_underliers_arr_ref(&parent);
+				witness_root_id[i] = root_id;
+				witness_parent_depth[i] = parent_depth as u32;
+				witness_parent_index[i] = parent_index as u32;
+				witness_child_depth[i] = parent_depth as u32 + 1;
+				witness_left_index[i] = 2 * parent_index as u32;
+				witness_right_index_packed[i] = 2 * parent_index as u32 + 1;
+				let left_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(left);
+				let right_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(right);
+				let parent_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(parent);
 
 				for jk in 0..32 {
 					// Row in the state
@@ -1083,15 +1082,15 @@ mod arithmetisation {
 				.collect::<Result<Vec<_>, _>>()?;
 
 			for (i, event) in rows.enumerate() {
-				let MerkleRootEvent { root_id, digest } = event;
-				witness_root_id[i] = *root_id;
-				let digest_as_field = B8::from_underliers_arr_ref(&digest);
-				for jk in 0..32 {
+				let &MerkleRootEvent { root_id, digest } = event;
+				witness_root_id[i] = root_id;
+				let digest_as_field = B8::from_underliers_arr(digest);
+				for (jk, &byte) in digest_as_field.iter().enumerate() {
 					// Row in the state
 					let j = jk % 8;
 					// Col in the state
 					let k = jk / 8;
-					set_packed_slice(&mut witness_root_digest[j], i * 4 + k, digest_as_field[jk]);
+					set_packed_slice(&mut witness_root_digest[j], i * 4 + k, byte);
 				}
 			}
 			Ok(())
@@ -1112,34 +1111,6 @@ mod arithmetisation {
 		cols.map(|col| B128::from(col.to_underlier() as u128))
 	}
 
-	#[test]
-	fn check_ordering() {
-		let mut rng = StdRng::seed_from_u64(0);
-		let bytes: [u8; 64] = array::from_fn(|_| rng.r#gen());
-		let state_out = GroestlShortImpl::state_from_bytes(&bytes);
-		let packed_state = PackedBinaryField8x8b::from_underliers_arr(state_out);
-		let gadget_state_out: [BinaryField8b; 64] = array::from_fn(|ij| {
-			let i = ij % 8;
-			let j = ij / 8;
-			packed_state[i].get(j)
-		});
-
-		let bytes = GroestlShortImpl::state_to_bytes(&state_out);
-		println!("state {:?}", bytes);
-		println!("gadget_state {:?}", B8::to_underliers_arr(gadget_state_out));
-	}
-
-	#[test]
-	fn check_state_orientation() {
-		let mut bytes: [u8; 64] = [0u8; 64];
-
-		bytes[32..].copy_from_slice(&[1u8; 32]);
-		println!("Bytes: {:?}", bytes);
-		let state = GroestlShortImpl::state_from_bytes(&bytes);
-		for col in state.iter() {
-			println!("{:?}", col.to_be_bytes());
-		}
-	}
 	#[test]
 	fn test_nodes_table_constructor() {
 		let mut cs = ConstraintSystem::new();
