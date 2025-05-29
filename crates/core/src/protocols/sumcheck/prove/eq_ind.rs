@@ -478,6 +478,9 @@ where
 			let mut expr_at_inf = composition.expression().leading_term();
 
 			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
+				if suffix == 0 {
+					continue;
+				}
 				expr = expr.const_subst(var_index, suffix_eval).optimize();
 				// NB: infinity point has a different interpolation result; in characteristic 2,
 				// it's always zero.
