@@ -18,11 +18,11 @@ define_packed_binary_fields!(
 			name: PackedAESBinaryField64x8b,
 			scalar: AESTowerField8b,
 			alpha_idx: _,
-			mul:       (if gfni (GfniStrategy) else (PairwiseTableStrategy)),
-			square:    (if gfni (ReuseMultiplyStrategy) else (PairwiseTableStrategy)),
-			invert:    (if gfni (GfniStrategy) else (PairwiseTableStrategy)),
-			mul_alpha: (if gfni (ReuseMultiplyStrategy) else (PairwiseTableStrategy)),
-			transform: (if gfni (GfniStrategy) else (SimdStrategy)),
+			mul:       (if gfni GfniStrategy else PairwiseTableStrategy),
+			square:    (if gfni ReuseMultiplyStrategy else PairwiseTableStrategy),
+			invert:    (if gfni GfniStrategy else PairwiseTableStrategy),
+			mul_alpha: (if gfni ReuseMultiplyStrategy else PairwiseTableStrategy),
+			transform: (if gfni GfniStrategy else SimdStrategy),
 		},
 		packed_field {
 			name: PackedAESBinaryField32x16b,
@@ -32,7 +32,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (if gfni (2) else (SimdStrategy)),
+			transform: (if gfni 2 else SimdStrategy),
 		},
 		packed_field {
 			name: PackedAESBinaryField16x32b,
@@ -42,7 +42,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (if gfni (4) else (SimdStrategy)),
+			transform: (if gfni 4 else SimdStrategy),
 		},
 		packed_field {
 			name: PackedAESBinaryField8x64b,
@@ -52,7 +52,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (if gfni (8) else (SimdStrategy)),
+			transform: (if gfni 8 else SimdStrategy),
 		},
 		packed_field {
 			name: PackedAESBinaryField4x128b,
@@ -62,7 +62,7 @@ define_packed_binary_fields!(
 			square: (SimdStrategy),
 			invert: (SimdStrategy),
 			mul_alpha: (SimdStrategy),
-			transform: (if gfni (16) else (SimdStrategy)),
+			transform: (if gfni 16 else SimdStrategy),
 		},
 	]
 );

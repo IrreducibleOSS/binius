@@ -18,7 +18,7 @@ macro_rules! maybe_impl_tower_constants {
 
 macro_rules! impl_strategy {
 	($impl_macro:ident $name:ident, (None)) => {};
-	($impl_macro:ident $name:ident, (if $cond:ident ($gfni_strategy:ident) else ($fallback:ident))) => {
+	($impl_macro:ident $name:ident, (if $cond:ident $gfni_strategy:tt else $fallback:tt)) => {
 		cfg_if! {
 			if #[cfg(target_feature = "gfni")] {
 				$impl_macro!($name @ $crate::arch::$gfni_strategy);
@@ -33,7 +33,7 @@ macro_rules! impl_strategy {
 }
 
 macro_rules! impl_transformation {
-	($name:ident, (if $cond:ident ($num:literal) else ($fallback:ident))) => {
+	($name:ident, (if $cond:ident $num:literal else $fallback:tt)) => {
 		cfg_if::cfg_if! {
 			if #[cfg(target_feature = "gfni")] {
 				crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn!($name, $num);
@@ -42,7 +42,7 @@ macro_rules! impl_transformation {
 			}
 		}
 	};
-	($name:ident, (if $cond:ident ($gfni_strategy:ident) else ($fallback:ident))) => {
+	($name:ident, (if $cond:ident $gfni_strategy:tt else $fallback:tt)) => {
 		cfg_if::cfg_if! {
 			if #[cfg(target_feature = "gfni")] {
 				impl_transformation_with_strategy!($name, $crate::arch::$gfni_strategy);
@@ -51,7 +51,7 @@ macro_rules! impl_transformation {
 			}
 		}
 	};
-	($name:ident, ($strategy:ident)) => {
+	($name:ident, ($strategy:tt)) => {
 		impl_transformation_with_strategy!($name, $crate::arch::$strategy);
 	};
 }

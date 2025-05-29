@@ -13,7 +13,7 @@ macro_rules! maybe_impl_tower_constants {
 
 macro_rules! impl_strategy {
 	($impl_macro:ident $name:ident, (None)) => {};
-	($impl_macro:ident $name:ident, ($strategy:ident)) => {
+	($impl_macro:ident $name:ident, ($strategy:tt)) => {
 		$impl_macro!($name @ $crate::arch::$strategy);
 	};
 }
