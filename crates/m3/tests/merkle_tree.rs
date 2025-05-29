@@ -182,6 +182,11 @@ mod model {
 			}
 			assert_eq!(current_hash, root);
 		}
+
+		// Returns the root of the merkle tree.
+		pub fn root(&self) -> [u8; 32] {
+			self.root
+		}
 	}
 
 	impl MerklePathEvent {
@@ -397,7 +402,7 @@ mod model {
 		];
 		let tree = MerkleTree::new(&leaves);
 		let path = tree.merkle_path(0);
-		let root = tree.root;
+		let root = tree.root();
 		let leaf = leaves[0];
 		MerkleTree::verify_path(&path, root, leaf, 0);
 
@@ -414,7 +419,7 @@ mod model {
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
-		let root = tree.root;
+		let root = tree.root();
 		let path = tree.merkle_path(path_index);
 		let path_root_id = 0;
 		let merkle_tree_trace = MerkleTreeTrace::generate(
@@ -438,7 +443,7 @@ mod model {
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
-		let root = tree.root;
+		let root = tree.root();
 		let paths = (0..2)
 			.map(|_| {
 				let path_index = rng.gen_range(0..1 << 4);
@@ -469,7 +474,7 @@ mod model {
 		let trees = (0..3)
 			.map(|i| MerkleTree::new(&leaves[i]))
 			.collect::<Vec<_>>();
-		let roots = (0..3).map(|i| trees[i].root).collect::<Vec<_>>();
+		let roots = (0..3).map(|i| trees[i].root()).collect::<Vec<_>>();
 		let paths = trees
 			.iter()
 			.enumerate()
