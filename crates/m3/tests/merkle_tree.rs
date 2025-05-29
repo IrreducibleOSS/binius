@@ -275,7 +275,7 @@ mod model {
 		/// Method to generate the trace given the witness values. The function assumes that the
 		/// root_id is the index of the root in the roots vector and that the paths and leaves are
 		/// passed in with their assigned root_id.
-		fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
+		pub fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
 			let mut path_nodes = Vec::new();
 			let mut root_nodes = HashSet::new();
 			let mut boundaries = MerkleBoundaries::new();
@@ -367,7 +367,7 @@ mod model {
 			}
 		}
 
-		fn validate(&self) {
+		pub fn validate(&self) {
 			let mut channels = MerkleTreeChannels::new();
 
 			// Push the boundary values to the nodes and roots channels.
