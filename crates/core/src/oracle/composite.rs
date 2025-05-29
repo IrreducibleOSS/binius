@@ -124,9 +124,9 @@ mod tests {
 		let composite = CompositePolyOracle::new(
 			n_vars,
 			vec![
-				oracles.oracle(poly_2b),
-				oracles.oracle(poly_2b),
-				oracles.oracle(poly_2b),
+				oracles[poly_2b].clone(),
+				oracles[poly_2b].clone(),
+				oracles[poly_2b].clone(),
 			],
 			composition.clone(),
 		)
@@ -136,9 +136,9 @@ mod tests {
 		let composite = CompositePolyOracle::new(
 			n_vars,
 			vec![
-				oracles.oracle(poly_2b),
-				oracles.oracle(poly_8b),
-				oracles.oracle(poly_8b),
+				oracles[poly_2b].clone(),
+				oracles[poly_8b].clone(),
+				oracles[poly_8b].clone(),
 			],
 			composition.clone(),
 		)
@@ -148,9 +148,9 @@ mod tests {
 		let composite = CompositePolyOracle::new(
 			n_vars,
 			vec![
-				oracles.oracle(poly_2b),
-				oracles.oracle(poly_8b),
-				oracles.oracle(poly_32b),
+				oracles[poly_2b].clone(),
+				oracles[poly_8b].clone(),
+				oracles[poly_32b].clone(),
 			],
 			composition,
 		)

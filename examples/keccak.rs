@@ -1,5 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
+// Uses binius_circuits which is being phased out.
+#![allow(deprecated)]
+
 use std::iter::repeat_with;
 
 use anyhow::Result;

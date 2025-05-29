@@ -2,17 +2,18 @@
 
 use std::{array, sync::Arc};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::ArithCircuit;
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail};
+use binius_utils::{
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes, bail, ensure,
+};
 use getset::{CopyGetters, Getters};
 
 use crate::{
 	oracle::{CompositePolyOracle, Error, OracleId},
-	polynomial::{
-		ArithCircuitPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
-	},
+	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
 
 /// Meta struct that lets you add optional `name` for the Multilinear before adding to the
@@ -43,6 +44,24 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
+	pub fn structured(self, n_vars: usize, expr: ArithCircuit<F>) -> Result<OracleId, Error> {
+		if expr.binary_tower_level() > F::TOWER_LEVEL {
+			bail!(Error::TowerLevelTooHigh {
+				tower_level: expr.binary_tower_level(),
+			});
+		}
+
+		let oracle = |id: OracleId| MultilinearPolyOracle {
+			id,
+			n_vars,
+			tower_level: expr.binary_tower_level(),
+			name: self.name,
+			variant: MultilinearPolyVariant::Structured(expr),
+		};
+
+		Ok(self.mut_ref.add_to_set(oracle))
+	}
+
 	pub fn committed(mut self, n_vars: usize, tower_level: usize) -> OracleId {
 		let name = self.name.take();
 		self.add_committed_with_name(n_vars, tower_level, name)
@@ -65,16 +84,16 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn repeating(self, inner_id: OracleId, log_count: usize) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 
+		let tower_level = inner.tower_level;
+		let n_vars = inner.n_vars + log_count;
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars: inner.n_vars + log_count,
-			tower_level: inner.tower_level,
+			n_vars,
+			tower_level,
 			name: self.name,
 			variant: MultilinearPolyVariant::Repeating {
 				id: inner_id,
@@ -92,11 +111,9 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		block_bits: usize,
 		variant: ShiftVariant,
 	) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		if block_bits > inner.n_vars {
 			bail!(PolynomialError::InvalidBlockSize {
 				n_vars: inner.n_vars,
@@ -110,12 +127,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let shifted = Shifted::new(&inner, offset, block_bits, variant)?;
+		let shifted = Shifted::new(inner, offset, block_bits, variant)?;
 
+		let tower_level = inner.tower_level;
+		let n_vars = inner.n_vars;
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			n_vars: inner.n_vars,
-			tower_level: inner.tower_level,
+			n_vars,
+			tower_level,
 			name: self.name,
 			variant: MultilinearPolyVariant::Shifted(shifted),
 		};
@@ -124,9 +143,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	}
 
 	pub fn packed(self, inner_id: OracleId, log_degree: usize) -> Result<OracleId, Error> {
-		if inner_id.index() >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(inner_id));
-		}
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		if log_degree > inner_n_vars {
@@ -160,6 +177,8 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		values: Vec<F>,
 		start_index: usize,
 	) -> Result<OracleId, Error> {
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
+
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		let values_len = values.len();
 		if values_len > inner_n_vars {
@@ -169,10 +188,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(&inner, values, start_index)?;
+		let projected = Projected::new(inner, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -190,6 +209,8 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		inner_id: OracleId,
 		values: Vec<F>,
 	) -> Result<OracleId, Error> {
+		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
+
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
 		let start_index = inner_n_vars - values.len();
 		let values_len = values.len();
@@ -200,10 +221,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
 		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(&inner, values, start_index)?;
+		let projected = Projected::new(inner, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -233,13 +254,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|(inner_id, coeff)| {
-				if inner_id.index() >= self.mut_ref.oracles.len() {
-					return Err(Error::InvalidOracleId(inner_id));
-				}
+				ensure!(
+					self.mut_ref.is_valid_oracle_id(inner_id),
+					Error::InvalidOracleId(inner_id)
+				);
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
-				Ok((self.mut_ref.get_from_set(inner_id), coeff))
+				Ok((self.mut_ref[inner_id].clone(), coeff))
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -272,13 +294,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		let inner = inner
 			.into_iter()
 			.map(|inner_id| {
-				if inner_id.index() >= self.mut_ref.oracles.len() {
-					return Err(Error::InvalidOracleId(inner_id));
-				}
+				ensure!(
+					self.mut_ref.is_valid_oracle_id(inner_id),
+					Error::InvalidOracleId(inner_id)
+				);
 				if self.mut_ref.n_vars(inner_id) != n_vars {
 					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
 				}
-				Ok(self.mut_ref.get_from_set(inner_id))
+				Ok(self.mut_ref[inner_id].clone())
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
@@ -315,9 +338,9 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let inner = &self.mut_ref[inner_id];
 		let tower_level = inner.binary_tower_level();
-		let padded = ZeroPadded::new(&inner, n_pad_vars, nonzero_index, start_index)?;
+		let padded = ZeroPadded::new(inner, n_pad_vars, nonzero_index, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -415,10 +438,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		id
 	}
 
-	fn get_from_set(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self[id].clone()
-	}
-
 	pub fn add_transparent(
 		&mut self,
 		poly: impl MultivariatePoly<F> + 'static,
@@ -513,10 +532,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().composite_mle(n_vars, inner, comp)
 	}
 
-	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {
-		self[id].clone()
-	}
-
 	pub fn n_vars(&self, id: OracleId) -> usize {
 		self[id].n_vars()
 	}
@@ -573,13 +588,30 @@ pub struct MultilinearPolyOracle<F: TowerField> {
 pub enum MultilinearPolyVariant<F: TowerField> {
 	Committed,
 	Transparent(TransparentPolyOracle<F>),
-	Repeating { id: OracleId, log_count: usize },
+	/// A structured virtual polynomial is one that can be evaluated succinctly by a verifier.
+	///
+	/// These are referred to as "MLE-structured" tables in [Lasso]. The evaluation algorithm is
+	/// expressed as an arithmetic circuit, of polynomial size in the number of variables.
+	///
+	/// [Lasso]: <https://eprint.iacr.org/2023/1216>
+	Structured(ArithCircuit<F>),
+	Repeating {
+		id: OracleId,
+		log_count: usize,
+	},
 	Projected(Projected<F>),
 	Shifted(Shifted),
 	Packed(Packed),
 	LinearCombination(LinearCombination<F>),
 	ZeroPadded(ZeroPadded),
 	Composite(CompositeMLE<F>),
+}
+
+impl<F: TowerField> MultilinearPolyVariant<F> {
+	/// Returns true if this multilinear polynomial variant is committed, as opposed to virtual.
+	pub fn is_committed(&self) -> bool {
+		matches!(self, Self::Committed)
+	}
 }
 
 impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
@@ -593,15 +625,16 @@ impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
 		Ok(match u8::deserialize(&mut buf, mode)? {
 			0 => Self::Committed,
 			1 => Self::Transparent(DeserializeBytes::deserialize(buf, mode)?),
-			2 => Self::Repeating {
+			2 => Self::Structured(DeserializeBytes::deserialize(buf, mode)?),
+			3 => Self::Repeating {
 				id: DeserializeBytes::deserialize(&mut buf, mode)?,
 				log_count: DeserializeBytes::deserialize(buf, mode)?,
 			},
-			3 => Self::Projected(DeserializeBytes::deserialize(buf, mode)?),
-			4 => Self::Shifted(DeserializeBytes::deserialize(buf, mode)?),
-			5 => Self::Packed(DeserializeBytes::deserialize(buf, mode)?),
-			6 => Self::LinearCombination(DeserializeBytes::deserialize(buf, mode)?),
-			7 => Self::ZeroPadded(DeserializeBytes::deserialize(buf, mode)?),
+			4 => Self::Projected(DeserializeBytes::deserialize(buf, mode)?),
+			5 => Self::Shifted(DeserializeBytes::deserialize(buf, mode)?),
+			6 => Self::Packed(DeserializeBytes::deserialize(buf, mode)?),
+			7 => Self::LinearCombination(DeserializeBytes::deserialize(buf, mode)?),
+			8 => Self::ZeroPadded(DeserializeBytes::deserialize(buf, mode)?),
 			variant_index => {
 				return Err(SerializationError::UnknownEnumVariant {
 					name: "MultilinearPolyVariant",
@@ -917,6 +950,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 	const fn type_str(&self) -> &str {
 		match self.variant {
 			MultilinearPolyVariant::Transparent(_) => "Transparent",
+			MultilinearPolyVariant::Structured(_) => "Structured",
 			MultilinearPolyVariant::Committed => "Committed",
 			MultilinearPolyVariant::Repeating { .. } => "Repeating",
 			MultilinearPolyVariant::Projected(_) => "Projected",
@@ -959,6 +993,6 @@ mod tests {
 		let projected = oracles
 			.add_projected(data, vec![F::ONE, F::ONE, F::ONE, F::ONE, F::ONE], start_index)
 			.unwrap();
-		let _ = oracles.oracle(projected);
+		let _ = &oracles[projected];
 	}
 }

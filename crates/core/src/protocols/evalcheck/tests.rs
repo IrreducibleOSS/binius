@@ -2,6 +2,7 @@
 
 use std::{array, iter::repeat_with};
 
+use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	AESTowerField128b, BinaryField1b, BinaryField128b, ByteSliced16x128x1b, ByteSlicedAES16x16x8b,
 	ByteSlicedAES16x128b, ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField16x8b,
@@ -12,7 +13,8 @@ use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_macros::arith_expr;
 use binius_math::{
-	CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery, extrapolate_line,
+	CompositionPoly, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	extrapolate_line,
 };
 use bytemuck::{Pod, cast_slice_mut};
 use itertools::Either;
@@ -21,7 +23,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use crate::{
 	fiat_shamir::HasherChallenger,
 	oracle::{MultilinearOracleSet, ShiftVariant},
-	polynomial::{ArithCircuitPoly, MultivariatePoly},
+	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
 		EvalcheckHint, EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
 		deserialize_evalcheck_proof, serialize_evalcheck_proof,
@@ -111,7 +113,7 @@ where
 		.unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
@@ -191,7 +193,7 @@ where
 		.unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state.prove(claims.clone(), &mut transcript).unwrap();
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
@@ -287,10 +289,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -363,10 +363,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -408,6 +406,7 @@ where
 	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
 
+	#[allow(deprecated)]
 	let comp = arith_expr!(FExtension[x, y, z] = x * y + z * y + z);
 
 	let values: [FExtension; 4] = array::from_fn(|_| <FExtension as Field>::random(&mut rng));
@@ -469,10 +468,8 @@ where
 		])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -534,10 +531,8 @@ where
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -627,10 +622,8 @@ where
 		eval: inner_eval,
 	};
 
-	let backend = make_portable_backend();
-
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
 	prover_state
 		.prove(vec![claim.clone()], &mut transcript)
 		.unwrap();
@@ -667,4 +660,73 @@ fn test_evalcheck_serialization() {
 	assert_eq!(out_2, EvalcheckHint::DuplicateClaim(6));
 
 	transcript.finalize().unwrap()
+}
+
+#[test]
+pub fn test_zero_padded_zero_vars() {
+	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
+	let mut witness_index = MultilinearExtensionIndex::<BinaryField128b>::new();
+
+	let committed = oracles.add_committed(0, BinaryField128b::TOWER_LEVEL);
+	let mut values = vec![BinaryField128b::from(32)];
+	let committed_mle = MultilinearExtension::from_values(values.clone()).unwrap();
+	let committed_poly = MLEDirectAdapter::from(committed_mle);
+
+	witness_index
+		.update_multilin_poly([(committed, committed_poly.upcast_arc_dyn())])
+		.unwrap();
+
+	let zero_padded = oracles.add_zero_padded(committed, 3, 0, 0).unwrap();
+
+	values.resize(1 << 3, BinaryField128b::ZERO);
+
+	let zero_padded_mle = MultilinearExtension::from_values(values).unwrap();
+	let zero_padded_poly = MLEDirectAdapter::from(zero_padded_mle);
+
+	let backend = make_portable_backend();
+
+	let eval_point = vec![
+		BinaryField128b::from(3),
+		BinaryField128b::from(2),
+		BinaryField128b::ONE,
+	];
+
+	let query = backend.multilinear_query(&eval_point).unwrap();
+	let eval = zero_padded_poly.evaluate(query.to_ref()).unwrap();
+	assert_eq!(eval, BinaryField128b::zero());
+
+	let zero_eval_claim = EvalcheckMultilinearClaim {
+		id: zero_padded,
+		eval_point: eval_point.into(),
+		eval,
+	};
+
+	let eval_point = vec![
+		BinaryField128b::from(3),
+		BinaryField128b::from(2),
+		BinaryField128b::ZERO,
+	];
+
+	let query = backend.multilinear_query(&eval_point).unwrap();
+	let eval = zero_padded_poly.evaluate(query.to_ref()).unwrap();
+
+	assert_ne!(eval, BinaryField128b::zero());
+
+	let non_zero_eval_claim = EvalcheckMultilinearClaim {
+		id: zero_padded,
+		eval_point: eval_point.into(),
+		eval,
+	};
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	prover_state
+		.prove(vec![zero_eval_claim.clone(), non_zero_eval_claim.clone()], &mut transcript)
+		.unwrap();
+
+	let mut transcript = transcript.into_verifier();
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state
+		.verify(vec![zero_eval_claim, non_zero_eval_claim], &mut transcript)
+		.unwrap();
 }

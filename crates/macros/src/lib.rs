@@ -38,6 +38,7 @@ use crate::{
 ///     F::ZERO
 /// );
 /// ```
+#[deprecated]
 #[proc_macro]
 pub fn composition_poly(input: TokenStream) -> TokenStream {
 	parse_macro_input!(input as CompositionPolyItem)
@@ -62,6 +63,7 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 ///     (Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))).into()
 /// );
 /// ```
+#[deprecated]
 #[proc_macro]
 pub fn arith_expr(input: TokenStream) -> TokenStream {
 	parse_macro_input!(input as ArithExprItem)
