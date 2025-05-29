@@ -20,6 +20,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
@@ -786,12 +787,8 @@ where
 			let non_const_scalars = nonzero_scalars_prefix;
 			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
 
-			let mut fast_ext_result = vec![
-				PackedType::<U, FFastExt<Tower>>::one();
-				1 << n_vars.saturating_sub(log_width)
-			];
-
-			fast_ext_result[..non_const_subcubes * subcube_packed_size]
+			let mut fast_ext_result = zeroed_vec(non_const_subcubes * subcube_packed_size);
+			fast_ext_result
 				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
 				.for_each(|(subcube_index, fast_subcube)| {
@@ -810,8 +807,7 @@ where
 					}
 				});
 
-			// TODO: Refactor the return type to be MultilinearExtension. I need to understand how
-			// the non_const_scalars thing works first though.
+			fast_ext_result.truncate(non_const_scalars);
 			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
