@@ -635,6 +635,7 @@ impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
 			6 => Self::Packed(DeserializeBytes::deserialize(buf, mode)?),
 			7 => Self::LinearCombination(DeserializeBytes::deserialize(buf, mode)?),
 			8 => Self::ZeroPadded(DeserializeBytes::deserialize(buf, mode)?),
+			9 => Self::Composite(DeserializeBytes::deserialize(buf, mode)?),
 			variant_index => {
 				return Err(SerializationError::UnknownEnumVariant {
 					name: "MultilinearPolyVariant",
@@ -888,7 +889,7 @@ impl<F: TowerField> LinearCombination<F> {
 /// - $M_1, M_2, \ldots, M_n$ are multilinear oracles in μ variables
 ///
 /// ($C$ should be sufficiently lightweight to be evaluated by the verifier)
-#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, DeserializeBytes, SerializeBytes)]
 pub struct CompositeMLE<F: TowerField> {
 	/// $\mu$
 	#[get_copy = "pub"]
