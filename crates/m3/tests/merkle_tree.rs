@@ -182,6 +182,11 @@ mod model {
 			}
 			assert_eq!(current_hash, root);
 		}
+
+		// Returns the root of the merkle tree.
+		pub fn root(&self) -> [u8; 32] {
+			self.root
+		}
 	}
 
 	impl MerklePathEvent {
