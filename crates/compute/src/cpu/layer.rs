@@ -388,23 +388,23 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	fn compute_composite(
 		&self,
 		_exec: &mut Self::Exec,
-		inputs: &[&[T::B128]],
-		output: &mut &mut [T::B128],
-		composition: &ArithCircuit<T::B128>,
+		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
+		output: &mut FSliceMut<'_, T::B128, Self>,
+		composition: &Self::ExprEval,
 	) -> Result<(), Error> {
-		if inputs.iter().any(|input| input.len() != output.len()) {
+		if inputs.row_len() != output.len() {
 			return Err(Error::InputValidation("inputs and output must be the same length".into()));
 		}
 
-		if composition.n_vars() != inputs.len() {
+		if composition.n_vars() != inputs.n_rows() {
 			return Err(Error::InputValidation("composition not match with input".into()));
 		}
 
-		let mut query = zeroed_vec(inputs.len());
+		let mut query = zeroed_vec(inputs.row_len());
 
 		for (i, output) in output.iter_mut().enumerate() {
 			for (j, query) in query.iter_mut().enumerate() {
-				*query = inputs[j][i];
+				*query = inputs.row(j)[i];
 			}
 
 			*output = composition.evaluate(&query).expect("Evaluation to succeed");

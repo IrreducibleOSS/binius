@@ -442,7 +442,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	fn compute_composite(
 		&self,
 		exec: &mut Self::Exec,
-		inputs: &[FSlice<'_, F, Self>],
+		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		output: &mut FSliceMut<'_, F, Self>,
 		composition: &Self::ExprEval,
 	) -> Result<(), Error>;

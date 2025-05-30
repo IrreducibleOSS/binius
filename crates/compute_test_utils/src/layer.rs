@@ -794,14 +794,11 @@ pub fn test_generic_compute_composite<'a, F: Field, Hal: ComputeLayer<F>>(
 		)))
 		.unwrap();
 
+	let inputs = SlicesBatch::new(vec![input_0_dev, input_1_dev], 1 << log_len);
+
 	hal.execute(|exec| {
-		hal.compute_composite(
-			exec,
-			&[input_0_dev, input_1_dev],
-			&mut output_dev,
-			&bivariate_product_expr,
-		)
-		.unwrap();
+		hal.compute_composite(exec, &inputs, &mut output_dev, &bivariate_product_expr)
+			.unwrap();
 		Ok(vec![])
 	})
 	.unwrap();
