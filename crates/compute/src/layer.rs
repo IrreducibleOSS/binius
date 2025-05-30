@@ -424,7 +424,8 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// This operation computes:
 	///
 	/// $$
-	/// P_{\text{out}}[i] = C(P_0[i], \ldots, P_{m-1}[i]) \quad \forall i \in \{0, \ldots, 2^n - 1\}
+	/// P_{\text{out}}\[i\] = C(P_0\[i\], \ldots, P_{m-1}\[i\])
+	/// \quad \forall i \in \{0, \ldots, 2^n- 1\}
 	/// $$
 	///
 	/// ## Arguments
