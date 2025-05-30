@@ -139,6 +139,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	n_vars: usize,
 	n_multilins: usize,
 	n_compositions: usize,
+	evaluation_order: EvaluationOrder,
 ) where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -203,11 +204,19 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 		.collect::<Vec<_>>();
 
 	assert!(
-		dev_alloc.capacity() >= <BivariateSumcheckProver<F, Hal>>::required_device_memory(&claim)
+		dev_alloc.capacity()
+			>= <BivariateSumcheckProver<F, Hal>>::required_device_memory(&claim, evaluation_order)
 	);
 
-	let prover =
-		BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, dev_multilins).unwrap();
+	let prover = BivariateSumcheckProver::new(
+		hal,
+		&dev_alloc,
+		&host_alloc,
+		&claim,
+		dev_multilins,
+		evaluation_order,
+	)
+	.unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
@@ -225,7 +234,10 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	assert_eq!(multilinear_evals.len(), 1);
 	let multilinear_evals = multilinear_evals.pop().unwrap();
 
-	challenges.reverse(); // Reverse challenges because of high-to-low variable binding
+	if evaluation_order == EvaluationOrder::HighToLow {
+		challenges.reverse();
+	}
+
 	let query = MultilinearQuery::expand(&challenges);
 	for (multilin_i, eval) in iter::zip(multilins, multilinear_evals) {
 		assert_eq!(multilin_i.evaluate(query.to_ref()).unwrap(), eval);

@@ -485,4 +485,29 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
 		Ok(())
 	}
+
+	fn deinterleaved(&self, evals: &mut FSliceMut<T::B128, Self>) -> Result<(), Error> {
+		unpack_if_possible_mut(
+			evals.data,
+			|evals| {
+				if evals.len() % 2 != 0 {
+					return Err(Error::InputValidation("evals length is not even".into()));
+				}
+
+				let half = evals.len() / 2;
+
+				let odds = evals.iter().skip(1).step_by(2).copied().collect::<Vec<_>>();
+
+				for i in 0..half {
+					evals[i] = evals[2 * i];
+				}
+
+				evals[half..].copy_from_slice(&odds[..]);
+				Ok(())
+			},
+			|_packed| {
+				todo!();
+			},
+		)
+	}
 }

@@ -32,6 +32,7 @@ pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: PhaseState<F>,
+	evaluation_order: EvaluationOrder,
 }
 
 impl<'a, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'alloc, F, Hal>
@@ -45,6 +46,7 @@ where
 		host_alloc: &'a HostBumpAllocator<'a, F>,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
+		evaluation_order: EvaluationOrder,
 	) -> Result<Self, Error> {
 		if Hal::DevMem::MIN_SLICE_LEN != 1 {
 			todo!("support non-trivial minimum slice lengths");
@@ -63,8 +65,15 @@ where
 		// Wrap multilinear witness inputs as SumcheckMultilinears.
 		let multilins = multilins
 			.into_iter()
-			.map(SumcheckMultilinear::PreFold)
-			.collect();
+			.map(|multilin| match evaluation_order {
+				EvaluationOrder::LowToHigh => {
+					let mut buffer = dev_alloc.alloc(1 << n_vars)?;
+					hal.copy_d2d(multilin, &mut buffer)?;
+					Ok(SumcheckMultilinear::PostFold(buffer))
+				}
+				EvaluationOrder::HighToLow => Ok(SumcheckMultilinear::PreFold(multilin)),
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
 
 		let (compositions, sums) = claim
 			.composite_sums()
@@ -81,6 +90,7 @@ where
 			multilins,
 			compositions,
 			last_coeffs_or_sums: PhaseState::InitialSums(sums),
+			evaluation_order,
 		})
 	}
 
@@ -96,10 +106,14 @@ where
 	/// Returns the amount of device memory this sumcheck requires.
 	pub fn required_device_memory(
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
+		evaluation_order: EvaluationOrder,
 	) -> usize {
-		// In `fold()`, prover allocates device buffers for each of the folded multilinears. They
-		// are each half of the size of the original multilinears.
-		claim.n_multilinears() * (1 << (claim.n_vars() - 1))
+		match evaluation_order {
+			EvaluationOrder::LowToHigh => claim.n_multilinears() * (1 << (claim.n_vars())),
+			// In `fold()`, prover allocates device buffers for each of the folded multilinears.
+			// They are each half of the size of the original multilinears.
+			EvaluationOrder::HighToLow => claim.n_multilinears() * (1 << (claim.n_vars() - 1)),
+		}
 	}
 }
 
@@ -113,10 +127,16 @@ where
 	}
 
 	fn evaluation_order(&self) -> EvaluationOrder {
-		EvaluationOrder::HighToLow
+		self.evaluation_order
 	}
 
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		if self.evaluation_order == EvaluationOrder::LowToHigh {
+			for multilin in &mut self.multilins {
+				self.hal.deinterleaved(&mut multilin.mut_slice())?;
+			}
+		}
+
 		let multilins = self
 			.multilins
 			.iter()
@@ -240,6 +260,13 @@ impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
 		match self {
 			Self::PreFold(slice) => Mem::narrow(slice),
 			Self::PostFold(slice) => Mem::as_const(slice),
+		}
+	}
+
+	fn mut_slice(&mut self) -> Mem::FSliceMut<'_> {
+		match self {
+			Self::PostFold(slice) => Mem::to_owned_mut(slice),
+			Self::PreFold(..) => unreachable!(),
 		}
 	}
 }
@@ -434,7 +461,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_bivariate_sumcheck_prove_verify() {
+	fn test_bivariate_sumcheck_prove_verify_l2h() {
 		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
 		let n_vars = 8;
@@ -446,6 +473,24 @@ mod tests {
 			n_vars,
 			n_multilins,
 			n_compositions,
+			EvaluationOrder::LowToHigh,
+		)
+	}
+
+	#[test]
+	fn test_bivariate_sumcheck_prove_verify_h2l() {
+		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+		let mut dev_mem = zeroed_vec(1 << 12);
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+		generic_test_bivariate_sumcheck_prove_verify(
+			&hal,
+			&mut dev_mem,
+			n_vars,
+			n_multilins,
+			n_compositions,
+			EvaluationOrder::HighToLow,
 		)
 	}
 }
