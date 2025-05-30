@@ -1,12 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{collections::Bound, ops::RangeBounds, fmt::Debug};
+use std::{collections::Bound, fmt::Debug, ops::RangeBounds};
 
 use crate::memory::ComputeMemory;
 
 #[derive(Debug)]
 pub struct CpuMemory;
-
 
 impl<F: 'static + Sync + Debug> ComputeMemory<F> for CpuMemory {
 	const MIN_SLICE_LEN: usize = 1;

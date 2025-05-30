@@ -316,7 +316,6 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let backend = make_portable_backend();
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
