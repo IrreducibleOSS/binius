@@ -224,9 +224,13 @@ where
 	let packed_committed_fslices_mut = packed_committed_multilins
 		.iter()
 		.map(|packed_committed_multilin| {
-			let hypercube_evals = packed_committed_multilin.packed_evals().unwrap();
+			let hypercube_evals = packed_committed_multilin
+				.packed_evals()
+				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
+			let mut allocated_mem = dev_alloc
+				.alloc(unpacked_hypercube_evals.len())
+				.expect("Device memory should not run out");
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
 			allocated_mem
 		})
@@ -240,9 +244,13 @@ where
 	let transparent_fslices_mut = transparent_multilins
 		.iter()
 		.map(|transparent_multilin| {
-			let hypercube_evals = transparent_multilin.packed_evals().unwrap();
+			let hypercube_evals = transparent_multilin
+				.packed_evals()
+				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
+			let mut allocated_mem = dev_alloc
+				.alloc(unpacked_hypercube_evals.len())
+				.expect("Device memory should not run out");
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
 			allocated_mem
 		})
