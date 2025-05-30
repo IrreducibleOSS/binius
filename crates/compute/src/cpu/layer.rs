@@ -384,6 +384,23 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		}
 		Ok(())
 	}
+
+	fn deinterleaved(&self, evals: &mut FSliceMut<T::B128, Self>) -> Result<(), Error> {
+		if evals.len() % 2 != 0 {
+			return Err(Error::InputValidation("evals length is not even".into()));
+		}
+
+		let half = evals.len() / 2;
+
+		let odds = evals.iter().skip(1).step_by(2).copied().collect::<Vec<_>>();
+
+		for i in 0..half {
+			evals[i] = evals[2 * i];
+		}
+
+		evals[half..].copy_from_slice(&odds[..]);
+		Ok(())
+	}
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in

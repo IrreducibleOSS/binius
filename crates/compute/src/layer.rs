@@ -406,6 +406,32 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		evals_1: FSlice<F, Self>,
 		z: F,
 	) -> Result<(), Error>;
+
+	/// Reorders a buffer of interleaved values into a deinterleaved format.
+	///
+	/// This operation assumes the input buffer contains values in an interleaved layout:
+	/// even-indexed elements followed by odd-indexed elements. It rearranges the elements
+	/// in-place so that the first half of the buffer contains all even-indexed elements,
+	/// and the second half contains all odd-indexed elements.
+	///
+	/// The transformation is performed as follows:
+	/// - For each `i` in `[0, half)`, `evals[i]` is set to `evals[2 * i]` (even indices).
+	/// - The remaining half is filled with the odd-indexed values of the original buffer.
+	///
+	/// # Arguments
+	///
+	/// * `evals` - A mutable buffer containing `2n` interleaved values. After the call, the first
+	///   `n` elements will be the even-indexed elements, and the last `n` will be the odd-indexed
+	///   elements from the original buffer.
+	///
+	/// # Errors
+	///
+	/// Returns an error if any invariant is violated during the operation.
+	///
+	/// # Panics
+	///
+	/// This function will panic if `evals.len()` is not even.
+	fn deinterleaved(&self, evals: &mut FSliceMut<F, Self>) -> Result<(), Error>;
 }
 
 /// A memory mapping specification for a kernel execution.
