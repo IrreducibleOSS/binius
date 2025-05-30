@@ -182,10 +182,13 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	)
 	.unwrap();
 
-	let mut host_mem =
-		hal.host_alloc(<BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim));
+	// TODO[SYS-275]: Remove this once we can allocate less than 512 words on host in HW.
+	const MIN_DEVICE_TRANSFER_SIZE: usize = 1 << 9;
+	let claim_req_mem = <BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim);
+	let mut host_mem = hal.host_alloc(std::cmp::max(claim_req_mem, MIN_DEVICE_TRANSFER_SIZE));
+	let host_mem = &mut host_mem.as_mut()[..claim_req_mem];
 
-	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let host_alloc = HostBumpAllocator::new(host_mem);
 	let dev_alloc = BumpAllocator::new(dev_mem);
 
 	let dev_multilins = evals
