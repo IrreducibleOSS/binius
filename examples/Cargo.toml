@@ -30,6 +30,10 @@ name = "keccak"
 path = "keccak.rs"
 
 [[example]]
+name = "widek"
+path = "widek.rs"
+
+[[example]]
 name = "u8mul"
 path = "u8mul.rs"
 
