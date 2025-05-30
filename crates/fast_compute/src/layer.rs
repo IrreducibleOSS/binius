@@ -69,7 +69,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		unpack_if_possible_mut(
 			dst.as_slice_mut(),
 			|scalars| {
-				scalars.copy_from_slice(src);
+				scalars[..src.len()].copy_from_slice(src);
 				Ok(())
 			},
 			|packed| {
@@ -95,7 +95,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		unpack_if_possible(
 			src.as_slice(),
 			|scalars| {
-				dst.borrow_mut().copy_from_slice(scalars);
+				dst.borrow_mut().copy_from_slice(&scalars[..src.len()]);
 				Ok(())
 			},
 			|packed: &[P]| {
