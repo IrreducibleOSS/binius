@@ -170,7 +170,6 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		&fri_params,
 		&ntt,
 		merkle_prover,
-		domain_factory,
 		commit_meta,
 		committed,
 		&codeword,
@@ -178,7 +177,6 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		&transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
-		&backend,
 	)
 	.unwrap();
 

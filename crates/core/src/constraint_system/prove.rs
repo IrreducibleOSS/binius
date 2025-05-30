@@ -462,14 +462,13 @@ where
 	let hal = CpuLayer::<Tower>::default();
 	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
 	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
-	piop::prove::<_, _, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+	piop::prove(
 		&hal,
 		&mut host_mem,
 		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		&merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -477,7 +476,6 @@ where
 		&transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
-		&backend,
 	)?;
 	drop(piop_compiler_span);
 

@@ -139,10 +139,15 @@ where
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
-		if self.compositions.len() > 0 {
-			Ok(round_coeffs)
-		} else {
+
+		// This is because the batched verifier reads a batched polynomial from the transcript with
+		// max degree from all compositions being proven. If our compoisition is empty, we add a
+		// degree 0 polynomial to whatever is already being written to the transcript by the batch
+		// prover.
+		if self.compositions.is_empty() {
 			Ok(RoundCoeffs(vec![]))
+		} else {
+			Ok(round_coeffs)
 		}
 	}
 

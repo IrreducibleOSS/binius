@@ -352,7 +352,6 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		&fri_params,
 		&ntt,
 		merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -360,7 +359,6 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		&transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
-		&backend,
 	)
 	.unwrap();
 
