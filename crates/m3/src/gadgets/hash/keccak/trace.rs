@@ -80,11 +80,6 @@ pub struct PermutationTrace {
 }
 
 impl PermutationTrace {
-	/// View the trace from the given `batch_no` lens.
-	pub fn per_batch(&self, batch_no: usize) -> PerBatchLens<'_> {
-		PerBatchLens { pt: self, batch_no }
-	}
-
 	/// Get the input state for the permutation.
 	pub fn input(&self) -> &StateMatrix<u64> {
 		&self.round_traces[0].state_in
@@ -96,18 +91,11 @@ impl PermutationTrace {
 	}
 }
 
-/// This is specialization of [`PermutationTrace`] for a particular batch.
-/// See [`PermutationTrace::per_batch`].
-pub struct PerBatchLens<'a> {
-	pt: &'a PermutationTrace,
-	batch_no: usize,
-}
-
-impl std::ops::Index<usize> for PerBatchLens<'_> {
+impl std::ops::Index<usize> for PermutationTrace {
 	type Output = RoundTrace;
+
 	fn index(&self, index: usize) -> &Self::Output {
-		let round = super::nth_round_per_batch(self.batch_no, index);
-		&self.pt.round_traces[round]
+		&self.round_traces[index]
 	}
 }
 
@@ -125,7 +113,7 @@ pub fn keccakf_trace(state_in: StateMatrix<u64>) -> PermutationTrace {
 #[cfg(test)]
 mod tests {
 	use super::{
-		super::{StateMatrix, test_vector},
+		super::{test_vector, trace::StateMatrix},
 		RoundTrace,
 	};
 
