@@ -14,6 +14,7 @@ binius_macros = { path = "../macros", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
+cfg-if.workspace = true
 either.workspace = true
 getset.workspace = true
 itertools.workspace = true
@@ -22,6 +23,7 @@ rand.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+trait-set.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
