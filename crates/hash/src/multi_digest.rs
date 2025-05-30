@@ -9,7 +9,9 @@ use binius_maybe_rayon::{
 };
 use binius_utils::{SerializationMode, SerializeBytes};
 use bytes::{BufMut, BytesMut};
-use digest::{Digest, Output};
+use digest::{Digest, Output, core_api::BlockSizeUser};
+
+use crate::HashBuffer;
 
 /// An object that efficiently computes `N` instances of a cryptographic hash function
 /// in parallel.
@@ -143,7 +145,7 @@ impl<D: MultiDigest<N, Digest: Send> + Send + Sync, const N: usize> ParallelDige
 	}
 }
 
-impl<D: Digest + Send + Sync + Clone> ParallelDigest for D {
+impl<D: Digest + BlockSizeUser + Send + Sync + Clone> ParallelDigest for D {
 	type Digest = D;
 
 	fn new() -> Self {
@@ -159,16 +161,14 @@ impl<D: Digest + Send + Sync + Clone> ParallelDigest for D {
 		source: impl IndexedParallelIterator<Item: Serializable>,
 		out: &mut [MaybeUninit<Output<Self::Digest>>],
 	) {
-		source
-			.zip(out.par_iter_mut())
-			.for_each_with(BytesMut::new(), |mut buffer, (data, out)| {
-				buffer.clear();
+		source.zip(out.par_iter_mut()).for_each(|(data, out)| {
+			let mut hasher = self.clone();
+			{
+				let mut buffer = HashBuffer::new(&mut hasher);
 				data.serialize(&mut buffer);
-
-				let mut hasher = self.clone();
-				hasher.update(buffer.as_ref());
-				out.write(hasher.finalize());
-			});
+			}
+			out.write(hasher.finalize());
+		});
 	}
 }
 
@@ -177,7 +177,10 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::U32};
+	use digest::{
+		FixedOutput, HashMarker, OutputSizeUser, Reset, Update,
+		consts::{U1, U32},
+	};
 	use itertools::izip;
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
@@ -206,6 +209,10 @@ mod tests {
 
 	impl OutputSizeUser for MockDigest {
 		type OutputSize = U32;
+	}
+
+	impl BlockSizeUser for MockDigest {
+		type BlockSize = U1;
 	}
 
 	impl FixedOutput for MockDigest {
@@ -286,7 +293,9 @@ mod tests {
 			.collect()
 	}
 
-	fn check_parallel_digest_consistency<D: ParallelDigest<Digest: Send + Sync + Clone>>(
+	fn check_parallel_digest_consistency<
+		D: ParallelDigest<Digest: BlockSizeUser + Send + Sync + Clone>,
+	>(
 		data: Vec<DataWrapper>,
 	) {
 		let parallel_digest = D::new();
