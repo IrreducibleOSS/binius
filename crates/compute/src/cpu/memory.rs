@@ -1,13 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{collections::Bound, ops::RangeBounds};
+use std::{collections::Bound, ops::RangeBounds, fmt::Debug};
 
 use crate::memory::ComputeMemory;
 
 #[derive(Debug)]
 pub struct CpuMemory;
 
-impl<F: 'static> ComputeMemory<F> for CpuMemory {
+impl<F: 'static + Debug> ComputeMemory<F> for CpuMemory {
 	const MIN_SLICE_LEN: usize = 1;
 
 	type FSlice<'a> = &'a [F];

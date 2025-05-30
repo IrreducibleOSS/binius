@@ -79,7 +79,7 @@ impl<P: PackedField> PackedMemory<P> {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PackedMemorySlice<'a, P: PackedField> {
 	pub(crate) data: &'a [P],
 }
@@ -103,6 +103,7 @@ impl<'a, P: PackedField> SizedSlice for PackedMemorySlice<'a, P> {
 	}
 }
 
+#[derive(Debug)]
 pub struct PackedMemorySliceMut<'a, P: PackedField> {
 	pub(crate) data: &'a mut [P],
 }

@@ -139,6 +139,7 @@ where
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
+		println!("{:?}",round_coeffs);
 		Ok(round_coeffs)
 	}
 
