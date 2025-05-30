@@ -91,6 +91,12 @@ impl PermutationTrace {
 	}
 }
 
+impl AsRef<[RoundTrace]> for PermutationTrace {
+	fn as_ref(&self) -> &[RoundTrace] {
+		&self.round_traces
+	}
+}
+
 impl std::ops::Index<usize> for PermutationTrace {
 	type Output = RoundTrace;
 

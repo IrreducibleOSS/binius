@@ -7,8 +7,11 @@ mod test_vector;
 mod trace;
 
 pub mod stacked;
+pub mod wide;
 
+pub use stacked::{Keccakf, PackedLane8};
 pub use state::StateMatrix;
+pub use trace::RoundTrace;
 
 const ROUNDS_PER_PERMUTATION: usize = 24;
 
