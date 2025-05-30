@@ -470,7 +470,7 @@ where
 	.entered();
 
 	let hal = FastCpuLayer::<Tower, Tower::B128>::default();
-	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
+	let mut host_mem = vec![Tower::B128::ZERO; 1 << 30];
 	let mut dev_mem_owned = vec![Tower::B128::zero(); 1 << 30];
 	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
 	piop::prove(
