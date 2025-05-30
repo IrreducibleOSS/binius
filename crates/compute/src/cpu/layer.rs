@@ -384,6 +384,34 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		}
 		Ok(())
 	}
+
+	fn compute_composite(
+		&self,
+		_exec: &mut Self::Exec,
+		inputs: &[&[T::B128]],
+		output: &mut &mut [T::B128],
+		composition: &ArithCircuit<T::B128>,
+	) -> Result<(), Error> {
+		if inputs.iter().any(|input| input.len() != output.len()) {
+			return Err(Error::InputValidation("inputs and output must be the same length".into()));
+		}
+
+		if composition.n_vars() != inputs.len() {
+			return Err(Error::InputValidation("composition not match with input".into()));
+		}
+
+		let mut query = zeroed_vec(inputs.len());
+
+		for (i, output) in output.iter_mut().enumerate() {
+			for (j, query) in query.iter_mut().enumerate() {
+				*query = inputs[j][i];
+			}
+
+			*output = composition.evaluate(&query).expect("Evaluation to succeed");
+		}
+
+		Ok(())
+	}
 }
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in

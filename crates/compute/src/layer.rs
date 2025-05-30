@@ -406,6 +406,45 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		evals_1: FSlice<F, Self>,
 		z: F,
 	) -> Result<(), Error>;
+
+	/// Computes the elementwise application of a compiled arithmetic expression to multiple input
+	/// slices.
+	///
+	/// This operation applies the composition expression to each row of input values, where a row
+	/// consists of one element from each input slice at the same index position. The results are
+	/// stored in the output slice.
+	///
+	/// ## Mathematical Definition
+	///
+	/// Given:
+	/// - Multiple input slices $P_0, \ldots, P_{m-1}$, each of length $2^n$ elements
+	/// - A composition function $C(X_0, \ldots, X_{m-1})$
+	/// - An output slice $P_{\text{out}}$ of length $2^n$ elements
+	///
+	/// This operation computes:
+	///
+	/// $$
+	/// P_{\text{out}}[i] = C(P_0[i], \ldots, P_{m-1}[i]) \quad \forall i \in \{0, \ldots, 2^n - 1\}
+	/// $$
+	///
+	/// ## Arguments
+	///
+	/// * `exec` - The execution environment.
+	/// * `inputs` - A slice of input slices, where each slice contains field elements.
+	/// * `output` - A mutable output slice where the results will be stored.
+	/// * `composition` - The compiled arithmetic expression to apply.
+	///
+	/// ## Throws
+	///
+	/// * Returns an error if any input or output slice has a length that is not a power of two.
+	/// * Returns an error if the input and output slices do not all have the same length.
+	fn compute_composite(
+		&self,
+		exec: &mut Self::Exec,
+		inputs: &[FSlice<'_, F, Self>],
+		output: &mut FSliceMut<'_, F, Self>,
+		composition: &Self::ExprEval,
+	) -> Result<(), Error>;
 }
 
 /// A memory mapping specification for a kernel execution.

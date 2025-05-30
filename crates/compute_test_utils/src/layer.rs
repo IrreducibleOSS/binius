@@ -9,9 +9,11 @@ use binius_compute::{
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
+use binius_core::composition::BivariateProduct;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{
-	ArithExpr, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar, tensor_prod_eq_ind,
+	ArithExpr, CompositionPoly, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar,
+	tensor_prod_eq_ind,
 };
 use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
@@ -755,4 +757,59 @@ pub fn test_extrapolate_line<'a, F: Field, Hal: ComputeLayer<F>>(
 		.map(|(x0, x1)| extrapolate_line_scalar(*x0, *x1, z))
 		.collect::<Vec<_>>();
 	assert_eq!(result_host, &expected_result);
+}
+
+pub fn test_generic_compute_composite<'a, F: Field, Hal: ComputeLayer<F>>(
+	hal: &Hal,
+	dev_mem: FSliceMut<'a, F, Hal>,
+	log_len: usize,
+) {
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let mut host_mem = hal.host_alloc(3 * (1 << log_len));
+	let host_alloc = BumpAllocator::<F, CpuMemory>::new(host_mem.as_mut());
+
+	let input_0_host = host_alloc.alloc(1 << log_len).unwrap();
+	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();
+	let output_host = host_alloc.alloc(1 << log_len).unwrap();
+
+	input_0_host.fill_with(|| F::random(&mut rng));
+	input_1_host.fill_with(|| F::random(&mut rng));
+
+	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
+
+	let mut input_0_dev = dev_alloc.alloc(1 << log_len).unwrap();
+	let mut input_1_dev = dev_alloc.alloc(1 << log_len).unwrap();
+	let mut output_dev = dev_alloc.alloc(1 << log_len).unwrap();
+
+	hal.copy_h2d(input_0_host, &mut input_0_dev).unwrap();
+	hal.copy_h2d(input_1_host, &mut input_1_dev).unwrap();
+
+	let input_0_dev = Hal::DevMem::as_const(&input_0_dev);
+	let input_1_dev = Hal::DevMem::as_const(&input_1_dev);
+
+	let bivariate_product_expr = hal
+		.compile_expr(&ArithExpr::from(CompositionPoly::<F>::expression(
+			&BivariateProduct::default(),
+		)))
+		.unwrap();
+
+	hal.execute(|exec| {
+		hal.compute_composite(
+			exec,
+			&[input_0_dev, input_1_dev],
+			&mut output_dev,
+			&bivariate_product_expr,
+		)
+		.unwrap();
+		Ok(vec![])
+	})
+	.unwrap();
+
+	hal.copy_d2h(Hal::DevMem::as_const(&output_dev), output_host)
+		.unwrap();
+
+	for (i, output) in output_host.iter_mut().enumerate() {
+		assert_eq!(*output, input_0_host[i] * input_1_host[i])
+	}
 }

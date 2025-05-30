@@ -485,4 +485,43 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
 		Ok(())
 	}
+
+	fn compute_composite(
+		&self,
+		_exec: &mut Self::Exec,
+		inputs: &[FSlice<'_, T::B128, Self>],
+		output: &mut FSliceMut<'_, T::B128, Self>,
+		composition: &ArithCircuitPoly<T::B128>,
+	) -> Result<(), Error> {
+		if inputs.iter().any(|input| input.len() != output.len()) {
+			return Err(Error::InputValidation("inputs and output must be the same length".into()));
+		}
+
+		if CompositionPoly::<P>::n_vars(composition) != inputs.len() {
+			return Err(Error::InputValidation("composition not match with inputs".into()));
+		}
+
+		let log_chunks = get_log_max_threads() + 1;
+
+		let chunk_size = (output.len() >> log_chunks).max(10);
+
+		output
+			.data
+			.par_chunks_mut(chunk_size)
+			.enumerate()
+			.for_each(|(chunk_idx, output_chunk)| {
+				let mut query = zeroed_vec(inputs.len());
+
+				for (i, output) in output_chunk.iter_mut().enumerate() {
+					for (j, query) in query.iter_mut().enumerate() {
+						let idx = chunk_size * chunk_idx + i;
+						*query = inputs[j].data[idx];
+					}
+
+					*output = composition.evaluate(&query).expect("Evaluation to succeed");
+				}
+			});
+
+		Ok(())
+	}
 }

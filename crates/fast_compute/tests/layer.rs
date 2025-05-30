@@ -148,3 +148,16 @@ fn test_extrapolate_line() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_compute_composite() {
+	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	binius_compute_test_utils::layer::test_generic_compute_composite(
+		&compute,
+		PackedMemorySliceMut::new(&mut device_memory),
+		log_len,
+	);
+}
