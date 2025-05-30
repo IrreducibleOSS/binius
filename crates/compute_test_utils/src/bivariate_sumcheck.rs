@@ -14,16 +14,22 @@ use binius_core::{
 	fiat_shamir::HasherChallenger,
 	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
+		BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim, SumcheckClaim,
+		eq_ind::reduce_to_regular_sumchecks,
 		front_loaded::BatchVerifier,
 		immediate_switchover_heuristic,
 		prove::{RegularSumcheckProver, SumcheckProver, front_loaded::BatchProver},
-		v3::bivariate_product::{BivariateSumcheckProver, calculate_round_evals},
+		v3::{
+			bivariate_mlecheck::BivariateMLEcheckProver,
+			bivariate_product::{BivariateSumcheckProver, calculate_round_evals},
+		},
 	},
 	transcript::ProverTranscript,
+	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{
-	BinaryField1b, BinaryField128b, Field, PackedBinaryField1x128b, PackedField, TowerField,
+	BinaryField1b, BinaryField8b, BinaryField128b, ExtensionField, Field, PackedBinaryField1x128b,
+	PackedExtension, PackedField, TowerField,
 	util::{inner_product_unchecked, powers},
 };
 use binius_hal::make_portable_backend;
@@ -254,4 +260,164 @@ where
 	(0..(1 << n_vars))
 		.map(|j| witness.evaluate_on_hypercube(j).unwrap())
 		.sum()
+}
+
+fn evaluate_composite_at_point<F, M, Composition>(
+	multilinears: &[M],
+	composition: Composition,
+	eval_point: &[F],
+) -> F
+where
+	F: Field,
+	M: MultilinearPoly<F> + Send + Sync,
+	Composition: CompositionPoly<F>,
+{
+	let n_vars = multilinears
+		.first()
+		.map(|multilinear| multilinear.n_vars())
+		.unwrap_or_default();
+	for multilinear in multilinears {
+		assert_eq!(multilinear.n_vars(), n_vars);
+	}
+
+	assert_eq!(eval_point.len(), n_vars);
+
+	let multilinears = multilinears.iter().collect::<Vec<_>>();
+
+	let backend = make_portable_backend();
+
+	let eq_ind = EqIndPartialEval::new(eval_point)
+		.multilinear_extension::<F, _>(&backend)
+		.unwrap();
+
+	let multilinears = multilinears.iter().collect::<Vec<_>>();
+	let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
+	(0..(1 << n_vars))
+		.map(|j| {
+			witness.evaluate_on_hypercube(j).unwrap() * eq_ind.evaluate_on_hypercube(j).unwrap()
+		})
+		.sum()
+}
+
+pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
+	hal: &Hal,
+	dev_mem: FSliceMut<F, Hal>,
+	n_vars: usize,
+	n_multilins: usize,
+	n_compositions: usize,
+) where
+	F: TowerField
+		+ PackedField<Scalar = F>
+		+ ExtensionField<BinaryField8b>
+		+ PackedExtension<BinaryField8b>,
+	Hal: ComputeLayer<F>,
+{
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let evals = repeat_with(|| {
+		repeat_with(|| <F as Field>::random(&mut rng))
+			.take(1 << n_vars)
+			.collect::<Vec<_>>()
+	})
+	.take(n_multilins)
+	.collect::<Vec<_>>();
+
+	let compositions = repeat_with(|| {
+		// Choose 2 distinct indices at random
+		let idx0 = rng.gen_range(0..n_multilins);
+		let idx1 = (idx0 + rng.gen_range(0..n_multilins - 1)) % n_multilins;
+		IndexComposition::new(n_multilins, [idx0, idx1], BivariateProduct::default()).unwrap()
+	})
+	.take(n_compositions)
+	.collect::<Vec<_>>();
+
+	let eq_ind_challenges = repeat_with(|| <F as Field>::random(&mut rng))
+		.take(n_vars)
+		.collect::<Vec<_>>();
+
+	let multilins = evals
+		.iter()
+		.map(|evals| {
+			let mle = MultilinearExtension::new(n_vars, evals.as_slice()).unwrap();
+			MLEDirectAdapter::from(mle)
+		})
+		.collect::<Vec<_>>();
+
+	let sums = compositions
+		.iter()
+		.map(|composition| evaluate_composite_at_point(&multilins, composition, &eq_ind_challenges))
+		.collect::<Vec<_>>();
+
+	let claim = EqIndSumcheckClaim::new(
+		n_vars,
+		n_multilins,
+		iter::zip(compositions, sums)
+			.map(|(composition, sum)| CompositeSumClaim { composition, sum })
+			.collect(),
+	)
+	.unwrap();
+
+	let mut host_mem =
+		hal.host_alloc(<BivariateMLEcheckProver<F, Hal>>::required_host_memory(&claim));
+
+	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let dev_alloc: BumpAllocator<F, Hal::DevMem> = BumpAllocator::new(dev_mem);
+
+	let dev_multilins = evals
+		.iter()
+		.map(|evals_i| {
+			let mut dev_multilin = dev_alloc.alloc(evals_i.len()).unwrap();
+			hal.copy_h2d(evals_i, &mut dev_multilin).unwrap();
+			dev_multilin
+		})
+		.collect::<Vec<_>>();
+	// TODO: into_const would be useful here
+	let dev_multilins = dev_multilins
+		.iter()
+		.map(Hal::DevMem::as_const)
+		.collect::<Vec<_>>();
+
+	assert!(
+		dev_alloc.capacity()
+			>= <BivariateMLEcheckProver<F, Hal>>::required_device_memory(&claim, false)
+	);
+
+	let prover = BivariateMLEcheckProver::new(
+		hal,
+		&dev_alloc,
+		&host_alloc,
+		&claim,
+		dev_multilins,
+		None,
+		eq_ind_challenges,
+		None,
+	)
+	.unwrap();
+
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+
+	let batch_prover = BatchProver::new(vec![prover], &mut transcript).unwrap();
+	let _batch_prover_output = batch_prover.run(&mut transcript).unwrap();
+
+	let mut transcript = transcript.into_verifier();
+
+	let verifier = BatchVerifier::new(
+		&reduce_to_regular_sumchecks(slice::from_ref(&claim)).unwrap(),
+		&mut transcript,
+	)
+	.unwrap();
+
+	let BatchSumcheckOutput {
+		mut challenges,
+		mut multilinear_evals,
+	} = verifier.run(&mut transcript).unwrap();
+
+	assert_eq!(multilinear_evals.len(), 1);
+	let multilinear_evals = multilinear_evals.pop().unwrap();
+
+	challenges.reverse(); // Reverse challenges because of high-to-low variable binding
+	let query = MultilinearQuery::expand(&challenges);
+	for (multilin_i, eval) in iter::zip(multilins, multilinear_evals) {
+		assert_eq!(multilin_i.evaluate(query.to_ref()).unwrap(), eval);
+	}
 }
