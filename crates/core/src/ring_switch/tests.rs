@@ -10,7 +10,6 @@ use binius_field::{
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
 };
-use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use binius_ntt::SingleThreadedNTT;
