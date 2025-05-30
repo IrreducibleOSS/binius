@@ -4,22 +4,19 @@ use std::ops::Mul;
 
 use super::{
 	super::portable::{
-		packed::{PackedPrimitiveType, impl_ops_for_zero_height},
+		packed::PackedPrimitiveType,
 		packed_arithmetic::{alphas, impl_tower_constants},
 	},
 	m128::M128,
+	packed_macros::*,
 	simd_arithmetic::{
 		packed_aes_16x8b_into_tower, packed_tower_16x8b_invert_or_zero,
 		packed_tower_16x8b_multiply, packed_tower_16x8b_multiply_alpha, packed_tower_16x8b_square,
 	},
 };
 use crate::{
-	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
-	BinaryField64b, BinaryField128b, PackedAESBinaryField16x8b,
-	arch::{
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
-		portable::packed::impl_serialize_deserialize_for_packed_binary_field,
-	},
+	BinaryField8b, PackedAESBinaryField16x8b,
+	arch::portable::packed_macros::*,
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
 		impl_square_with, impl_transformation_with_strategy,
@@ -27,45 +24,86 @@ use crate::{
 	underlier::WithUnderlier,
 };
 
-// Define 128 bit packed field types
-pub type PackedBinaryField128x1b = PackedPrimitiveType<M128, BinaryField1b>;
-pub type PackedBinaryField64x2b = PackedPrimitiveType<M128, BinaryField2b>;
-pub type PackedBinaryField32x4b = PackedPrimitiveType<M128, BinaryField4b>;
+define_packed_binary_fields!(
+	underlier: M128,
+	packed_fields: [
+		packed_field {
+			name: PackedBinaryField128x1b,
+			scalar: BinaryField1b,
+			alpha_idx: 0,
+			mul: (None),
+			square: (None),
+			invert: (None),
+			mul_alpha: (None),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField64x2b,
+			scalar: BinaryField2b,
+			alpha_idx: 1,
+			mul: (SimdStrategy),
+			square: (SimdStrategy),
+			invert: (SimdStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField32x4b,
+			scalar: BinaryField4b,
+			alpha_idx: 2,
+			mul: (SimdStrategy),
+			square: (SimdStrategy),
+			invert: (SimdStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField8x16b,
+			scalar: BinaryField16b,
+			alpha_idx: 4,
+			mul: (SimdStrategy),
+			square: (SimdStrategy),
+			invert: (SimdStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField4x32b,
+			scalar: BinaryField32b,
+			alpha_idx: 5,
+			mul: (PackedStrategy),
+			square: (PairwiseStrategy),
+			invert: (PairwiseStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField2x64b,
+			scalar: BinaryField64b,
+			alpha_idx: 6,
+			mul: (PairwiseStrategy),
+			square: (PairwiseStrategy),
+			invert: (PairwiseStrategy),
+			mul_alpha: (PairwiseStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedBinaryField1x128b,
+			scalar: BinaryField128b,
+			alpha_idx: _,
+			mul: (PairwiseRecursiveStrategy),
+			square: (PairwiseRecursiveStrategy),
+			invert: (PairwiseRecursiveStrategy),
+			mul_alpha: (PairwiseRecursiveStrategy),
+			transform: (PairwiseStrategy),
+		},
+	]
+);
+
+// PackedBinaryField16x8b is constructed separately
 pub type PackedBinaryField16x8b = PackedPrimitiveType<M128, BinaryField8b>;
-pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
-pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
-pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
-pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
-
-// Define (de)serialize
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField128x1b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField64x2b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField32x4b);
 impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField16x8b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField8x16b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField4x32b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField2x64b);
-impl_serialize_deserialize_for_packed_binary_field!(PackedBinaryField1x128b);
-
-// Define operations for height 0
-impl_ops_for_zero_height!(PackedBinaryField128x1b);
-
-// Define constants
-impl_tower_constants!(BinaryField1b, M128, { M128(alphas!(u128, 0)) });
-impl_tower_constants!(BinaryField2b, M128, { M128(alphas!(u128, 1)) });
-impl_tower_constants!(BinaryField4b, M128, { M128(alphas!(u128, 2)) });
 impl_tower_constants!(BinaryField8b, M128, { M128(alphas!(u128, 3)) });
-impl_tower_constants!(BinaryField16b, M128, { M128(alphas!(u128, 4)) });
-impl_tower_constants!(BinaryField32b, M128, { M128(alphas!(u128, 5)) });
-impl_tower_constants!(BinaryField64b, M128, { M128(alphas!(u128, 6)) });
-
-// Define multiplication
-impl_mul_with!(PackedBinaryField64x2b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField32x4b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField4x32b @ PackedStrategy);
-impl_mul_with!(PackedBinaryField2x64b @ PairwiseStrategy);
-impl_mul_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 impl Mul for PackedBinaryField16x8b {
 	type Output = Self;
@@ -79,41 +117,17 @@ impl Mul for PackedBinaryField16x8b {
 	}
 }
 
-// Define square
-impl_square_with!(PackedBinaryField64x2b @ SimdStrategy);
-impl_square_with!(PackedBinaryField32x4b @ SimdStrategy);
-impl_square_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_square_with!(PackedBinaryField4x32b @ PairwiseStrategy);
-impl_square_with!(PackedBinaryField2x64b @ PairwiseStrategy);
-impl_square_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
-
 impl Square for PackedBinaryField16x8b {
 	fn square(self) -> Self {
 		self.mutate_underlier(packed_tower_16x8b_square)
 	}
 }
 
-// Define invert
-impl_invert_with!(PackedBinaryField64x2b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField32x4b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField4x32b @ PairwiseStrategy);
-impl_invert_with!(PackedBinaryField2x64b @ PairwiseStrategy);
-impl_invert_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
-
 impl InvertOrZero for PackedBinaryField16x8b {
 	fn invert_or_zero(self) -> Self {
 		self.mutate_underlier(packed_tower_16x8b_invert_or_zero)
 	}
 }
-
-// Define multiply by alpha
-impl_mul_alpha_with!(PackedBinaryField64x2b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField32x4b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField4x32b @ SimdStrategy);
-impl_mul_alpha_with!(PackedBinaryField2x64b @ PairwiseStrategy);
-impl_mul_alpha_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 impl MulAlpha for PackedBinaryField16x8b {
 	#[inline]
@@ -122,15 +136,7 @@ impl MulAlpha for PackedBinaryField16x8b {
 	}
 }
 
-// Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryField128x1b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField64x2b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField32x4b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField16x8b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField8x16b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField4x32b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField2x64b, PackedStrategy);
-impl_transformation_with_strategy!(PackedBinaryField1x128b, PairwiseStrategy);
+impl_transformation_with_strategy!(PackedBinaryField16x8b, crate::arch::PackedStrategy);
 
 impl From<PackedAESBinaryField16x8b> for PackedBinaryField16x8b {
 	fn from(value: PackedAESBinaryField16x8b) -> Self {
