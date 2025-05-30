@@ -64,7 +64,10 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			// buffer contains Some, invariant restored
 			Err(Error::OutOfMemory)
 		} else {
-			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::ALIGNMENT));
+			let (mut lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::ALIGNMENT));
+			if n < Mem::ALIGNMENT {
+				(lhs, _) = Mem::split_at_mut(lhs, n);
+			}
 			self.buffer.set(Some(rhs));
 			// buffer contains Some, invariant restored
 			Ok(Mem::narrow_mut(lhs))

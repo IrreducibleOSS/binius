@@ -46,10 +46,6 @@ where
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
-		if Hal::DevMem::ALIGNMENT != 1 {
-			todo!("support non-trivial minimum slice lengths");
-		}
-
 		let n_vars = claim.n_vars();
 
 		// Check shape of multilinear witness inputs.
@@ -417,7 +413,11 @@ mod tests {
 	use binius_compute_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
-	use binius_field::{BinaryField128b, tower::CanonicalTowerFamily};
+	use binius_fast_compute::layer::FastCpuLayer;
+	use binius_field::{
+		BinaryField128b, PackedField, arch::OptimalUnderlier, as_packed_field::PackedType,
+		tower::CanonicalTowerFamily,
+	};
 	use bytemuck::zeroed_vec;
 
 	use super::*;
@@ -434,6 +434,21 @@ mod tests {
 	}
 
 	#[test]
+	fn test_calculate_round_evals_fast_cpu() {
+		type F = BinaryField128b;
+		type Packed = PackedType<OptimalUnderlier, F>;
+		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
+
+		let hal = Hal::default();
+		let mut dev_mem = vec![Packed::zero(); 1 << (10 - Packed::LOG_WIDTH)];
+		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
+			&mut dev_mem,
+		);
+		let n_vars = 8;
+		generic_test_calculate_round_evals(&hal, dev_mem, n_vars)
+	}
+
+	#[test]
 	fn test_bivariate_sumcheck_prove_verify() {
 		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
@@ -443,6 +458,29 @@ mod tests {
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			&mut dev_mem,
+			n_vars,
+			n_multilins,
+			n_compositions,
+		)
+	}
+
+	#[test]
+	fn test_bivariate_sumcheck_prove_verify_fast() {
+		type F = BinaryField128b;
+		type Packed = PackedType<OptimalUnderlier, F>;
+		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
+
+		let hal = Hal::default();
+		let mut dev_mem = zeroed_vec(1 << (12 - Packed::LOG_WIDTH));
+		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
+			&mut dev_mem,
+		);
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+		generic_test_bivariate_sumcheck_prove_verify(
+			&hal,
+			dev_mem,
 			n_vars,
 			n_multilins,
 			n_compositions,
