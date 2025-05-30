@@ -229,7 +229,7 @@ where
 				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc
-				.alloc(unpacked_hypercube_evals.len())
+				.alloc(1 << packed_committed_multilin.n_vars())
 				.expect("Device memory should not run out");
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
 			allocated_mem
@@ -249,7 +249,7 @@ where
 				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc
-				.alloc(unpacked_hypercube_evals.len())
+				.alloc(1 << transparent_multilin.n_vars())
 				.expect("Device memory should not run out");
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
 			allocated_mem
