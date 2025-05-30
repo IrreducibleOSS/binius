@@ -8,8 +8,9 @@ mod model {
 		hash::Hash,
 	};
 
+	use binius_field::AESTowerField8b;
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
-	use binius_m3::emulate::Channel;
+	use binius_m3::{builder::B8, emulate::Channel};
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	/// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
@@ -90,17 +91,22 @@ mod model {
 		}
 	}
 
-	// Uses the Groestl256 compression function to compress two 32-byte inputs into a single 32-byte
+	/// Uses the Groestl256 compression function to compress two 32-byte inputs into a single
+	/// 32-byte. It is assumed the bytes are in the Fan-Paar basis and so are transformed to the
+	/// AESTowerField8b basis before the Groestl compression function is applied to agree with the
+	/// Groestl gadget.
 	fn compress(left: &[u8], right: &[u8], output: &mut [u8]) {
 		let mut state_bytes = [0u8; 64];
 		let (half0, half1) = state_bytes.split_at_mut(32);
 		half0.copy_from_slice(left);
 		half1.copy_from_slice(right);
+		state_bytes = state_bytes.map(|b| AESTowerField8b::from(B8::new(b)).val());
 		let input = GroestlShortImpl::state_from_bytes(&state_bytes);
 		let mut state = input;
 		GroestlShortImpl::p_perm(&mut state);
 		GroestlShortImpl::xor_state(&mut state, &input);
 		state_bytes = GroestlShortImpl::state_to_bytes(&state);
+		state_bytes = state_bytes.map(|b| B8::from(AESTowerField8b::new(b)).val());
 		output.copy_from_slice(&state_bytes[32..]);
 	}
 
