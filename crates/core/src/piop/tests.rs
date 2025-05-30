@@ -1,10 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::iter::repeat_with;
+
 use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
-	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField, TowerField, tower::{TowerFamily, CanonicalTowerFamily}, underlier::{Divisible, WithUnderlier}, PackedFieldIndexable,
+	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField,
+	PackedFieldIndexable, TowerField,
+	tower::{CanonicalTowerFamily, TowerFamily},
+	underlier::{Divisible, WithUnderlier},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
@@ -109,9 +113,9 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
 		+ PackedExtension<Tower::B128, PackedSubfield = P>
-		+ PackedFieldIndexable<Scalar=Tower::B128>,
+		+ PackedFieldIndexable<Scalar = Tower::B128>,
 	MTScheme: MerkleTreeScheme<Tower::B128, Digest: SerializeBytes + DeserializeBytes>,
-	Tower: TowerFamily + Default
+	Tower: TowerFamily + Default,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -143,7 +147,6 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		.map(|&n_committed| if n_committed == 0 { 0 } else { n_transparents })
 		.collect::<Vec<_>>();
 
-	println!("transparent multilins by vars: {:?}", transparent_multilins_by_vars);
 	let transparent_mles = generate_multilins::<P>(&transparent_multilins_by_vars, &mut rng);
 	let transparent_multilins = transparent_mles
 		.iter()
@@ -225,12 +228,13 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
 
 #[test]
@@ -240,12 +244,13 @@ fn test_without_opening_claims() {
 	let n_transparents = 0;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
 
 #[test]
@@ -255,12 +260,13 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
 
 #[test]
@@ -270,12 +276,13 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
 
 #[test]
@@ -285,12 +292,13 @@ fn test_commit_prove_verify_small() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
 
 #[test]
@@ -300,25 +308,11 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, CanonicalTowerFamily>(
-		&commit_meta,
-		n_transparents,
-		&merkle_prover,
-		log_inv_rate,
-	);
+	commit_prove_verify::<
+		BinaryField8b,
+		BinaryField16b,
+		PackedBinaryField2x128b,
+		_,
+		CanonicalTowerFamily,
+	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
 }
-
-// #[test]
-// fn test_commit_prove_verify_byte_sliced() {
-// 	let commit_meta = CommitMeta::with_vars([11, 12, 13, 14]);
-// 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
-// 	let n_transparents = 2;
-// 	let log_inv_rate = 1;
-
-// 	commit_prove_verify::<AESTowerField8b, AESTowerField16b, ByteSlicedAES16x128b, _, CanonicalTowerFamily>(
-// 		&commit_meta,
-// 		n_transparents,
-// 		&merkle_prover,
-// 		log_inv_rate,
-// 	);
-// }

@@ -139,8 +139,11 @@ where
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
-		println!("{:?}",round_coeffs);
-		Ok(round_coeffs)
+		if self.compositions.len() > 0 {
+			Ok(round_coeffs)
+		} else {
+			Ok(RoundCoeffs(vec![]))
+		}
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {

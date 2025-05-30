@@ -2,6 +2,7 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
+use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
@@ -18,7 +19,7 @@ use binius_math::{
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::prelude::*;
-use binius_compute::cpu::CpuLayer;
+
 use super::{
 	common::EvalClaimSystem,
 	prove,
@@ -286,7 +287,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
-	Tower: Default
+	Tower: Default,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();

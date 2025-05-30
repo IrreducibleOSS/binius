@@ -1,10 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{borrow::Cow, ops::Deref, fs};
+use std::{borrow::Cow, fs, ops::Deref};
 
 use binius_compute::{
 	ComputeLayer, ComputeMemory,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	cpu::CpuMemory,
 };
 use binius_field::{
 	BinaryField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
@@ -15,7 +16,6 @@ use binius_math::{
 	EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
 	MultilinearPoly,
 };
-use binius_compute::cpu::CpuMemory;
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
@@ -228,7 +228,7 @@ where
 {
 	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
 
-	let dev_alloc = BumpAllocator::<_,Hal::DevMem>::new(dev_mem);
+	let dev_alloc = BumpAllocator::<_, Hal::DevMem>::new(dev_mem);
 
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -255,12 +255,17 @@ where
 			let hypercube_evals = packed_committed_multilin.packed_evals().unwrap();
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
-			let _ = hal.copy_h2d(unpacked_hypercube_evals,&mut allocated_mem).unwrap();
+			let _ = hal
+				.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem)
+				.unwrap();
 			allocated_mem
 		})
 		.collect::<Vec<_>>();
 
-	let packed_committed_fslices = packed_committed_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
+	let packed_committed_fslices = packed_committed_fslices_mut
+		.iter()
+		.map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut))
+		.collect::<Vec<_>>();
 
 	let transparent_fslices_mut = transparent_multilins
 		.iter()
@@ -268,13 +273,17 @@ where
 			let hypercube_evals = transparent_multilin.packed_evals().unwrap();
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc.alloc(unpacked_hypercube_evals.len()).unwrap();
-			let _ = hal.copy_h2d(unpacked_hypercube_evals,&mut allocated_mem).unwrap();
+			let _ = hal
+				.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem)
+				.unwrap();
 			allocated_mem
 		})
 		.collect::<Vec<_>>();
 
-	let transparent_fslices = transparent_fslices_mut.iter().map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut)).collect::<Vec<_>>();
-
+	let transparent_fslices = transparent_fslices_mut
+		.iter()
+		.map(|flslice_mut| Hal::DevMem::as_const(&flslice_mut))
+		.collect::<Vec<_>>();
 
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
@@ -286,7 +295,7 @@ where
 
 	let mut sumcheck_provers = vec![];
 
-	for (_n_vars, desc) in non_empty_sumcheck_descs{
+	for (_n_vars, desc) in non_empty_sumcheck_descs {
 		let multilins = chain!(
 			packed_committed_fslices[desc.committed_indices.clone()]
 				.iter()
@@ -314,9 +323,14 @@ where
 		// let f_vecs = multilins.iter().map(|multilin|{
 		// 	P::unpack_scalars(multilin.packed_evals().unwrap())
 		// }).collect();
-		
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, multilins)?);
+		sumcheck_provers.push(BivariateSumcheckProver::new(
+			hal,
+			&dev_alloc,
+			&host_alloc,
+			&claim,
+			multilins,
+		)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
