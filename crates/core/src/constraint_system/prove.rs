@@ -2,7 +2,7 @@
 
 use std::{env, marker::PhantomData};
 
-use binius_compute::cpu::CpuLayer;
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -459,13 +459,14 @@ where
 	)
 	.entered();
 
-	let hal = CpuLayer::<Tower>::default();
+	let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
 	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
-	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
+	let mut dev_mem_owned = vec![PackedType::<U, Tower::B128>::zero(); 1 << 22];
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
 	piop::prove(
 		&hal,
 		&mut host_mem,
-		&mut dev_mem,
+		dev_mem,
 		&fri_params,
 		&ntt,
 		&merkle_prover,

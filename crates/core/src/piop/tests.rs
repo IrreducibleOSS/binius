@@ -4,17 +4,12 @@ use std::iter::repeat_with;
 
 use binius_compute::cpu::CpuLayer;
 use binius_field::{
-	AESTowerField8b, AESTowerField16b, BinaryField, BinaryField8b, BinaryField16b,
-	ByteSlicedAES16x128b, Field, PackedBinaryField2x128b, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField8b, BinaryField16b, Field, PackedBinaryField2x128b, PackedExtension,
+	PackedField, PackedFieldIndexable,
 	tower::{CanonicalTowerFamily, TowerFamily},
-	underlier::{Divisible, WithUnderlier},
 };
-use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::{
-	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-};
+use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -128,7 +123,6 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 	.unwrap();
 	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
-	let backend = make_portable_backend();
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let committed_multilins = generate_multilins::<P>(commit_meta.n_multilins_by_vars(), &mut rng)
@@ -159,7 +153,6 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
 	let hal = CpuLayer::<Tower>::default();
 	let mut host_mem = vec![Tower::B128::ZERO; 1 << 16];
 	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
