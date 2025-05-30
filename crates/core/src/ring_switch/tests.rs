@@ -2,6 +2,7 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
+use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
@@ -9,12 +10,8 @@ use binius_field::{
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
 };
-use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::{
-	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
-};
+use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::prelude::*;
@@ -273,7 +270,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	log_inv_rate: usize,
 ) where
 	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
+	Tower: TowerFamily + Default,
 	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
@@ -318,19 +315,22 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let backend = make_portable_backend();
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
 	} = prove::<_, _, _, Tower, _>(&system, &committed_multilins, &mut proof, MemoizedData::new())
 		.unwrap();
 
-	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
+	let hal = CpuLayer::<Tower>::default();
+	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
+	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
 	piop::prove(
+		&hal,
+		&mut host_mem,
+		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -338,7 +338,6 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		&transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
-		&backend,
 	)
 	.unwrap();
 

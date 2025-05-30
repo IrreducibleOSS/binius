@@ -2,6 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -69,7 +70,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 ) -> Result<Proof, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
+	Tower: ProverTowerFamily + Default,
 	Tower::B128: PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
@@ -467,11 +468,18 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+
+	let hal = FastCpuLayer::<Tower, Tower::B128>::default();
+	let mut host_mem = vec![Tower::B128::ZERO; 1 << 30];
+	let mut dev_mem_owned = vec![Tower::B128::zero(); 1 << 30];
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+	piop::prove(
+		&hal,
+		&mut host_mem,
+		dev_mem,
 		&fri_params,
 		&ntt,
 		&merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -479,7 +487,6 @@ where
 		&transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
-		&backend,
 	)?;
 	drop(piop_compiler_span);
 
