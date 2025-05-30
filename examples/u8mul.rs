@@ -98,13 +98,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&constraint_system.no_base_constraints(),
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&[],
-		proof,
-	)?;
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }

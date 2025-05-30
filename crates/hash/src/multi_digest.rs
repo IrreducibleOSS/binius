@@ -96,10 +96,10 @@ pub trait ParallelDigest: Send {
 
 /// A wrapper that implements the `ParallelDigest` trait for a `MultiDigest` implementation.
 #[derive(Clone)]
-pub struct ParallelMulidigestImpl<D: MultiDigest<N>, const N: usize>(D);
+pub struct ParallelMultidigestImpl<D: MultiDigest<N>, const N: usize>(D);
 
 impl<D: MultiDigest<N, Digest: Send> + Send + Sync, const N: usize> ParallelDigest
-	for ParallelMulidigestImpl<D, N>
+	for ParallelMultidigestImpl<D, N>
 {
 	type Digest = D::Digest;
 
@@ -177,7 +177,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{Digest, FixedOutput, HashMarker, OutputSizeUser, Update, consts::U32};
+	use digest::{FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::U32};
 	use itertools::izip;
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
@@ -195,6 +195,12 @@ mod tests {
 			for &byte in data {
 				self.state ^= byte;
 			}
+		}
+	}
+
+	impl Reset for MockDigest {
+		fn reset(&mut self) {
+			self.state = 0;
 		}
 	}
 
@@ -308,14 +314,14 @@ mod tests {
 	#[test]
 	fn test_empty_data() {
 		let data = generate_mock_data(0, 16);
-		check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
+		check_parallel_digest_consistency::<ParallelMultidigestImpl<MockMultiDigest, 4>>(data);
 	}
 
 	#[test]
 	fn test_non_empty_data() {
 		for n_hashes in [1, 2, 4, 8, 9] {
 			let data = generate_mock_data(n_hashes, 16);
-			check_parallel_digest_consistency::<ParallelMulidigestImpl<MockMultiDigest, 4>>(data);
+			check_parallel_digest_consistency::<ParallelMultidigestImpl<MockMultiDigest, 4>>(data);
 		}
 	}
 }

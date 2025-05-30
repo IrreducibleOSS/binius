@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::mem;
+use std::{iter, mem};
 
 use binius_field::{Field, TowerField, util::inner_product_unchecked};
 use getset::{Getters, MutGetters};
@@ -150,11 +150,26 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			eval,
 		} = evalcheck_claim;
 
-		let multilinear = self.oracles.oracle(id);
+		let multilinear = &self.oracles[id];
 		let multilinear_label = multilinear.label();
 		match multilinear.variant {
-			MultilinearPolyVariant::Transparent(inner) => {
+			MultilinearPolyVariant::Transparent(ref inner) => {
 				let actual_eval = inner.poly().evaluate(&eval_point)?;
+				if actual_eval != eval {
+					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
+				}
+			}
+			MultilinearPolyVariant::Structured(ref inner) => {
+				// Here we need to extend the eval_point to the input domain of the arith circuit
+				// by assigning zeroes to the variables.
+				let eval_point: &[F] = &eval_point;
+				let n_pad_zeros = inner.n_vars() - eval_point.len();
+				let query = eval_point
+					.iter()
+					.copied()
+					.chain(iter::repeat_n(F::ZERO, n_pad_zeros))
+					.collect::<Vec<_>>();
+				let actual_eval = inner.evaluate(&query)?;
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
 				}
@@ -180,7 +195,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 
-			MultilinearPolyVariant::Projected(projected) => {
+			MultilinearPolyVariant::Projected(ref projected) => {
 				let new_eval_point = {
 					let (lo, hi) = eval_point.split_at(projected.start_index());
 					chain!(lo, projected.values(), hi)
@@ -198,7 +213,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 
-			MultilinearPolyVariant::Shifted(shifted) => {
+			MultilinearPolyVariant::Shifted(ref shifted) => {
+				let shifted = shifted.clone();
 				let meta = shifted_sumcheck_meta(self.oracles, &shifted, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					&meta,
@@ -208,7 +224,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)
 			}
 
-			MultilinearPolyVariant::Packed(packed) => {
+			MultilinearPolyVariant::Packed(ref packed) => {
+				let packed = packed.clone();
 				let meta = packed_sumcheck_meta(self.oracles, &packed, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					&meta,
@@ -218,7 +235,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)
 			}
 
-			MultilinearPolyVariant::LinearCombination(linear_combination) => {
+			MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+				let linear_combination = linear_combination.clone();
 				let evals = linear_combination
 					.polys()
 					.map(|sub_oracle_id| {
@@ -238,7 +256,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					return Err(VerificationError::IncorrectEvaluation(multilinear_label).into());
 				}
 			}
-			MultilinearPolyVariant::ZeroPadded(padded) => {
+			MultilinearPolyVariant::ZeroPadded(ref padded) => {
 				let subclaim_eval_point = chain!(
 					&eval_point[..padded.start_index()],
 					&eval_point[padded.start_index() + padded.n_pad_vars()..],
@@ -272,7 +290,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					transcript,
 				)?;
 			}
-			MultilinearPolyVariant::Composite(composite) => {
+			MultilinearPolyVariant::Composite(ref composite) => {
 				let position = transcript.message().read::<u32>()? as usize;
 
 				if let Some((constraints_eval_point, _)) =
@@ -287,7 +305,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					position,
 					&eval_point,
 					&mut self.new_mlechecks_constraints,
-					&composite,
+					composite,
 					eval,
 				);
 			}

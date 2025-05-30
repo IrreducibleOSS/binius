@@ -1,11 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, marker::PhantomData};
+use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
+	alloc::{BumpAllocator, ComputeAllocator},
+	cpu::layer::count_total_local_buffer_sizes,
 	each_tower_subfield,
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField,
@@ -13,7 +15,7 @@ use binius_field::{
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
 };
-use binius_math::{ArithExpr, tensor_prod_eq_ind};
+use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef, tensor_prod_eq_ind};
 use binius_maybe_rayon::{
 	iter::{
 		IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
@@ -21,11 +23,18 @@ use binius_maybe_rayon::{
 	},
 	slice::{ParallelSlice, ParallelSliceMut},
 };
-use binius_ntt::AdditiveNTT;
+use binius_ntt::{AdditiveNTT, fri::fold_interleaved_allocated};
+use binius_utils::{
+	checked_arithmetics::{checked_int_div, strict_log_2},
+	rayon::get_log_max_threads,
+};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 
-use crate::{arith_circuit::ArithCircuitPoly, memory::PackedMemory};
+use crate::{
+	arith_circuit::ArithCircuitPoly,
+	memory::{PackedMemory, PackedMemorySliceMut},
+};
 
 #[derive(Debug)]
 pub struct FastCpuExecutor;
@@ -190,46 +199,191 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	fn accumulate_kernels(
 		&self,
 		_exec: &mut Self::Exec,
-		_map: impl for<'a> Fn(
+		map: impl Sync
+		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
 		) -> Result<Vec<Self::KernelValue>, Error>,
-		_mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
-		unimplemented!()
+		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
+			.ok_or_else(|| Error::InputValidation("no chunks range found".to_string()))?;
+
+		// Choose the number of chunks based on the range and the number of threads available.
+		let log_chunks = (get_log_max_threads() + 1)
+			.min(log_chunks_range.end)
+			.max(log_chunks_range.start);
+		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
+
+		// Calculate memory needed for each chunk
+		let mem_maps_count = mem_maps.len();
+		let mut memory_chunks: Vec<KernelMemMap<'_, <T as TowerFamily>::B128, PackedMemory<P>>> =
+			repeat_with(|| KernelMemMap::Local { log_size: 0 })
+				.take(mem_maps_count << log_chunks)
+				.collect::<Vec<_>>();
+		for (i, mem_map) in mem_maps.into_iter().enumerate() {
+			for (j, chunk) in mem_map.chunks(log_chunks).enumerate() {
+				memory_chunks[i + j * mem_maps_count] = chunk;
+			}
+		}
+
+		memory_chunks
+			.par_chunks_exact_mut(mem_maps_count)
+			.map_with(zeroed_vec::<P>(total_alloc), |buffer, chunk| {
+				let buffer = PackedMemorySliceMut::new(buffer);
+				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
+
+				let kernel_data = chunk
+					.iter_mut()
+					.map(|mem_map| {
+						match std::mem::replace(mem_map, KernelMemMap::Local { log_size: 0 }) {
+							KernelMemMap::Chunked { data, .. } => KernelBuffer::Ref(data),
+							KernelMemMap::ChunkedMut { data, .. } => KernelBuffer::Mut(data),
+							KernelMemMap::Local { log_size } => {
+								let data = allocator
+									.alloc(1 << log_size)
+									.expect("buffer must be large enough");
+
+								KernelBuffer::Mut(data)
+							}
+						}
+					})
+					.collect::<Vec<_>>();
+
+				map(&mut FastCpuExecutor, log_chunks, kernel_data)
+			})
+			.reduce_with(|out1, out2| {
+				let mut out1 = out1?;
+				let mut out2_iter = out2?.into_iter();
+				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
+					*out1_i += out2_i;
+				}
+				out1.extend(out2_iter);
+				Ok(out1)
+			})
+			.expect("range is not empty")
 	}
 
 	fn fold_left<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		_mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		_vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		_out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		unimplemented!()
+		let log_evals_size = strict_log_2(mat.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		let out = binius_utils::mem::slice_uninit_mut(out.data);
+
+		fn fold_left<FSub: Field, P: PackedExtension<FSub>>(
+			mat: &[P],
+			log_evals_size: usize,
+			vec: &[P],
+			log_query_size: usize,
+			out: &mut [MaybeUninit<P>],
+		) -> Result<(), Error> {
+			let mat = PackedExtension::cast_bases(mat);
+
+			binius_math::fold_left(mat, log_evals_size, vec, log_query_size, out).map_err(|_| {
+				Error::InputValidation("the input data dimensions are wrong".to_string())
+			})
+		}
+
+		each_tower_subfield!(
+			mat.tower_level,
+			T,
+			fold_left::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out,)
+		)
 	}
 
 	fn fold_right<'a>(
 		&'a self,
 		_exec: &'a mut Self::Exec,
-		_mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		_vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
-		_out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
+		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		unimplemented!()
+		let log_evals_size = strict_log_2(mat.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `mat` must be a power of 2".to_string())
+		})?;
+		let log_query_size = strict_log_2(vec.len()).ok_or_else(|| {
+			Error::InputValidation("the length of `vec` must be a power of 2".to_string())
+		})?;
+
+		fn fold_right<FSub: Field, P: PackedExtension<FSub>>(
+			mat: &[P],
+			log_evals_size: usize,
+			vec: &[P],
+			log_query_size: usize,
+			out: &mut [P],
+		) -> Result<(), Error> {
+			let mat = PackedExtension::cast_bases(mat);
+
+			binius_math::fold_right(mat, log_evals_size, vec, log_query_size, out).map_err(|_| {
+				Error::InputValidation("the input data dimensions are wrong".to_string())
+			})
+		}
+
+		each_tower_subfield!(
+			mat.tower_level,
+			T,
+			fold_right::<_, P>(mat.slice.data, log_evals_size, vec.data, log_query_size, out.data)
+		)
 	}
 
 	fn sum_composition_evals(
 		&self,
 		_exec: &mut Self::KernelExec,
-		_log_len: usize,
-		_inputs: &[FSlice<'_, T::B128, Self>],
-		_composition: &Self::ExprEval,
-		_batch_coeff: T::B128,
-		_accumulator: &mut T::B128,
+		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
+		composition: &Self::ExprEval,
+		batch_coeff: T::B128,
+		accumulator: &mut Self::KernelValue,
 	) -> Result<(), Error> {
-		unimplemented!()
+		// The batch size is chosen to balance the amount of additional memory needed
+		// for the each operation and to minimize the call overhead.
+		// The current value is chosen based on the intuition and may be changed in the future
+		// based on the performance measurements.
+		const BATCH_SIZE: usize = 64;
+
+		let rows = inputs.iter().map(|slice| slice.data).collect::<Vec<_>>();
+		if inputs.row_len() >= P::WIDTH {
+			let packed_row_len = checked_int_div(inputs.row_len(), P::WIDTH);
+
+			// Safety: `rows` is guaranteed to be valid as all slices have the same length
+			// (this is guaranteed by the `SlicesBatch` struct).
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, packed_row_len) };
+			let mut result = P::zero();
+			let mut output = [P::zero(); BATCH_SIZE];
+			for offset in (0..packed_row_len).step_by(BATCH_SIZE) {
+				let batch_size = packed_row_len.saturating_sub(offset).min(BATCH_SIZE);
+				let rows = rows_batch.columns_subrange(offset..offset + batch_size);
+				composition
+					.batch_evaluate(&rows, &mut output[..batch_size])
+					.expect("dimensions are correct");
+
+				result += output[..batch_size].iter().copied().sum::<P>();
+			}
+
+			*accumulator += batch_coeff * result.into_iter().sum::<T::B128>();
+		} else {
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, 1) };
+
+			let mut output = P::zero();
+			composition
+				.batch_evaluate(&rows_batch, slice::from_mut(&mut output))
+				.expect("dimensions are correct");
+
+			*accumulator +=
+				batch_coeff * output.into_iter().take(inputs.row_len()).sum::<T::B128>();
+		}
+
+		Ok(())
 	}
 
 	fn kernel_add(
@@ -266,18 +420,49 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
-		_ntt: &impl AdditiveNTT<FSub>,
-		_log_len: usize,
-		_log_batch_size: usize,
-		_challenges: &[T::B128],
-		_data_in: FSlice<T::B128, Self>,
-		_data_out: &mut FSliceMut<T::B128, Self>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
+		log_len: usize,
+		log_batch_size: usize,
+		challenges: &[T::B128],
+		data_in: FSlice<T::B128, Self>,
+		data_out: &mut FSliceMut<T::B128, Self>,
 	) -> Result<(), Error>
 	where
 		FSub: binius_field::BinaryField,
 		T::B128: binius_field::ExtensionField<FSub>,
 	{
-		unimplemented!()
+		unpack_if_possible_mut(
+			data_out.data,
+			|out| {
+				fold_interleaved_allocated(
+					ntt,
+					data_in.data,
+					challenges,
+					log_len,
+					log_batch_size,
+					out,
+				);
+			},
+			|packed| {
+				let mut out_scalars =
+					zeroed_vec(1 << (log_len - (challenges.len() - log_batch_size)));
+				fold_interleaved_allocated(
+					ntt,
+					packed,
+					challenges,
+					log_len,
+					log_batch_size,
+					&mut out_scalars,
+				);
+
+				let mut iter = out_scalars.iter().copied();
+				for p in packed {
+					*p = PackedField::from_scalars(&mut iter);
+				}
+			},
+		);
+
+		Ok(())
 	}
 
 	fn extrapolate_line(

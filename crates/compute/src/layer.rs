@@ -5,16 +5,17 @@ use std::ops::Range;
 use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::ArithExpr;
 use binius_ntt::AdditiveNTT;
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
+use itertools::Either;
 
 use super::{
 	alloc::Error as AllocError,
 	memory::{ComputeMemory, SubfieldSlice},
 };
-use crate::memory::SizedSlice;
+use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static {
+pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
@@ -32,7 +33,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	type KernelValue;
 
 	/// The evaluator for arithmetic expressions (polynomials).
-	type ExprEval;
+	type ExprEval: Sync;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
@@ -162,7 +163,8 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn accumulate_kernels(
 		&self,
 		exec: &mut Self::Exec,
-		map: impl for<'a> Fn(
+		map: impl Sync
+		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
@@ -301,7 +303,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	/// ## Arguments
 	///
 	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
-	/// * `inputs` - the input buffers.
+	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
 	/// * `composition` - the compiled composition polynomial expression. This is an output of
 	///   [`Self::compile_expr`].
 	/// * `batch_coeff` - the scaling coefficient.
@@ -309,8 +311,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn sum_composition_evals(
 		&self,
 		exec: &mut Self::KernelExec,
-		log_len: usize,
-		inputs: &[FSlice<'_, F, Self>],
+		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
@@ -368,7 +369,7 @@ pub trait ComputeLayer<F: Field>: 'static {
 	fn fri_fold<FSub>(
 		&self,
 		exec: &mut Self::Exec,
-		ntt: &impl AdditiveNTT<FSub>,
+		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[F],
@@ -453,6 +454,38 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 				Self::Local { log_size } => 0..*log_size,
 			})
 			.reduce(|range0, range1| range0.start.max(range1.start)..range0.end.min(range1.end))
+	}
+
+	// Split the memory mapping into `1 << log_chunks>` chunks.
+	pub fn chunks(self, log_chunks: usize) -> impl Iterator<Item = KernelMemMap<'a, F, Mem>> {
+		match self {
+			Self::Chunked {
+				data,
+				log_min_chunk_size,
+			} => Either::Left(Either::Left(
+				Mem::slice_chunks(data, checked_int_div(data.len(), 1 << log_chunks)).map(
+					move |data| KernelMemMap::Chunked {
+						data,
+						log_min_chunk_size,
+					},
+				),
+			)),
+			Self::ChunkedMut { data, .. } => {
+				let chunks_count = checked_int_div(data.len(), 1 << log_chunks);
+				Either::Left(Either::Right(Mem::slice_chunks_mut(data, chunks_count).map(
+					move |data| KernelMemMap::ChunkedMut {
+						data,
+						log_min_chunk_size: checked_log_2(chunks_count),
+					},
+				)))
+			}
+			Self::Local { log_size } => Either::Right(
+				std::iter::repeat_with(move || KernelMemMap::Local {
+					log_size: log_size - log_chunks,
+				})
+				.take(1 << log_chunks),
+			),
+		}
 	}
 }
 

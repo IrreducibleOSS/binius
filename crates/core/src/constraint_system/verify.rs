@@ -352,7 +352,7 @@ pub fn make_flush_oracles<F: TowerField>(
 					let n_vars = oracles.n_vars(first_oracle);
 
 					for selector_id in &flush.selectors {
-						let got_tower_level = oracles.oracle(*selector_id).tower_level;
+						let got_tower_level = oracles[*selector_id].tower_level;
 						if got_tower_level != 0 {
 							return Err(Error::FlushSelectorTowerLevel {
 								oracle: *selector_id,

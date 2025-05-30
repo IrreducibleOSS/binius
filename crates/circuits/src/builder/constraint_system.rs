@@ -466,9 +466,9 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	/// let z = builder.add_committed("z", log_size, BinaryField1b::TOWER_LEVEL);
 	///
 	/// let system = builder.build().unwrap();
-	/// assert_eq!(system.oracles.oracle(x).name().unwrap(), "a::x");
-	/// assert_eq!(system.oracles.oracle(y).name().unwrap(), "a::b::y");
-	/// assert_eq!(system.oracles.oracle(z).name().unwrap(), "z");
+	/// assert_eq!(system.oracles[x].name().unwrap(), "a::x");
+	/// assert_eq!(system.oracles[y].name().unwrap(), "a::b::y");
+	/// assert_eq!(system.oracles[z].name().unwrap(), "z");
 	/// ```
 	pub fn push_namespace(&mut self, name: impl ToString) {
 		self.namespace_path.push(name.to_string());

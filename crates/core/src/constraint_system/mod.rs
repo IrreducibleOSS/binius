@@ -35,11 +35,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub max_channel_id: ChannelId,
 }
 
-impl<F: TowerField> ConstraintSystem<F> {
-	pub const fn no_base_constraints(self) -> Self {
-		self
-	}
-}
+impl<F: TowerField> ConstraintSystem<F> {}
 
 /// Constraint system proof that has been serialized into bytes
 #[derive(Debug, Clone)]

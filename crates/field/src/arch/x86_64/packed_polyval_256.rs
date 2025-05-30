@@ -43,7 +43,6 @@ impl_square_with!(PackedBinaryPolyval2x128b @ ReuseMultiplyStrategy);
 impl_invert_with!(PackedBinaryPolyval2x128b @ PairwiseStrategy);
 
 // Define linear transformations
-// Define linear transformations
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;

@@ -4,6 +4,7 @@ use std::ops::Mul;
 
 use super::{
 	m128::M128,
+	packed_macros::*,
 	simd_arithmetic::{
 		packed_aes_16x8b_invert_or_zero, packed_aes_16x8b_mul_alpha, packed_aes_16x8b_multiply,
 		packed_tower_16x8b_into_aes,
@@ -11,15 +12,11 @@ use super::{
 };
 use crate::{
 	PackedBinaryField16x8b,
-	aes_field::{
-		AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
-	},
-	arch::{
-		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
-		portable::{
-			packed::PackedPrimitiveType,
-			packed_arithmetic::{alphas, impl_tower_constants},
-		},
+	aes_field::AESTowerField8b,
+	arch::portable::{
+		packed::PackedPrimitiveType,
+		packed_arithmetic::{alphas, impl_tower_constants},
+		packed_macros::*,
 	},
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
@@ -28,21 +25,54 @@ use crate::{
 	underlier::WithUnderlier,
 };
 
-// Define 128 bit packed field types
+define_packed_binary_fields!(
+	underlier: M128,
+	packed_fields: [
+		packed_field {
+			name: PackedAESBinaryField8x16b,
+			scalar: AESTowerField16b,
+			alpha_idx: 4,
+			mul: (SimdStrategy),
+			square: (None),
+			invert: (SimdStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedAESBinaryField4x32b,
+			scalar: AESTowerField32b,
+			alpha_idx: 5,
+			mul: (SimdStrategy),
+			square: (None),
+			invert: (SimdStrategy),
+			mul_alpha: (SimdStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedAESBinaryField2x64b,
+			scalar: AESTowerField64b,
+			alpha_idx: 6,
+			mul: (PairwiseStrategy),
+			square: (PairwiseStrategy),
+			invert: (PairwiseStrategy),
+			mul_alpha: (PairwiseStrategy),
+			transform: (PackedStrategy),
+		},
+		packed_field {
+			name: PackedAESBinaryField1x128b,
+			scalar: AESTowerField128b,
+			alpha_idx: _,
+			mul: (PairwiseRecursiveStrategy),
+			square: (PairwiseRecursiveStrategy),
+			invert: (PairwiseRecursiveStrategy),
+			mul_alpha: (PairwiseRecursiveStrategy),
+			transform: (PairwiseStrategy),
+		},
+	]
+);
+
 pub type PackedAESBinaryField16x8b = PackedPrimitiveType<M128, AESTowerField8b>;
-pub type PackedAESBinaryField8x16b = PackedPrimitiveType<M128, AESTowerField16b>;
-pub type PackedAESBinaryField4x32b = PackedPrimitiveType<M128, AESTowerField32b>;
-pub type PackedAESBinaryField2x64b = PackedPrimitiveType<M128, AESTowerField64b>;
-pub type PackedAESBinaryField1x128b = PackedPrimitiveType<M128, AESTowerField128b>;
-
-// Define constants
-// 0xD3 corresponds to 0x10 after isomorphism from BinaryField8b to AESField
 impl_tower_constants!(AESTowerField8b, M128, { M128(0x00d300d300d300d300d300d300d300d3) });
-impl_tower_constants!(AESTowerField16b, M128, { M128(alphas!(u128, 4)) });
-impl_tower_constants!(AESTowerField32b, M128, { M128(alphas!(u128, 5)) });
-impl_tower_constants!(AESTowerField64b, M128, { M128(alphas!(u128, 6)) });
-
-// Define multiplication
 impl Mul for PackedAESBinaryField16x8b {
 	type Output = Self;
 
@@ -52,12 +82,6 @@ impl Mul for PackedAESBinaryField16x8b {
 		self.mutate_underlier(|underlier| packed_aes_16x8b_multiply(underlier, rhs.to_underlier()))
 	}
 }
-impl_mul_with!(PackedAESBinaryField8x16b @ SimdStrategy);
-impl_mul_with!(PackedAESBinaryField4x32b @ SimdStrategy);
-impl_mul_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
-impl_mul_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
-
-// Define square
 impl Square for PackedAESBinaryField16x8b {
 	fn square(self) -> Self {
 		self * self
@@ -73,38 +97,17 @@ impl Square for PackedAESBinaryField4x32b {
 		self * self
 	}
 }
-impl_square_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
-impl_square_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
-
-// Define invert
 impl InvertOrZero for PackedAESBinaryField16x8b {
 	fn invert_or_zero(self) -> Self {
 		self.mutate_underlier(packed_aes_16x8b_invert_or_zero)
 	}
 }
-impl_invert_with!(PackedAESBinaryField8x16b @ SimdStrategy);
-impl_invert_with!(PackedAESBinaryField4x32b @ SimdStrategy);
-impl_invert_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
-impl_invert_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
-
-// Define multiply by alpha
 impl MulAlpha for PackedAESBinaryField16x8b {
 	fn mul_alpha(self) -> Self {
 		self.mutate_underlier(packed_aes_16x8b_mul_alpha)
 	}
 }
-impl_mul_alpha_with!(PackedAESBinaryField8x16b @ SimdStrategy);
-impl_mul_alpha_with!(PackedAESBinaryField4x32b @ SimdStrategy);
-impl_mul_alpha_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
-impl_mul_alpha_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
-
-// Define linear transformations
-impl_transformation_with_strategy!(PackedAESBinaryField16x8b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
-impl_transformation_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
-
+impl_transformation_with_strategy!(PackedAESBinaryField16x8b, crate::arch::PackedStrategy);
 impl From<PackedBinaryField16x8b> for PackedAESBinaryField16x8b {
 	fn from(value: PackedBinaryField16x8b) -> Self {
 		Self::from_underlier(packed_tower_16x8b_into_aes(value.to_underlier()))

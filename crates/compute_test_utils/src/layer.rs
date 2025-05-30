@@ -7,13 +7,13 @@ use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
-	memory::{ComputeMemory, SizedSlice, SubfieldSlice},
+	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
-use binius_core::protocols::fri::fold_interleaved;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{
 	ArithExpr, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar, tensor_prod_eq_ind,
 };
+use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
 use rand::{SeedableRng, prelude::StdRng};
 
@@ -369,17 +369,11 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 						.iter()
 						.map(|buf| buf.to_ref())
 						.collect::<Vec<_>>();
+					let row_len = kernel_data[0].len();
+					let slice_batch = SlicesBatch::new(kernel_data, row_len);
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-					let log_len = checked_log_2(kernel_data[0].len());
 					compute
-						.sum_composition_evals(
-							kernel_exec,
-							log_len,
-							&kernel_data,
-							&eval,
-							F::ONE,
-							&mut res,
-						)
+						.sum_composition_evals(kernel_exec, &slice_batch, &eval, F::ONE, &mut res)
 						.unwrap();
 					Ok(vec![res])
 				},
@@ -468,8 +462,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
 					compute.sum_composition_evals(
 						kernel_exec,
-						log_len,
-						&[c],
+						&SlicesBatch::new(vec![c], c.len()),
 						&eval,
 						F::ONE,
 						&mut res,
@@ -512,13 +505,12 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	for x_i in data_in.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
-	let data_in = data_in.to_vec();
 
 	// Copy the buffer to device slice
 	let device_allocator =
 		BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
 	let mut data_in_slice = device_allocator.alloc(data_in.len()).unwrap();
-	compute.copy_h2d(&data_in, &mut data_in_slice).unwrap();
+	compute.copy_h2d(data_in, &mut data_in_slice).unwrap();
 	let data_in_slice = C::DevMem::as_const(&data_in_slice);
 
 	let mut data_out = compute.host_alloc(1 << (log_len - log_fold_challenges));
@@ -556,7 +548,7 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	compute.copy_d2h(data_out_slice, data_out).unwrap();
 
 	// Compute the expected result and compare
-	let expected_result = fold_interleaved(&ntt, &data_in, &challenges, log_len, log_batch_size);
+	let expected_result = fold_interleaved(&ntt, data_in, &challenges, log_len, log_batch_size);
 	assert_eq!(data_out, &expected_result);
 }
 
@@ -580,12 +572,16 @@ pub fn test_generic_single_left_fold<
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
-	let evals = repeat_with(|| F2::random(&mut rng))
-		.take(1 << log_evals_size_f2)
-		.collect::<Vec<_>>();
-	let query = repeat_with(|| F2::random(&mut rng))
-		.take(1 << log_query_size)
-		.collect::<Vec<_>>();
+	let mut evals = compute.host_alloc(1 << log_evals_size_f2);
+	let evals = evals.as_mut();
+	for eval in evals.iter_mut() {
+		*eval = F2::random(&mut rng);
+	}
+	let mut query = compute.host_alloc(1 << log_query_size);
+	let query = query.as_mut();
+	for query_elem in query.iter_mut() {
+		*query_elem = F2::random(&mut rng);
+	}
 	let mut out = compute.host_alloc(1 << (log_evals_size - log_query_size));
 	let out = out.as_mut();
 	for x_i in out.iter_mut() {
@@ -598,12 +594,8 @@ pub fn test_generic_single_left_fold<
 	let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
 	let mut query_slice = device_allocator.alloc(query.len()).unwrap();
 	compute.copy_h2d(out, &mut out_slice).unwrap();
-	compute
-		.copy_h2d(evals.as_slice(), &mut evals_slice)
-		.unwrap();
-	compute
-		.copy_h2d(query.as_slice(), &mut query_slice)
-		.unwrap();
+	compute.copy_h2d(evals, &mut evals_slice).unwrap();
+	compute.copy_h2d(query, &mut query_slice).unwrap();
 	let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
 	let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
 	let evals_slice_with_tower_level =
@@ -631,7 +623,7 @@ pub fn test_generic_single_left_fold<
 	binius_math::fold_left(
 		&evals_as_f1_slice,
 		log_evals_size,
-		&query,
+		query,
 		log_query_size,
 		expected_out.as_mut_slice(),
 	)

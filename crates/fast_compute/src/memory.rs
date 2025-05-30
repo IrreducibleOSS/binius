@@ -57,6 +57,24 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 	fn narrow_mut<'a, 'b: 'a>(data: Self::FSliceMut<'b>) -> Self::FSliceMut<'a> {
 		data
 	}
+
+	fn to_owned_mut<'a>(data: &'a mut Self::FSliceMut<'_>) -> Self::FSliceMut<'a> {
+		Self::FSliceMut::new(data.data)
+	}
+
+	fn slice_chunks_mut<'a>(
+		data: Self::FSliceMut<'a>,
+		chunk_len: usize,
+	) -> impl Iterator<Item = Self::FSliceMut<'a>> {
+		assert_eq!(chunk_len % P::WIDTH, 0, "chunk_len must be a multiple of {}", P::WIDTH);
+		assert_eq!(data.len() % chunk_len, 0, "data.len() must be a multiple of chunk_len");
+
+		let chunk_len = chunk_len >> P::LOG_WIDTH;
+
+		data.data
+			.chunks_mut(chunk_len)
+			.map(|chunk| Self::FSliceMut { data: chunk })
+	}
 }
 
 impl<P: PackedField> PackedMemory<P> {

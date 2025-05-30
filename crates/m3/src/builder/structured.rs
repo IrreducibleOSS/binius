@@ -7,8 +7,12 @@ use crate::builder::B1;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("log_size must be less than or equal to F::N_BITS")]
-	ColumnSizeTooLarge,
+	#[error("max_log_size must be less than or equal to F::N_BITS")]
+	MaxLogSizeTooLarge,
+
+	#[error("table size must be less than or equal to max_log_size")]
+	TableSizeTooLarge,
+
 	#[error("math error: {0}")]
 	Math(#[from] binius_math::Error),
 }
@@ -22,15 +26,37 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructuredDynSize {
 	/// A column whose values are incrementing binary field elements in lexicographic order.
-	Incrementing,
+	Incrementing {
+		/// The base-2 logarithm of the maximum size of the column.
+		max_size_log: usize,
+	},
 }
 
 impl StructuredDynSize {
 	/// Returns an arithmetic expression that represents the multilinear extension of the
 	/// structured column.
-	pub fn expr<F: TowerField>(self, log_size: usize) -> Result<ArithExpr<F>, Error> {
+	pub fn expr<F: TowerField>(self) -> Result<ArithExpr<F>, Error> {
 		match self {
-			StructuredDynSize::Incrementing => incrementing_expr::<F>(log_size),
+			StructuredDynSize::Incrementing { max_size_log } => {
+				incrementing_expr::<F>(max_size_log)
+			}
+		}
+	}
+
+	/// Returns the maximum size of the column.
+	fn max_size_log(&self) -> usize {
+		match self {
+			StructuredDynSize::Incrementing { max_size_log } => *max_size_log,
+		}
+	}
+
+	/// Checks whether the given table size specified as n_vars can fit into this structured column
+	/// specifier.
+	pub fn check_nvars(&self, n_vars: usize) -> Result<(), Error> {
+		if n_vars > self.max_size_log() {
+			Err(Error::MaxLogSizeTooLarge)
+		} else {
+			Ok(())
 		}
 	}
 }
@@ -44,11 +70,11 @@ impl StructuredDynSize {
 /// $$
 ///
 /// where $\beta_i$ is the $i$-th basis element of the field $F$ as an $\mathbb{F}_2$ vector space.
-pub fn incrementing_expr<F: TowerField>(log_size: usize) -> Result<ArithExpr<F>, Error> {
-	if log_size > F::N_BITS {
-		return Err(Error::ColumnSizeTooLarge);
+pub fn incrementing_expr<F: TowerField>(max_log_size: usize) -> Result<ArithExpr<F>, Error> {
+	if max_log_size > F::N_BITS {
+		return Err(Error::MaxLogSizeTooLarge);
 	}
-	let expr = (0..log_size)
+	let expr = (0..max_log_size)
 		.map(|i| ArithExpr::Var(i) * ArithExpr::Const(<F as ExtensionField<B1>>::basis(i)))
 		.sum::<ArithExpr<F>>();
 	Ok(expr)
@@ -91,8 +117,10 @@ mod tests {
 		table.require_power_of_two_size();
 		let test_table_id = table.id();
 		let expected_col = table.add_committed::<B32, 1>("reference");
-		let structured_col =
-			table.add_structured::<B32>("incrementing", StructuredDynSize::Incrementing);
+		let structured_col = table.add_structured::<B32>(
+			"incrementing",
+			StructuredDynSize::Incrementing { max_size_log: 32 },
+		);
 		table.assert_zero("reference = structured", expected_col - structured_col);
 
 		let allocator = Bump::new();

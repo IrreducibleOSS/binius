@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
@@ -45,11 +44,10 @@ use crate::{
 /// `new_sumchecks` bivariate sumcheck instances, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during proving)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckProver<'a, 'b, F, P, Backend>
+pub struct EvalcheckProver<'a, 'b, F, P>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	/// Mutable reference to the oracle set which is modified to create new claims arising from
 	/// sumchecks
@@ -76,8 +74,7 @@ where
 	// The new mle sumcheck constraints arising in this round
 	new_mlechecks_constraints: Vec<(EvalPoint<F>, ConstraintSetBuilder<F>)>,
 	// Tensor expansion of evaluation points and partial evaluations of multilinears
-	pub memoized_data: MemoizedData<'b, P, Backend>,
-	backend: &'a Backend,
+	pub memoized_data: MemoizedData<'b, P>,
 
 	// The unique index of a claim in this round.
 	claim_to_index: EvalPointOracleIdMap<usize, F>,
@@ -92,15 +89,14 @@ where
 	// Partial evaluations after `evaluate_partial_high` in suffixes
 	partial_evals: EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 
-	// These oracles reuse the same suffix across multiple evaluations
-	oracles_with_suffixes: HashSet<(OracleId, EvalPoint<F>)>,
+	// Common suffixes
+	suffixes: HashSet<EvalPoint<F>>,
 }
 
-impl<'a, 'b, F, P, Backend> EvalcheckProver<'a, 'b, F, P, Backend>
+impl<'a, 'b, F, P> EvalcheckProver<'a, 'b, F, P>
 where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and
 	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles
@@ -108,7 +104,6 @@ where
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
 		witness_index: &'a mut MultilinearExtensionIndex<'b, P>,
-		backend: &'a Backend,
 	) -> Self {
 		Self {
 			oracles,
@@ -120,7 +115,6 @@ where
 			claims_to_be_evaluated: HashSet::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_data: MemoizedData::new(),
-			backend,
 
 			claim_to_index: EvalPointOracleIdMap::new(),
 			visited_claims: EvalPointOracleIdMap::new(),
@@ -128,7 +122,7 @@ where
 			round_claim_index: 0,
 
 			partial_evals: EvalPointOracleIdMap::new(),
-			oracles_with_suffixes: HashSet::new(),
+			suffixes: HashSet::new(),
 		}
 	}
 
@@ -203,34 +197,51 @@ where
 			);
 		}
 
-		let eval_points = self
+		let mut eval_points = self
 			.claims_to_be_evaluated
 			.iter()
 			.map(|(_, eval_point)| eval_point.clone())
 			.collect::<HashSet<_>>();
 
-		let suffixes = self
-			.oracles_with_suffixes
-			.iter()
-			.map(|(_, suffix)| suffix.clone())
-			.collect::<HashSet<_>>();
+		let mut suffixes = self.suffixes.iter().cloned().collect::<HashSet<_>>();
 
 		let mut prefixes = HashSet::new();
 
+		let mut to_remove = Vec::new();
 		for suffix in &suffixes {
-			for eval_points in &eval_points {
-				if let Some(prefix) = eval_points.try_get_prefix(suffix) {
+			for eval_point in &eval_points {
+				if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 					prefixes.insert(prefix);
+					to_remove.push(eval_point.clone());
 				}
 			}
 		}
+		for ep in to_remove {
+			eval_points.remove(&ep);
+		}
 
-		let eval_points = chain!(&eval_points, &suffixes, &prefixes)
+		// We don't split points whose tensor product, when halved, would be smaller than
+		// PackedField::WIDTH.
+		let (long, short): (Vec<_>, Vec<_>) = eval_points
+			.into_iter()
+			.partition(|ep| ep.len().saturating_sub(1) > P::LOG_WIDTH);
+
+		for eval_point in long {
+			let ep = eval_point.to_vec();
+			let mid = ep.len() / 2;
+			let (low, high) = ep.split_at(mid);
+			let suffix = EvalPoint::from(high);
+			let prefix = EvalPoint::from(low);
+			suffixes.insert(suffix.clone());
+			self.suffixes.insert(suffix);
+			prefixes.insert(prefix);
+		}
+
+		let eval_points = chain!(&short, &suffixes, &prefixes)
 			.map(|p| p.as_ref())
 			.collect::<Vec<_>>();
 
-		self.memoized_data
-			.memoize_query_par(eval_points, self.backend)?;
+		self.memoized_data.memoize_query_par(eval_points)?;
 
 		let subclaims_partial_evals = std::mem::take(&mut self.claims_to_be_evaluated)
 			.into_par_iter()
@@ -241,7 +252,7 @@ where
 					self.witness_index,
 					&self.memoized_data,
 					&self.partial_evals,
-					&self.oracles_with_suffixes,
+					&self.suffixes,
 				)
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
@@ -304,20 +315,17 @@ where
 			&mut self.memoized_data,
 			&projected_bivariate_claims,
 			self.witness_index,
-			self.backend,
 			&mut self.partial_evals,
 		)?;
 
 		drop(evalcheck_mle_fold_high_span);
 
 		// memoize eq_ind_partial_evals for HighToLow case
-		self.memoized_data.memoize_query_par(
-			self.new_mlechecks_constraints.iter().map(|(ep, _)| {
+		self.memoized_data
+			.memoize_query_par(self.new_mlechecks_constraints.iter().map(|(ep, _)| {
 				let ep = ep.as_ref();
 				&ep[0..ep.len().saturating_sub(1)]
-			}),
-			self.backend,
-		)?;
+			}))?;
 
 		for (claim, meta) in izip!(&projected_bivariate_claims, &projected_bivariate_metas) {
 			self.process_bivariate_sumcheck(claim, meta)?;
@@ -356,7 +364,7 @@ where
 				.insert(multilinear_id, eval_point.clone(), eval);
 		}
 
-		let multilinear = self.oracles.oracle(multilinear_id);
+		let multilinear = &self.oracles[multilinear_id];
 
 		match multilinear.variant {
 			MultilinearPolyVariant::Shifted(_) => {
@@ -374,7 +382,7 @@ where
 				self.collect_subclaims_for_memoization(id, inner_eval_point, eval);
 			}
 
-			MultilinearPolyVariant::Projected(projected) => {
+			MultilinearPolyVariant::Projected(ref projected) => {
 				let (id, values) = (projected.id(), projected.values());
 
 				let new_eval_point = {
@@ -388,13 +396,11 @@ where
 				self.collect_subclaims_for_memoization(id, new_eval_point.into(), eval);
 			}
 
-			MultilinearPolyVariant::LinearCombination(linear_combination) => {
+			MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
 				let n_polys = linear_combination.n_polys();
-
-				match (
-					izip!(linear_combination.polys(), linear_combination.coefficients()).next(),
-					eval,
-				) {
+				let next =
+					izip!(linear_combination.polys(), linear_combination.coefficients()).next();
+				match (next, eval) {
 					(Some((suboracle_id, coeff)), Some(eval))
 						if n_polys == 1 && !coeff.is_zero() =>
 					{
@@ -417,7 +423,11 @@ where
 						);
 					}
 					_ => {
-						for suboracle_id in linear_combination.polys() {
+						// We have to collect here to make the borrowck happy. This does not seem
+						// to be a big problem, but in case it turns out to be problematic, consider
+						// using smallvec.
+						let lincom_suboracles = linear_combination.polys().collect::<Vec<_>>();
+						for suboracle_id in lincom_suboracles {
 							self.claims_without_evals
 								.insert((suboracle_id, eval_point.clone()));
 
@@ -431,7 +441,7 @@ where
 				};
 			}
 
-			MultilinearPolyVariant::ZeroPadded(padded) => {
+			MultilinearPolyVariant::ZeroPadded(ref padded) => {
 				let id = padded.id();
 				let inner_eval_point = chain!(
 					&eval_point[..padded.start_index()],
@@ -497,10 +507,10 @@ where
 
 		self.round_claim_index += 1;
 
-		let multilinear = self.oracles.oracle(id);
+		let multilinear = &self.oracles[id];
 
 		match multilinear.variant {
-			MultilinearPolyVariant::Transparent { .. } => {}
+			MultilinearPolyVariant::Transparent { .. } | MultilinearPolyVariant::Structured(_) => {}
 			MultilinearPolyVariant::Committed => {
 				self.committed_eval_claims.push(EvalcheckMultilinearClaim {
 					id: multilinear.id,
@@ -522,7 +532,7 @@ where
 					transcript,
 				)?;
 			}
-			MultilinearPolyVariant::Projected(projected) => {
+			MultilinearPolyVariant::Projected(ref projected) => {
 				let new_eval_point = {
 					let (lo, hi) = eval_point.split_at(projected.start_index());
 					chain!(lo, projected.values(), hi)
@@ -547,7 +557,7 @@ where
 				};
 				self.projected_bivariate_claims.push(claim);
 			}
-			MultilinearPolyVariant::Composite(composite) => {
+			MultilinearPolyVariant::Composite(ref composite) => {
 				let position = self
 					.new_mlechecks_constraints
 					.iter()
@@ -560,12 +570,13 @@ where
 					position,
 					&eval_point,
 					&mut self.new_mlechecks_constraints,
-					&composite,
+					composite,
 					eval,
 				);
 			}
-			MultilinearPolyVariant::LinearCombination(linear_combination) => {
-				for suboracle_id in linear_combination.polys() {
+			MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+				let lincom_suboracles = linear_combination.polys().collect::<Vec<_>>();
+				for suboracle_id in lincom_suboracles {
 					if let Some(claim_index) = self.claim_to_index.get(suboracle_id, &eval_point) {
 						serialize_evalcheck_proof(
 							&mut transcript.message(),
@@ -595,7 +606,7 @@ where
 					}
 				}
 			}
-			MultilinearPolyVariant::ZeroPadded(padded) => {
+			MultilinearPolyVariant::ZeroPadded(ref padded) => {
 				let inner_eval_point = chain!(
 					&eval_point[..padded.start_index()],
 					&eval_point[padded.start_index() + padded.n_pad_vars()..],
@@ -705,12 +716,14 @@ where
 	) -> Result<ProjectedBivariateMeta, Error> {
 		let EvalcheckMultilinearClaim { id, eval_point, .. } = evalcheck_claim;
 
-		match &oracles.oracle(*id).variant {
+		match &oracles[*id].variant {
 			MultilinearPolyVariant::Shifted(shifted) => {
-				shifted_sumcheck_meta(oracles, shifted, eval_point)
+				let shifted = shifted.clone();
+				shifted_sumcheck_meta(oracles, &shifted, eval_point)
 			}
 			MultilinearPolyVariant::Packed(packed) => {
-				packed_sumcheck_meta(oracles, packed, eval_point)
+				let packed = packed.clone();
+				packed_sumcheck_meta(oracles, &packed, eval_point)
 			}
 			_ => unreachable!(),
 		}
@@ -746,7 +759,7 @@ where
 				}
 			}
 			_ => {
-				self.oracles_with_suffixes.insert((oracle_id, suffix));
+				self.suffixes.insert(suffix);
 			}
 		}
 	}
@@ -762,9 +775,9 @@ where
 			eval,
 		} = evalcheck_claim;
 
-		match self.oracles.oracle(*id).variant {
-			MultilinearPolyVariant::Shifted(shifted) => process_shifted_sumcheck(
-				&shifted,
+		match self.oracles[*id].variant {
+			MultilinearPolyVariant::Shifted(ref shifted) => process_shifted_sumcheck(
+				shifted,
 				meta,
 				eval_point,
 				*eval,
@@ -773,9 +786,9 @@ where
 				&self.partial_evals,
 			),
 
-			MultilinearPolyVariant::Packed(packed) => process_packed_sumcheck(
+			MultilinearPolyVariant::Packed(ref packed) => process_packed_sumcheck(
 				self.oracles,
-				&packed,
+				packed,
 				meta,
 				eval_point,
 				*eval,
@@ -799,9 +812,9 @@ where
 		oracle_id: OracleId,
 		eval_point: EvalPoint<F>,
 		witness_index: &MultilinearExtensionIndex<P>,
-		memoized_queries: &MemoizedData<P, Backend>,
+		memoized_queries: &MemoizedData<P>,
 		partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
-		oracles_with_suffixes: &HashSet<(OracleId, EvalPoint<F>)>,
+		suffixes: &HashSet<EvalPoint<F>>,
 	) -> Result<(EvalcheckMultilinearClaim<F>, Option<OracleIdPartialEval<P>>), Error> {
 		let witness_poly = witness_index
 			.get_multilin_poly(oracle_id)
@@ -810,10 +823,7 @@ where
 		let mut eval = None;
 		let mut new_partial_eval = None;
 
-		for (_, suffix) in oracles_with_suffixes
-			.iter()
-			.filter(|(id, _)| *id == oracle_id)
-		{
+		for suffix in suffixes {
 			if let Some(prefix) = eval_point.try_get_prefix(suffix) {
 				let partial_eval = match partial_evals.get(oracle_id, suffix) {
 					Some(partial_eval) => partial_eval,
@@ -854,11 +864,7 @@ where
 					.full_query_readonly(&eval_point)
 					.ok_or(Error::MissingQuery)?;
 
-				witness_poly
-					.evaluate_partial_high(query.to_ref())
-					.map_err(Error::from)?
-					.evaluate_on_hypercube(0)
-					.unwrap()
+				witness_poly.evaluate(query.to_ref()).map_err(Error::from)?
 			}
 		};
 

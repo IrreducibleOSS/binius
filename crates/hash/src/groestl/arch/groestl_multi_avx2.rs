@@ -1,24 +1,26 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{arch::x86_64::*, array};
+use std::{arch::x86_64::*, array, mem::MaybeUninit};
+
+use crate::{
+	groestl::Groestl256,
+	multi_digest::{MultiDigest, ParallelMultidigestImpl},
+};
+
 pub type State = [__m256i; 8];
 const ROUNDS_PER_PERMUTATION: usize = 10;
 const NUM_PARALLEL_SUBSTATES: usize = 4;
 const STATE_SIZE: usize = 64;
 const HALF_STATE_SIZE: usize = STATE_SIZE / 2;
 
-use std::mem::MaybeUninit;
-
-use crate::{groestl::Groestl256, multi_digest::MultiDigest};
-
 // These getters/setters are still prototypes
 #[inline]
 fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	let mut new_state = [unsafe { _mm256_setzero_si256() }; 8];
-	let byteslice_permuatation_m256 = unsafe {
+	let byteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
-			0, 8, 16, 24, 1, 9, 17, 25, 2, 10, 18, 26, 3, 11, 19, 27, 4, 12, 20, 28, 5, 13, 21, 29,
-			6, 14, 22, 30, 7, 15, 23, 31,
+			0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 0, 8, 1, 9, 2, 10, 3, 11, 4, 12,
+			5, 13, 6, 14, 7, 15,
 		)
 	};
 
@@ -34,11 +36,18 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 	}
 
 	for new_state_row in &mut new_state {
-		*new_state_row =
-			unsafe { _mm256_permutexvar_epi8(byteslice_permuatation_m256, *new_state_row) };
+		let permuted = unsafe { _mm256_shuffle_epi8(*new_state_row, byteslice_permutation_m256) };
+
+		let permuted_swapped = unsafe { _mm256_permute2x128_si256(permuted, permuted, 0x01) };
+
+		let bottom_half = unsafe { _mm256_unpacklo_epi16(permuted, permuted_swapped) };
+
+		let top_half = unsafe { _mm256_unpackhi_epi16(permuted, permuted_swapped) };
+
+		*new_state_row = unsafe { _mm256_permute2x128_si256(bottom_half, top_half, 0x20) };
 	}
 
-	// row-align every eigth item
+	// row-align every eighth item
 	for i in 0..8 {
 		if i % 2 == 0 {
 			(new_state[i], new_state[i + 1]) = unsafe {
@@ -84,12 +93,12 @@ fn set_substates_par(substate_vals: [&[u8]; NUM_PARALLEL_SUBSTATES]) -> State {
 }
 
 #[inline]
-fn get_substates_par_better(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
+fn get_substates_par(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES] {
 	let mut new_substates = [[0; STATE_SIZE]; NUM_PARALLEL_SUBSTATES];
-	let unbyteslice_permuatation_m256 = unsafe {
+	let unbyteslice_permutation_m256 = unsafe {
 		_mm256_setr_epi8(
-			0, 8, 16, 24, 1, 9, 17, 25, 4, 12, 20, 28, 5, 13, 21, 29, 2, 10, 18, 26, 3, 11, 19, 27,
-			6, 14, 22, 30, 7, 15, 23, 31,
+			0, 8, 1, 9, 4, 12, 5, 13, 2, 10, 3, 11, 6, 14, 7, 15, 0, 8, 1, 9, 4, 12, 5, 13, 2, 10,
+			3, 11, 6, 14, 7, 15,
 		)
 	};
 
@@ -116,7 +125,15 @@ fn get_substates_par_better(mut state: State) -> [[u8; STATE_SIZE]; NUM_PARALLEL
 	}
 
 	for state_row in &mut state {
-		*state_row = unsafe { _mm256_permutexvar_epi8(unbyteslice_permuatation_m256, *state_row) };
+		let permuted = unsafe { _mm256_shuffle_epi8(*state_row, unbyteslice_permutation_m256) };
+
+		let permuted_swapped = unsafe { _mm256_permute2x128_si256(permuted, permuted, 0x01) };
+
+		let bottom_half = unsafe { _mm256_unpacklo_epi16(permuted, permuted_swapped) };
+
+		let top_half = unsafe { _mm256_unpackhi_epi16(permuted, permuted_swapped) };
+
+		*state_row = unsafe { _mm256_permute2x128_si256(bottom_half, top_half, 0x20) };
 	}
 
 	for i in 0..8 {
@@ -181,27 +198,72 @@ fn sub_bytes(state: &mut State) {
 }
 
 #[inline]
+fn rotate_bytes_right_epi64(value: __m256i, shift: usize) -> __m256i {
+	let permutation = unsafe {
+		match shift {
+			0 => _mm256_setr_epi8(
+				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+				10, 11, 12, 13, 14, 15,
+			),
+			1 => _mm256_setr_epi8(
+				1, 2, 3, 4, 5, 6, 7, 0, 9, 10, 11, 12, 13, 14, 15, 8, 1, 2, 3, 4, 5, 6, 7, 0, 9,
+				10, 11, 12, 13, 14, 15, 8,
+			),
+			2 => _mm256_setr_epi8(
+				2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9, 2, 3, 4, 5, 6, 7, 0, 1, 10,
+				11, 12, 13, 14, 15, 8, 9,
+			),
+			3 => _mm256_setr_epi8(
+				3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10, 3, 4, 5, 6, 7, 0, 1, 2, 11,
+				12, 13, 14, 15, 8, 9, 10,
+			),
+			4 => _mm256_setr_epi8(
+				4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3, 12,
+				13, 14, 15, 8, 9, 10, 11,
+			),
+			5 => _mm256_setr_epi8(
+				5, 6, 7, 0, 1, 2, 3, 4, 13, 14, 15, 8, 9, 10, 11, 12, 5, 6, 7, 0, 1, 2, 3, 4, 13,
+				14, 15, 8, 9, 10, 11, 12,
+			),
+			6 => _mm256_setr_epi8(
+				6, 7, 0, 1, 2, 3, 4, 5, 14, 15, 8, 9, 10, 11, 12, 13, 6, 7, 0, 1, 2, 3, 4, 5, 14,
+				15, 8, 9, 10, 11, 12, 13,
+			),
+			7 => _mm256_setr_epi8(
+				7, 0, 1, 2, 3, 4, 5, 6, 15, 8, 9, 10, 11, 12, 13, 14, 7, 0, 1, 2, 3, 4, 5, 6, 15,
+				8, 9, 10, 11, 12, 13, 14,
+			),
+			_ => {
+				unreachable!("invalid shift value")
+			}
+		}
+	};
+
+	unsafe { _mm256_shuffle_epi8(value, permutation) }
+}
+
+#[inline]
 #[allow(clippy::identity_op)]
 fn shift_bytes_p(state: &mut State) {
-	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 1) };
-	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 2) };
-	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 3) };
-	state[4] = unsafe { _mm256_ror_epi64(state[4], 8 * 4) };
-	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 5) };
-	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 6) };
-	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 7) };
+	state[1] = rotate_bytes_right_epi64(state[1], 1);
+	state[2] = rotate_bytes_right_epi64(state[2], 2);
+	state[3] = rotate_bytes_right_epi64(state[3], 3);
+	state[4] = rotate_bytes_right_epi64(state[4], 4);
+	state[5] = rotate_bytes_right_epi64(state[5], 5);
+	state[6] = rotate_bytes_right_epi64(state[6], 6);
+	state[7] = rotate_bytes_right_epi64(state[7], 7);
 }
 
 #[inline]
 #[allow(clippy::identity_op)]
 fn shift_bytes_q(state: &mut State) {
-	state[0] = unsafe { _mm256_ror_epi64(state[0], 8 * 1) };
-	state[1] = unsafe { _mm256_ror_epi64(state[1], 8 * 3) };
-	state[2] = unsafe { _mm256_ror_epi64(state[2], 8 * 5) };
-	state[3] = unsafe { _mm256_ror_epi64(state[3], 8 * 7) };
-	state[5] = unsafe { _mm256_ror_epi64(state[5], 8 * 2) };
-	state[6] = unsafe { _mm256_ror_epi64(state[6], 8 * 4) };
-	state[7] = unsafe { _mm256_ror_epi64(state[7], 8 * 6) };
+	state[0] = rotate_bytes_right_epi64(state[0], 1);
+	state[1] = rotate_bytes_right_epi64(state[1], 3);
+	state[2] = rotate_bytes_right_epi64(state[2], 5);
+	state[3] = rotate_bytes_right_epi64(state[3], 7);
+	state[5] = rotate_bytes_right_epi64(state[5], 2);
+	state[6] = rotate_bytes_right_epi64(state[6], 4);
+	state[7] = rotate_bytes_right_epi64(state[7], 6);
 }
 
 #[inline]
@@ -259,7 +321,7 @@ fn permutation_q(state: &mut State) {
 #[derive(Clone)]
 pub struct Groestl256Multi {
 	state: State,
-	unfinished_block: [[u8; STATE_SIZE]; 4],
+	unfinished_block: [[u8; STATE_SIZE]; NUM_PARALLEL_SUBSTATES],
 	num_unfinished_bytes: usize,
 	num_blocks_consumed: usize,
 }
@@ -326,7 +388,7 @@ impl Groestl256Multi {
 			self.state[i] = unsafe { _mm256_xor_si256(self.state[i], *state_copy_row) };
 		}
 
-		let slices = get_substates_par_better(self.state);
+		let slices = get_substates_par(self.state);
 
 		for parallel_idx in 0..NUM_PARALLEL_SUBSTATES {
 			let slice = slices[parallel_idx];
@@ -435,6 +497,8 @@ impl MultiDigest<4> for Groestl256Multi {
 		digest.finalize_into(out);
 	}
 }
+
+pub type Groestl256Parallel = ParallelMultidigestImpl<Groestl256Multi, 4>;
 
 #[cfg(test)]
 mod tests {

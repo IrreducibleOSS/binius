@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{env, marker::PhantomData};
+use std::{env, iter, marker::PhantomData};
 
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -10,18 +10,20 @@ use binius_field::{
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	underlier::WithUnderlier,
+	util::powers,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
-use itertools::{chain, izip};
+use itertools::chain;
 use tracing::instrument;
 
 use super::{
@@ -33,12 +35,13 @@ use super::{
 use crate::{
 	constraint_system::{
 		Flush,
+		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{Constraint, MultilinearOracleSet, MultilinearPolyVariant, OracleId},
+	oracle::{Constraint, MultilinearOracleSet, OracleId},
 	piop,
 	protocols::{
 		fri::CommitOutput,
@@ -52,7 +55,7 @@ use crate::{
 	},
 	ring_switch,
 	transcript::ProverTranscript,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
+	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
@@ -221,7 +224,7 @@ where
 	)
 	.entered();
 	let non_zero_fast_witnesses =
-		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -264,16 +267,23 @@ where
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
 	let flush_convert_span = tracing::info_span!(
-		"[task] Convert Non-Zero to Fast Field",
+		"[task] Convert Flushes to Fast Field",
 		phase = "prodcheck",
 		perfetto_category = "task.main"
 	)
 	.entered();
-	make_masked_flush_witnesses::<U, _>(&oracles, &mut witness, &flush_oracle_ids, &flushes)?;
+	make_masked_flush_witnesses::<U, _>(
+		&oracles,
+		&mut witness,
+		&flush_oracle_ids,
+		&flushes,
+		mixing_challenge,
+		&permutation_challenges,
+	)?;
 
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
-		make_fast_unmasked_flush_witnesses::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -296,7 +306,8 @@ where
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
 	// Prove grand products
-	let all_gpa_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
+	let all_gpa_witnesses =
+		chain!(flush_prodcheck_witnesses, non_zero_prodcheck_witnesses).collect::<Vec<_>>();
 	let all_gpa_claims = chain!(flush_prodcheck_claims, non_zero_prodcheck_claims)
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
@@ -442,12 +453,11 @@ where
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _, _>(
+	} = ring_switch::prove::<_, _, _, Tower, _>(
 		&system,
 		&committed_multilins,
 		&mut transcript,
 		memoized_data,
-		backend,
 	)?;
 	drop(ring_switch_span);
 
@@ -544,151 +554,219 @@ where
 #[instrument(skip_all, level = "debug")]
 fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
 	flushes: &[Flush<FExt<Tower>>],
+	mixing_challenge: FExt<Tower>,
+	permutation_challenges: &[FExt<Tower>],
 ) -> Result<(), Error>
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 {
-	let ones = PackedType::<U, FExt<Tower>>::one();
+	// TODO: Move me out into a separate function & deduplicate.
+	// Count the suffix zeros on all selectors.
+	for flush in flushes {
+		for &selector_id in &flush.selectors {
+			let selector = witness_index.get_multilin_poly(selector_id)?;
+			let zero_suffix_len = count_zero_suffixes(&selector);
+
+			let nonzero_prefix_len = (1 << selector.n_vars()) - zero_suffix_len;
+			witness_index.update_multilin_poly_with_nonzero_scalars_prefixes([(
+				selector_id,
+				selector,
+				nonzero_prefix_len,
+			)])?;
+		}
+	}
+
+	// Find the maximum power of the mixing challenge needed.
+	let max_n_mixed = flushes
+		.iter()
+		.map(|flush| flush.oracles.len())
+		.max()
+		.unwrap_or_default();
+	let mixing_powers = powers(mixing_challenge)
+		.take(max_n_mixed)
+		.collect::<Vec<_>>();
+
 	// The function is on the critical path, parallelize.
-	let indices_to_update = izip!(flush_oracle_ids, flushes)
-		.map(|(&flush_oracle, flush)| match &oracles[flush_oracle].variant {
-			MultilinearPolyVariant::Composite(composite) => {
-				let inner_polys = composite.inner();
+	let indices_to_update = flush_oracle_ids
+		.par_iter()
+		.zip(flushes)
+		.map(|(&flush_oracle, flush)| {
+			let n_vars = oracles.n_vars(flush_oracle);
 
-				let selectors = flush
-					.selectors
-					.iter()
-					.map(|id| witness.get_multilin_poly(*id))
-					.collect::<Result<Vec<_>, _>>()?;
+			let const_term = flush
+				.oracles
+				.iter()
+				.copied()
+				.zip(mixing_powers.iter())
+				.filter_map(|(oracle_or_const, coeff)| match oracle_or_const {
+					OracleOrConst::Const { base, .. } => Some(base * coeff),
+					_ => None,
+				})
+				.sum::<FExt<Tower>>();
+			let const_term = permutation_challenges[flush.channel_id] + const_term;
 
-				let n_vars = composite.n_vars();
+			let inner_oracles = flush
+				.oracles
+				.iter()
+				.copied()
+				.zip(mixing_powers.iter())
+				.filter_map(|(oracle_or_const, &coeff)| match oracle_or_const {
+					OracleOrConst::Oracle(oracle_id) => Some((oracle_id, coeff)),
+					_ => None,
+				})
+				.map(|(inner_id, coeff)| {
+					let witness = witness_index.get_multilin_poly(inner_id)?;
+					Ok((witness, coeff))
+				})
+				.collect::<Result<Vec<_>, Error>>()?;
 
-				let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+			let selector_entries = flush
+				.selectors
+				.iter()
+				.map(|id| witness_index.get_index_entry(*id))
+				.collect::<Result<Vec<_>, _>>()?;
 
-				let len: usize = 1 << n_vars;
-				let packed_len: usize = 1 << n_vars.saturating_sub(log_width);
+			// Get the number of entries before any selector column is fully disabled.
+			let selector_prefix_len = selector_entries
+				.iter()
+				.map(|selector_entry| selector_entry.nonzero_scalars_prefix)
+				.min()
+				.unwrap_or(1 << n_vars);
 
-				let inner_c = composite.c();
+			let selectors = selector_entries
+				.into_iter()
+				.map(|entry| entry.multilin_poly)
+				.collect::<Vec<_>>();
 
-				let zero_suffixes = count_zero_suffixes(&selectors);
+			let log_width = <PackedType<U, FExt<Tower>>>::LOG_WIDTH;
+			let packed_selector_prefix_len = selector_prefix_len.div_ceil(1 << log_width);
 
-				for (zero_suffix, id, poly) in izip!(&zero_suffixes, inner_polys, selectors) {
-					let nonzero_scalars_prefixes = len.saturating_sub(*zero_suffix);
+			let mut witness_data = Vec::with_capacity(1 << n_vars.saturating_sub(log_width));
+			(0..packed_selector_prefix_len)
+				.into_par_iter()
+				.map(|i| {
+					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+						let index = i << log_width | j;
 
-					witness.update_multilin_poly_with_nonzero_scalars_prefixes([(
-						*id,
-						poly,
-						nonzero_scalars_prefixes,
-					)])?;
-				}
+						// Compute the product of all selectors at this point
+						let selector_off = selectors.iter().any(|selector| {
+							let sel_val = selector
+								.evaluate_on_hypercube(index)
+								.expect("index < 1 << n_vars");
+							sel_val.is_zero()
+						});
 
-				let polys = inner_polys
-					.iter()
-					.map(|id| witness.get_multilin_poly(*id))
-					.collect::<Result<Vec<_>, _>>()?;
+						if selector_off {
+							// If any selector is zero, the result is 1
+							<FExt<Tower>>::ONE
+						} else {
+							// Otherwise, compute the linear combination
+							let mut inner_oracles_iter = inner_oracles.iter();
 
-				let max_packed_zero_suffix =
-					zero_suffixes.into_iter().max().unwrap_or(0) >> log_width;
-
-				let mut composite_data = (0..packed_len.saturating_sub(max_packed_zero_suffix))
-					.into_par_iter()
-					.map(|i| {
-						let evals = polys
-							.iter()
-							.map(|poly| {
-								<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-									let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-									poly.evaluate_on_hypercube(index).unwrap_or_default()
-								})
-							})
-							.collect::<Vec<_>>();
-
-						inner_c
-							.evaluate(&evals)
-							.expect("query length is the same as poly length")
+							// Handle the first one specially because the mixing power is ONE,
+							// unless the first oracle was a constant.
+							if let Some((poly, coeff)) = inner_oracles_iter.next() {
+								let first_term = if *coeff == FExt::<Tower>::ONE {
+									poly.evaluate_on_hypercube(index).expect("index in bounds")
+								} else {
+									poly.evaluate_on_hypercube_and_scale(index, *coeff)
+										.expect("index in bounds")
+								};
+								inner_oracles_iter.fold(
+									const_term + first_term,
+									|sum, (poly, coeff)| {
+										let scaled_eval = poly
+											.evaluate_on_hypercube_and_scale(index, *coeff)
+											.expect("index in bounds");
+										sum + scaled_eval
+									},
+								)
+							} else {
+								const_term
+							}
+						}
 					})
-					.collect::<Vec<_>>();
+				})
+				.collect_into_vec(&mut witness_data);
+			witness_data.resize(witness_data.capacity(), PackedType::<U, FExt<Tower>>::one());
 
-				// `ArithExpr::Const(F::ONE) + selector * arith_expr_linear` — so if selector is
-				// zero, we fill with ones.
-				composite_data.resize(packed_len, ones);
-
-				let composite_poly = MultilinearExtension::new(n_vars, composite_data)
-					.expect("data is constructed with the correct length with respect to n_vars");
-
-				Ok((flush_oracle, MLEDirectAdapter::from(composite_poly).upcast_arc_dyn()))
-			}
-			MultilinearPolyVariant::LinearCombination(lincom) => {
-				let polys = lincom
-					.polys()
-					.map(|id| witness.get_multilin_poly(id))
-					.collect::<Result<Vec<_>, _>>()?;
-
-				let packed_len = 1
-					<< lincom
-						.n_vars()
-						.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
-				let lin_comb_data = (0..packed_len)
-					.into_par_iter()
-					.map(|i| {
-						<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-							let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-							polys.iter().zip(lincom.coefficients()).fold(
-								lincom.offset(),
-								|sum, (poly, coeff)| {
-									sum + poly
-										.evaluate_on_hypercube_and_scale(index, coeff)
-										.unwrap_or(<FExt<Tower>>::ZERO)
-								},
-							)
-						})
-					})
-					.collect::<Vec<_>>();
-
-				let lincom_poly = MultilinearExtension::new(lincom.n_vars(), lin_comb_data)
-					.expect("data is constructed with the correct length with respect to n_vars");
-				Ok((flush_oracle, MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn()))
-			}
-			_ => unreachable!("flush_oracles must either be composite or linear combinations"),
+			let witness = MLEDirectAdapter::from(
+				MultilinearExtension::new(n_vars, witness_data)
+					.expect("witness_data created with correct n_vars"),
+			);
+			// TODO: This is sketchy. The field on witness index is called "nonzero_prefix", but
+			// I'm setting it when the suffix is 1, not zero.
+			Ok((witness, selector_prefix_len))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
-	witness.update_multilin_poly(indices_to_update.into_iter())?;
+	witness_index.update_multilin_poly_with_nonzero_scalars_prefixes(
+		iter::zip(flush_oracle_ids, indices_to_update).map(
+			|(&oracle_id, (witness, nonzero_scalars_prefix))| {
+				(oracle_id, witness.upcast_arc_dyn(), nonzero_scalars_prefix)
+			},
+		),
+	)?;
 	Ok(())
 }
 
-fn count_zero_suffixes<P: PackedField>(polys: &[MultilinearWitness<P>]) -> Vec<usize> {
+fn count_zero_suffixes<P: PackedField, M: MultilinearPoly<P>>(poly: &M) -> usize {
 	let zeros = P::zero();
-	polys
-		.iter()
-		.map(|poly| {
-			if let Some(packed_evals) = poly.packed_evals() {
-				let mut zero_suffix_len = 0;
+	if let Some(packed_evals) = poly.packed_evals() {
+		let packed_zero_suffix_len = packed_evals
+			.iter()
+			.rev()
+			.position(|&packed_eval| packed_eval != zeros)
+			.unwrap_or(packed_evals.len());
 
-				for &packed_evals in packed_evals.iter().rev() {
-					if packed_evals != zeros {
-						break;
-					}
-					zero_suffix_len += 1 << (P::LOG_WIDTH + poly.log_extension_degree());
-				}
-				zero_suffix_len
-			} else {
-				0
-			}
-		})
-		.collect()
+		let log_scalars_per_elem = P::LOG_WIDTH + poly.log_extension_degree();
+		if poly.n_vars() < log_scalars_per_elem {
+			debug_assert_eq!(packed_evals.len(), 1, "invariant of MultilinearPoly");
+			packed_zero_suffix_len << poly.n_vars()
+		} else {
+			packed_zero_suffix_len << log_scalars_per_elem
+		}
+	} else {
+		0
+	}
 }
 
+/// Converts specified oracles' witness representations from the base extension field
+/// to the fast extension field format for optimized grand product calculations.
+///
+/// This function processes the provided list of oracle IDs, extracting the corresponding
+/// multilinear polynomials from the witness index, and converting their evaluations
+/// to the fast field representation. The conversion is performed efficiently using
+/// the tower transformation infrastructure.
+///
+/// # Performance Considerations
+/// - This function is optimized for parallel execution as it's on the critical path of the proving
+///   system.
+///
+/// # Arguments
+/// * `oracles` - Reference to the multilinear oracle set containing metadata for all oracles
+/// * `witness` - Reference to the witness index containing the multilinear polynomial evaluations
+/// * `oracle_ids` - Slice of oracle IDs for which to generate fast field representations
+///
+/// # Returns
+/// A vector of tuples, where each tuple contains:
+/// - The number of variables in the oracle's multilinear polynomial
+/// - A vector of packed field elements representing the polynomial's evaluations in the fast field
+///
+/// # Errors
+/// Returns an error if:
+/// - Any oracle ID is invalid or not found in the witness index
+/// - Subcube evaluation fails for any polynomial
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-fn make_fast_unmasked_flush_witnesses<'a, U, Tower>(
+fn convert_witnesses_to_fast_ext<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
-	flush_oracles: &[OracleId],
+	oracle_ids: &[OracleId],
 ) -> Result<Vec<(usize, Vec<PackedType<U, FFastExt<Tower>>>)>, Error>
 where
 	U: ProverTowerUnderlier<Tower>,
@@ -698,26 +776,25 @@ where
 	let to_fast = Tower::packed_transformation_to_fast();
 
 	// The function is on the critical path, parallelize.
-	flush_oracles
+	oracle_ids
 		.into_par_iter()
 		.map(|&flush_oracle_id| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 
 			let log_width = <PackedType<U, FFastExt<Tower>>>::LOG_WIDTH;
 
-			let poly = witness.get_multilin_poly(flush_oracle_id)?;
+			let IndexEntry {
+				multilin_poly: poly,
+				nonzero_scalars_prefix,
+			} = witness.get_index_entry(flush_oracle_id)?;
 
 			const MAX_SUBCUBE_VARS: usize = 8;
 			let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
 			let subcube_packed_size = 1 << subcube_vars.saturating_sub(log_width);
-			let non_const_scalars = 1usize << n_vars;
+			let non_const_scalars = nonzero_scalars_prefix;
 			let non_const_subcubes = non_const_scalars.div_ceil(1 << subcube_vars);
 
-			let mut fast_ext_result = vec![
-				PackedType::<U, FFastExt<Tower>>::one();
-				non_const_subcubes * subcube_packed_size
-			];
-
+			let mut fast_ext_result = zeroed_vec(non_const_subcubes * subcube_packed_size);
 			fast_ext_result
 				.par_chunks_exact_mut(subcube_packed_size)
 				.enumerate()
