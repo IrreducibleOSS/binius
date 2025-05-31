@@ -24,7 +24,7 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeScheme,
-	oracle::{MultilinearOracleSet, OracleId},
+	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
 		gkr_exp,
@@ -55,7 +55,7 @@ where
 {
 	let ConstraintSystem {
 		mut oracles,
-		mut table_constraints,
+		table_constraints,
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
@@ -63,6 +63,19 @@ where
 		..
 	} = constraint_system.clone();
 
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.map(|u| {
+			// Pick the first oracle and get its n_vars.
+			//
+			// TODO(pep): I know that this invariant is not guaranteed to hold at this point, but
+			//            this is fine and is going away in a follow up where we read the sizes of
+			//            tables from the transcript or pass it in the prover.
+			let first_oracle_id = u.oracle_ids[0];
+			let n_vars = oracles.n_vars(first_oracle_id);
+			SizedConstraintSet::new(n_vars, u)
+		})
+		.collect::<Vec<_>>();
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
