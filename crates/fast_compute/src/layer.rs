@@ -485,4 +485,45 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
 		Ok(())
 	}
+
+	fn compute_composite(
+		&self,
+		_exec: &mut Self::Exec,
+		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
+		output: &mut FSliceMut<'_, T::B128, Self>,
+		composition: &ArithCircuitPoly<T::B128>,
+	) -> Result<(), Error> {
+		if inputs.row_len() != output.len() {
+			return Err(Error::InputValidation("inputs and output must be the same length".into()));
+		}
+
+		if CompositionPoly::<P>::n_vars(composition) != inputs.n_rows() {
+			return Err(Error::InputValidation("composition not match with inputs".into()));
+		}
+
+		let rows = inputs.iter().map(|slice| slice.data).collect::<Vec<_>>();
+
+		let log_chunks = get_log_max_threads() + 1;
+
+		let chunk_size = (output.len() >> log_chunks).max(1);
+
+		let packed_row_len = checked_int_div(inputs.row_len(), P::WIDTH);
+
+		let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, packed_row_len) };
+
+		output
+			.data
+			.par_chunks_mut(chunk_size)
+			.enumerate()
+			.for_each(|(chunk_idx, output_chunk)| {
+				let offset = chunk_idx * chunk_size;
+				let rows = rows_batch.columns_subrange(offset..offset + chunk_size);
+
+				composition
+					.batch_evaluate(&rows, output_chunk)
+					.expect("dimensions are correct");
+			});
+
+		Ok(())
+	}
 }
