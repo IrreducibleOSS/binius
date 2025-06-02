@@ -90,9 +90,10 @@ pub fn and_circuit() -> ArithCircuit<B128> {
 	// returns a field element which is the result of the bitwise andconcatenated with the inputs.
 	let mut circuit = ArithExpr::zero();
 	for i in 0..8 {
-		circuit += ArithExpr::Var(i) * ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << i));
-		circuit += ArithExpr::Var(i) * ArithExpr::Const(B32::new(1 << (i + 8)));
-		circuit += ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << (i + 16)));
+		circuit += ArithExpr::Var(i) * ArithExpr::Const(B32::new(1 << i));
+		circuit += ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << (i + 8)));
+		circuit +=
+			ArithExpr::Var(i) * ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << (i + 16)));
 	}
 	ArithCircuit::<B32>::from(circuit)
 		.try_convert_field()
