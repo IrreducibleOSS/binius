@@ -14,8 +14,7 @@ use crate::{
 	gadgets::lookup::LookupProducer,
 };
 
-/// A gadget that computes the logical AND of two boolean columns using JOLT style
-/// lookups.
+/// A gadget that computes the logical AND of two boolean columns using a lookup table.
 
 pub struct AndLookup {
 	/// The table ID
@@ -32,7 +31,12 @@ pub struct And {
 	merged: Col<B32>,
 }
 impl And {
-	fn new(table: &mut TableBuilder, lookup_chan: ChannelId, in_a: Col<B8>, in_b: Col<B8>) -> Self {
+	pub fn new(
+		table: &mut TableBuilder,
+		lookup_chan: ChannelId,
+		in_a: Col<B8>,
+		in_b: Col<B8>,
+	) -> Self {
 		let output = table.add_committed::<B8, 1>("output");
 		let merged = merge_and_columns(table, in_a, in_b, output);
 		table.pull(lookup_chan, [merged]);
@@ -42,6 +46,24 @@ impl And {
 			output,
 			merged,
 		}
+	}
+
+	pub fn populate(&self, witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
+		let in_a_col = witness.get_as(self.in_a)?;
+		let in_b_col = witness.get_as(self.in_b)?;
+		let mut output_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.output)?;
+		let mut merged_col: std::cell::RefMut<'_, [u32]> = witness.get_mut_as(self.merged)?;
+
+		for i in 0..witness.size() {
+			let in_a = in_a_col[i];
+			let in_b = in_b_col[i];
+			let output = in_a & in_b;
+			output_col[i] = output;
+
+			// Merge the values into a single u32
+			merged_col[i] = merge_and_vals(in_a, in_b, output);
+		}
+		Ok(())
 	}
 }
 
@@ -87,7 +109,7 @@ impl AndLookup {
 		table.require_fixed_size(AndIndexedLookup.log_size());
 
 		// The entries_ordered column is the one that is filled with the lookup table entries.
-		let entries_ordered = table.add_fixed("incr_lookup", and_circuit());
+		let entries_ordered = table.add_fixed("and_lookup", and_circuit());
 		let entries_sorted = table.add_committed::<B32, 1>("entries_sorted");
 
 		// Use flush to check that entries_sorted is a permutation of entries_ordered.
@@ -105,6 +127,40 @@ impl AndLookup {
 	}
 }
 
+struct AndLooker {
+	pub in_a: Col<B8>,
+	pub in_b: Col<B8>,
+	and: And,
+}
+
+impl AndLooker {
+	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
+		let in_a = table.add_committed::<B8, 1>("in_a");
+		let in_b = table.add_committed::<B8, 1>("in_b");
+		// Create the And gadget which will compute the AND of in_a and in_b
+		let and = And::new(table, lookup_chan, in_a, in_b);
+		Self { in_a, in_b, and }
+	}
+
+	pub fn populate<'a>(
+		&self,
+		witness: &'a mut TableWitnessSegment,
+		inputs: impl Iterator<Item = &'a (u8, u8)> + Clone,
+	) -> anyhow::Result<()> {
+		{
+			let mut in_a_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.in_a)?;
+			let mut in_b_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.in_b)?;
+
+			for (i, &(in_a, in_b)) in inputs.enumerate() {
+				in_a_col[i] = in_a;
+				in_b_col[i] = in_b;
+			}
+		}
+
+		self.and.populate(witness)?;
+		Ok(())
+	}
+}
 struct AndIndexedLookup;
 
 impl IndexedLookup<B128> for AndIndexedLookup {
@@ -171,14 +227,91 @@ impl TableFiller for AndLookup {
 #[cfg(test)]
 mod tests {
 
+	use std::{cmp::Reverse, iter::repeat_with};
+
+	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
+	use binius_field::arch::OptimalUnderlier;
+	use binius_hash::permutation;
+	use bumpalo::Bump;
+	use itertools::Itertools;
+	use rand::{Rng, SeedableRng, rngs::StdRng};
+
 	use super::*;
-	use crate::builder::ConstraintSystem;
+	use crate::builder::{
+		ConstraintSystem, WitnessIndex, tally,
+		test_utils::{ClosureFiller, validate_system_witness},
+	};
 
 	#[test]
 	fn test_and_lookup() {
 		let mut cs: ConstraintSystem<B128> = ConstraintSystem::new();
 		let lookup_chan = cs.add_channel("lookup");
-		let mut table = cs.add_table("and_lookup");
-		let and_lookup = AndLookup::new(&mut table, lookup_chan, lookup_chan, 0);
+		let permutation_chan = cs.add_channel("permutation");
+		let mut and_table = cs.add_table("and_lookup");
+		let n_multiplicity_bits = 8;
+
+		let and_lookup =
+			AndLookup::new(&mut and_table, lookup_chan, permutation_chan, n_multiplicity_bits);
+		let mut and_looker = cs.add_table("and_looker");
+
+		let and_1 = AndLooker::new(&mut and_looker, lookup_chan);
+
+		let looker_1_size = 5;
+		let looker_id = and_looker.id();
+
+		let allocator = Bump::new();
+		let mut witness = WitnessIndex::new(&cs, &allocator);
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let inputs_1 = repeat_with(|| {
+			let in_a = rng.r#gen::<u8>();
+			let in_b = rng.r#gen::<u8>();
+			(in_a, in_b)
+		})
+		.take(looker_1_size)
+		.collect::<Vec<_>>();
+
+		witness
+			.fill_table_sequential(
+				&ClosureFiller::new(looker_id, |inputs, segment| {
+					and_1.populate(segment, inputs.iter().copied())
+				}),
+				&inputs_1,
+			)
+			.unwrap();
+
+		let boundary_reads = (0..5)
+			.map(|_| {
+				let in_a = rng.r#gen::<u8>();
+				let in_b = rng.r#gen::<u8>();
+				merge_and_vals(in_a, in_b, in_a & in_b)
+			})
+			.collect::<Vec<_>>();
+
+		let boundaries = boundary_reads
+			.into_iter()
+			.map(|val| Boundary {
+				values: vec![B32::new(val).into()],
+				direction: FlushDirection::Pull,
+				channel_id: lookup_chan,
+				multiplicity: 1,
+			})
+			.collect::<Vec<_>>();
+
+		// Tally the lookup counts from the looker tables
+		let counts = tally(&cs, &mut witness, &boundaries, lookup_chan, &AndIndexedLookup).unwrap();
+
+		// Fill the lookup table with the sorted counts
+		let sorted_counts = counts
+			.into_iter()
+			.enumerate()
+			.sorted_by_key(|(_, count)| Reverse(*count))
+			.collect::<Vec<_>>();
+
+		witness
+			.fill_table_sequential(&and_lookup, &sorted_counts)
+			.unwrap();
+
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
 	}
 }
