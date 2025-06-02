@@ -75,7 +75,7 @@ impl<H: Digest + BlockSizeUser + FixedOutputReset + Default> Challenger for Hash
 		}
 	}
 
-	/// This returns the inner challenger which implements `[Buf]`
+	/// This returns the inner challenger which implements [`Buf`].
 	fn sampler(&mut self) -> &mut impl Buf {
 		match self {
 			Self::Sampler(sampler) => sampler,

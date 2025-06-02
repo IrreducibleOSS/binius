@@ -131,6 +131,10 @@ where
 		})
 	}
 
+	pub fn n_multilinears(&self) -> usize {
+		self.multilinears.len()
+	}
+
 	#[instrument(skip_all, name = "ProverState::fold", level = "debug")]
 	pub fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		if self.n_vars == 0 {
@@ -221,7 +225,6 @@ where
 	}
 
 	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
-	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
@@ -230,6 +233,27 @@ where
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPoly<P>,
 	{
+		let min_const_suffix = evaluators
+			.iter()
+			.map(SumcheckEvaluator::const_eval_suffix)
+			.min()
+			.unwrap_or(1 << self.n_vars);
+		let max_degree = evaluators
+			.iter()
+			.map(|evaluator| evaluator.composition().degree())
+			.max()
+			.unwrap_or(0);
+
+		let _scope = tracing::debug_span!(
+			"calculate_round_evals",
+			n_vars = self.n_vars,
+			n_multilinears = self.multilinears.len(),
+			n_compositions = evaluators.len(),
+			min_const_suffix,
+			max_degree,
+		)
+		.entered();
+
 		Ok(self.backend.sumcheck_compute_round_evals(
 			self.evaluation_order,
 			self.n_vars,

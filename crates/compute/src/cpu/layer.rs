@@ -6,7 +6,7 @@ use binius_field::{
 	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
 	util::inner_product_unchecked,
 };
-use binius_math::{ArithCircuit, ArithExpr, extrapolate_line_scalar};
+use binius_math::{ArithCircuit, extrapolate_line_scalar};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
@@ -86,8 +86,8 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		f(&mut CpuExecutor)
 	}
 
-	fn compile_expr(&self, expr: &ArithExpr<T::B128>) -> Result<Self::ExprEval, Error> {
-		Ok(expr.into())
+	fn compile_expr(&self, expr: &ArithCircuit<T::B128>) -> Result<Self::ExprEval, Error> {
+		Ok(expr.clone())
 	}
 
 	fn accumulate_kernels(
