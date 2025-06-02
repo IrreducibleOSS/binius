@@ -230,13 +230,13 @@ where
 
 /// A multilinear polynomial that is being processed by a sumcheck prover.
 #[derive(Debug, Clone)]
-enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
+pub enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
 	PreFold(Mem::FSlice<'a>),
 	PostFold(Mem::FSliceMut<'a>),
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
-	fn const_slice(&self) -> Mem::FSlice<'_> {
+	pub fn const_slice(&self) -> Mem::FSlice<'_> {
 		match self {
 			Self::PreFold(slice) => Mem::narrow(slice),
 			Self::PostFold(slice) => Mem::as_const(slice),
@@ -402,7 +402,7 @@ fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2]) -> RoundCo
 }
 
 #[derive(Debug)]
-enum PhaseState<F: Field> {
+pub enum PhaseState<F: Field> {
 	Coeffs(RoundCoeffs<F>),
 	InitialSums(Vec<F>),
 	BatchedSum(F),
