@@ -314,6 +314,7 @@ where
 			&projected_bivariate_metas,
 			&mut self.memoized_data,
 			&projected_bivariate_claims,
+			self.oracles,
 			self.witness_index,
 			&mut self.partial_evals,
 		)?;
