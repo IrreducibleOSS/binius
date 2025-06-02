@@ -7,4 +7,5 @@
 //! to the prover implementation. Once the V3 prover is fully integrated throughout the codebase,
 //! the current V2 prover will be removed.
 
+pub mod bivariate_mlecheck;
 pub mod bivariate_product;
