@@ -1,177 +1,181 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_core::constraint_system::channel::ChannelId;
-use binius_field::{PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield};
-use binius_math::ArithExpr;
+use std::{iter, slice};
 
+use binius_core::constraint_system::channel::ChannelId;
+use binius_field::{PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, ext_basis};
+use binius_math::{ArithCircuit, ArithExpr};
+
+use super::lookup::{self, LookupProducer};
 use crate::builder::{
-	B1, B8, B32, B128, Col, Expr, TableBuilder, TableFiller, TableId, TableWitnessSegment,
-	column::upcast_col,
+	B1, B8, B32, B128, Col, Expr, IndexedLookup, TableBuilder, TableFiller, TableId,
+	TableWitnessSegment, column::upcast_col, table,
 };
 
 /// A gadget that computes the logical AND of two boolean columns using JOLT style
 /// lookups.
 
-pub struct And {
+pub struct AndLookup {
 	/// The table ID
-	pub id: TableId,
-	/// The first argument.
-	pub a: Col<B8>,
-	/// The second argument.
-	pub b: Col<B8>,
-	/// The output column that holds the result of the AND operation.
-	pub out: Col<B8>,
-	/// Merged column for lookup operations
-	pub merged: Col<B32>,
+	pub table_id: TableId,
+	entries_ordered: Col<B32>,
+	entries_sorted: Col<B32>,
+	lookup_producer: LookupProducer,
 }
 
-/// Returns an arithmetic expression that represents the AND operation.
-pub fn and_circuit() -> ArithExpr<B128> {
-	// The circuit is a lookup table for the and operation, which takes 2 8-bit inputs and
-	// returns a 8-bit output.
-	let mut circuit = ArithExpr::zero();
-	for i in 0..8 {
-		circuit += ArithExpr::Var(i) * ArithExpr::Var(i + 8) * ArithExpr::Const(B8::new(1 << i))
-	}
-	circuit
+pub struct And {
+	in_a: Col<B8>,
+	in_b: Col<B8>,
+	output: Col<B8>,
+	merged: Col<B32>,
 }
-
 impl And {
-	/// Creates a new AND table.
-	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
-		let a = table.add_committed("a");
-		let b = table.add_committed("b");
-		let out = table.add_committed("out");
-
-		// Merge the inputs and output into a single column for lookup
-		// Format: a (8 bit) | b (8 bit) | out (8 bit)
-		let merged = table.add_computed(
-			"merged",
-			upcast_col(a) + upcast_col(b) * B8::new(2) + upcast_col(out) * B8::new(4),
-		);
-
-		// Pull from lookup channel to verify against lookup table
+	fn new(table: &mut TableBuilder, lookup_chan: ChannelId, in_a: Col<B8>, in_b: Col<B8>) -> Self {
+		let output = table.add_committed::<B8, 1>("output");
+		let merged = merge_and_columns(table, in_a, in_b, output);
 		table.pull(lookup_chan, [merged]);
-
 		Self {
-			id: table.id(),
-			a,
-			b,
-			out,
+			in_a,
+			in_b,
+			output,
 			merged,
 		}
 	}
+}
 
-	/// Populate the witness based on the input values
-	pub fn populate<P>(&self, witness: &mut TableWitnessSegment<P>) -> anyhow::Result<()>
-	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
-	{
-		let mut a = witness.get_mut(self.a)?;
-		let mut b = witness.get_mut(self.b)?;
-		let mut out = witness.get_mut(self.out)?;
-		let mut merged = witness.get_mut(self.merged)?;
+pub fn merge_and_columns(
+	table: &mut TableBuilder,
+	in_a: Col<B8>,
+	in_b: Col<B8>,
+	output: Col<B8>,
+) -> Col<B32> {
+	table.add_computed(
+		"merged",
+		upcast_col(in_a)
+			+ upcast_col(in_b) * ext_basis::<B32, B8>(1)
+			+ upcast_col(output) * ext_basis::<B32, B8>(2),
+	)
+}
 
-		for i in 0..witness.size() {
-			// Compute the logical AND
-			out[i] = a[i] * b[i];
+pub fn merge_and_vals(in_a: u8, in_b: u8, output: u8) -> u32 {
+	(in_a as u32) | ((in_b as u32) << 8) | ((output as u32) << 16)
+}
+/// Returns an arithmetic expression that represents the AND operation.
+pub fn and_circuit() -> ArithCircuit<B128> {
+	// The circuit is a lookup table for the and operation, which takes 2 8-bit inputs and
+	// returns a field element which is the result of the bitwise andconcatenated with the inputs.
+	let mut circuit = ArithExpr::zero();
+	for i in 0..8 {
+		circuit += ArithExpr::Var(i) * ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << i));
+		circuit += ArithExpr::Var(i) * ArithExpr::Const(B32::new(1 << (i + 8)));
+		circuit += ArithExpr::Var(i + 8) * ArithExpr::Const(B32::new(1 << (i + 16)));
+	}
+	ArithCircuit::<B32>::from(circuit)
+		.try_convert_field()
+		.expect("And circuit should convert to B128")
+}
 
-			// Compute the merged value
-			merged[i] = a[i].into() + b[i].into() * B8::new(2) + out[i].into() * B8::new(4);
+impl AndLookup {
+	pub fn new(
+		table: &mut TableBuilder,
+		chan: ChannelId,
+		permutation_chan: ChannelId,
+		n_multiplicity_bits: usize,
+	) -> Self {
+		table.require_fixed_size(AndIndexedLookup.log_size());
+
+		// The entries_ordered column is the one that is filled with the lookup table entries.
+		let entries_ordered = table.add_fixed("incr_lookup", and_circuit());
+		let entries_sorted = table.add_committed::<B32, 1>("entries_sorted");
+
+		// Use flush to check that entries_sorted is a permutation of entries_ordered.
+		table.push(permutation_chan, [entries_ordered]);
+		table.pull(permutation_chan, [entries_sorted]);
+
+		let lookup_producer =
+			LookupProducer::new(table, chan, &[entries_sorted], n_multiplicity_bits);
+		Self {
+			table_id: table.id(),
+			entries_ordered,
+			entries_sorted,
+			lookup_producer,
 		}
-
-		Ok(())
 	}
 }
 
-impl<P> TableFiller<P> for And
-where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
-{
-	type Event = (bool, bool);
+struct AndIndexedLookup;
+
+impl IndexedLookup<B128> for AndIndexedLookup {
+	fn log_size(&self) -> usize {
+		16
+	}
+
+	fn entry_to_index(&self, entry: &[B128]) -> usize {
+		debug_assert_eq!(entry.len(), 1, "AndLookup entry must be a single B128 field");
+		let merged_val = entry[0].val() as u32;
+		(merged_val & 0xFFFF) as usize
+	}
+
+	fn index_to_entry(&self, index: usize, entry: &mut [B128]) {
+		debug_assert_eq!(entry.len(), 1, "AndLookup entry must be a single B128 field");
+		let in_a = index & 0xFF;
+		let in_b = (index >> 8) & 0xFF;
+		let output = in_a & in_b;
+		let merged = merge_and_vals(in_a as u8, in_b as u8, output as u8);
+		entry[0] = B128::from(merged as u128);
+	}
+}
+
+impl TableFiller for AndLookup {
+	// Tuple of index and count
+	type Event = (usize, u32);
 
 	fn id(&self) -> TableId {
-		self.id
+		self.table_id
 	}
 
 	fn fill<'a>(
 		&'a self,
 		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
+		witness: &'a mut TableWitnessSegment,
 	) -> anyhow::Result<()> {
-		let mut a = witness.get_mut(self.a)?;
-		let mut b = witness.get_mut(self.b)?;
-		let mut out = witness.get_mut(self.out)?;
-		let mut merged = witness.get_mut(self.merged)?;
-
-		for (i, &(a_val, b_val)) in rows.enumerate() {
-			a[i] = B1::from(a_val);
-			b[i] = B1::from(b_val);
-
-			// Compute logical AND
-			let out_val = a_val && b_val;
-			out[i] = B1::from(out_val);
-
-			// Compute merged value
-			let merged_val = (a_val as u8) + ((b_val as u8) << 1) + ((out_val as u8) << 2);
-			merged[i] = B8::new(merged_val);
+		// Fill the entries_ordered column
+		{
+			let mut col_data = witness.get_scalars_mut(self.entries_ordered)?;
+			let start_index = witness.index() << witness.log_size();
+			for (i, col_data_i) in col_data.iter_mut().enumerate() {
+				let mut entry_128b = B128::default();
+				AndIndexedLookup.index_to_entry(start_index + i, slice::from_mut(&mut entry_128b));
+				*col_data_i = B32::try_from(entry_128b).expect("guaranteed by AndIndexedLookup");
+			}
 		}
 
+		// Fill the entries_sorted column
+		{
+			let mut entries_sorted = witness.get_scalars_mut(self.entries_sorted)?;
+			for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.clone()) {
+				let mut entry_128b = B128::default();
+				AndIndexedLookup.index_to_entry(index, slice::from_mut(&mut entry_128b));
+				*merged_i = B32::try_from(entry_128b).expect("guaranteed by AndIndexedLookup");
+			}
+		}
+
+		self.lookup_producer
+			.populate(witness, rows.map(|&(_i, count)| count))?;
 		Ok(())
 	}
 }
 
-/// A lookup table for AND operations.
-/// This table stores all possible combinations of inputs and outputs for AND.
-pub struct AndLookupTable {
-	pub id: TableId,
-	pub entries: Col<B8>,
-}
+mod tests {
 
-impl AndLookupTable {
-	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
-		// Fixed size table with 4 entries (all possible input combinations)
-		table.require_fixed_size(2);
+	use super::*;
+	use crate::builder::ConstraintSystem;
 
-		let entries = table.add_committed("entries");
-
-		// Push to lookup channel to provide lookup values
-		table.push(lookup_chan, [entries]);
-
-		Self {
-			id: table.id(),
-			entries,
-		}
-	}
-}
-
-impl<P> TableFiller<P> for AndLookupTable
-where
-	P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B8>,
-{
-	type Event = ();
-
-	fn id(&self) -> TableId {
-		self.id
-	}
-
-	fn fill<'a>(
-		&'a self,
-		_rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
-	) -> anyhow::Result<()> {
-		let mut entries = witness.get_mut(self.entries)?;
-
-		// Fill in all possible combinations for a & b:
-		// 0 & 0 = 0 -> 0
-		// 0 & 1 = 0 -> 2
-		// 1 & 0 = 0 -> 1
-		// 1 & 1 = 1 -> 7 (1 + 2 + 4)
-		entries[0] = B8::new(0); // 0 & 0 = 0
-		entries[1] = B8::new(2); // 0 & 1 = 0
-		entries[2] = B8::new(1); // 1 & 0 = 0
-		entries[3] = B8::new(7); // 1 & 1 = 1
-
-		Ok(())
+	#[test]
+	fn test_and_lookup() {
+		let mut cs: ConstraintSystem<B128> = ConstraintSystem::new();
+		let lookup_chan = cs.add_channel("lookup");
+		let mut table = cs.add_table("and_lookup");
+		let and_lookup = AndLookup::new(&mut table, lookup_chan, lookup_chan, 0);
 	}
 }
