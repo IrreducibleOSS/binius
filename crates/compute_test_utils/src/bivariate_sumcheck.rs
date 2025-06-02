@@ -25,7 +25,6 @@ use binius_core::{
 		},
 	},
 	transcript::ProverTranscript,
-	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{
 	BinaryField1b, BinaryField8b, BinaryField128b, ExtensionField, Field, PackedBinaryField1x128b,
@@ -278,18 +277,12 @@ where
 
 	let multilinears = multilinears.iter().collect::<Vec<_>>();
 
-	let backend = make_portable_backend();
-
-	let eq_ind = EqIndPartialEval::new(eval_point)
-		.multilinear_extension::<F, _>(&backend)
-		.unwrap();
+	let eq_ind = MultilinearQuery::<F, _>::expand(eval_point);
 
 	let multilinears = multilinears.iter().collect::<Vec<_>>();
 	let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 	(0..(1 << n_vars))
-		.map(|j| {
-			witness.evaluate_on_hypercube(j).unwrap() * eq_ind.evaluate_on_hypercube(j).unwrap()
-		})
+		.map(|j| witness.evaluate_on_hypercube(j).unwrap() * eq_ind.expansion()[j])
 		.sum()
 }
 
