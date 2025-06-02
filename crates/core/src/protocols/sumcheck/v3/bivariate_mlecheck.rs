@@ -90,6 +90,10 @@ where
 		// 1-variable subcube, thus it should be twice smaller.
 		let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << (n_vars - 1))?;
 		if let Some(eq_ind_partial_evals) = eq_ind_partial_evals {
+			if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(1) {
+				bail!(Error::IncorrectEqIndPartialEvalsSize);
+			}
+
 			hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
 		} else {
 			{
