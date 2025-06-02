@@ -188,9 +188,9 @@ impl<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> WideSub<UX, BIT_LENGTH>
 		let bin: [_; BIT_LENGTH] = array::from_fn(|i| {
 			if i == 0 {
 				if let Some(borrow_in_bit) = flags.borrow_in_bit {
-					table.add_selected("bin[{0}]", borrow_in_bit, 0)
+					table.add_selected("bin[0]", borrow_in_bit, 0)
 				} else {
-					table.add_constant("bin[{0}}", [B1::ZERO])
+					table.add_constant("bin[0]", [B1::ZERO])
 				}
 			} else {
 				bout[i - 1]
