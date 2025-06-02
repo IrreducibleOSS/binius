@@ -119,6 +119,7 @@ stackalloc = "1.2.1"
 subtle = "2.5.0"
 syn = { version = "2.0.98", features = ["extra-traits"] }
 thiserror = "2.0.3"
+thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 trait-set = "0.3.0"
 tracing = "0.1.38"

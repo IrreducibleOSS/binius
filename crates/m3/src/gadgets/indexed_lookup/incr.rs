@@ -1,3 +1,4 @@
+// Copyright 2025 Irreducible Inc.
 use std::{iter, slice};
 
 use binius_core::constraint_system::channel::ChannelId;
