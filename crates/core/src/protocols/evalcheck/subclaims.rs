@@ -310,7 +310,7 @@ pub fn try_build_partial_eval<F: TowerField, P: PackedField<Scalar = F>>(
 	acc: &mut [P],
 	coeff: P,
 ) -> bool {
-	match &oracles.oracle(id).variant {
+	match &oracles[id].variant {
 		crate::oracle::MultilinearPolyVariant::LinearCombination(lc) => {
 			for (poly_id, internal_coeff) in izip!(lc.polys(), lc.coefficients()) {
 				let new_coeff = coeff * P::broadcast(internal_coeff);
