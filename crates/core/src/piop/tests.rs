@@ -153,28 +153,16 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let host_mem_size_committed = committed_multilins.iter().count();
+	let host_mem_size_committed = committed_multilins.len();
 	let dev_mem_size_committed = committed_multilins
 		.iter()
-		.map(|multilin| {
-			if multilin.n_vars() > 0 {
-				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
-			} else {
-				1
-			}
-		})
+		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
 
-	let host_mem_size_transparent = transparent_multilins.iter().count();
+	let host_mem_size_transparent = transparent_multilins.len();
 	let dev_mem_size_transparent = transparent_multilins
 		.iter()
-		.map(|multilin| {
-			if multilin.n_vars() > 0 {
-				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
-			} else {
-				1
-			}
-		})
+		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
 
 	let hal = CpuLayer::<Tower>::default();
