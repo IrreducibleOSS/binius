@@ -1,7 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
 pub mod add;
-pub mod and;
 pub mod barrel_shifter;
 pub mod div;
 pub mod hash;
