@@ -6,10 +6,12 @@ use binius_core::constraint_system::channel::ChannelId;
 use binius_field::{PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, ext_basis};
 use binius_math::{ArithCircuit, ArithExpr};
 
-use super::lookup::{self, LookupProducer};
-use crate::builder::{
-	B1, B8, B32, B128, Col, Expr, IndexedLookup, TableBuilder, TableFiller, TableId,
-	TableWitnessSegment, column::upcast_col, table,
+use crate::{
+	builder::{
+		B1, B8, B32, B128, Col, Expr, IndexedLookup, TableBuilder, TableFiller, TableId,
+		TableWitnessSegment, column::upcast_col, table,
+	},
+	gadgets::lookup::LookupProducer,
 };
 
 /// A gadget that computes the logical AND of two boolean columns using JOLT style
@@ -166,6 +168,7 @@ impl TableFiller for AndLookup {
 	}
 }
 
+#[cfg(test)]
 mod tests {
 
 	use super::*;
@@ -177,5 +180,7 @@ mod tests {
 		let lookup_chan = cs.add_channel("lookup");
 		let mut table = cs.add_table("and_lookup");
 		let and_lookup = AndLookup::new(&mut table, lookup_chan, lookup_chan, 0);
+
+		let and_looker 
 	}
 }
