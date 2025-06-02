@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use binius_field::{BinaryField, ExtensionField, Field};
-use binius_math::ArithExpr;
+use binius_math::ArithCircuit;
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 use itertools::Either;
@@ -109,7 +109,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	}
 
 	/// Compiles an arithmetic expression to the evaluator.
-	fn compile_expr(&self, expr: &ArithExpr<F>) -> Result<Self::ExprEval, Error>;
+	fn compile_expr(&self, expr: &ArithCircuit<F>) -> Result<Self::ExprEval, Error>;
 
 	/// Launch many kernels in parallel and accumulate the scalar results with field addition.
 	///

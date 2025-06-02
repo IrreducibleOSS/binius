@@ -12,7 +12,7 @@ use binius_compute::{
 use binius_core::composition::BivariateProduct;
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_math::{
-	ArithExpr, CompositionPoly, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar,
+	ArithCircuit, CompositionPoly, MultilinearExtension, MultilinearQuery, extrapolate_line_scalar,
 	tensor_prod_eq_ind,
 };
 use binius_ntt::fri::fold_interleaved;
@@ -352,7 +352,7 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 	let b_slice = C::DevMem::as_const(&b_slice);
 
 	// Run the HAL operation to compute the inner product
-	let arith = ArithExpr::Var(0) * ArithExpr::Var(1);
+	let arith = ArithCircuit::var(0) * ArithCircuit::var(1);
 	let eval = compute.compile_expr(&arith).unwrap();
 	let [actual] = compute
 		.execute(|exec| {
@@ -433,7 +433,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 	let b_slice = C::DevMem::as_const(&b_slice);
 
 	// Run the HAL operation to compute the a + b
-	let arith = ArithExpr::Var(0);
+	let arith = ArithCircuit::var(0);
 	let eval = compute.compile_expr(&arith).unwrap();
 	let [actual] = compute
 		.execute(|exec| {
@@ -789,9 +789,7 @@ pub fn test_generic_compute_composite<'a, F: Field, Hal: ComputeLayer<F>>(
 	let input_1_dev = Hal::DevMem::as_const(&input_1_dev);
 
 	let bivariate_product_expr = hal
-		.compile_expr(&ArithExpr::from(CompositionPoly::<F>::expression(
-			&BivariateProduct::default(),
-		)))
+		.compile_expr(&CompositionPoly::<F>::expression(&BivariateProduct::default()))
 		.unwrap();
 
 	let inputs = SlicesBatch::new(vec![input_0_dev, input_1_dev], 1 << log_len);

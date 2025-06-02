@@ -7,7 +7,7 @@ use binius_compute::{
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
-use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder, evaluate_univariate};
+use binius_math::{CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::bail;
 
 use crate::{
@@ -284,10 +284,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 ) -> Result<[F; 2], Error> {
 	let prod_evaluators = compositions
 		.iter()
-		.map(|composition| {
-			let prod_expr = CompositionPoly::<F>::expression(&composition);
-			hal.compile_expr(&ArithExpr::from(prod_expr))
-		})
+		.map(|composition| hal.compile_expr(&CompositionPoly::<F>::expression(&composition)))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	// n_vars - 1 is the number of variables in the halves of the split multilinear.
