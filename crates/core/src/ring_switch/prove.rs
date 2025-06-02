@@ -2,11 +2,11 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{
-	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-	tower::{PackedTop, TowerFamily},
+use binius_field::{PackedField, PackedFieldIndexable, TowerField};
+use binius_math::{
+	B1, B8, B16, B32, B64, B128, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, PackedTop,
+	TowerTop,
 };
-use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use tracing::instrument;
@@ -29,31 +29,22 @@ use crate::{
 	witness::MultilinearWitness,
 };
 
-type FExt<Tower> = <Tower as TowerFamily>::B128;
-
 #[derive(Debug)]
 pub struct ReducedWitness<P: PackedField> {
 	pub transparents: Vec<MultilinearWitness<'static, P>>,
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
 }
 
-pub fn prove<F, P, M, Tower, Challenger_>(
+pub fn prove<F, P, M, Challenger_>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
 	memoized_data: MemoizedData<P>,
 ) -> Result<ReducedWitness<P>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<Tower::B1>
-		+ PackedExtension<Tower::B8>
-		+ PackedExtension<Tower::B16>
-		+ PackedExtension<Tower::B32>
-		+ PackedExtension<Tower::B64>
-		+ PackedExtension<Tower::B128>,
+	F: TowerTop + PackedTop<Scalar = F>,
+	P: PackedFieldIndexable<Scalar = F> + PackedTop,
 	M: MultilinearPoly<P> + Sync,
-	Tower: TowerFamily<B128 = F>,
 	Challenger_: Challenger,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
@@ -78,7 +69,7 @@ where
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
-	let tensor_elems = compute_partial_evals::<_, _, _, Tower>(system, witnesses, memoized_data)?;
+	let tensor_elems = compute_partial_evals(system, witnesses, memoized_data)?;
 	let scaled_tensor_elems = scale_tensor_elems(tensor_elems, &mixing_coeffs);
 	let mixed_tensor_elems = mix_tensor_elems_for_prefixes(
 		&scaled_tensor_elems,
@@ -112,7 +103,7 @@ where
 	)
 	.entered();
 
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
@@ -140,16 +131,15 @@ where
 }
 
 #[instrument(skip_all)]
-fn compute_partial_evals<F, P, M, Tower>(
+fn compute_partial_evals<F, P, M>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	mut memoized_data: MemoizedData<P>,
-) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
+) -> Result<Vec<TowerTensorAlgebra<F>>, Error>
 where
-	F: TowerField,
+	F: TowerTop,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Sync,
-	Tower: TowerFamily<B128 = F>,
 {
 	let suffixes = system
 		.suffix_descs
@@ -204,13 +194,12 @@ where
 	Ok(tensor_elems)
 }
 
-fn scale_tensor_elems<F, Tower>(
-	tensor_elems: Vec<TowerTensorAlgebra<Tower>>,
+fn scale_tensor_elems<F>(
+	tensor_elems: Vec<TowerTensorAlgebra<F>>,
 	mixing_coeffs: &[F],
-) -> Vec<TowerTensorAlgebra<Tower>>
+) -> Vec<TowerTensorAlgebra<F>>
 where
-	F: TowerField,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerTop,
 {
 	// Precondition
 	assert!(tensor_elems.len() <= mixing_coeffs.len());
@@ -222,14 +211,13 @@ where
 		.collect()
 }
 
-fn mix_tensor_elems_for_prefixes<F, Tower>(
-	scaled_tensor_elems: &[TowerTensorAlgebra<Tower>],
+fn mix_tensor_elems_for_prefixes<F>(
+	scaled_tensor_elems: &[TowerTensorAlgebra<F>],
 	prefix_descs: &[EvalClaimPrefixDesc<F>],
 	eval_claim_to_prefix_desc_index: &[usize],
-) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
+) -> Result<Vec<TowerTensorAlgebra<F>>, Error>
 where
-	F: TowerField,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerTop,
 {
 	// Precondition
 	assert_eq!(scaled_tensor_elems.len(), eval_claim_to_prefix_desc_index.len());
@@ -249,14 +237,12 @@ where
 }
 
 #[instrument(skip_all)]
-fn compute_row_batched_sumcheck_evals<F, Tower>(
-	tensor_elems: Vec<TowerTensorAlgebra<Tower>>,
+fn compute_row_batched_sumcheck_evals<F>(
+	tensor_elems: Vec<TowerTensorAlgebra<F>>,
 	row_batch_coeffs: &[F],
 ) -> Vec<F>
 where
-	F: TowerField,
-	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
+	F: TowerTop + PackedTop,
 {
 	tensor_elems
 		.into_par_iter()
@@ -264,74 +250,67 @@ where
 		.collect()
 }
 
-fn make_ring_switch_eq_inds<F, P, Tower>(
+fn make_ring_switch_eq_inds<F, P>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<Tower::B1>
-		+ PackedExtension<Tower::B8>
-		+ PackedExtension<Tower::B16>
-		+ PackedExtension<Tower::B32>
-		+ PackedExtension<Tower::B64>
-		+ PackedExtension<Tower::B128>,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerField + PackedTop,
+	P: PackedFieldIndexable<Scalar = F> + PackedTop,
 {
 	sumcheck_claim_descs
 		.par_iter()
 		.zip(mixing_coeffs)
 		.map(|(claim_desc, &mixing_coeff)| {
 			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
-			make_ring_switch_eq_ind::<P, Tower>(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
+			make_ring_switch_eq_ind(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
 		})
 		.collect()
 }
 
-fn make_ring_switch_eq_ind<P, Tower>(
-	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
-	row_batch_coeffs: Arc<RowBatchCoeffs<FExt<Tower>>>,
-	mixing_coeff: FExt<Tower>,
+fn make_ring_switch_eq_ind<F, P>(
+	suffix_desc: &EvalClaimSuffixDesc<F>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
+	mixing_coeff: F,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where
-	P: PackedFieldIndexable<Scalar = FExt<Tower>> + PackedTop<Tower>,
-	Tower: TowerFamily,
+	F: TowerTop,
+	P: PackedFieldIndexable<Scalar = F> + PackedTop,
 {
-	let eq_ind = match suffix_desc.kappa {
-		7 => RingSwitchEqInd::<Tower::B1, _>::new(
+	let eq_ind = match F::TOWER_LEVEL - suffix_desc.kappa {
+		0 => RingSwitchEqInd::<B1, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
 		.multilinear_extension::<P>(),
-		4 => RingSwitchEqInd::<Tower::B8, _>::new(
+		3 => RingSwitchEqInd::<B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
 		.multilinear_extension(),
-		3 => RingSwitchEqInd::<Tower::B16, _>::new(
+		4 => RingSwitchEqInd::<B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
 		.multilinear_extension(),
-		2 => RingSwitchEqInd::<Tower::B32, _>::new(
+		5 => RingSwitchEqInd::<B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
 		.multilinear_extension(),
-		1 => RingSwitchEqInd::<Tower::B64, _>::new(
+		6 => RingSwitchEqInd::<B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
 		.multilinear_extension(),
-		0 => RingSwitchEqInd::<Tower::B128, _>::new(
+		7 => RingSwitchEqInd::<B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,

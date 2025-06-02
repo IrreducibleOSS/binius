@@ -48,7 +48,7 @@ pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower>,
+	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
@@ -190,7 +190,7 @@ where
 	let ring_switch::ReducedClaim {
 		transparents,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::verify::<_, Tower, _>(&system, &mut transcript)?;
+	} = ring_switch::verify(&system, &mut transcript)?;
 
 	// Prove evaluation claims using PIOP compiler
 	piop::verify(

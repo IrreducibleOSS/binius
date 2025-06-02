@@ -248,13 +248,13 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove::<_, _, _, Tower, _>(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
+		} = prove(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
 			transparents: _,
 			sumcheck_claims: verifier_sumcheck_claims,
-		} = verify::<_, Tower, _>(&system, &mut proof).unwrap();
+		} = verify(&system, &mut proof).unwrap();
 
 		assert_eq!(prover_sumcheck_claims, verifier_sumcheck_claims);
 
@@ -274,8 +274,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 ) where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
-	FExt<Tower>: PackedTop<Tower>,
+	PackedType<U, FExt<Tower>>: PackedFieldIndexable + binius_math::PackedTop,
+	FExt<Tower>: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
 {
@@ -322,8 +322,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove::<_, _, _, Tower, _>(&system, &committed_multilins, &mut proof, MemoizedData::new())
-		.unwrap();
+	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(
@@ -348,7 +347,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let ReducedClaim {
 		transparents,
 		sumcheck_claims,
-	} = verify::<_, Tower, _>(&system, &mut proof).unwrap();
+	} = verify(&system, &mut proof).unwrap();
 
 	piop::verify(
 		&commit_meta,
