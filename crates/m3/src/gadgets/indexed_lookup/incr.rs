@@ -15,7 +15,7 @@ use crate::{
 	gadgets::lookup::LookupProducer,
 };
 
-struct Incr {
+pub struct Incr {
 	pub input: Col<B8>,
 	pub carry_in: Col<B1>,
 	pub output: Col<B8>,
@@ -24,7 +24,7 @@ struct Incr {
 }
 
 impl Incr {
-	fn new(
+	pub fn new(
 		table: &mut TableBuilder,
 		lookup_chan: ChannelId,
 		input: Col<B8>,
@@ -45,7 +45,7 @@ impl Incr {
 		}
 	}
 
-	fn populate<P>(&self, witness: &mut TableWitnessSegment<P>) -> anyhow::Result<()>
+	pub fn populate<P>(&self, witness: &mut TableWitnessSegment<P>) -> anyhow::Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128>
 			+ PackedExtension<B1>
@@ -75,14 +75,14 @@ impl Incr {
 	}
 }
 
-struct IncrLooker {
+pub struct IncrLooker {
 	pub input: Col<B8>,
 	pub carry_in: Col<B1>,
 	incr: Incr,
 }
 
 impl IncrLooker {
-	fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
+	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
 		let input = table.add_committed::<B8, 1>("input");
 		let carry_in = table.add_committed::<B1, 1>("carry_in");
 		let incr = Incr::new(table, lookup_chan, input, carry_in);
@@ -94,7 +94,7 @@ impl IncrLooker {
 		}
 	}
 
-	fn populate<'a, P>(
+	pub fn populate<'a, P>(
 		&self,
 		witness: &mut TableWitnessSegment<P>,
 		events: impl Iterator<Item = &'a (u8, bool)>,
@@ -120,7 +120,7 @@ impl IncrLooker {
 	}
 }
 
-struct IncrLookup {
+pub struct IncrLookup {
 	table_id: TableId,
 	entries_ordered: Col<B32>,
 	entries_sorted: Col<B32>,
@@ -128,7 +128,7 @@ struct IncrLookup {
 }
 
 impl IncrLookup {
-	fn new(
+	pub fn new(
 		table: &mut TableBuilder,
 		chan: ChannelId,
 		permutation_chan: ChannelId,
@@ -252,7 +252,7 @@ pub fn incr_circuit() -> ArithCircuit<B128> {
 	circuit.into()
 }
 
-fn merge_incr_cols(
+pub fn merge_incr_cols(
 	table: &mut TableBuilder,
 	input: Col<B8>,
 	carry_in: Col<B1>,
@@ -271,7 +271,7 @@ fn merge_incr_cols(
 	)
 }
 
-fn merge_incr_vals(input: u8, carry_in: bool, output: u8, carry_out: bool) -> u32 {
+pub fn merge_incr_vals(input: u8, carry_in: bool, output: u8, carry_out: bool) -> u32 {
 	((carry_out as u32) << 17) | ((carry_in as u32) << 16) | ((output as u32) << 8) | input as u32
 }
 
