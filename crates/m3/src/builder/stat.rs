@@ -41,9 +41,9 @@ impl TableStat {
 		for column in &table.columns {
 			let bits_per_column = 1 << column.shape.log_cell_size();
 			if matches!(column.col, super::ColumnDef::Committed { .. }) {
-				bits_per_row_virtual += bits_per_column;
-			} else {
 				bits_per_row_committed += bits_per_column;
+			} else {
+				bits_per_row_virtual += bits_per_column;
 			}
 		}
 
