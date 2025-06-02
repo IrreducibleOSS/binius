@@ -8,8 +8,9 @@ mod model {
 		hash::Hash,
 	};
 
+	use binius_field::AESTowerField8b;
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
-	use binius_m3::emulate::Channel;
+	use binius_m3::{builder::B8, emulate::Channel};
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	/// Signature of the Nodes channel: (Root ID, Data, Depth, Index)
@@ -64,7 +65,7 @@ mod model {
 	}
 	/// A table representing a step in verifying a merkle path for inclusion.
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 	pub struct MerklePathEvent {
 		pub root_id: u8,
 		pub left: [u8; 32],
@@ -78,7 +79,7 @@ mod model {
 
 	/// A table representing the final step of comparing the claimed root.
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 	pub struct MerkleRootEvent {
 		pub root_id: u8,
 		pub digest: [u8; 32],
@@ -90,17 +91,22 @@ mod model {
 		}
 	}
 
-	// Uses the Groestl256 compression function to compress two 32-byte inputs into a single 32-byte
+	/// Uses the Groestl256 compression function to compress two 32-byte inputs into a single
+	/// 32-byte. It is assumed the bytes are in the Fan-Paar basis and so are transformed to the
+	/// AESTowerField8b basis before the Groestl compression function is applied to agree with the
+	/// Groestl gadget.
 	fn compress(left: &[u8], right: &[u8], output: &mut [u8]) {
 		let mut state_bytes = [0u8; 64];
 		let (half0, half1) = state_bytes.split_at_mut(32);
 		half0.copy_from_slice(left);
 		half1.copy_from_slice(right);
+		state_bytes = state_bytes.map(|b| AESTowerField8b::from(B8::new(b)).val());
 		let input = GroestlShortImpl::state_from_bytes(&state_bytes);
 		let mut state = input;
 		GroestlShortImpl::p_perm(&mut state);
 		GroestlShortImpl::xor_state(&mut state, &input);
 		state_bytes = GroestlShortImpl::state_to_bytes(&state);
+		state_bytes = state_bytes.map(|b| B8::from(AESTowerField8b::new(b)).val());
 		output.copy_from_slice(&state_bytes[32..]);
 	}
 
@@ -175,6 +181,11 @@ mod model {
 				current_hash = next_hash;
 			}
 			assert_eq!(current_hash, root);
+		}
+
+		// Returns the root of the merkle tree.
+		pub fn root(&self) -> [u8; 32] {
+			self.root
 		}
 	}
 
@@ -264,7 +275,7 @@ mod model {
 		/// Method to generate the trace given the witness values. The function assumes that the
 		/// root_id is the index of the root in the roots vector and that the paths and leaves are
 		/// passed in with their assigned root_id.
-		fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
+		pub fn generate(roots: Vec<[u8; 32]>, paths: &[MerklePath]) -> Self {
 			let mut path_nodes = Vec::new();
 			let mut root_nodes = HashSet::new();
 			let mut boundaries = MerkleBoundaries::new();
@@ -356,7 +367,7 @@ mod model {
 			}
 		}
 
-		fn validate(&self) {
+		pub fn validate(&self) {
 			let mut channels = MerkleTreeChannels::new();
 
 			// Push the boundary values to the nodes and roots channels.
@@ -391,7 +402,7 @@ mod model {
 		];
 		let tree = MerkleTree::new(&leaves);
 		let path = tree.merkle_path(0);
-		let root = tree.root;
+		let root = tree.root();
 		let leaf = leaves[0];
 		MerkleTree::verify_path(&path, root, leaf, 0);
 
@@ -408,7 +419,7 @@ mod model {
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
-		let root = tree.root;
+		let root = tree.root();
 		let path = tree.merkle_path(path_index);
 		let path_root_id = 0;
 		let merkle_tree_trace = MerkleTreeTrace::generate(
@@ -432,7 +443,7 @@ mod model {
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
-		let root = tree.root;
+		let root = tree.root();
 		let paths = (0..2)
 			.map(|_| {
 				let path_index = rng.gen_range(0..1 << 4);
@@ -463,7 +474,7 @@ mod model {
 		let trees = (0..3)
 			.map(|i| MerkleTree::new(&leaves[i]))
 			.collect::<Vec<_>>();
-		let roots = (0..3).map(|i| trees[i].root).collect::<Vec<_>>();
+		let roots = (0..3).map(|i| trees[i].root()).collect::<Vec<_>>();
 		let paths = trees
 			.iter()
 			.enumerate()
