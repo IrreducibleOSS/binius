@@ -282,7 +282,6 @@ mod tests {
 	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
 	use binius_field::arch::OptimalUnderlier;
 	use bumpalo::Bump;
-	use digest::generic_array::arr::Inc;
 	use itertools::Itertools;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
