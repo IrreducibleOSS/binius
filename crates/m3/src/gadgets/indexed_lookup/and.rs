@@ -180,7 +180,5 @@ mod tests {
 		let lookup_chan = cs.add_channel("lookup");
 		let mut table = cs.add_table("and_lookup");
 		let and_lookup = AndLookup::new(&mut table, lookup_chan, lookup_chan, 0);
-
-		let and_looker 
 	}
 }
