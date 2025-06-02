@@ -65,7 +65,7 @@ mod model {
 	}
 	/// A table representing a step in verifying a merkle path for inclusion.
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 	pub struct MerklePathEvent {
 		pub root_id: u8,
 		pub left: [u8; 32],
@@ -79,7 +79,7 @@ mod model {
 
 	/// A table representing the final step of comparing the claimed root.
 
-	#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 	pub struct MerkleRootEvent {
 		pub root_id: u8,
 		pub digest: [u8; 32],
