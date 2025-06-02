@@ -57,7 +57,7 @@ where
 		multilins: Vec<FSlice<'a, F, Hal>>,
 		// Specify an existing tensor expansion for `eq_ind_challenges`. Avoids
 		// duplicate work.
-		eq_ind_partial_evals: Option<FSlice<'a, F, Hal>>,
+		eq_ind_partial_evals: FSlice<'a, F, Hal>,
 		eq_ind_challenges: Vec<F>,
 	) -> Result<Self, Error> {
 		if Hal::DevMem::MIN_SLICE_LEN != 1 {
@@ -89,34 +89,11 @@ where
 		// Only one value of the expanded equality indicator is used per each
 		// 1-variable subcube, thus it should be twice smaller.
 		let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << (n_vars - 1))?;
-		if let Some(eq_ind_partial_evals) = eq_ind_partial_evals {
-			if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(1) {
-				bail!(Error::IncorrectEqIndPartialEvalsSize);
-			}
+		if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(1) {
+			bail!(Error::IncorrectEqIndPartialEvalsSize);
+		}
 
-			hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
-		} else {
-			{
-				let host_min_slice = host_alloc.alloc(Hal::DevMem::MIN_SLICE_LEN)?;
-				let mut dev_min_slice = Hal::DevMem::slice_mut(
-					&mut eq_ind_partial_evals_buffer,
-					0..Hal::DevMem::MIN_SLICE_LEN,
-				);
-				host_min_slice[0] = F::ONE;
-
-				hal.copy_h2d(host_min_slice, &mut dev_min_slice)?;
-			}
-
-			hal.execute(|exec| {
-				hal.tensor_expand(
-					exec,
-					0,
-					&eq_ind_challenges[..n_vars.saturating_sub(1)],
-					&mut eq_ind_partial_evals_buffer,
-				)?;
-				Ok(vec![])
-			})?;
-		};
+		hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
 
 		Ok(Self {
 			hal,

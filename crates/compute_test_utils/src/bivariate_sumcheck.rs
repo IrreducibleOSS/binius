@@ -401,7 +401,7 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 		&host_alloc,
 		&claim,
 		dev_multilins,
-		Some(Hal::DevMem::as_const(&eq_ind_partial_evals)),
+		Hal::DevMem::as_const(&eq_ind_partial_evals),
 		eq_ind_challenges,
 	)
 	.unwrap();
