@@ -15,7 +15,6 @@ use crate::{
 };
 
 /// A gadget that computes the logical AND of two boolean columns using a lookup table.
-
 pub struct AndLookup {
 	/// The table ID
 	pub table_id: TableId,
