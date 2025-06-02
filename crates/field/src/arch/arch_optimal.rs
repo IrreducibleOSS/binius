@@ -43,7 +43,7 @@ cfg_if! {
 		pub type OptimalUnderlier128b = crate::arch::x86_64::m128::M128;
 		pub type OptimalUnderlier256b = crate::arch::x86_64::m256::M256;
 		pub type OptimalUnderlier512b = crate::arch::x86_64::m512::M512;
-		pub type OptimalUnderlier = OptimalUnderlier512b;
+		pub type OptimalUnderlier = OptimalUnderlier128b;
 	} else if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "avx2"))] {
 		use crate::underlier::ScaledUnderlier;
 
@@ -52,7 +52,7 @@ cfg_if! {
 		pub type OptimalUnderlier128b = crate::arch::x86_64::m128::M128;
 		pub type OptimalUnderlier256b = crate::arch::x86_64::m256::M256;
 		pub type OptimalUnderlier512b = ScaledUnderlier<OptimalUnderlier256b, 2>;
-		pub type OptimalUnderlier = OptimalUnderlier256b;
+		pub type OptimalUnderlier = OptimalUnderlier128b;
 	} else if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "sse2"))] {
 		use crate::underlier::ScaledUnderlier;
 
