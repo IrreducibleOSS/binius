@@ -579,6 +579,16 @@ mod tests {
 	};
 
 	#[test]
+	fn ensure_committed_bits_per_row() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("stacked permutation");
+		let _ = Keccakf::new(&mut table);
+		let id = table.id();
+		let stat = cs.tables[id].stat();
+		assert_eq!(stat.bits_per_row_committed(), 51200);
+	}
+
+	#[test]
 	fn test_round_gadget() {
 		const N_ROWS: usize = 1;
 
