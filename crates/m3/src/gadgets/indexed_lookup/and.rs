@@ -3,13 +3,13 @@
 use std::{iter, slice};
 
 use binius_core::constraint_system::channel::ChannelId;
-use binius_field::{PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, ext_basis};
+use binius_field::ext_basis;
 use binius_math::{ArithCircuit, ArithExpr};
 
 use crate::{
 	builder::{
-		B1, B8, B32, B128, Col, Expr, IndexedLookup, TableBuilder, TableFiller, TableId,
-		TableWitnessSegment, column::upcast_col, table,
+		B8, B32, B128, Col, IndexedLookup, TableBuilder, TableFiller, TableId, TableWitnessSegment,
+		column::upcast_col,
 	},
 	gadgets::lookup::LookupProducer,
 };
@@ -128,7 +128,7 @@ impl AndLookup {
 	}
 }
 
-struct AndLooker {
+pub struct AndLooker {
 	pub in_a: Col<B8>,
 	pub in_b: Col<B8>,
 	and: And,
@@ -232,7 +232,6 @@ mod tests {
 
 	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
 	use binius_field::arch::OptimalUnderlier;
-	use binius_hash::permutation;
 	use bumpalo::Bump;
 	use itertools::Itertools;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
