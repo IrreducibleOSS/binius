@@ -2,10 +2,10 @@
 
 pub mod add;
 pub mod barrel_shifter;
-pub mod hash;
-pub mod lookup;
-
 pub mod div;
+pub mod hash;
+pub mod indexed_lookup;
+pub mod lookup;
 pub mod mul;
 pub mod structured;
 pub mod sub;
