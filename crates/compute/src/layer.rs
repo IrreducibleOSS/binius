@@ -482,14 +482,14 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
-					(log_data_size - log_min_chunk_size)..log_data_size
+					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::ChunkedMut {
 					data,
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
-					(log_data_size - log_min_chunk_size)..log_data_size
+					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::Local { log_size } => 0..*log_size,
 			})
@@ -580,7 +580,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		alloc::{BumpAllocator, ComputeAllocator, Error as AllocError, HostBumpAllocator},
-		cpu::CpuLayer,
+		cpu::{CpuLayer, CpuMemory},
 	};
 
 	/// Test showing how to allocate host memory and create a sub-allocator over it.
@@ -633,5 +633,28 @@ mod tests {
 	fn test_cpu_copy_host_device() {
 		let mut dev_mem = vec![BinaryField128b::ZERO; 256];
 		test_copy_host_device(CpuLayer::<CanonicalTowerFamily>::default(), dev_mem.as_mut_slice());
+	}
+
+	#[test]
+	fn test_log_chunks_range() {
+		let mem_1 = vec![BinaryField128b::ZERO; 256];
+		let mut mem_2 = vec![BinaryField128b::ZERO; 256];
+
+		let mappings = vec![
+			KernelMemMap::Chunked {
+				data: mem_1.as_slice(),
+				log_min_chunk_size: 4,
+			},
+			KernelMemMap::ChunkedMut {
+				data: mem_2.as_mut_slice(),
+				log_min_chunk_size: 6,
+			},
+			KernelMemMap::Local { log_size: 8 },
+		];
+
+		let range =
+			KernelMemMap::<BinaryField128b, CpuMemory>::log_chunks_range(&mappings).unwrap();
+		assert_eq!(range.start, 0);
+		assert_eq!(range.end, 2);
 	}
 }
