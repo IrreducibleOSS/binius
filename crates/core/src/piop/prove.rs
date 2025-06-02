@@ -230,11 +230,11 @@ where
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc
 				.alloc(1 << packed_committed_multilin.n_vars())
-				.expect("Device memory should not run out");
+				.map_err(Error::Alloc)?;
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
-			allocated_mem
+			Ok(allocated_mem)
 		})
-		.collect::<Vec<_>>();
+		.collect::<Result<Vec<_>, Error>>()?;
 
 	let packed_committed_fslices = packed_committed_fslices_mut
 		.iter()
@@ -250,11 +250,11 @@ where
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc
 				.alloc(1 << transparent_multilin.n_vars())
-				.expect("Device memory should not run out");
+				.map_err(Error::Alloc)?;
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
-			allocated_mem
+			Ok(allocated_mem)
 		})
-		.collect::<Vec<_>>();
+		.collect::<Result<Vec<_>, Error>>()?;
 
 	let transparent_fslices = transparent_fslices_mut
 		.iter()

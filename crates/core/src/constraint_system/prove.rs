@@ -470,7 +470,7 @@ where
 	.entered();
 
 	let piop_hal_span = tracing::info_span!(
-		"[phase] PIOP HAL Setup",
+		"PIOP HAL Setup",
 		phase = "piop_compiler",
 		perfetto_category = "phase.sub"
 	)
@@ -495,7 +495,7 @@ where
 		vec![Tower::B128::zero(); dev_mem_size_committed + dev_mem_size_transparent];
 
 	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
-	
+
 	drop(piop_hal_span);
 	piop::prove(
 		&hal,

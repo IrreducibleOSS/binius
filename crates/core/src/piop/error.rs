@@ -23,6 +23,8 @@ pub enum Error {
 	OracleToCommitIndexMalformed { id: OracleId },
 	#[error("the number of variables of the polynomials in sumcheck claim {index} do not match")]
 	SumcheckClaimVariablesMismatch { index: usize },
+	#[error("Compute layer allocation error: {0}")]
+	Alloc(#[from] binius_compute::alloc::Error),
 	#[error("binius_math error: {0}")]
 	Math(#[from] binius_math::Error),
 	#[error("Reed-Solomon error: {0}")]
