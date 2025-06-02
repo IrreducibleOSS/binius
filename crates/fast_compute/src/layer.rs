@@ -15,7 +15,7 @@ use binius_field::{
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
 };
-use binius_math::{ArithExpr, CompositionPoly, RowsBatchRef, tensor_prod_eq_ind};
+use binius_math::{ArithCircuit, CompositionPoly, RowsBatchRef, tensor_prod_eq_ind};
 use binius_maybe_rayon::{
 	iter::{
 		IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
@@ -191,8 +191,8 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		Ok(init)
 	}
 
-	fn compile_expr(&self, expr: &ArithExpr<T::B128>) -> Result<Self::ExprEval, Error> {
-		let expr = ArithCircuitPoly::new(expr.into());
+	fn compile_expr(&self, expr: &ArithCircuit<T::B128>) -> Result<Self::ExprEval, Error> {
+		let expr = ArithCircuitPoly::new(expr.clone());
 		Ok(expr)
 	}
 
