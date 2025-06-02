@@ -14,7 +14,7 @@ use binius_core::{
 	fiat_shamir::HasherChallenger,
 	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim, SumcheckClaim,
+		self, BatchSumcheckOutput, CompositeSumClaim, EqIndSumcheckClaim, SumcheckClaim,
 		eq_ind::reduce_to_regular_sumchecks,
 		front_loaded::BatchVerifier,
 		immediate_switchover_heuristic,
@@ -32,13 +32,13 @@ use binius_field::{
 	PackedExtension, PackedField, TowerField,
 	util::{inner_product_unchecked, powers},
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{SumcheckMultilinear, make_portable_backend};
 use binius_hash::groestl::Groestl256;
 use binius_math::{
 	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain, EvaluationOrder,
 	InterpolationDomain, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
-use bytemuck::must_cast_slice;
+use bytemuck::{must_cast_slice, zeroed_vec};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
@@ -93,7 +93,7 @@ pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 
 	let sums = indexed_compositions
 		.iter()
-		.map(|composition| compute_composite_sum(&multilins, composition))
+		.map(|composition| compute_composite_sum(&multilins, n_vars, composition))
 		.collect::<Vec<_>>();
 	let sum = inner_product_unchecked(powers(batch_coeff), sums.iter().copied());
 
@@ -176,7 +176,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 		.collect::<Vec<_>>();
 	let sums = compositions
 		.iter()
-		.map(|composition| compute_composite_sum(&multilins, composition))
+		.map(|composition| compute_composite_sum(&multilins, n_vars, composition))
 		.collect::<Vec<_>>();
 
 	let claim = SumcheckClaim::new(
@@ -240,6 +240,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 
 fn compute_composite_sum<P, M, Composition>(
 	multilinears: &[M],
+	n_vars: usize,
 	composition: Composition,
 ) -> P::Scalar
 where
@@ -247,16 +248,12 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Composition: CompositionPoly<P>,
 {
-	let n_vars = multilinears
-		.first()
-		.map(|multilinear| multilinear.n_vars())
-		.unwrap_or_default();
 	for multilinear in multilinears {
 		assert_eq!(multilinear.n_vars(), n_vars);
 	}
 
 	let multilinears = multilinears.iter().collect::<Vec<_>>();
-	let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
+	let witness = MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
 	(0..(1 << n_vars))
 		.map(|j| witness.evaluate_on_hypercube(j).unwrap())
 		.sum()
@@ -264,6 +261,7 @@ where
 
 fn evaluate_composite_at_point<F, M, Composition>(
 	multilinears: &[M],
+	n_vars: usize,
 	composition: Composition,
 	eval_point: &[F],
 ) -> F
@@ -272,10 +270,6 @@ where
 	M: MultilinearPoly<F> + Send + Sync,
 	Composition: CompositionPoly<F>,
 {
-	let n_vars = multilinears
-		.first()
-		.map(|multilinear| multilinear.n_vars())
-		.unwrap_or_default();
 	for multilinear in multilinears {
 		assert_eq!(multilinear.n_vars(), n_vars);
 	}
@@ -345,7 +339,9 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 
 	let sums = compositions
 		.iter()
-		.map(|composition| evaluate_composite_at_point(&multilins, composition, &eq_ind_challenges))
+		.map(|composition| {
+			evaluate_composite_at_point(&multilins, n_vars, composition, &eq_ind_challenges)
+		})
 		.collect::<Vec<_>>();
 
 	let claim = EqIndSumcheckClaim::new(
@@ -354,6 +350,20 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 		iter::zip(compositions, sums)
 			.map(|(composition, sum)| CompositeSumClaim { composition, sum })
 			.collect(),
+	)
+	.unwrap();
+
+	let sumcheck_multilinears = multilins
+		.iter()
+		.cloned()
+		.map(|multilin| SumcheckMultilinear::transparent(multilin, &immediate_switchover_heuristic))
+		.collect::<Vec<_>>();
+
+	sumcheck::prove::eq_ind::validate_witness(
+		n_vars,
+		&sumcheck_multilinears,
+		&eq_ind_challenges,
+		claim.eq_ind_composite_sums().to_vec(),
 	)
 	.unwrap();
 
@@ -382,15 +392,17 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 			>= <BivariateMLEcheckProver<F, Hal>>::required_device_memory(&claim, false)
 	);
 
+	let eq_ind_partial_evals =
+		tensor_expand(hal, &eq_ind_challenges[..n_vars.saturating_sub(1)], &dev_alloc, n_vars - 1);
+
 	let prover = BivariateMLEcheckProver::new(
 		hal,
 		&dev_alloc,
 		&host_alloc,
 		&claim,
 		dev_multilins,
-		None,
+		Some(Hal::DevMem::as_const(&eq_ind_partial_evals)),
 		eq_ind_challenges,
-		None,
 	)
 	.unwrap();
 
@@ -420,4 +432,37 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 	for (multilin_i, eval) in iter::zip(multilins, multilinear_evals) {
 		assert_eq!(multilin_i.evaluate(query.to_ref()).unwrap(), eval);
 	}
+}
+
+fn tensor_expand<'a, 'alloc, F, Hal>(
+	hal: &'a Hal,
+	eq_ind_challenges: &[F],
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	n_vars: usize,
+) -> FSliceMut<'a, F, Hal>
+where
+	F: TowerField
+		+ PackedField<Scalar = F>
+		+ ExtensionField<BinaryField8b>
+		+ PackedExtension<BinaryField8b>,
+	Hal: ComputeLayer<F>,
+{
+	let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << n_vars).unwrap();
+
+	{
+		let mut host_min_slice = zeroed_vec(Hal::DevMem::MIN_SLICE_LEN);
+		let mut dev_min_slice =
+			Hal::DevMem::slice_mut(&mut eq_ind_partial_evals_buffer, 0..Hal::DevMem::MIN_SLICE_LEN);
+		host_min_slice[0] = F::ONE;
+
+		hal.copy_h2d(&host_min_slice, &mut dev_min_slice).unwrap();
+	}
+
+	hal.execute(|exec| {
+		hal.tensor_expand(exec, 0, eq_ind_challenges, &mut eq_ind_partial_evals_buffer)?;
+		Ok(vec![])
+	})
+	.unwrap();
+
+	eq_ind_partial_evals_buffer
 }

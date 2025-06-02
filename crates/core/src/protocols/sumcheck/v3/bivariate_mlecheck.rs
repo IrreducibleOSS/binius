@@ -22,6 +22,12 @@ use crate::{
 	},
 };
 
+/// MLEcheck prover implementation for the special case of bivariate product compositions over
+/// large-field multilinears.
+///
+/// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
+/// instance for expensive operations and the input multilinears are provided as device memory
+/// slices.
 pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
@@ -35,7 +41,6 @@ pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	// Wrapping it in Option is a temporary workaround for the lifetime problem
 	eq_ind_partial_evals: Option<FSliceMut<'a, F, Hal>>,
 	eq_ind_challenges: Vec<F>,
-	first_round_eval_1s: Option<Vec<F>>,
 }
 
 impl<'a, 'alloc, F, Hal> BivariateMLEcheckProver<'a, 'alloc, F, Hal>
@@ -50,9 +55,10 @@ where
 		host_alloc: &'a HostBumpAllocator<'a, F>,
 		claim: &EqIndSumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
+		// Specify an existing tensor expansion for `eq_ind_challenges`. Avoids
+		// duplicate work.
 		eq_ind_partial_evals: Option<FSlice<'a, F, Hal>>,
 		eq_ind_challenges: Vec<F>,
-		first_round_eval_1s: Option<Vec<F>>,
 	) -> Result<Self, Error> {
 		if Hal::DevMem::MIN_SLICE_LEN != 1 {
 			todo!("support non-trivial minimum slice lengths");
@@ -108,12 +114,6 @@ where
 			})?;
 		};
 
-		if let Some(ref first_round_eval_1s) = first_round_eval_1s {
-			if first_round_eval_1s.len() != claim.eq_ind_composite_sums().len() {
-				bail!(Error::IncorrectFirstRoundEvalOnesLength);
-			}
-		}
-
 		Ok(Self {
 			hal,
 			dev_alloc,
@@ -126,7 +126,6 @@ where
 			eq_ind_prefix_eval: F::ONE,
 			eq_ind_partial_evals: Some(eq_ind_partial_evals_buffer),
 			eq_ind_challenges,
-			first_round_eval_1s,
 		})
 	}
 
@@ -295,7 +294,6 @@ where
 			&multilins,
 			Hal::DevMem::as_const(self.eq_ind_partial_evals.as_ref().expect("exist")),
 			&self.compositions,
-			self.first_round_eval_1s.as_ref(),
 		)?;
 
 		let batched_sum = match self.last_coeffs_or_sums {
@@ -397,14 +395,13 @@ fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2], alpha: F) 
 	RoundCoeffs(vec![c_0, c_1, c_2])
 }
 
-pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
+fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 	hal: &Hal,
 	n_vars: usize,
 	batch_coeff: F,
 	multilins: &[FSlice<'a, F, Hal>],
 	eq_ind_partial_evals: FSlice<'a, F, Hal>,
 	compositions: &[IndexComposition<BivariateProduct, 2>],
-	first_round_eval_1s: Option<&Vec<F>>,
 ) -> Result<[F; 2], Error> {
 	let prod_evaluators = compositions
 		.iter()
@@ -451,52 +448,37 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 		.take(compositions.len())
 		.collect::<Vec<_>>();
 
-	let eval1 = first_round_eval_1s.map(|evals| {
-		evals
-			.iter()
-			.zip(&batch_coeffs)
-			.map(|(e, c)| *c * e)
-			.sum::<F>()
-	});
-
-	let mut evals = hal.execute(|exec| {
+	let evals = hal.execute(|exec| {
 		hal.accumulate_kernels(
 			exec,
 			|local_exec, log_chunks, mut buffers| {
 				let log_chunk_size = split_n_vars - log_chunks;
 
-				let mut res = Vec::new();
-
 				let eq_ind = buffers.pop().expect(
 					"The presence of eq_ind in the buffer is due to it being added earlier in the code.",
 				);
 
-				if eval1.is_none() {
-					// Compute the composite evaluations at the point ONE.
-					let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
-					{
-						let mut eval_1s_with_eq_ind = (0..multilins.len())
-							.map(|i| buffers[i * 3 + 1].to_ref())
-							.collect::<Vec<_>>();
+				// Compute the composite evaluations at the point ONE.
+				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				{
+					let mut eval_1s_with_eq_ind = (0..multilins.len())
+						.map(|i| buffers[i * 3 + 1].to_ref())
+						.collect::<Vec<_>>();
 
-						eval_1s_with_eq_ind.push(eq_ind.to_ref());
+					eval_1s_with_eq_ind.push(eq_ind.to_ref());
 
-						let eval_1s_with_eq_ind =
-							SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
+					let eval_1s_with_eq_ind =
+						SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
 
-						for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators)
-						{
-							hal.sum_composition_evals(
-								local_exec,
-								&eval_1s_with_eq_ind,
-								evaluator,
-								batch_coeff,
-								&mut acc_1,
-							)?;
-						}
+					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
+						hal.sum_composition_evals(
+							local_exec,
+							&eval_1s_with_eq_ind,
+							evaluator,
+							batch_coeff,
+							&mut acc_1,
+						)?;
 					}
-
-					res.push(acc_1);
 				}
 
 				// Extrapolate the multilinear evaluations at the point Infinity.
@@ -537,17 +519,11 @@ pub fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 					)?;
 				}
 
-				res.push(acc_inf);
-
-				Ok(res)
+				Ok(vec![acc_1, acc_inf])
 			},
 			kernel_mappings,
 		)
 	})?;
-
-	if let Some(eval1) = eval1 {
-		evals.insert(0, eval1);
-	}
 
 	let evals = TryInto::<[F; 2]>::try_into(evals).expect("kernel returns two values");
 	Ok(evals)
