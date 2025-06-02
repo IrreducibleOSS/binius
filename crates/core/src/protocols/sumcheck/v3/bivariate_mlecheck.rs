@@ -11,7 +11,7 @@ use binius_field::{
 	Field, TowerField,
 	util::{eq, powers},
 };
-use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder, evaluate_univariate};
+use binius_math::{ArithCircuit, CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::bail;
 
 use super::bivariate_product::{PhaseState, SumcheckMultilinear};
@@ -387,12 +387,11 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 	let prod_evaluators = compositions
 		.iter()
 		.map(|composition| {
-			let prod_expr = CompositionPoly::<F>::expression(&composition);
-			let mut expr = ArithExpr::from(prod_expr);
+			let mut prod_expr = CompositionPoly::<F>::expression(&composition);
 			// add eq_ind
-			expr *= ArithExpr::Var(multilins.len());
+			prod_expr *= ArithCircuit::var(multilins.len());
 
-			hal.compile_expr(&expr)
+			hal.compile_expr(&prod_expr)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
