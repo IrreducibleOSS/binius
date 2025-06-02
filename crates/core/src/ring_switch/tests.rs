@@ -322,8 +322,32 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		.unwrap();
 
 	let hal = CpuLayer::<Tower>::default();
-	let mut host_mem = vec![Tower::B128::ZERO; 1 << 10];
-	let mut dev_mem = vec![Tower::B128::ZERO; 1 << 28];
+	let host_mem_size_committed = committed_multilins.iter().count();
+	let dev_mem_size_committed = committed_multilins
+		.iter()
+		.map(|multilin| {
+			if multilin.n_vars() > 0 {
+				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
+			} else {
+				1
+			}
+		})
+		.sum::<usize>();
+
+	let host_mem_size_transparent = transparent_multilins.iter().count();
+	let dev_mem_size_transparent = transparent_multilins
+		.iter()
+		.map(|multilin| {
+			if multilin.n_vars() > 0 {
+				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
+			} else {
+				1
+			}
+		})
+		.sum::<usize>();
+	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
+	let mut dev_mem = vec![Tower::B128::ZERO; dev_mem_size_committed + dev_mem_size_transparent];
+
 	piop::prove(
 		&hal,
 		&mut host_mem,

@@ -470,8 +470,35 @@ where
 	.entered();
 
 	let hal = FastCpuLayer::<Tower, Tower::B128>::default();
-	let mut host_mem = vec![Tower::B128::ZERO; 1 << 30];
-	let mut dev_mem_owned = vec![Tower::B128::zero(); 1 << 30];
+
+	let host_mem_size_committed = committed_multilins.iter().count();
+	let dev_mem_size_committed = committed_multilins
+		.iter()
+		.map(|multilin| {
+			if multilin.n_vars() > 0 {
+				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
+			} else {
+				1
+			}
+		})
+		.sum::<usize>();
+
+	let host_mem_size_transparent = transparent_multilins.iter().count();
+	let dev_mem_size_transparent = transparent_multilins
+		.iter()
+		.map(|multilin| {
+			if multilin.n_vars() > 0 {
+				1 << multilin.n_vars() + 1 << (multilin.n_vars() - 1)
+			} else {
+				1
+			}
+		})
+		.sum::<usize>();
+
+	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
+	let mut dev_mem_owned =
+		vec![Tower::B128::zero(); dev_mem_size_committed + dev_mem_size_transparent];
+
 	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
 	piop::prove(
 		&hal,
