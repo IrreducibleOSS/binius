@@ -538,7 +538,7 @@ impl<F: Field> ArithCircuit<F> {
 	}
 
 	/// Fold constants in the circuit.
-	fn optimize_constants(&mut self) {
+	pub fn optimize_constants_in_place(&mut self) {
 		for step_index in 0..self.steps.len() {
 			let (prev_steps, curr_steps) = self.steps.split_at_mut(step_index);
 			let curr_step = &mut curr_steps[0];
@@ -592,6 +592,12 @@ impl<F: Field> ArithCircuit<F> {
 				},
 			}
 		}
+	}
+
+	/// Same as `optimize_constants_in_place`, but returns a new instance of the circuit.
+	pub fn optimize_constants(mut self) -> Self {
+		self.optimize_constants_in_place();
+		self
 	}
 
 	/// Deduplicate steps in the circuit by using a single instance of each step.
@@ -676,14 +682,14 @@ impl<F: Field> ArithCircuit<F> {
 	/// - Extract common steps
 	/// - Remove unused steps
 	pub fn optimize_in_place(&mut self) {
-		self.optimize_constants();
+		self.optimize_constants_in_place();
 		self.deduplicate_steps();
 		self.compress_unused_steps();
 	}
 
 	/// Same as `optimize_in_place`, but returns a new instance of the circuit.
 	pub fn optimize(mut self) -> Self {
-		self.optimize_constants();
+		self.optimize_constants_in_place();
 		self.deduplicate_steps();
 		self.compress_unused_steps();
 
@@ -1401,7 +1407,7 @@ mod tests {
 			+ ArithCircuit::constant(F::ONE) * ArithCircuit::var(2)
 			+ ArithCircuit::constant(F::ONE).pow(4).pow(5)
 			+ (ArithCircuit::var(5) + ArithCircuit::var(5));
-		circuit.optimize_constants();
+		circuit.optimize_constants_in_place();
 
 		let expected_circuit = ArithCircuit::var(0) * ArithCircuit::var(1)
 			+ ArithCircuit::var(2)
