@@ -26,7 +26,7 @@ pub struct AndLookup {
 pub struct And {
 	in_a: Col<B8>,
 	in_b: Col<B8>,
-	output: Col<B8>,
+	pub output: Col<B8>,
 	merged: Col<B32>,
 }
 impl And {
@@ -127,6 +127,8 @@ impl AndLookup {
 	}
 }
 
+/// The 2 columns that are the inputs to the AND operation, and the gadget exposes an output column
+/// that corresponds to the bitwise AND of the two inputs. 
 pub struct AndLooker {
 	pub in_a: Col<B8>,
 	pub in_b: Col<B8>,
@@ -308,7 +310,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		witness
-			.fill_table_sequential(&and_lookup, &sorted_counts)
+			.fill_table_parallel(&and_lookup, &sorted_counts)
 			.unwrap();
 
 		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
