@@ -7,7 +7,7 @@ use std::iter::repeat_with;
 
 use anyhow::Result;
 use binius_circuits::builder::types::U;
-use binius_core::fiat_shamir::HasherChallenger;
+use binius_core::{constraint_system::channel::ChannelId, fiat_shamir::HasherChallenger};
 use binius_field::{
 	PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
 	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
@@ -16,10 +16,14 @@ use binius_field::{
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
-		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
-		WitnessIndex,
+		B1, B8, B64, B128, Boundary, ConstraintSystem, FlushDirection, Statement, TableFiller,
+		TableId, TableWitnessSegment, WitnessIndex,
 	},
-	gadgets::hash::keccak::{StateMatrix, stacked::Keccakf},
+	gadgets::hash::keccak::{
+		StateMatrix,
+		stacked::Keccakf,
+		trace::{self, PermutationTrace, RoundTrace},
+	},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
@@ -30,7 +34,7 @@ use tracing_profile::init_tracing;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(1 << 9..))]
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(2..))]
 	n_permutations: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -39,17 +43,20 @@ struct Args {
 
 pub struct PermutationTable {
 	table_id: TableId,
+	channel_id: ChannelId,
 	keccakf: Keccakf,
 }
 
 impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
+		let channel_id = cs.add_channel("channel");
 		let mut table = cs.add_table("Keccak permutation");
 
-		let keccakf = Keccakf::new(&mut table);
+		let keccakf = Keccakf::new(&mut table, channel_id);
 
 		Self {
 			table_id: table.id(),
+			channel_id,
 			keccakf,
 		}
 	}
@@ -63,7 +70,7 @@ where
 		+ PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 {
-	type Event = StateMatrix<u64>;
+	type Event = PermutationTrace;
 
 	fn id(&self) -> TableId {
 		self.table_id
@@ -74,8 +81,8 @@ where
 		rows: impl Iterator<Item = &'a Self::Event>,
 		witness: &mut TableWitnessSegment<P>,
 	) -> Result<()> {
-		self.keccakf.populate_state_in(witness, rows)?;
-		self.keccakf.populate(witness)?;
+		let rows = rows.cloned().collect::<Vec<_>>();
+		self.keccakf.populate(&rows, witness)?;
 		Ok(())
 	}
 }
@@ -98,19 +105,46 @@ fn main() -> Result<()> {
 	let mut cs = ConstraintSystem::new();
 	let table = PermutationTable::new(&mut cs);
 
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+	let mut permutations = Vec::with_capacity(n_permutations);
+	let mut state = StateMatrix::default();
+	for _ in 0..n_permutations {
+		let permutation_trace = trace::keccakf_trace(state);
+		state = permutation_trace.output().clone();
+		permutations.push(permutation_trace);
+	}
+
 	let statement = Statement {
-		boundaries: vec![],
+		boundaries: vec![
+			Boundary {
+				values: permutations[0]
+					.input()
+					.as_inner()
+					.iter()
+					.map(|v| B128::from(*v as u128))
+					.collect(),
+				channel_id: table.channel_id,
+				direction: FlushDirection::Push,
+				multiplicity: 1,
+			},
+			Boundary {
+				values: permutations[n_permutations - 1][11]
+					.state_out
+					.as_inner()
+					.iter()
+					.map(|v| B128::from(*v as u128))
+					.collect(),
+				channel_id: table.channel_id,
+				direction: FlushDirection::Pull,
+				multiplicity: 1,
+			},
+		],
 		table_sizes: vec![n_permutations],
 	};
 
-	let mut rng = thread_rng();
-	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
-		.take(n_permutations)
-		.collect::<Vec<_>>();
-
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
-	witness.fill_table_parallel(&table, &events)?;
+	witness.fill_table_parallel(&table, &permutations)?;
 	drop(trace_gen_scope);
 
 	let ccs = cs.compile(&statement).unwrap();

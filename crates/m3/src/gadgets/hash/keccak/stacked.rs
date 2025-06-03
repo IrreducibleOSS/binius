@@ -13,7 +13,7 @@ use std::array;
 
 use anyhow::Result;
 use array_util::ArrayExt as _;
-use binius_core::oracle::ShiftVariant;
+use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, PackedSubfield, TowerField,
 	linear_transformation::PackedTransformationFactory,
@@ -25,8 +25,9 @@ use super::{
 	state::{StateMatrix, StateRow},
 	trace,
 };
-use crate::builder::{
-	B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_expr,
+use crate::{
+	builder::{B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_expr},
+	gadgets::hash::keccak::trace::RoundTrace,
 };
 
 /// 8x 64-bit lanes packed[^packed] in the single column.
@@ -37,7 +38,7 @@ use crate::builder::{
 pub type PackedLane8 = Col<B1, { 64 * TRACKS_PER_BATCH }>;
 
 //const BATCHES_PER_PERMUTATION: usize = 3;
-const BATCHES_PER_ROW: usize = 12;
+const BATCHES_PER_ROW: usize = 6;
 const TRACKS_PER_BATCH: usize = 2;
 const STATE_IN_TRACK: usize = 0;
 const STATE_OUT_TRACK: usize = 1;
@@ -72,9 +73,6 @@ const STATE_OUT_TRACK: usize = 1;
 /// each cell is a 64-bit integer called lane. In our case however, since the SIMD-like approach,
 /// each cell is represented by a pack of columns - one for each track and this is what
 /// [`PackedLane8`] represents.
-///
-/// To feed the input to permutation, you need to initialize the `state_in` column of the 0th batch
-/// with the input state matrix. See [`Self::populate_state_in`] if you have values handy.
 pub struct Keccakf {
 	batches: [RoundBatch; BATCHES_PER_ROW],
 	/// The lanes of the input and output state columns. These are exposed to make it convenient to
@@ -101,7 +99,7 @@ impl Keccakf {
 	/// Creates a new instance of the gadget.
 	///
 	/// See the struct documentation for more details.
-	pub fn new(table: &mut TableBuilder) -> Self {
+	pub fn new(table: &mut TableBuilder, chan: ChannelId) -> Self {
 		let state_in: StateMatrix<PackedLane8> =
 			StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_in[{x},{y}]")));
 
@@ -171,6 +169,8 @@ impl Keccakf {
 				);
 			}
 		}
+		table.pull(chan, input.as_inner().iter().copied());
+		table.push(chan, output.as_inner().iter().copied());
 		Self {
 			batches,
 			next_state_in,
@@ -182,9 +182,12 @@ impl Keccakf {
 
 	/// Populate the gadget.
 	///
-	/// Requires state in already to be populated. To populate with known values use
-	/// [`Self::populate_state_in`].
-	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<()>
+	/// Requires state in already to be populated.
+	pub fn populate<P>(
+		&self,
+		permutation_traces: &[PermutationTrace],
+		index: &mut TableWitnessSegment<P>,
+	) -> Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128>
 			+ PackedExtension<B1>
@@ -192,15 +195,8 @@ impl Keccakf {
 			+ PackedExtension<B64>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
-		// `state_in` for the first track of the first batch specifies the initial state for
-		// permutation. Read it out, gather trace and populate each batch.
-		let permutation_traces = self
-			.first_batch()
-			.read_state_ins(index, 0)?
-			.map(trace::keccakf_trace)
-			.collect::<Vec<PermutationTrace>>();
 		for batch in &self.batches {
-			batch.populate(index, &permutation_traces)?;
+			batch.populate(index, permutation_traces)?;
 		}
 
 		for k in 0..permutation_traces.len() {
@@ -227,7 +223,10 @@ impl Keccakf {
 						index.get_mut_as(self.output[(x, y)])?;
 
 					input[k] = permutation_traces[k].input()[(x, y)];
-					output[k] = permutation_traces[k].output()[(x, y)];
+					// output[k] = permutation_traces[k].output()[(x, y)];
+					//
+					// Now the ouput of the row is actually the output of the ROUNDS/2th round.
+					output[k] = permutation_traces[k][11].state_out[(x, y)];
 				}
 			}
 		}
@@ -260,21 +259,6 @@ impl Keccakf {
 	/// 7th track.
 	pub fn packed_state_out(&self) -> &StateMatrix<PackedLane8> {
 		&self.last_batch().state_out
-	}
-
-	/// Populate the input state of the permutation.
-	pub fn populate_state_in<'a, P>(
-		&self,
-		index: &mut TableWitnessSegment<P>,
-		state_ins: impl IntoIterator<Item = &'a StateMatrix<u64>>,
-	) -> Result<()>
-	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
-		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
-	{
-		self.first_batch()
-			.populate_state_in(index, STATE_IN_TRACK, state_ins)?;
-		Ok(())
 	}
 
 	/// Read the resulting states of permutation, one item per row.
@@ -492,26 +476,6 @@ impl RoundBatch {
 		Ok(())
 	}
 
-	fn read_state_ins<'a, P>(
-		&self,
-		index: &'a TableWitnessSegment<P>,
-		track: usize,
-	) -> Result<impl Iterator<Item = StateMatrix<u64>> + 'a>
-	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
-		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
-	{
-		let state_in = self
-			.state_in
-			.as_inner()
-			.try_map_ext(|col| index.get_mut_as(col))?;
-
-		let iter = (0..index.size()).map(move |k| {
-			StateMatrix::from_fn(|(x, y)| state_in[x + 5 * y][TRACKS_PER_BATCH * k + track])
-		});
-		Ok(iter)
-	}
-
 	fn read_state_outs<'a, P>(
 		&self,
 		index: &'a TableWitnessSegment<P>,
@@ -592,23 +556,27 @@ impl std::ops::Index<usize> for PerBatchLens<'_> {
 
 #[cfg(test)]
 mod tests {
+	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use bumpalo::Bump;
 
 	use super::*;
 	use crate::{
 		builder::{ConstraintSystem, Statement, WitnessIndex},
-		gadgets::hash::keccak::test_vector::TEST_VECTOR,
+		gadgets::hash::keccak::{
+			ROUNDS_PER_PERMUTATION, test_vector::TEST_VECTOR, trace::RoundTrace,
+		},
 	};
 
 	#[test]
 	fn ensure_committed_bits_per_row() {
 		let mut cs = ConstraintSystem::new();
+		let chan = cs.add_channel("chan");
 		let mut table = cs.add_table("stacked permutation");
-		let _ = Keccakf::new(&mut table);
+		let _ = Keccakf::new(&mut table, chan);
 		let id = table.id();
 		let stat = cs.tables[id].stat();
-		assert_eq!(stat.bits_per_row_committed(), 41600);
+		assert_eq!(stat.bits_per_row_committed(), 22400);
 	}
 
 	#[test]
@@ -644,46 +612,64 @@ mod tests {
 
 	#[test]
 	fn test_permutation() {
-		const N_ROWS: usize = TEST_VECTOR.len();
+		const N_ROWS: usize = TEST_VECTOR.len() * 2;
 
 		let mut cs = ConstraintSystem::new();
+		let chan = cs.add_channel("chan");
 		let mut table = cs.add_table("test");
 
-		let keccakf = Keccakf::new(&mut table);
+		let keccakf = Keccakf::new(&mut table, chan);
 
 		let allocator = Bump::new();
 		let table_id = table.id();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
-		let state_ins = TEST_VECTOR
-			.iter()
-			.map(|&[state_in, _]| StateMatrix::from_values(state_in))
-			.collect::<Vec<_>>();
+		let mut boundaries = Vec::new();
+		let mut permutation_traces = Vec::with_capacity(TEST_VECTOR.len());
 
-		keccakf.populate_state_in(&mut segment, &state_ins).unwrap();
-		keccakf.populate(&mut segment).unwrap();
-		let state_outs = keccakf
-			.read_state_outs(&segment)
-			.unwrap()
-			.collect::<Vec<_>>();
-		for (i, actual_out) in state_outs.iter().enumerate() {
-			let expected_out = StateMatrix::from_values(TEST_VECTOR[i][1]);
-			if *actual_out != expected_out {
-				panic!("Mismatch at index {i}: expected {expected_out:#?}, got {actual_out:#?}",);
-			}
+		for [state_in, _] in &TEST_VECTOR {
+			let mut mk_boundary = |values: &StateMatrix<u64>, dir: FlushDirection| {
+				boundaries.push(Boundary {
+					values: values
+						.as_inner()
+						.iter()
+						.map(|x| B128::from(*x as u128))
+						.collect(),
+					channel_id: chan,
+					direction: dir,
+					multiplicity: 1,
+				});
+			};
+
+			let permutation_trace = trace::keccakf_trace(StateMatrix::from_values(*state_in));
+			mk_boundary(&permutation_trace[0].state_in, FlushDirection::Push);
+			mk_boundary(&permutation_trace[11].state_out, FlushDirection::Pull);
+			mk_boundary(&permutation_trace[11].state_in, FlushDirection::Push);
+			mk_boundary(&permutation_trace[23].state_out, FlushDirection::Pull);
+
+			permutation_traces.push(permutation_trace);
 		}
+
+		let statement = Statement {
+			boundaries,
+			table_sizes: vec![N_ROWS],
+		};
+		println!("statement: {:#?}", statement.boundaries);
+
+		keccakf.populate(&permutation_traces, &mut segment).unwrap();
 
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+		binius_core::constraint_system::validate::validate_witness(
+			&ccs,
+			&statement.boundaries,
+			&witness,
+		)
+		.unwrap();
 	}
 }

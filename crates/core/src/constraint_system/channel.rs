@@ -219,7 +219,7 @@ where
 				.filter(|(_, c)| **c != 0i64)
 				.collect();
 
-			tracing::debug!("Channel {:?} unbalanced: {:?}", id, unbalanced_flushes);
+			panic!("Channel {:?} unbalanced: {:#?}", id, unbalanced_flushes);
 
 			return Err((VerificationError::ChannelUnbalanced { id }).into());
 		}

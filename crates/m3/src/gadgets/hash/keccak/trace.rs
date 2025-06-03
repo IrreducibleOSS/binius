@@ -75,6 +75,7 @@ impl RoundTrace {
 }
 
 /// A trace of all [`ROUNDS_PER_PERMUTATION`] keccak-f\[1600\] rounds.
+#[derive(Clone)]
 pub struct PermutationTrace {
 	round_traces: [RoundTrace; ROUNDS_PER_PERMUTATION],
 }
