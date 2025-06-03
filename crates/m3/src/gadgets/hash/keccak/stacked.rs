@@ -34,12 +34,13 @@ use crate::builder::{
 /// For the motivation see [`Keccakf`] documentation.
 ///
 /// [^packed]: here it means in the SIMD sense, not as in packed columns.
-pub type PackedLane8 = Col<B1, { 64 * 8 }>;
+pub type PackedLane8 = Col<B1, { 64 * TRACKS_PER_BATCH }>;
 
-const BATCHES_PER_PERMUTATION: usize = 3;
-const TRACKS_PER_BATCH: usize = 8;
+//const BATCHES_PER_PERMUTATION: usize = 3;
+const BATCHES_PER_ROW: usize = 12;
+const TRACKS_PER_BATCH: usize = 2;
 const STATE_IN_TRACK: usize = 0;
-const STATE_OUT_TRACK: usize = 7;
+const STATE_OUT_TRACK: usize = 1;
 
 /// Keccak-f\[1600\] permutation function verification gadget.
 ///
@@ -75,7 +76,7 @@ const STATE_OUT_TRACK: usize = 7;
 /// To feed the input to permutation, you need to initialize the `state_in` column of the 0th batch
 /// with the input state matrix. See [`Self::populate_state_in`] if you have values handy.
 pub struct Keccakf {
-	batches: [RoundBatch; BATCHES_PER_PERMUTATION],
+	batches: [RoundBatch; BATCHES_PER_ROW],
 	/// The lanes of the input and output state columns. These are exposed to make it convenient to
 	/// use the gadget along with flushing.
 	pub input: StateMatrix<Col<B64>>,
@@ -107,9 +108,10 @@ impl Keccakf {
 		let mut state = state_in;
 
 		// Declaring packed state_in columns for exposing in the struct.
-		let state_in_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
-			table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
-		});
+		let state_in_packed: StateMatrix<Col<B64, TRACKS_PER_BATCH>> =
+			StateMatrix::from_fn(|(x, y)| {
+				table.add_packed(format!("state_in_packed[{x},{y}]"), state[(x, y)])
+			});
 
 		// Constructing the batches of rounds. The final value of `state` will be the permutation
 		// output.
@@ -124,21 +126,32 @@ impl Keccakf {
 		});
 
 		// Declaring packed state_out columns to be exposed in the struct.
-		let state_out_packed: StateMatrix<Col<B64, 8>> = StateMatrix::from_fn(|(x, y)| {
-			table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
-		});
+		let state_out_packed: StateMatrix<Col<B64, TRACKS_PER_BATCH>> =
+			StateMatrix::from_fn(|(x, y)| {
+				table.add_packed(format!("state_out_packed[{x},{y}]"), state[(x, y)])
+			});
 
 		let input = StateMatrix::from_fn(|(x, y)| {
-			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x, y)], 0)
+			table.add_selected(format!("input[{x},{y}]"), state_in_packed[(x, y)], STATE_IN_TRACK)
 		});
 
 		let output = StateMatrix::from_fn(|(x, y)| {
-			table.add_selected(format!("output[{x},{y}]"), state_out_packed[(x, y)], 7)
+			table.add_selected(
+				format!("output[{x},{y}]"),
+				state_out_packed[(x, y)],
+				STATE_OUT_TRACK,
+			)
 		});
 
 		let link_sel = table.add_constant(
 			"link_sel",
-			array::from_fn(|bit_index| if bit_index < 7 { B1::ONE } else { B1::ZERO }),
+			array::from_fn(|bit_index| {
+				if bit_index < TRACKS_PER_BATCH - 1 {
+					B1::ONE
+				} else {
+					B1::ZERO
+				}
+			}),
 		);
 		let next_state_in = StateMatrix::from_fn(|(x, y)| {
 			table.add_shifted(
@@ -181,7 +194,8 @@ impl Keccakf {
 	{
 		// `state_in` for the first track of the first batch specifies the initial state for
 		// permutation. Read it out, gather trace and populate each batch.
-		let permutation_traces = self.batches[0]
+		let permutation_traces = self
+			.first_batch()
 			.read_state_ins(index, 0)?
 			.map(trace::keccakf_trace)
 			.collect::<Vec<PermutationTrace>>();
@@ -195,15 +209,15 @@ impl Keccakf {
 					let mut next_state_in: std::cell::RefMut<'_, [u64]> =
 						index.get_mut_as(self.next_state_in[(x, y)])?;
 					let batch_0_state_in: std::cell::Ref<'_, [u64]> =
-						index.get_as(self.batches[0].state_in[(x, y)])?;
-					let batch_2_state_out: std::cell::Ref<'_, [u64]> =
-						index.get_as(self.batches[2].state_out[(x, y)])?;
+						index.get_as(self.first_batch().state_in[(x, y)])?;
+					let batch_11_state_out: std::cell::Ref<'_, [u64]> =
+						index.get_as(self.last_batch().state_out[(x, y)])?;
 					for track in 0..TRACKS_PER_BATCH - 1 {
 						next_state_in[TRACKS_PER_BATCH * k + track] =
 							batch_0_state_in[TRACKS_PER_BATCH * k + track + 1];
 						assert_eq!(
 							next_state_in[TRACKS_PER_BATCH * k + track],
-							batch_2_state_out[TRACKS_PER_BATCH * k + track]
+							batch_11_state_out[TRACKS_PER_BATCH * k + track]
 						);
 					}
 					// Populating the packed and selected input and output columns.
@@ -221,23 +235,31 @@ impl Keccakf {
 		{
 			let mut link_sel: std::cell::RefMut<'_, [u8]> = index.get_mut_as(self.link_sel)?;
 			for link_sel_i in link_sel.iter_mut() {
-				*link_sel_i = 0x7f;
+				*link_sel_i = 0b01010101;
 			}
 		}
 
 		Ok(())
 	}
 
+	fn first_batch(&self) -> &RoundBatch {
+		&self.batches[0]
+	}
+
+	fn last_batch(&self) -> &RoundBatch {
+		&self.batches[self.batches.len() - 1]
+	}
+
 	/// Returns the `state_in` column for the 0th batch. The input to the permutation is at the
 	/// 0th track.
 	pub fn packed_state_in(&self) -> &StateMatrix<PackedLane8> {
-		&self.batches[0].state_in
+		&self.first_batch().state_in
 	}
 
 	/// Returns the `state_out` column for the 2nd batch. The output of the permutation is at the
 	/// 7th track.
 	pub fn packed_state_out(&self) -> &StateMatrix<PackedLane8> {
-		&self.batches[2].state_out
+		&self.last_batch().state_out
 	}
 
 	/// Populate the input state of the permutation.
@@ -250,7 +272,8 @@ impl Keccakf {
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
-		self.batches[0].populate_state_in(index, STATE_IN_TRACK, state_ins)?;
+		self.first_batch()
+			.populate_state_in(index, STATE_IN_TRACK, state_ins)?;
 		Ok(())
 	}
 
@@ -265,7 +288,7 @@ impl Keccakf {
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
 	{
-		self.batches[2].read_state_outs(index, STATE_OUT_TRACK)
+		self.last_batch().read_state_outs(index, STATE_OUT_TRACK)
 	}
 }
 
@@ -287,7 +310,7 @@ struct RoundBatch {
 
 impl RoundBatch {
 	fn new(table: &mut TableBuilder, state_in: StateMatrix<PackedLane8>, batch_no: usize) -> Self {
-		assert!(batch_no < BATCHES_PER_PERMUTATION);
+		assert!(batch_no < BATCHES_PER_ROW);
 		let state_out =
 			StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_out[{x},{y}]")));
 
@@ -525,9 +548,9 @@ where
 /// Returns the RC for every round/track in the given batch.
 ///
 /// The return type is basically 8 tracks of 64-bit round constants represented as bit patterns.
-fn round_consts_for_batch(batch_no: usize) -> [B1; 64 * 8] {
-	assert!(batch_no < BATCHES_PER_PERMUTATION);
-	let mut batch_rc = [B1::from(0); 64 * 8];
+fn round_consts_for_batch(batch_no: usize) -> [B1; 64 * TRACKS_PER_BATCH] {
+	assert!(batch_no < BATCHES_PER_ROW);
+	let mut batch_rc = [B1::from(0); 64 * TRACKS_PER_BATCH];
 	for track in 0..TRACKS_PER_BATCH {
 		let rc = RC[nth_round_per_batch(batch_no, track)];
 		for bit in 0..64 {
@@ -540,9 +563,9 @@ fn round_consts_for_batch(batch_no: usize) -> [B1; 64 * 8] {
 
 /// Calculates the round number that is performed at the `nth` track of the `batch_no` batch.
 fn nth_round_per_batch(batch_no: usize, nth: usize) -> usize {
-	assert!(batch_no < BATCHES_PER_PERMUTATION);
+	assert!(batch_no < BATCHES_PER_ROW);
 	assert!(nth < TRACKS_PER_BATCH);
-	nth * BATCHES_PER_PERMUTATION + batch_no
+	nth * BATCHES_PER_ROW + batch_no
 }
 
 /// This is specialization of [`PermutationTrace`] for a particular batch.
@@ -585,7 +608,7 @@ mod tests {
 		let _ = Keccakf::new(&mut table);
 		let id = table.id();
 		let stat = cs.tables[id].stat();
-		assert_eq!(stat.bits_per_row_committed(), 51200);
+		assert_eq!(stat.bits_per_row_committed(), 41600);
 	}
 
 	#[test]
