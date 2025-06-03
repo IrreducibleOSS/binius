@@ -2,14 +2,13 @@
 
 use std::{iter, marker::PhantomData, sync::Arc};
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, TowerField, packed::pack_slice,
+use binius_compute::{
+	ComputeLayer, ComputeMemory, FSlice, SizedSlice, SubfieldSlice,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
-use binius_math::{
-	MultilinearExtension, MultilinearQuery, MultilinearQueryRef, tensor_prod_eq_ind,
-};
+use binius_fast_compute_math::tensor_prod_eq_ind;
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_utils::bail;
-use bytemuck::zeroed_vec;
 
 use super::error::Error;
 use crate::{
@@ -74,26 +73,45 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<P: PackedField<Scalar = F> + PackedExtension<FSub>>(
+	pub fn multilinear_extension<'a, 'alloc, Hal: ComputeLayer<F>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
-		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
-		evals[0].set(0, self.mixing_coeff);
-		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
+		hal: &'a Hal,
+		exec: &mut Hal::Exec,
+		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+		host_alloc: &'a HostBumpAllocator<'a, F>,
+		tower_level: usize,
+	) -> Result<FSlice<'a, F, Hal>, Error> {
+		let evals = tensor_prod_eq_ind(
+			0,
+			&[self.mixing_coeff],
+			&self.z_vals,
+			exec,
+			hal,
+			dev_alloc,
+			host_alloc,
+		)?;
 
-		let subfield_vector = <P as PackedExtension<FSub>>::cast_bases(&evals);
+		let subfield_vector = SubfieldSlice::new(evals, tower_level);
 
-		let subfield_vector_mle =
-			MultilinearExtension::new(self.z_vals.len() + F::LOG_DEGREE, subfield_vector)?;
+		let extension_degree = <F as ExtensionField<FSub>>::DEGREE;
 
-		let row_batch_coeffs = pack_slice(&self.row_batch_coeffs.coeffs()[0..F::DEGREE]);
-		let row_batching_query_expansion =
-			MultilinearQuery::with_expansion(F::LOG_DEGREE, row_batch_coeffs)?;
+		let mut row_batching_query_expansion = dev_alloc.alloc(extension_degree)?;
 
-		let partial_low_eval = subfield_vector_mle
-			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
+		hal.copy_h2d(
+			&self.row_batch_coeffs.coeffs()[0..extension_degree],
+			&mut row_batching_query_expansion,
+		)?;
 
-		Ok(partial_low_eval)
+		let mut mle = dev_alloc.alloc(evals.len())?;
+
+		hal.fold_right(
+			exec,
+			subfield_vector,
+			Hal::DevMem::as_const(&row_batching_query_expansion),
+			&mut mle,
+		)?;
+
+		Ok(Hal::DevMem::to_const(mle))
 	}
 }
 
@@ -140,8 +158,11 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{BinaryField8b, BinaryField128b};
+	use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
+	use binius_fast_compute_math::eq_ind_partial_eval;
+	use binius_field::{BinaryField8b, BinaryField128b, tower::CanonicalTowerFamily};
 	use binius_math::MultilinearQuery;
+	use bytemuck::zeroed_vec;
 	use iter::repeat_with;
 	use rand::{SeedableRng, prelude::StdRng};
 
@@ -171,15 +192,44 @@ mod tests {
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
-		let eval_query = MultilinearQuery::<F>::expand(&eval_point);
 
 		let mixing_coeff = <F as Field>::random(&mut rng);
 
+		let hal = FastCpuLayer::<CanonicalTowerFamily, BinaryField128b>::default();
+
+		let mut dev_mem = zeroed_vec(1 << 10);
+		let mut host_mem = zeroed_vec(1 << 10);
+
+		let dev_mem = PackedMemorySliceMut::new(&mut dev_mem);
+
+		let host_alloc = HostBumpAllocator::new(&mut host_mem);
+		let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
 		let rs_eq = RingSwitchEqInd::<FS, _>::new(z_vals, row_batch_coeffs, mixing_coeff).unwrap();
-		let mle = rs_eq.multilinear_extension::<F>().unwrap();
 
 		let val1 = rs_eq.evaluate(&eval_point).unwrap();
-		let val2 = mle.evaluate(&eval_query).unwrap();
-		assert_eq!(val1, val2);
+
+		hal.execute(|exec| {
+			let mle = rs_eq
+				.multilinear_extension(
+					&hal,
+					exec,
+					&dev_alloc,
+					&host_alloc,
+					BinaryField8b::TOWER_LEVEL,
+				)
+				.unwrap();
+
+			let mle = SubfieldSlice::new(mle, BinaryField128b::TOWER_LEVEL);
+
+			let query =
+				eq_ind_partial_eval(&hal, exec, &eval_point, &dev_alloc, &host_alloc).unwrap();
+
+			let val2 = hal.inner_product(exec, mle, query).unwrap();
+
+			assert_eq!(val1, val2);
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }

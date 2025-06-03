@@ -2,7 +2,11 @@
 
 use std::iter::repeat_with;
 
-use binius_compute::cpu::CpuLayer;
+use binius_compute::{
+	ComputeLayer, ComputeMemory, FSlice, SizedSlice,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	cpu::CpuLayer,
+};
 use binius_field::{
 	BinaryField, BinaryField8b, BinaryField16b, Field, PackedBinaryField2x128b, PackedExtension,
 	PackedField, PackedFieldIndexable,
@@ -11,7 +15,8 @@ use binius_field::{
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_ntt::SingleThreadedNTT;
-use binius_utils::{DeserializeBytes, SerializeBytes};
+use binius_utils::{DeserializeBytes, SerializeBytes, checked_arithmetics::strict_log_2};
+use bytemuck::zeroed_vec;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use super::{
@@ -62,9 +67,10 @@ where
 		.collect()
 }
 
-fn make_sumcheck_claims<F, P, M>(
+fn make_sumcheck_claims<'a, F, P, M, Hal: ComputeLayer<F>>(
 	committed_multilins: &[M],
-	transparent_multilins: &[M],
+	transparent_multilins: &[FSlice<'a, F, Hal>],
+	hal: &Hal,
 ) -> Vec<PIOPSumcheckClaim<F>>
 where
 	F: Field,
@@ -74,14 +80,19 @@ where
 	let mut sumcheck_claims = Vec::new();
 	for (i, committed_multilin) in committed_multilins.iter().enumerate() {
 		for (j, transparent_multilin) in transparent_multilins.iter().enumerate() {
-			if committed_multilin.n_vars() == transparent_multilin.n_vars() {
+			if committed_multilin.n_vars() == strict_log_2(transparent_multilin.len()).unwrap_or(0)
+			{
 				let n_vars = committed_multilin.n_vars();
+
+				let mut transparent_evals = zeroed_vec(transparent_multilin.len());
+
+				hal.copy_d2h(*transparent_multilin, &mut transparent_evals)
+					.unwrap();
+
 				let sum = (0..1 << n_vars)
 					.map(|v| {
 						let committed_eval = committed_multilin.evaluate_on_hypercube(v).unwrap();
-						let transparent_eval =
-							transparent_multilin.evaluate_on_hypercube(v).unwrap();
-						committed_eval * transparent_eval
+						committed_eval * transparent_evals[v]
 					})
 					.sum();
 				sumcheck_claims.push(PIOPSumcheckClaim {
@@ -114,6 +125,16 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 {
 	let merkle_scheme = merkle_prover.scheme();
 
+	let hal = CpuLayer::<Tower>::default();
+
+	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 7);
+	let mut dev_mem: Vec<Tower::B128> = zeroed_vec(1 << 12);
+
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, <CpuLayer<Tower> as ComputeLayer<Tower::B128>>::DevMem>::new(
+		&mut dev_mem,
+	);
+
 	let fri_params = make_commit_params_with_optimal_arity::<_, FEncode, _>(
 		commit_meta,
 		merkle_scheme,
@@ -144,35 +165,26 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 	let transparent_mles = generate_multilins::<P>(&transparent_multilins_by_vars, &mut rng);
 	let transparent_multilins = transparent_mles
 		.iter()
-		.map(|mle| MLEDirectAdapter::from(mle.clone()))
+		.map(|mle| {
+			let mut buffer = dev_alloc.alloc(1 << mle.n_vars()).unwrap();
+
+			let evals = P::iter_slice(mle.evals()).collect::<Vec<_>>();
+
+			hal.copy_h2d(&evals, &mut buffer).unwrap();
+			<CpuLayer<Tower> as ComputeLayer<Tower::B128>>::DevMem::to_const(buffer)
+		})
 		.collect::<Vec<_>>();
 
 	let sumcheck_claims =
-		make_sumcheck_claims(&committed_multilins, transparent_multilins.as_slice());
+		make_sumcheck_claims(&committed_multilins, transparent_multilins.as_slice(), &hal);
 
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let host_mem_size_committed = committed_multilins.len();
-	let dev_mem_size_committed = committed_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let host_mem_size_transparent = transparent_multilins.len();
-	let dev_mem_size_transparent = transparent_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let hal = CpuLayer::<Tower>::default();
-	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem =
-		vec![Tower::B128::ZERO; dev_mem_size_committed + dev_mem_size_transparent - 1];
 	prove(
 		&hal,
-		&mut host_mem,
-		&mut dev_mem,
+		&dev_alloc,
+		&host_alloc,
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -180,7 +192,7 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
 	)

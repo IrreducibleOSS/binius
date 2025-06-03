@@ -2,13 +2,18 @@
 
 use std::{iter, sync::Arc};
 
+use binius_compute::{
+	ComputeLayer, FSlice,
+	alloc::{BumpAllocator, HostBumpAllocator},
+};
 use binius_field::{
-	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	tower::{PackedTop, TowerFamily},
 };
-use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
+use binius_math::{MultilinearPoly, MultilinearQuery};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
+use itertools::izip;
 use tracing::instrument;
 
 use super::{
@@ -26,23 +31,24 @@ use crate::{
 		common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd, logging::CalculateRingSwitchEqIndData,
 	},
 	transcript::ProverTranscript,
-	witness::MultilinearWitness,
 };
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;
 
-#[derive(Debug)]
-pub struct ReducedWitness<P: PackedField> {
-	pub transparents: Vec<MultilinearWitness<'static, P>>,
-	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
+pub struct ReducedWitness<'a, F: Field, Hal: ComputeLayer<F>> {
+	pub transparents: Vec<FSlice<'a, F, Hal>>,
+	pub sumcheck_claims: Vec<PIOPSumcheckClaim<F>>,
 }
 
-pub fn prove<F, P, M, Tower, Challenger_>(
+pub fn prove<'a, 'alloc, F, P, M, Tower, Challenger_, Hal>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
 	memoized_data: MemoizedData<P>,
-) -> Result<ReducedWitness<P>, Error>
+	hal: &'a Hal,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, F>,
+) -> Result<ReducedWitness<'a, F, Hal>, Error>
 where
 	F: TowerField + PackedTop<Tower>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -55,6 +61,7 @@ where
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
 	Challenger_: Challenger,
+	Hal: ComputeLayer<F>,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
 		return Err(Error::InvalidWitness(
@@ -112,11 +119,14 @@ where
 	)
 	.entered();
 
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, Tower, _>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
 		&mixing_coeffs,
+		hal,
+		dev_alloc,
+		host_alloc,
 	)?;
 	drop(calculate_ring_switch_eq_ind_span);
 
@@ -264,40 +274,59 @@ where
 		.collect()
 }
 
-fn make_ring_switch_eq_inds<F, P, Tower>(
+fn make_ring_switch_eq_inds<'a, 'alloc, F, Tower, Hal>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
-) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
+	hal: &'a Hal,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, F>,
+) -> Result<Vec<FSlice<'a, F, Hal>>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<Tower::B1>
-		+ PackedExtension<Tower::B8>
-		+ PackedExtension<Tower::B16>
-		+ PackedExtension<Tower::B32>
-		+ PackedExtension<Tower::B64>
-		+ PackedExtension<Tower::B128>,
+	F: TowerField,
 	Tower: TowerFamily<B128 = F>,
+	Hal: ComputeLayer<F>,
 {
-	sumcheck_claim_descs
-		.par_iter()
-		.zip(mixing_coeffs)
-		.map(|(claim_desc, &mixing_coeff)| {
-			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
-			make_ring_switch_eq_ind::<P, Tower>(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
-		})
-		.collect()
+	let mut eq_inds = Vec::with_capacity(sumcheck_claim_descs.len());
+	let _ = hal.execute(|exec| {
+		let res = hal
+			.map(
+				exec,
+				izip!(sumcheck_claim_descs, mixing_coeffs),
+				|exec, (claim_desc, &mixing_coeff)| {
+					let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
+
+					Ok(make_ring_switch_eq_ind::<Tower, _>(
+						suffix_desc,
+						row_batch_coeffs.clone(),
+						mixing_coeff,
+						hal,
+						exec,
+						dev_alloc,
+						host_alloc,
+					)
+					.unwrap())
+				},
+			)
+			.unwrap();
+		eq_inds.extend(res);
+		Ok(vec![])
+	});
+
+	Ok(eq_inds)
 }
 
-fn make_ring_switch_eq_ind<P, Tower>(
+fn make_ring_switch_eq_ind<'a, 'alloc, Tower, Hal: ComputeLayer<Tower::B128>>(
 	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
 	row_batch_coeffs: Arc<RowBatchCoeffs<FExt<Tower>>>,
 	mixing_coeff: FExt<Tower>,
-) -> Result<MultilinearWitness<'static, P>, Error>
+	hal: &'a Hal,
+	exec: &mut Hal::Exec,
+	dev_alloc: &'a BumpAllocator<'alloc, Tower::B128, Hal::DevMem>,
+	host_alloc: &'a HostBumpAllocator<'a, Tower::B128>,
+) -> Result<FSlice<'a, Tower::B128, Hal>, Error>
 where
-	P: PackedFieldIndexable<Scalar = FExt<Tower>> + PackedTop<Tower>,
 	Tower: TowerFamily,
 {
 	let eq_ind = match suffix_desc.kappa {
@@ -306,40 +335,40 @@ where
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension::<P>(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B1::TOWER_LEVEL),
 		4 => RingSwitchEqInd::<Tower::B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B8::TOWER_LEVEL),
 		3 => RingSwitchEqInd::<Tower::B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B16::TOWER_LEVEL),
 		2 => RingSwitchEqInd::<Tower::B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B32::TOWER_LEVEL),
 		1 => RingSwitchEqInd::<Tower::B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B64::TOWER_LEVEL),
 		0 => RingSwitchEqInd::<Tower::B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(hal, exec, dev_alloc, host_alloc, Tower::B128::TOWER_LEVEL),
 		_ => Err(Error::PackingDegreeNotSupported {
 			kappa: suffix_desc.kappa,
 		}),
 	}?;
-	Ok(MLEDirectAdapter::from(eq_ind).upcast_arc_dyn())
+	Ok(eq_ind)
 }
