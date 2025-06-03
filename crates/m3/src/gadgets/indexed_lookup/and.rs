@@ -1,5 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
+/// This module provides gadgets for performing indexed lookup operations for the bitwise AND
+/// of two 8-bit values, using lookup tables. It includes types and functions for constructing,
+/// populating, and testing AND lookup tables and their associated circuits.
 use std::{iter, slice};
 
 use binius_core::constraint_system::channel::ChannelId;
@@ -15,6 +18,11 @@ use crate::{
 };
 
 /// A gadget that computes the logical AND of two boolean columns using a lookup table.
+///
+/// This struct holds columns for an 8-bit AND operation where:
+/// - `entries_ordered` is the fixed column containing all possible AND table entries
+/// - `entries_sorted` is a committed column for sorted entries
+/// - `lookup_producer` manages lookup multiplicities and constraints
 pub struct AndLookup {
 	/// The table ID
 	pub table_id: TableId,
@@ -24,12 +32,26 @@ pub struct AndLookup {
 }
 
 pub struct And {
+	/// Input column A (8 bits)
 	in_a: Col<B8>,
+	/// Input column B (8 bits)
 	in_b: Col<B8>,
+	/// Output column (8 bits), result of in_a & in_b
 	pub output: Col<B8>,
+	/// Merged column for lookup (32 bits)
 	merged: Col<B32>,
 }
 impl And {
+	/// Constructs a new AND gadget, registering the necessary columns in the table.
+	///
+	/// # Arguments
+	/// * `table` - The table builder to register columns with.
+	/// * `lookup_chan` - The channel for lookup operations.
+	/// * `in_a` - The first input column (8 bits).
+	/// * `in_b` - The second input column (8 bits).
+	///
+	/// # Returns
+	/// An `And` struct with all columns set up.
 	pub fn new(
 		table: &mut TableBuilder,
 		lookup_chan: ChannelId,
@@ -47,6 +69,13 @@ impl And {
 		}
 	}
 
+	/// Populates the witness segment for this AND operation.
+	///
+	/// # Arguments
+	/// * `witness` - The witness segment to populate.
+	///
+	/// # Returns
+	/// `Ok(())` if successful, or an error otherwise.
 	pub fn populate(&self, witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
 		let in_a_col = witness.get_as(self.in_a)?;
 		let in_b_col = witness.get_as(self.in_b)?;
@@ -66,6 +95,7 @@ impl And {
 	}
 }
 
+/// Merges the input and output columns into a single B32 column for lookup.
 pub fn merge_and_columns(
 	table: &mut TableBuilder,
 	in_a: Col<B8>,
@@ -80,10 +110,13 @@ pub fn merge_and_columns(
 	)
 }
 
+/// Merges the input and output values into a single u32 for lookup.
 pub fn merge_and_vals(in_a: u8, in_b: u8, output: u8) -> u32 {
 	(in_a as u32) | ((in_b as u32) << 8) | ((output as u32) << 16)
 }
-/// Returns an arithmetic expression that represents the AND operation.
+
+/// Returns an arithmetic expression that represents the AND operation as a lookup circuit.
+/// The circuit encodes input A, input B, and output into a single value.
 pub fn and_circuit() -> ArithCircuit<B128> {
 	// The circuit is a lookup table for the and operation, which takes 2 8-bit inputs and
 	// returns a field element which is the result of the bitwise andconcatenated with the inputs.
@@ -100,6 +133,13 @@ pub fn and_circuit() -> ArithCircuit<B128> {
 }
 
 impl AndLookup {
+	/// Constructs a new AND lookup table.
+	///
+	/// # Arguments
+	/// * `table` - The table builder.
+	/// * `chan` - The lookup channel.
+	/// * `permutation_chan` - The channel for permutation checks.
+	/// * `n_multiplicity_bits` - Number of bits for multiplicity.
 	pub fn new(
 		table: &mut TableBuilder,
 		chan: ChannelId,
@@ -128,14 +168,18 @@ impl AndLookup {
 }
 
 /// The 2 columns that are the inputs to the AND operation, and the gadget exposes an output column
-/// that corresponds to the bitwise AND of the two inputs. 
+/// that corresponds to the bitwise AND of the two inputs.
 pub struct AndLooker {
+	/// Input column A (8 bits)
 	pub in_a: Col<B8>,
+	/// Input column B (8 bits)
 	pub in_b: Col<B8>,
+	/// Internal AND gadget
 	and: And,
 }
 
 impl AndLooker {
+	/// Constructs a new AND looker, registering columns in the table.
 	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
 		let in_a = table.add_committed::<B8, 1>("in_a");
 		let in_b = table.add_committed::<B8, 1>("in_b");
@@ -144,6 +188,7 @@ impl AndLooker {
 		Self { in_a, in_b, and }
 	}
 
+	/// Populates the witness segment for a sequence of (in_a, in_b) events.
 	pub fn populate<'a>(
 		&self,
 		witness: &'a mut TableWitnessSegment,
@@ -163,19 +208,24 @@ impl AndLooker {
 		Ok(())
 	}
 }
+
+/// Internal struct for indexed lookup logic for AND operations.
 struct AndIndexedLookup;
 
 impl IndexedLookup<B128> for AndIndexedLookup {
+	/// Returns the log2 size of the table (16 for 8 bits + 8 bits).
 	fn log_size(&self) -> usize {
 		16
 	}
 
+	/// Converts a table entry to its index.
 	fn entry_to_index(&self, entry: &[B128]) -> usize {
 		debug_assert_eq!(entry.len(), 1, "AndLookup entry must be a single B128 field");
 		let merged_val = entry[0].val() as u32;
 		(merged_val & 0xFFFF) as usize
 	}
 
+	/// Converts an index to a table entry.
 	fn index_to_entry(&self, index: usize, entry: &mut [B128]) {
 		debug_assert_eq!(entry.len(), 1, "AndLookup entry must be a single B128 field");
 		let in_a = index & 0xFF;
@@ -186,6 +236,7 @@ impl IndexedLookup<B128> for AndIndexedLookup {
 	}
 }
 
+/// Implements filling for the AND lookup table.
 impl TableFiller for AndLookup {
 	// Tuple of index and count
 	type Event = (usize, u32);
@@ -228,6 +279,7 @@ impl TableFiller for AndLookup {
 
 #[cfg(test)]
 mod tests {
+	//! Tests for the AND indexed lookup gadgets.
 
 	use std::{cmp::Reverse, iter::repeat_with};
 
