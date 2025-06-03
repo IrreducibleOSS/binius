@@ -1,4 +1,9 @@
 // Copyright 2025 Irreducible Inc.
+
+/// This module provides gadgets for performing indexed lookup operations for incrementing
+/// 8-bit values with carry, using lookup tables. It includes types and functions for
+/// constructing, populating, and testing increment lookup tables and their associated
+/// circuits.
 use std::{iter, slice};
 
 use binius_core::constraint_system::channel::ChannelId;
@@ -16,6 +21,17 @@ use crate::{
 	gadgets::lookup::LookupProducer,
 };
 
+/// Represents an increment operation with carry in a lookup table.
+///
+/// This struct holds columns for an 8-bit increment operation where:
+/// - `input` is the 8-bit value to be incremented
+/// - `carry_in` is a 1-bit carry input
+/// - `output` is the 8-bit result of the increment
+/// - `carry_out` is a 1-bit carry output
+/// - `merged` is a 32-bit encoding of all inputs and outputs for lookup
+///
+/// The increment operation computes: output = input + carry_in, with carry_out
+/// set if the result overflows 8 bits.
 pub struct Incr {
 	pub input: Col<B8>,
 	pub carry_in: Col<B1>,
@@ -25,6 +41,16 @@ pub struct Incr {
 }
 
 impl Incr {
+	/// Constructs a new increment gadget, registering the necessary columns in the table.
+	///
+	/// # Arguments
+	/// * `table` - The table builder to register columns with.
+	/// * `lookup_chan` - The channel for lookup operations.
+	/// * `input` - The input column (8 bits).
+	/// * `carry_in` - The carry-in column (1 bit).
+	///
+	/// # Returns
+	/// An `Incr` struct with all columns set up.
 	pub fn new(
 		table: &mut TableBuilder,
 		lookup_chan: ChannelId,
@@ -46,6 +72,13 @@ impl Incr {
 		}
 	}
 
+	/// Populates the witness segment for this increment operation.
+	///
+	/// # Arguments
+	/// * `witness` - The witness segment to populate.
+	///
+	/// # Returns
+	/// `Ok(())` if successful, or an error otherwise.
 	pub fn populate<P>(&self, witness: &mut TableWitnessSegment<P>) -> anyhow::Result<()>
 	where
 		P: PackedFieldIndexable<Scalar = B128>
@@ -76,6 +109,7 @@ impl Incr {
 	}
 }
 
+/// Helper struct for producing increment lookups from input/carry pairs.
 pub struct IncrLooker {
 	pub input: Col<B8>,
 	pub carry_in: Col<B1>,
@@ -83,6 +117,7 @@ pub struct IncrLooker {
 }
 
 impl IncrLooker {
+	/// Constructs a new increment looker, registering columns in the table.
 	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
 		let input = table.add_committed::<B8, 1>("input");
 		let carry_in = table.add_committed::<B1, 1>("carry_in");
@@ -95,6 +130,7 @@ impl IncrLooker {
 		}
 	}
 
+	/// Populates the witness segment for a sequence of (input, carry_in) events.
 	pub fn populate<'a, P>(
 		&self,
 		witness: &mut TableWitnessSegment<P>,
@@ -121,6 +157,7 @@ impl IncrLooker {
 	}
 }
 
+/// Represents the increment lookup table, supporting filling and permutation checks.
 pub struct IncrLookup {
 	table_id: TableId,
 	entries_ordered: Col<B32>,
@@ -129,6 +166,13 @@ pub struct IncrLookup {
 }
 
 impl IncrLookup {
+	/// Constructs a new increment lookup table.
+	///
+	/// # Arguments
+	/// * `table` - The table builder.
+	/// * `chan` - The lookup channel.
+	/// * `permutation_chan` - The channel for permutation checks.
+	/// * `n_multiplicity_bits` - Number of bits for multiplicity.
 	pub fn new(
 		table: &mut TableBuilder,
 		chan: ChannelId,
@@ -156,7 +200,7 @@ impl IncrLookup {
 	}
 }
 
-// TODO: It seems very possible to make a generic table filler for indexed lookup tables.
+/// Implements filling for the increment lookup table.
 impl TableFiller for IncrLookup {
 	// Tuple of index and count
 	type Event = (usize, u32);
@@ -197,14 +241,17 @@ impl TableFiller for IncrLookup {
 	}
 }
 
+/// Internal struct for indexed lookup logic for increment operations.
 struct IncrIndexedLookup;
 
 impl IndexedLookup<B128> for IncrIndexedLookup {
+	/// Returns the log2 size of the table (9 for 8 bits + 1 carry).
 	fn log_size(&self) -> usize {
 		// Input is an 8-bit value plus 1-bit carry-in
 		8 + 1
 	}
 
+	/// Converts a table entry to its index.
 	fn entry_to_index(&self, entry: &[B128]) -> usize {
 		debug_assert_eq!(entry.len(), 1);
 		let merged_val = entry[0].val() as u32;
@@ -213,6 +260,7 @@ impl IndexedLookup<B128> for IncrIndexedLookup {
 		(carry_in_bit as usize) << 8 | input as usize
 	}
 
+	/// Converts an index to a table entry.
 	fn index_to_entry(&self, index: usize, entry: &mut [B128]) {
 		debug_assert_eq!(entry.len(), 1);
 		let input = (index % (1 << 8)) as u8;
@@ -224,7 +272,7 @@ impl IndexedLookup<B128> for IncrIndexedLookup {
 }
 
 /// Returns a circuit that describes the carry-in for the i_th bit of incrementing an 8-bit
-/// number by a carry-in bit. We describe the following polynomials
+/// number by a carry-in bit. The circuit is a product of the lower bits.
 pub fn carry_in_circuit(i: usize) -> ArithExpr<B128> {
 	// The circuit is a lookup table for the increment operation, which takes an 8-bit input and
 	// returns an 8-bit output and a carry bit. The circuit is defined as follows:
@@ -236,7 +284,7 @@ pub fn carry_in_circuit(i: usize) -> ArithExpr<B128> {
 }
 
 /// Returns a circuit that describes the increment operation for an 8-bit addition.
-/// We describe the following polynomials
+/// The circuit encodes input, output, carry-in, and carry-out into a single value.
 pub fn incr_circuit() -> ArithCircuit<B128> {
 	// The circuit is a lookup table for the increment operation, which takes an 8-bit input and
 	// returns an 8-bit output and a carry bit. The circuit is defined as follows:
@@ -253,6 +301,7 @@ pub fn incr_circuit() -> ArithCircuit<B128> {
 	circuit.into()
 }
 
+/// Merges the input, output, carry-in, and carry-out columns into a single B32 column for lookup.
 pub fn merge_incr_cols(
 	table: &mut TableBuilder,
 	input: Col<B8>,
@@ -272,12 +321,14 @@ pub fn merge_incr_cols(
 	)
 }
 
+/// Merges the input, output, carry-in, and carry-out values into a single u32 for lookup.
 pub fn merge_incr_vals(input: u8, carry_in: bool, output: u8, carry_out: bool) -> u32 {
 	((carry_out as u32) << 17) | ((carry_in as u32) << 16) | ((output as u32) << 8) | input as u32
 }
 
 #[cfg(test)]
 mod tests {
+	//! Tests for the increment indexed lookup gadgets.
 	use std::{cmp::Reverse, iter::repeat_with};
 
 	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
