@@ -28,6 +28,7 @@ mod packing_deref;
 mod piecewise_multilinear;
 mod rows_batch;
 mod tensor_prod_eq_ind;
+mod tower;
 mod univariate;
 
 pub use arith_expr::*;
@@ -45,4 +46,5 @@ pub use packing_deref::*;
 pub use piecewise_multilinear::*;
 pub use rows_batch::*;
 pub use tensor_prod_eq_ind::*;
+pub use tower::*;
 pub use univariate::*;
