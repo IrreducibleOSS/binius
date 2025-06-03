@@ -197,44 +197,40 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// by a sumcheck reduction.
 	pub fn add_computed<FSub, const V: usize>(
 		&mut self,
-		name: impl ToString,
+		name: impl ToString + Clone,
 		expr: Expr<FSub, V>,
 	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let expr_circuit = ArithCircuit::from(expr.expr());
-		// Indices within the partition.
-		let indices_within_partition = expr_circuit
-			.vars_usage()
-			.iter()
-			.enumerate()
-			.filter(|(_, used)| **used)
-			.map(|(i, _)| i)
-			.collect::<Vec<_>>();
-		let partition = &self.table.partitions[partition_id::<V>()];
-		let cols = indices_within_partition
-			.iter()
-			.map(|&partition_index| partition.columns[partition_index])
-			.collect::<Vec<_>>();
+		let computed_col: Col<FSub, V> = self.add_committed(name.clone());
+		self.assert_zero(name, expr - computed_col);
+		// let expr_circuit = ArithCircuit::from(expr.expr());
+		// // Indices within the partition.
+		// let indices_within_partition = expr_circuit
+		// 	.vars_usage()
+		// 	.iter()
+		// 	.enumerate()
+		// 	.filter(|(_, used)| **used)
+		// 	.map(|(i, _)| i)
+		// 	.collect::<Vec<_>>();
+		// let partition = &self.table.partitions[partition_id::<V>()];
+		// let cols = indices_within_partition
+		// 	.iter()
+		// 	.map(|&partition_index| partition.columns[partition_index])
+		// 	.collect::<Vec<_>>();
 
-		let mut var_remapping = vec![0; expr_circuit.n_vars()];
-		for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
-			var_remapping[old_index] = new_index;
-		}
-		let remapped_expr = expr_circuit
-			.convert_field()
-			.remap_vars(&var_remapping)
-			.expect("var_remapping should be large enough");
+		// let mut var_remapping = vec![0; expr_circuit.n_vars()];
+		// for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
+		// 	var_remapping[old_index] = new_index;
+		// }
+		// let remapped_expr = expr_circuit
+		// 	.convert_field()
+		// 	.remap_vars(&var_remapping)
+		// 	.expect("var_remapping should be large enough");
 
-		self.table.new_column(
-			self.namespaced_name(name),
-			ColumnDef::Computed {
-				cols,
-				expr: remapped_expr,
-			},
-		)
+		computed_col
 	}
 
 	/// Add a derived column that selects a single value from a vertically stacked column.
