@@ -193,8 +193,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	/// The derived column has the same vertical stacking factor as the input columns and its
 	/// values are computed independently. The cost of the column's evaluations are proportional
 	/// to the polynomial degree of the expression. When the expression is linear, the column's
-	/// cost is minimal. When the expression is non-linear, the column's evaluations are resolved
-	/// by a sumcheck reduction.
+	/// cost is minimal. When the expression is non-linear, the column is committed and the
+	/// expression is asserted to be zero against the committed column.
 	pub fn add_computed<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString + Clone,
@@ -204,31 +204,43 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let computed_col: Col<FSub, V> = self.add_committed(name.clone());
-		self.assert_zero(name, expr - computed_col);
-		// let expr_circuit = ArithCircuit::from(expr.expr());
-		// // Indices within the partition.
-		// let indices_within_partition = expr_circuit
-		// 	.vars_usage()
-		// 	.iter()
-		// 	.enumerate()
-		// 	.filter(|(_, used)| **used)
-		// 	.map(|(i, _)| i)
-		// 	.collect::<Vec<_>>();
-		// let partition = &self.table.partitions[partition_id::<V>()];
-		// let cols = indices_within_partition
-		// 	.iter()
-		// 	.map(|&partition_index| partition.columns[partition_index])
-		// 	.collect::<Vec<_>>();
+		let computed_col = if expr.degree() <= 1 {
+			let expr_circuit = ArithCircuit::from(expr.expr());
+			// Indices within the partition.
+			let indices_within_partition = expr_circuit
+				.vars_usage()
+				.iter()
+				.enumerate()
+				.filter(|(_, used)| **used)
+				.map(|(i, _)| i)
+				.collect::<Vec<_>>();
+			let partition = &self.table.partitions[partition_id::<V>()];
+			let cols = indices_within_partition
+				.iter()
+				.map(|&partition_index| partition.columns[partition_index])
+				.collect::<Vec<_>>();
 
-		// let mut var_remapping = vec![0; expr_circuit.n_vars()];
-		// for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
-		// 	var_remapping[old_index] = new_index;
-		// }
-		// let remapped_expr = expr_circuit
-		// 	.convert_field()
-		// 	.remap_vars(&var_remapping)
-		// 	.expect("var_remapping should be large enough");
+			let mut var_remapping = vec![0; expr_circuit.n_vars()];
+			for (new_index, &old_index) in indices_within_partition.iter().enumerate() {
+				var_remapping[old_index] = new_index;
+			}
+			let remapped_expr = expr_circuit
+				.convert_field()
+				.remap_vars(&var_remapping)
+				.expect("var_remapping should be large enough");
+
+			self.table.new_column(
+				self.namespaced_name(name),
+				ColumnDef::Computed {
+					cols,
+					expr: remapped_expr,
+				},
+			)
+		} else {
+			let col: Col<FSub, V> = self.add_committed(name.clone());
+			self.assert_zero(name, expr - col);
+			col
+		};
 
 		computed_col
 	}
