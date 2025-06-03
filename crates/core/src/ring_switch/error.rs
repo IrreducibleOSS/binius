@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_compute::{alloc, layer};
+
 use crate::{oracle::OracleId, polynomial, transcript};
 
 #[derive(Debug, thiserror::Error)]
@@ -20,12 +22,18 @@ pub enum Error {
 	OracleToCommitIndexMissingEntry { id: OracleId },
 	#[error("binius_math error: {0}")]
 	Math(#[from] binius_math::Error),
+	#[error("binius_fast_compute_math error: {0}")]
+	FastMath(#[from] binius_fast_compute_math::Error),
 	#[error("transcript error: {0}")]
 	Transcript(#[from] transcript::Error),
 	#[error("Polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),
 	#[error("HAL error: {0}")]
 	HAL(#[from] binius_hal::Error),
+	#[error("compute error: {0}")]
+	ComputeError(#[from] layer::Error),
+	#[error("allocation error: {0}")]
+	AllocError(#[from] alloc::Error),
 	#[error("verification error: {0}")]
 	VerificationError(#[from] VerificationError),
 }

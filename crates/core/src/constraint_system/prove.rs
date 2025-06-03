@@ -6,6 +6,7 @@ use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator, cpu::Cp
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
+	arch::OptimalUnderlier128b,
 	as_packed_field::PackedType,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
@@ -164,6 +165,22 @@ where
 	writer.write_slice(table_sizes);
 
 	reorder_exponents(&mut exponents, &oracles);
+
+	let piop_hal_span =
+		tracing::info_span!("HAL Setup", phase = "piop_compiler", perfetto_category = "phase.sub")
+			.entered();
+
+	let hal = FastCpuLayer::<Tower, PackedType<OptimalUnderlier128b, Tower::B128>>::default();
+
+	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 20);
+	let mut dev_mem_owned: Vec<PackedType<OptimalUnderlier128b, Tower::B128>> = zeroed_vec(1 << 26);
+
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
+	drop(piop_hal_span);
 
 	let witness_span = tracing::info_span!(
 		"[phase] Witness Finalization",
@@ -520,7 +537,15 @@ where
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove(&system, &committed_multilins, &mut transcript, memoized_data)?;
+	} = ring_switch::prove(
+		&system,
+		&committed_multilins,
+		&mut transcript,
+		memoized_data,
+		&hal,
+		&dev_alloc,
+		&host_alloc,
+	)?;
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
@@ -530,6 +555,7 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
 	piop::prove(
 		compute_data,
 		&fri_params,
@@ -539,7 +565,7 @@ where
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
 	)?;

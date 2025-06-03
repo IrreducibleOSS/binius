@@ -28,6 +28,7 @@ use binius_math::{
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
+use bytemuck::zeroed_vec;
 use rand::prelude::*;
 
 const SECURITY_BITS: usize = 32;
@@ -204,6 +205,16 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	Hal: ComputeLayer<F>,
 	HalHolder: ComputeHolder<F, Hal>,
 {
+	let hal = FastCpuLayer::<Tower, PackedType<OptimalUnderlier128b, Tower::B128>>::default();
+
+	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 7);
+	let mut dev_mem_owned: Vec<PackedType<OptimalUnderlier128b, Tower::B128>> = zeroed_vec(1 << 12);
+
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -274,7 +285,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
 	)

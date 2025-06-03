@@ -14,10 +14,11 @@ use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
 	SerializeBytes, bail,
-	checked_arithmetics::checked_log_2,
+	checked_arithmetics::{checked_log_2, strict_log_2},
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
 };
+use bytemuck::zeroed_vec;
 use itertools::{Itertools, chain};
 
 use super::{
@@ -188,7 +189,7 @@ pub fn prove<
 	committed: MTProver::Committed,
 	codeword: &[P],
 	committed_multilins: &[M],
-	transparent_multilins: &[M],
+	transparent_multilins: Vec<FSlice<'a, F, Hal>>,
 	claims: &[PIOPSumcheckClaim<F>],
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
@@ -212,11 +213,10 @@ where
 	let dev_alloc = compute_data.dev_alloc.subscope_allocator();
 	let hal = compute_data.hal;
 
-	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
 		commit_meta,
-		transparent_multilins.iter().map(|poly| poly.n_vars()),
-		claims,
+		transparent_multilins
+			.iter()
 	)?;
 
 	// The committed multilinears provided by argument are committed *small field* multilinears.
@@ -244,40 +244,13 @@ where
 				.packed_evals()
 				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let mut allocated_mem = dev_alloc.alloc(1 << packed_committed_multilin.n_vars())?;
-			let _ = hal.copy_h2d(
-				&unpacked_hypercube_evals[..1 << packed_committed_multilin.n_vars()],
-				&mut allocated_mem,
-			);
-			Ok(allocated_mem)
+			let mut allocated_mem = dev_alloc
+				.alloc(1 << packed_committed_multilin.n_vars())
+				.map_err(Error::Alloc)?;
+			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
+			Ok(Hal::DevMem::to_const(allocated_mem))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
-
-	let packed_committed_fslices = packed_committed_fslices_mut
-		.iter()
-		.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
-		.collect::<Vec<_>>();
-
-	let transparent_fslices_mut = transparent_multilins
-		.iter()
-		.map(|transparent_multilin| {
-			let hypercube_evals = transparent_multilin
-				.packed_evals()
-				.expect("Prover should always populate witnesses");
-			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let mut allocated_mem = dev_alloc.alloc(1 << transparent_multilin.n_vars())?;
-			let _ = hal.copy_h2d(
-				&unpacked_hypercube_evals[..1 << transparent_multilin.n_vars()],
-				&mut allocated_mem,
-			);
-			Ok(allocated_mem)
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	let transparent_fslices = transparent_fslices_mut
-		.iter()
-		.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
-		.collect::<Vec<_>>();
 
 	drop(copy_span);
 
@@ -287,30 +260,25 @@ where
 		// Keep sumcheck claims with >0 committed multilinears, even with 0 composite claims. This
 		// indicates unconstrained columns, but we still need the final evaluations from the
 		// sumcheck prover in order to derive the final FRI value.
-		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
+		.filter(|(_, desc)| !desc.committed_indices.is_empty());
 
 	let mut sumcheck_provers = vec![];
 
-	for (_n_vars, desc) in non_empty_sumcheck_descs {
+	for (n_vars, desc) in non_empty_sumcheck_descs {
 		let multilins = chain!(
 			packed_committed_fslices[desc.committed_indices.clone()]
 				.iter()
 				.map(|fslice| Hal::DevMem::narrow(fslice)),
-			transparent_fslices[desc.transparent_indices.clone()]
+			transparent_multilins[desc.transparent_indices.clone()]
 				.iter()
 				.map(|fslice| Hal::DevMem::narrow(fslice))
 		)
 		.collect::<Vec<_>>();
 
-		let claim = SumcheckClaim::new(_n_vars, multilins.len(), desc.composite_sums.clone())?;
+		let claim = SumcheckClaim::new(n_vars, multilins.len(), desc.composite_sums.clone())?;
 
-		sumcheck_provers.push(BivariateSumcheckProver::new(
-			hal,
-			&dev_alloc,
-			&host_alloc,
-			&claim,
-			multilins,
-		)?);
+		sumcheck_provers
+			.push(BivariateSumcheckProver::new(hal, dev_alloc, host_alloc, &claim, multilins)?);
 	}
 
 	prove_interleaved_fri_sumcheck(
@@ -421,10 +389,11 @@ where
 	Ok(())
 }
 
-pub fn validate_sumcheck_witness<F, P, M>(
+pub fn validate_sumcheck_witness<'a, F, P, M, Hal: ComputeLayer<F>>(
 	committed_multilins: &[M],
-	transparent_multilins: &[M],
+	transparent_multilins: &[FSlice<'a, F, Hal>],
 	claims: &[PIOPSumcheckClaim<F>],
+	hal: &Hal,
 ) -> Result<(), Error>
 where
 	F: TowerField,
@@ -446,9 +415,13 @@ where
 		}
 
 		let transparent = &transparent_multilins[claim.transparent];
-		if transparent.n_vars() != claim.n_vars {
+		if transparent.len() != 1 << claim.n_vars {
 			bail!(sumcheck::Error::NumberOfVariablesMismatch);
 		}
+
+		let mut transparent_evals = zeroed_vec(transparent.len());
+
+		hal.copy_d2h(*transparent, &mut transparent_evals)?;
 
 		let sum = (0..(1 << claim.n_vars))
 			.into_par_iter()
@@ -456,8 +429,8 @@ where
 				let committed_eval = committed
 					.evaluate_on_hypercube(j)
 					.expect("j is less than 1 << n_vars; committed.n_vars is checked above");
-				let transparent_eval = transparent
-					.evaluate_on_hypercube(j)
+				let transparent_eval = transparent_evals
+					.get(j)
 					.expect("j is less than 1 << n_vars; transparent.n_vars is checked above");
 				committed_eval * transparent_eval
 			})

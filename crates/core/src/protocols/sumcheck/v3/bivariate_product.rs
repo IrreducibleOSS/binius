@@ -39,7 +39,7 @@ pub struct BivariateSumcheckProver<
 	host_alloc: &'a HostAllocatorType,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
-	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
+	multilins: Vec<SumcheckMultilinear<'b, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: PhaseState<F>,
 }
@@ -57,7 +57,7 @@ where
 		dev_alloc: &'a DeviceAllocatorType,
 		host_alloc: &'a HostAllocatorType,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
-		multilins: Vec<FSlice<'a, F, Hal>>,
+		multilins: Vec<FSlice<'b, F, Hal>>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
 

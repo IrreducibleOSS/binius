@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use binius_compute::layer;
+
 use crate::{
 	oracle::OracleId,
 	polynomial,
@@ -25,6 +27,8 @@ pub enum Error {
 	SumcheckClaimVariablesMismatch { index: usize },
 	#[error("Compute layer allocation error: {0}")]
 	Alloc(#[from] binius_compute::alloc::Error),
+	#[error("compute error: {0}")]
+	ComputeError(#[from] layer::Error),
 	#[error("binius_math error: {0}")]
 	Math(#[from] binius_math::Error),
 	#[error("Reed-Solomon error: {0}")]
