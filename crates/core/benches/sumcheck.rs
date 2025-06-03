@@ -158,13 +158,13 @@ fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
 	let mut group = c.benchmark_group(format!("SumcheckV3/{field}"));
 	let mut cpu_memory = vec![T::B128::ZERO; 1 << n_vars];
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
+	let hal = FastCpuLayer::default();
 
 	group.bench_function(format!("n_vars={n_vars}"), |b| {
 		b.iter(|| {
 			let cpu_allocator = HostBumpAllocator::new(&mut cpu_memory);
 			let device_memory = PackedMemorySliceMut::new_slice(&mut device_memory);
 			let device_allocator = BumpAllocator::new(device_memory);
-			let hal = FastCpuLayer::default();
 
 			let prover = BivariateSumcheckProver::new(
 				&hal,

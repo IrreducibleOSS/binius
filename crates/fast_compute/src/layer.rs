@@ -30,6 +30,7 @@ use binius_utils::{
 };
 use bytemuck::zeroed_vec;
 use itertools::izip;
+use thread_local::ThreadLocal;
 
 use crate::{
 	arith_circuit::ArithCircuitPoly,
@@ -41,11 +42,17 @@ pub struct FastCpuExecutor;
 
 /// Optimized CPU implementation of the compute layer.
 #[derive(Debug)]
-pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
+pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>> {
+	kernel_buffers: ThreadLocal<RefCell<Vec<P>>>,
+	_phantom: PhantomData<(P, T)>,
+}
 
 impl<T: TowerFamily, P: PackedTop<T>> Default for FastCpuLayer<T, P> {
 	fn default() -> Self {
-		Self(PhantomData)
+		Self {
+			kernel_buffers: ThreadLocal::with_capacity(1 << get_log_max_threads()),
+			_phantom: PhantomData,
+		}
 	}
 }
 
@@ -236,8 +243,16 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 
 		memory_chunks
 			.par_chunks_exact_mut(mem_maps_count)
-			.map_with(zeroed_vec::<P>(total_alloc), |buffer, chunk| {
-				let buffer = PackedMemorySliceMut::new_slice(buffer);
+			.map(|chunk| {
+				let buffer = self
+					.kernel_buffers
+					.get_or(|| RefCell::new(zeroed_vec(total_alloc)));
+				let mut buffer = buffer.borrow_mut();
+				if buffer.len() < total_alloc {
+					buffer.resize(total_alloc, P::zero());
+				}
+
+				let buffer = PackedMemorySliceMut::new_slice(&mut buffer);
 				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
 
 				let kernel_data = chunk
