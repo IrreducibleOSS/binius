@@ -25,6 +25,10 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 		}
 	}
 
+	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
+		PackedMemorySlice { data: data.data }
+	}
+
 	fn slice(data: Self::FSlice<'_>, range: impl std::ops::RangeBounds<usize>) -> Self::FSlice<'_> {
 		let (start, end) = Self::to_packed_range(data.len(), range);
 		if start == 0 && end == data.len() {

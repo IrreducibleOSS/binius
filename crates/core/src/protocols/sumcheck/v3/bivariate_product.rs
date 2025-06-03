@@ -24,18 +24,21 @@ use crate::{
 /// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
 /// instance for expensive operations and the input multilinears are provided as device memory
 /// slices.
-pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
+pub struct BivariateSumcheckProver<'a, 'b, 'alloc, F: Field, Hal: ComputeLayer<F>>
+where
+	'a: 'b,
+{
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: &'a HostBumpAllocator<'a, F>,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
-	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
+	multilins: Vec<SumcheckMultilinear<'b, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: PhaseState<F>,
 }
 
-impl<'a, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'alloc, F, Hal>
+impl<'a, 'b, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'b, 'alloc, F, Hal>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -45,7 +48,7 @@ where
 		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 		host_alloc: &'a HostBumpAllocator<'a, F>,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
-		multilins: Vec<FSlice<'a, F, Hal>>,
+		multilins: Vec<FSlice<'b, F, Hal>>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
 
@@ -100,7 +103,7 @@ where
 	}
 }
 
-impl<'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, 'alloc, F, Hal>
+impl<'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, '_, 'alloc, F, Hal>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,

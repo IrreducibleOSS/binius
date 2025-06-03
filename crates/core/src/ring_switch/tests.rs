@@ -2,9 +2,10 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
-use binius_compute::cpu::CpuLayer;
+use binius_compute::alloc::{BumpAllocator, HostBumpAllocator};
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField128b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
@@ -17,6 +18,7 @@ use binius_math::{
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
+use bytemuck::zeroed_vec;
 use rand::prelude::*;
 
 use super::{
@@ -236,13 +238,32 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	let rng = StdRng::seed_from_u64(0);
 	let oracles = make_test_oracle_set();
 
-	with_test_instance_from_oracles::<U, F, _>(rng, &oracles, |_rng, system, witnesses| {
+	let hal = FastCpuLayer::<Tower, PackedType<U, BinaryField128b>>::default();
+
+	let mut host_mem: Vec<BinaryField128b> = zeroed_vec(1 << 7);
+	let mut dev_mem_owned: Vec<PackedType<U, BinaryField128b>> = zeroed_vec(1 << 12);
+
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
+	with_test_instance_from_oracles::<U, Tower, _>(rng, &oracles, |_rng, system, witnesses| {
 		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
+		} = prove::<_, _, _, Tower, _, _>(
+			&system,
+			&witnesses,
+			&mut proof,
+			MemoizedData::new(),
+			&hal,
+			&dev_alloc,
+			&host_alloc,
+		)
+		.unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
@@ -256,6 +277,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 			&witnesses,
 			&transparent_witnesses,
 			&prover_sumcheck_claims,
+			&hal,
 		)
 		.unwrap();
 	});
@@ -266,12 +288,24 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
 ) where
-	U: TowerUnderlier + PackScalar<F>,
-	PackedType<U, F>: PackedFieldIndexable + PackedTop,
-	F: TowerTop + PackedTop<Scalar = F>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
-	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	U: TowerUnderlier<Tower>,
+	OptimalUnderlier128b: TowerUnderlier<Tower>,
+	Tower: TowerFamily + Default,
+	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
+	FExt<Tower>: PackedTop<Tower>,
+	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
+	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
 {
+	let hal = FastCpuLayer::<Tower, PackedType<OptimalUnderlier128b, Tower::B128>>::default();
+
+	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 7);
+	let mut dev_mem_owned: Vec<PackedType<OptimalUnderlier128b, Tower::B128>> = zeroed_vec(1 << 12);
+
+	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -314,27 +348,21 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
-
-	let hal = CpuLayer::<Tower>::default();
-	let host_mem_size_committed = committed_multilins.len();
-	let dev_mem_size_committed = committed_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let host_mem_size_transparent = transparent_multilins.len();
-	let dev_mem_size_transparent = transparent_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem = vec![Tower::B128::ZERO; dev_mem_size_committed + dev_mem_size_transparent];
+	} = prove::<_, _, _, Tower, _, _>(
+		&system,
+		&committed_multilins,
+		&mut proof,
+		MemoizedData::new(),
+		&hal,
+		&dev_alloc,
+		&host_alloc,
+	)
+	.unwrap();
 
 	piop::prove(
 		&hal,
-		&mut host_mem,
-		&mut dev_mem,
+		&dev_alloc,
+		&host_alloc,
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -342,7 +370,7 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
 	)
