@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-/// This module provides gadgets for performing indexed lookup operations for incrementing
-/// 8-bit values with carry, using lookup tables. It includes types and functions for
-/// constructing, populating, and testing increment lookup tables and their associated
-/// circuits.
+//! This module provides gadgets for performing indexed lookup operations for incrementing
+//! 8-bit values with carry, using lookup tables. It includes types and functions for
+//! constructing, populating, and testing increment lookup tables and their associated
+//! circuits.
 use std::{iter, slice};
 
 use binius_core::constraint_system::channel::ChannelId;
