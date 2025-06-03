@@ -204,7 +204,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let computed_col = if expr.degree() <= 1 {
+		if expr.degree() <= 1 {
 			let expr_circuit = ArithCircuit::from(expr.expr());
 			// Indices within the partition.
 			let indices_within_partition = expr_circuit
@@ -240,9 +240,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			let col: Col<FSub, V> = self.add_committed(name.clone());
 			self.assert_zero(name, expr - col);
 			col
-		};
-
-		computed_col
+		}
 	}
 
 	/// Add a derived column that selects a single value from a vertically stacked column.
