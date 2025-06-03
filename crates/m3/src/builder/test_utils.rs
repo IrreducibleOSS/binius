@@ -33,13 +33,15 @@ where
 	P::Scalar: TowerField,
 {
 	table_id: TableId,
-	fill: Box<dyn for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + 'a>,
+	fill: Box<
+		dyn for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a,
+	>,
 }
 
 impl<'a, P: PackedField<Scalar: TowerField>, Event> ClosureFiller<'a, P, Event> {
 	pub fn new(
 		table_id: TableId,
-		fill: impl for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + 'a,
+		fill: impl for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a,
 	) -> Self {
 		Self {
 			table_id,
