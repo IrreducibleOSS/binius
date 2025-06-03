@@ -2,7 +2,7 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{PackedField, PackedFieldIndexable};
 use binius_math::{
 	B1, B8, B16, B32, B64, B128, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, PackedTop,
 	TowerTop,
@@ -257,7 +257,7 @@ fn make_ring_switch_eq_inds<F, P>(
 	mixing_coeffs: &[F],
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
-	F: TowerField + PackedTop,
+	F: TowerTop,
 	P: PackedFieldIndexable<Scalar = F> + PackedTop,
 {
 	sumcheck_claim_descs

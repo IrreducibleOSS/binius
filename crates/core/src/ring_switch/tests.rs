@@ -6,14 +6,13 @@ use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
-	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	underlier::UnderlierType,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
-	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
+	B1, B8, B16, B32, B64, B128, DefaultEvaluationDomainFactory, MLEEmbeddingAdapter,
+	MultilinearExtension, MultilinearPoly, MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
@@ -38,8 +37,6 @@ use crate::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
-type FExt<Tower> = <Tower as TowerFamily>::B128;
-
 const SECURITY_BITS: usize = 32;
 
 fn generate_multilinear<U, F, FExt>(
@@ -58,13 +55,13 @@ where
 	MLEEmbeddingAdapter::from(mle).upcast_arc_dyn()
 }
 
-fn generate_multilinears<U, Tower>(
+fn generate_multilinears<U, F>(
 	mut rng: impl Rng,
-	oracles: &MultilinearOracleSet<FExt<Tower>>,
-) -> MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>
+	oracles: &MultilinearOracleSet<F>,
+) -> MultilinearExtensionIndex<PackedType<U, F>>
 where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
+	U: TowerUnderlier + PackScalar<F>,
+	F: TowerTop,
 {
 	let mut witness_index = MultilinearExtensionIndex::new();
 
@@ -72,12 +69,12 @@ where
 		if oracle.variant.is_committed() {
 			let n_vars = oracle.n_vars();
 			let witness = match oracle.binary_tower_level() {
-				0 => generate_multilinear::<U, Tower::B1, FExt<Tower>>(&mut rng, n_vars),
-				3 => generate_multilinear::<U, Tower::B8, FExt<Tower>>(&mut rng, n_vars),
-				4 => generate_multilinear::<U, Tower::B16, FExt<Tower>>(&mut rng, n_vars),
-				5 => generate_multilinear::<U, Tower::B32, FExt<Tower>>(&mut rng, n_vars),
-				6 => generate_multilinear::<U, Tower::B64, FExt<Tower>>(&mut rng, n_vars),
-				7 => generate_multilinear::<U, Tower::B128, FExt<Tower>>(&mut rng, n_vars),
+				0 => generate_multilinear::<U, B1, F>(&mut rng, n_vars),
+				3 => generate_multilinear::<U, B8, F>(&mut rng, n_vars),
+				4 => generate_multilinear::<U, B16, F>(&mut rng, n_vars),
+				5 => generate_multilinear::<U, B32, F>(&mut rng, n_vars),
+				6 => generate_multilinear::<U, B64, F>(&mut rng, n_vars),
+				7 => generate_multilinear::<U, B128, F>(&mut rng, n_vars),
 				_ => panic!("unsupported tower level"),
 			};
 			witness_index
@@ -186,23 +183,19 @@ where
 	eval_claims
 }
 
-fn with_test_instance_from_oracles<U, Tower, R>(
+fn with_test_instance_from_oracles<U, F, R>(
 	mut rng: R,
-	oracles: &MultilinearOracleSet<Tower::B128>,
-	func: impl FnOnce(
-		R,
-		EvalClaimSystem<Tower::B128>,
-		Vec<MultilinearWitness<PackedType<U, Tower::B128>>>,
-	),
+	oracles: &MultilinearOracleSet<F>,
+	func: impl FnOnce(R, EvalClaimSystem<F>, Vec<MultilinearWitness<PackedType<U, F>>>),
 ) where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
+	U: TowerUnderlier + PackScalar<F>,
+	F: TowerTop,
 	R: Rng,
 {
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
-	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
-	let witnesses = piop::collect_committed_witnesses::<U, Tower::B128>(
+	let witness_index = generate_multilinears::<U, F>(&mut rng, oracles);
+	let witnesses = piop::collect_committed_witnesses::<U, _>(
 		&commit_meta,
 		&oracle_to_commit_index,
 		oracles,
@@ -210,7 +203,7 @@ fn with_test_instance_from_oracles<U, Tower, R>(
 	)
 	.unwrap();
 
-	let eval_claims = setup_test_eval_claims::<U, Tower::B128>(&mut rng, oracles, &witness_index);
+	let eval_claims = setup_test_eval_claims::<U, _>(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
 	let system =
@@ -237,12 +230,12 @@ fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
 #[test]
 fn test_prove_verify_claim_reduction_with_naive_validation() {
 	type U = OptimalUnderlier128b;
-	type Tower = CanonicalTowerFamily;
+	type F = B128;
 
 	let rng = StdRng::seed_from_u64(0);
 	let oracles = make_test_oracle_set();
 
-	with_test_instance_from_oracles::<U, Tower, _>(rng, &oracles, |_rng, system, witnesses| {
+	with_test_instance_from_oracles::<U, F, _>(rng, &oracles, |_rng, system, witnesses| {
 		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 		let ReducedWitness {
@@ -267,24 +260,23 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	});
 }
 
-fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
+fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	merkle_prover: &MTProver,
-	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
 ) where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
-	PackedType<U, FExt<Tower>>: PackedFieldIndexable + binius_math::PackedTop,
-	FExt<Tower>: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
-	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
-	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
+	U: TowerUnderlier + PackScalar<F>,
+	PackedType<U, F>: PackedFieldIndexable + PackedTop,
+	F: TowerTop + PackedTop<Scalar = F>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
-	let fri_params = piop::make_commit_params_with_optimal_arity::<_, Tower::B32, _>(
+	let fri_params = piop::make_commit_params_with_optimal_arity::<_, B32, _>(
 		&commit_meta,
 		merkle_scheme,
 		SECURITY_BITS,
@@ -293,8 +285,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	.unwrap();
 	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
 
-	let witness_index = generate_multilinears::<U, Tower>(&mut rng, oracles);
-	let committed_multilins = piop::collect_committed_witnesses::<U, FExt<Tower>>(
+	let witness_index = generate_multilinears::<U, _>(&mut rng, oracles);
+	let committed_multilins = piop::collect_committed_witnesses::<U, _>(
 		&commit_meta,
 		&oracle_to_commit_index,
 		oracles,
@@ -308,7 +300,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		codeword,
 	} = piop::commit(&fri_params, &ntt, merkle_prover, &committed_multilins).unwrap();
 
-	let eval_claims = setup_test_eval_claims::<U, FExt<Tower>>(&mut rng, oracles, &witness_index);
+	let eval_claims = setup_test_eval_claims::<U, _>(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
 	let system =
@@ -324,7 +316,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 		sumcheck_claims,
 	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
 
-	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
+	let domain_factory = DefaultEvaluationDomainFactory::<B8>::default();
 	piop::prove(
 		&fri_params,
 		&ntt,
@@ -364,11 +356,11 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 #[test]
 fn test_prove_verify_piop_integration() {
 	type U = OptimalUnderlier128b;
-	type Tower = CanonicalTowerFamily;
+	type F = B128;
 
 	let oracles = make_test_oracle_set();
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
-	commit_prove_verify_piop::<U, Tower, _, _>(&merkle_prover, &oracles, log_inv_rate);
+	commit_prove_verify_piop::<U, F, _, _>(&merkle_prover, &oracles, log_inv_rate);
 }

@@ -23,7 +23,7 @@ impl<F: TowerTop> TowerTensorAlgebra<F> {
 	/// * `elems` must have length `FE::DEGREE`, otherwise this will pad or truncate.
 	pub fn new(kappa: usize, elems: Vec<F>) -> Result<Self, Error> {
 		match F::TOWER_LEVEL - kappa {
-			1 => Ok(Self::B1(TensorAlgebra::new(elems))),
+			0 => Ok(Self::B1(TensorAlgebra::new(elems))),
 			3 => Ok(Self::B8(TensorAlgebra::new(elems))),
 			4 => Ok(Self::B16(TensorAlgebra::new(elems))),
 			5 => Ok(Self::B32(TensorAlgebra::new(elems))),
