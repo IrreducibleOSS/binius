@@ -7,7 +7,7 @@ use binius_field::{
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
-use digest::{Digest, Output, core_api::BlockSizeUser};
+use digest::{Digest, Output, OutputSizeUser, core_api::BlockSizeUser};
 use itertools::{Itertools, chain};
 use tracing::instrument;
 
@@ -38,10 +38,12 @@ use crate::{
 
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]
+#[allow(clippy::too_many_arguments)]
 pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
+	constraint_system_digest: &Output<Hash>,
 	boundaries: &[Boundary<FExt<Tower>>],
 	proof: Proof,
 ) -> Result<(), Error>
@@ -49,10 +51,11 @@ where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
-	Hash: Digest + BlockSizeUser,
+	Hash: Digest + BlockSizeUser + OutputSizeUser,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 {
+	let _ = constraint_system_digest;
 	let ConstraintSystem {
 		mut oracles,
 		table_constraints,
