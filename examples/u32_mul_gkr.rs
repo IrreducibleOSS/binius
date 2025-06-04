@@ -1,12 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-#![allow(deprecated)]
-
 use std::iter::repeat_with;
 
 use anyhow::Result;
-use binius_circuits::builder::types::U;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier,
@@ -117,7 +113,7 @@ fn main() -> Result<()> {
 
 	let proof =
 		constraint_system::prove::<
-			U,
+			OptimalUnderlier,
 			CanonicalTowerFamily,
 			Groestl256Parallel,
 			Groestl256ByteCompression,
@@ -128,7 +124,7 @@ fn main() -> Result<()> {
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	constraint_system::verify::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
