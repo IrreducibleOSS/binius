@@ -104,7 +104,7 @@ where
 		mut flushes,
 		mut exponents,
 		non_zero_oracle_ids,
-		max_channel_id,
+		channel_count,
 	} = constraint_system.clone();
 
 	reorder_exponents(&mut exponents, &oracles);
@@ -272,7 +272,7 @@ where
 
 	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	let permutation_challenges = transcript.sample_vec(channel_count);
 
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let flush_oracle_ids =

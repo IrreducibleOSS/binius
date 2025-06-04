@@ -66,7 +66,7 @@ where
 		witness,
 		&constraint_system.flushes,
 		boundaries,
-		constraint_system.max_channel_id,
+		constraint_system.channel_count,
 	)?;
 
 	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually
