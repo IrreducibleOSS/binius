@@ -12,7 +12,9 @@ use super::{
 	SumcheckClaim, ZerocheckClaim,
 };
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
+	oracle::{
+		Constraint, ConstraintPredicate, OracleId, SizedConstraintSet, TypeErasedComposition,
+	},
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 
@@ -31,7 +33,7 @@ pub struct OracleClaimMeta {
 /// zerochecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_sumcheck_claim<F: TowerField>(
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 ) -> Result<(SumcheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
 	let n_multilinears = meta.oracle_ids.len();
@@ -60,7 +62,7 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 /// sumchecks. Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_zerocheck_claim<F: TowerField>(
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 ) -> Result<(ZerocheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
 	let n_multilinears = meta.oracle_ids.len();
@@ -86,7 +88,7 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_mlecheck_claim<F: TowerField>(
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 ) -> Result<(EqIndSumcheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
 	let n_multilinears = meta.oracle_ids.len();
@@ -112,9 +114,9 @@ pub fn constraint_set_mlecheck_claim<F: TowerField>(
 }
 
 fn split_constraint_set<F: Field>(
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 ) -> (Vec<Constraint<F>>, OracleClaimMeta) {
-	let ConstraintSet {
+	let SizedConstraintSet {
 		oracle_ids,
 		constraints,
 		n_vars,
@@ -236,9 +238,9 @@ pub struct SumcheckClaimsWithMeta<F: TowerField, C> {
 	pub metas: Vec<OracleClaimMeta>,
 }
 
-/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+/// Constructs sumcheck claims and metas from the vector of [`SizedConstraintSet`]
 pub fn constraint_set_sumcheck_claims<F: TowerField>(
-	constraint_sets: Vec<ConstraintSet<F>>,
+	constraint_sets: Vec<SizedConstraintSet<F>>,
 ) -> Result<SumcheckClaimsWithMeta<F, ArithCircuitPoly<F>>, Error> {
 	let mut claims = Vec::with_capacity(constraint_sets.len());
 	let mut metas = Vec::with_capacity(constraint_sets.len());
@@ -256,9 +258,9 @@ pub struct MLEcheckClaimsWithMeta<F: TowerField, C> {
 	pub metas: Vec<OracleClaimMeta>,
 }
 
-/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+/// Constructs sumcheck claims and metas from the vector of [`SizedConstraintSet`]
 pub fn constraint_set_mlecheck_claims<F: TowerField>(
-	constraint_sets: Vec<ConstraintSet<F>>,
+	constraint_sets: Vec<SizedConstraintSet<F>>,
 ) -> Result<MLEcheckClaimsWithMeta<F, ArithCircuitPoly<F>>, Error> {
 	let mut claims = Vec::with_capacity(constraint_sets.len());
 	let mut metas = Vec::with_capacity(constraint_sets.len());
