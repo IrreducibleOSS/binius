@@ -13,6 +13,7 @@
 #![allow(clippy::suspicious_op_assign_impl)]
 
 pub mod composition;
+pub mod compute_math;
 pub mod constraint_system;
 pub mod fiat_shamir;
 pub mod merkle_tree;

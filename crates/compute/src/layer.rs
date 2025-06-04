@@ -596,6 +596,8 @@ pub enum Error {
 	Alloc(#[from] AllocError),
 	#[error("device error: {0}")]
 	DeviceError(Box<dyn std::error::Error + Send + Sync + 'static>),
+	#[error("core library error: {0}")]
+	CoreLibError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 // Convenience types for the device memory.

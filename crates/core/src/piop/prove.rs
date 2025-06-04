@@ -248,7 +248,7 @@ where
 				.alloc(1 << packed_committed_multilin.n_vars())
 				.map_err(Error::Alloc)?;
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
-			Ok(Hal::DevMem::to_const(allocated_mem))
+			Ok(Hal::DevMem::into_const(allocated_mem))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
