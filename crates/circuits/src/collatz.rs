@@ -7,7 +7,6 @@ use binius_core::{
 use binius_field::{
 	BinaryField1b, BinaryField32b, ExtensionField, TowerField, as_packed_field::PackScalar,
 };
-use binius_macros::arith_expr;
 use bytemuck::Pod;
 
 use crate::{
@@ -186,7 +185,14 @@ pub fn ensure_odd(
 	builder.assert_zero(
 		"is_odd",
 		[lsb, selector],
-		arith_expr!([lsb, selector] = selector * (lsb + 1)).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Const(
+						binius_field::Field::ONE,
+					)),
+		)
+		.convert_field(),
 	);
 	Ok(())
 }

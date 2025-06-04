@@ -2,7 +2,6 @@
 
 use binius_core::oracle::OracleId;
 use binius_field::{BinaryField1b, Field, TowerField};
-use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
 
 use crate::builder::ConstraintSystemBuilder;
@@ -32,7 +31,12 @@ pub fn and(
 	builder.assert_zero(
 		"bitwise_and",
 		[xin, yin, zout],
-		arith_expr!([x, y, z] = x * y - z).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+		)
+		.convert_field(),
 	);
 	builder.pop_namespace();
 	Ok(zout)
@@ -90,7 +94,14 @@ pub fn or(
 	builder.assert_zero(
 		"bitwise_or",
 		[xin, yin, zout],
-		arith_expr!([x, y, z] = (x + y) + (x * y) - z).convert_field(),
+		binius_math::ArithCircuit::from(
+			(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize))
+				+ (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+					* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize))
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+		)
+		.convert_field(),
 	);
 	builder.pop_namespace();
 	Ok(zout)
