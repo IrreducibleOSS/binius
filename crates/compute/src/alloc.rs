@@ -2,6 +2,8 @@
 
 use std::cell::Cell;
 
+use binius_utils::checked_arithmetics::checked_log_2;
+
 use super::memory::{ComputeMemory, SizedSlice};
 use crate::cpu::CpuMemory;
 
@@ -64,7 +66,13 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			// buffer contains Some, invariant restored
 			Err(Error::OutOfMemory)
 		} else {
-			let (lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::ALIGNMENT));
+			let (mut lhs, rhs) = Mem::split_at_mut(buffer, n.max(Mem::ALIGNMENT));
+			if n < Mem::ALIGNMENT {
+				assert!(n.is_power_of_two(), "n must be a power of two");
+				for _ in checked_log_2(n)..checked_log_2(Mem::ALIGNMENT) {
+					(lhs, _) = Mem::split_half_mut(lhs)
+				}
+			}
 			self.buffer.set(Some(rhs));
 			// buffer contains Some, invariant restored
 			Ok(Mem::narrow_mut(lhs))

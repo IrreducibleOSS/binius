@@ -96,7 +96,7 @@ pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 		.collect::<Vec<_>>();
 	let sum = inner_product_unchecked(powers(batch_coeff), sums.iter().copied());
 
-	let result = calculate_round_evals(
+	let evals = calculate_round_evals(
 		hal,
 		n_vars,
 		batch_coeff,
@@ -106,9 +106,8 @@ pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 			Hal::DevMem::as_const(&evals_3_dev),
 		],
 		&indexed_compositions,
-	);
-	assert!(result.is_ok());
-	let evals = result.unwrap();
+	)
+	.unwrap();
 	assert_eq!(evals.len(), 2);
 
 	let interpolation_domain = InterpolationDomain::from(

@@ -482,6 +482,9 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
+					let log_min_chunk_size = (*log_min_chunk_size)
+						.max(checked_log_2(Mem::ALIGNMENT))
+						.min(log_data_size);
 					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::ChunkedMut {
@@ -489,6 +492,9 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
+					let log_min_chunk_size = (*log_min_chunk_size)
+						.max(checked_log_2(Mem::ALIGNMENT))
+						.min(log_data_size);
 					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::Local { log_size } => 0..*log_size,
