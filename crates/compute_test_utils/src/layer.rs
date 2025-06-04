@@ -3,7 +3,7 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	FSliceMut,
+	FSliceMut, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
@@ -373,9 +373,9 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 						.collect::<Vec<_>>();
 					let row_len = kernel_data[0].len();
 					let slice_batch = SlicesBatch::new(kernel_data, row_len);
-					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-					compute
-						.sum_composition_evals(kernel_exec, &slice_batch, &eval, F::ONE, &mut res)
+					let mut res = kernel_exec.decl_value(F::ZERO)?;
+					kernel_exec
+						.sum_composition_evals(&slice_batch, &eval, F::ONE, &mut res)
 						.unwrap();
 					Ok(vec![res])
 				},
@@ -459,11 +459,10 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 						_ => unreachable!(),
 					};
 					let log_len = checked_log_2(a.len());
-					compute.kernel_add(kernel_exec, log_len, a, b, &mut c)?;
+					kernel_exec.add(log_len, a, b, &mut c)?;
 					let c = C::DevMem::as_const(&c);
-					let mut res = compute.kernel_decl_value(kernel_exec, F::ZERO)?;
-					compute.sum_composition_evals(
-						kernel_exec,
+					let mut res = kernel_exec.decl_value(F::ZERO)?;
+					kernel_exec.sum_composition_evals(
 						&SlicesBatch::new(vec![c], c.len()),
 						&eval,
 						F::ONE,

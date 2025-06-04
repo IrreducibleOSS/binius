@@ -31,7 +31,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type KernelExec = CpuKernelBuilder;
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
-	type KernelValue = T::B128;
 	type ExprEval = ArithCircuit<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
@@ -95,7 +94,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		) -> Result<Vec<T::B128>, Error>,
 		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
