@@ -121,7 +121,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		log_inv_rate,
 	)
 	.unwrap();
-	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
+	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();
 
 	let backend = make_portable_backend();
 	let mut rng = StdRng::seed_from_u64(0);
