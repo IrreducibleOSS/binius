@@ -24,7 +24,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
-	type KernelExec;
+	type KernelExec: KernelBuilder<F, Mem = Self::DevMem, Value = Self::KernelValue, ExprEval = Self::ExprEval>;
 
 	/// The operation (scalar) value type.
 	type OpValue;
@@ -445,6 +445,46 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
 		output: &mut FSliceMut<'_, F, Self>,
 		composition: &Self::ExprEval,
+	) -> Result<(), Error>;
+}
+
+pub trait KernelBuilder<F> {
+	type Mem: ComputeMemory<F>;
+	type Value;
+
+	/// The evaluator for arithmetic expressions (polynomials).
+	type ExprEval: Sync;
+
+	/// Declares a kernel-level value.
+	fn decl_value(&mut self, init: F) -> Result<Self::Value, Error>;
+
+	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
+	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
+	///
+	/// Mathematically, let there be $m$ input buffers, $P_0, \ldots, P_{m-1}$, each of length
+	/// $2^n$ elements. Let $c$ be the scaling coefficient (`batch_coeff`) and
+	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
+	///
+	/// $$
+	/// \sum_{i=0}^{2^n - 1} c C(P_0\[i\], \ldots, P_{m-1}\[i\]).
+	/// $$
+	///
+	/// The result is added back to an accumulator value.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
+	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
+	/// * `composition` - the compiled composition polynomial expression. This is an output of
+	///   [`Self::compile_expr`].
+	/// * `batch_coeff` - the scaling coefficient.
+	/// * `accumulator` - the output where the result is accumulated to.
+	fn sum_composition_evals(
+		&mut self,
+		inputs: &SlicesBatch<<Self::Mem as ComputeMemory<F>>::FSlice<'_>>,
+		composition: &Self::ExprEval,
+		batch_coeff: F,
+		accumulator: &mut Self::Value,
 	) -> Result<(), Error>;
 }
 
