@@ -39,7 +39,7 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{Constraint, MultilinearOracleSet, OracleId},
+	oracle::{Constraint, MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
 		fri::CommitOutput,
@@ -101,11 +101,11 @@ where
 
 	let ConstraintSystem {
 		mut oracles,
-		mut table_constraints,
+		table_constraints,
 		mut flushes,
 		mut exponents,
 		non_zero_oracle_ids,
-		max_channel_id,
+		channel_count,
 	} = constraint_system.clone();
 
 	reorder_exponents(&mut exponents, &oracles);
@@ -130,6 +130,19 @@ where
 
 	drop(witness_span);
 
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.map(|u| {
+			// Pick the first oracle and get its n_vars.
+			//
+			// TODO(pep): I know that this invariant is not guaranteed to hold at this point, but
+			//            this is fine and is going away in a follow up where we read the sizes of
+			//            tables from the transcript or pass it in the prover.
+			let first_oracle_id = u.oracle_ids[0];
+			let n_vars = oracles.n_vars(first_oracle_id);
+			SizedConstraintSet::new(n_vars, u)
+		})
+		.collect::<Vec<_>>();
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
@@ -151,7 +164,7 @@ where
 		security_bits,
 		log_inv_rate,
 	)?;
-	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())?
+	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace())?
 		.precompute_twiddles()
 		.multithreaded();
 
@@ -260,7 +273,7 @@ where
 
 	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	let permutation_challenges = transcript.sample_vec(channel_count);
 
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let flush_oracle_ids =

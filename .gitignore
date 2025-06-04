@@ -8,3 +8,7 @@ benchmark_results/
 **/rustc-ice-*.txt
 /*.bin
 .last_perfetto_trace_path
+
+# Samply profile files
+profile.json.gz
+profile.json

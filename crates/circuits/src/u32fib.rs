@@ -2,7 +2,6 @@
 
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, BinaryField32b, TowerField};
-use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
 use rand::{Rng, thread_rng};
 
@@ -65,7 +64,10 @@ pub fn u32fib(
 	builder.assert_zero(
 		"step",
 		[sum_packed, next_next_packed, enabled],
-		arith_expr!(F[a, b, enabled] = (a - b) * enabled),
+		binius_math::ArithCircuit::from(
+			(binius_math::ArithExpr::<F>::Var(0usize) - binius_math::ArithExpr::<F>::Var(1usize))
+				* binius_math::ArithExpr::<F>::Var(2usize),
+		),
 	);
 
 	builder.pop_namespace();

@@ -3,7 +3,8 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField};
-use binius_utils::bail;
+use binius_ntt::AdditiveNTT;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use getset::{CopyGetters, Getters};
 
 use crate::{
@@ -54,6 +55,85 @@ where
 			n_test_queries,
 			_marker: PhantomData,
 		})
+	}
+
+	/// Choose commit parameters based on protocol parameters, using a constant fold arity.
+	///
+	/// ## Arguments
+	///
+	/// * `log_msg_len` - the binary logarithm of the length of the message to commit.
+	/// * `security_bits` - the target security level in bits.
+	/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
+	/// * `arity` - the folding arity.
+	pub fn choose_with_constant_fold_arity(
+		ntt: &impl AdditiveNTT<FA>,
+		log_msg_len: usize,
+		security_bits: usize,
+		log_inv_rate: usize,
+		arity: usize,
+	) -> Result<Self, Error> {
+		assert!(arity > 0);
+
+		let log_dim = log_msg_len.saturating_sub(arity);
+		let log_batch_size = log_msg_len.min(arity);
+		let rs_code = ReedSolomonCode::with_ntt_subspace(ntt, log_dim, log_inv_rate)?;
+		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+
+		let cap_height = log2_ceil_usize(n_test_queries);
+		let fold_arities = std::iter::repeat_n(
+			arity,
+			log_msg_len.saturating_sub(cap_height.saturating_sub(log_inv_rate)) / arity,
+		)
+		.collect::<Vec<_>>();
+		// here is the down-to-earth explanation of what we're doing: we want the terminal
+		// codeword's log-length to be at least as large as the Merkle cap height. note that
+		// `total_vars + log_inv_rate - sum(fold_arities)` is exactly the log-length of the
+		// terminal codeword; we want this number to be ≥ cap height. so fold_arities will repeat
+		// `arity` the maximal number of times possible, while maintaining that `total_vars +
+		// log_inv_rate - sum(fold_arities) ≥ cap_height` stays true. this arity-selection
+		// strategy can be characterized as: "terminate as late as you can, while maintaining that
+		// no Merkle cap is strictly smaller than `cap_height`." this strategy does attain that
+		// property: the Merkle path height of the last non-terminal codeword will equal the
+		// log-length of the terminal codeword, which is ≥ cap height by fiat. moreover, if we
+		// terminated later than we are above, then this would stop being true. imagine what would
+		// happen if we took the above terminal codeword and continued folding. in that case, we
+		// would Merklize this word, again with the coset-bundling trick; the post-bundling path
+		// height would thus be `total_vars + log_inv_rate - sum(fold_arities) - arity`. but we
+		// already agreed (by the maximality of the number of times we subtracted `arity`) that
+		// the above number will be < cap_height. in other words, its Merkle cap will be
+		// short. equivalently: this is the latest termination for which the `min` in
+		// `optimal_verify_layer` will never trigger; i.e., we will have log2_ceil_usize(n_queries)
+		// ≤ tree_depth there. it can be shown that this strategy beats any strategy which
+		// terminates later than it does (in other words, by doing this, we are NOT terminating
+		// TOO early!). this doesn't mean that we should't terminate EVEN earlier (maybe we
+		// should). but this approach is conservative and simple; and it's easy to show that you
+		// won't lose by doing this.
+
+		// see https://github.com/IrreducibleOSS/binius/pull/300 for proof of this fact
+
+		// how should we handle the case `fold_arities = []`, i.e. total_vars + log_inv_rate -
+		// cap_height < arity? in that case, we would lose nothing by making the entire thing
+		// interleaved, i.e., setting `log_batch_size := total_vars`, so `terminal_codeword` lives
+		// in the interleaving of the repetition code (and so is itself a repetition codeword!).
+		// encoding is trivial. but there's a circularity: whether `total_vars + log_inv_rate -
+		// cap_height < arity` or not depends on `cap_height`, which depends on `n_test_queries`,
+		// which depends on `log_dim`--- soundness depends on block length!---which finally itself
+		// depends on whether we're using the repetition code or not. of course this circular
+		// dependency is artificial, since in the case `log_batch_size = total_vars` and `log_dim
+		// = 0`, we're sending the entire message anyway, so the FRI portion is essentially
+		// trivial / superfluous, and the security is perfect. and in any case we could evade it
+		// simply by calculating `n_test_queries` and `cap_height` using the provisional `log_dim
+		// := total_vars.saturating_sub(arity)`, proceeding as above, and only then, if we find
+		// out post facto that `fold_arities = []`, overwriting `log_batch_size := total_vars` and
+		// `log_dim = 0`---and even recalculating `n_test_queries` if we wanted (though of course
+		// it doesn't matter---we could do 0 queries in that case, and we would still get
+		// security---and in fact during the actual querying part we will skip querying
+		// anyway). in any case, from a purely code-simplicity point of view, the simplest approach
+		// is to bite the bullet and let `log_batch_size := min(total_vars, arity)` for good---and
+		// keep it there, even if we post-facto find out that `fold_arities = []`. the cost of
+		// this is that the prover has to do a nontrivial (though small!) interleaved encoding, as
+		// opposed to a trivial one.
+		Self::new(rs_code, log_batch_size, fold_arities, n_test_queries)
 	}
 
 	pub const fn n_fold_rounds(&self) -> usize {

@@ -18,7 +18,6 @@ use binius_field::{
 	packed::get_packed_slice,
 };
 use binius_hash::{INV_PACKED_TRANS_AES, Vision32MDSTransform};
-use binius_macros::arith_expr;
 use binius_math::{ArithCircuit, ArithExpr};
 use bytemuck::must_cast_slice;
 
@@ -198,7 +197,11 @@ const MDS_TRANS: [[u8; STATE_SIZE]; STATE_SIZE] = [
 
 fn vision_round_begin_expr(state_idx: usize) -> ArithCircuit<BinaryField32b> {
 	assert!(state_idx < STATE_SIZE);
-	arith_expr!(BinaryField32b[x, y] = x + y + ArithExpr::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])))
+	binius_math::ArithCircuit::from(
+		binius_math::ArithExpr::<BinaryField32b>::Var(0usize)
+			+ binius_math::ArithExpr::<BinaryField32b>::Var(1usize)
+			+ ArithExpr::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])),
+	)
 }
 
 fn s_box_linearized_eval_expr() -> ArithCircuit<BinaryField32b> {

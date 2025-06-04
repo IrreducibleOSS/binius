@@ -11,7 +11,6 @@ use binius_field::{
 	BinaryField1b, BinaryField64b, Field, PackedField, TowerField, as_packed_field::PackedType,
 	underlier::WithUnderlier,
 };
-use binius_macros::arith_expr;
 use bytemuck::{Pod, pod_collect_to_vec};
 
 use crate::{
@@ -391,8 +390,23 @@ pub fn keccakf(
 		}
 	}
 
-	let chi_iota = arith_expr!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2));
-	let chi = arith_expr!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2));
+	let chi_iota = binius_math::ArithCircuit::from(
+		binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+			- (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(4usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				+ (binius_math::ArithExpr::<binius_field::BinaryField1b>::Const(
+					binius_field::Field::ONE,
+				) - binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+					* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize)),
+	);
+	let chi = binius_math::ArithCircuit::from(
+		binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+			- (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				+ (binius_math::ArithExpr::<binius_field::BinaryField1b>::Const(
+					binius_field::Field::ONE,
+				) - binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+					* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize)),
+	);
 	for x in 0..5 {
 		for y in 0..5 {
 			for round_within_row in 0..ROUNDS_PER_STATE_ROW {
@@ -426,8 +440,11 @@ pub fn keccakf(
 		}
 	}
 
-	let selector_consistency =
-		arith_expr!([state_out, next_state_in, select] = (state_out - next_state_in) * select);
+	let selector_consistency = binius_math::ArithCircuit::from(
+		(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+			- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize))
+			* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+	);
 
 	for xy in 0..STATE_SIZE {
 		builder.assert_zero(

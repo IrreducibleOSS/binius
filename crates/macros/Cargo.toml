@@ -13,10 +13,7 @@ quote.workspace = true
 proc-macro2.workspace = true
 
 [dev-dependencies]
-binius_core = { path = "../core", default-features = false }
-binius_fast_compute ={ path = "../fast_compute", default-features = false }
 binius_field = { path = "../field", default-features = false }
-binius_math = { path = "../math", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 paste.workspace = true
 rand.workspace = true
@@ -26,7 +23,4 @@ proc-macro = true
 
 [features]
 default = ["nightly_features"]
-nightly_features = [
-    "binius_core/nightly_features",
-    "binius_field/nightly_features",
-]
+nightly_features = ["binius_field/nightly_features"]

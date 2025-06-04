@@ -2,7 +2,6 @@
 
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, Field, TowerField, as_packed_field::PackedType};
-use binius_macros::arith_expr;
 use itertools::izip;
 
 use crate::{
@@ -222,13 +221,28 @@ pub fn sha256(
 		builder.assert_zero(
 			format!("ch_{i}"),
 			[e, f, g, ch[i]],
-			arith_expr!([e, f, g, ch] = (g + e * (f + g)) - ch).convert_field(),
+			binius_math::ArithCircuit::from(
+				(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+						* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+							+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)))
+					- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+			)
+			.convert_field(),
 		);
 
 		builder.assert_zero(
 			format!("maj_{i}"),
 			[a, b, c, maj[i]],
-			arith_expr!([a, b, c, maj] = maj - (a * (b + c)) + b * c).convert_field(),
+			binius_math::ArithCircuit::from(
+				binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize)
+					- (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+						* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+							+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)))
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+						* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+			)
+			.convert_field(),
 		);
 
 		h = g;

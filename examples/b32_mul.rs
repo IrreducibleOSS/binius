@@ -10,6 +10,7 @@ use binius_field::{BinaryField32b, TowerField, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_macros::arith_expr;
+
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -80,7 +81,12 @@ fn main() -> Result<()> {
 	builder.assert_zero(
 		"b32_mul",
 		[in_a, in_b, out],
-		arith_expr!([in_a, in_b, out] = in_a * in_b - out).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+		)
+		.convert_field(),
 	);
 
 	drop(trace_gen_scope);

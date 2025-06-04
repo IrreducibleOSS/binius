@@ -2,22 +2,33 @@
 
 use std::iter::repeat_with;
 
+use binius_compute::alloc::{BumpAllocator, HostBumpAllocator};
 use binius_core::{
-	composition::BivariateProduct,
+	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::HasherChallenger,
 	polynomial::MultilinearComposite,
-	protocols::sumcheck::{CompositeSumClaim, batch_prove, prove::RegularSumcheckProver},
+	protocols::sumcheck::{
+		CompositeSumClaim, SumcheckClaim, batch_prove, prove::RegularSumcheckProver,
+		v3::bivariate_product::BivariateSumcheckProver,
+	},
 	transcript::ProverTranscript,
+};
+use binius_fast_compute::{
+	layer::FastCpuLayer,
+	memory::{PackedMemorySlice, PackedMemorySliceMut},
 };
 use binius_field::{
 	AESTowerField8b, BinaryField, BinaryField8b, BinaryField128b, BinaryField128bPolyval,
-	ByteSlicedAES32x128b, ExtensionField, PackedExtension, PackedField, TowerField,
-	arch::OptimalUnderlier, as_packed_field::PackedType,
+	ByteSlicedAES32x128b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
+	arch::OptimalUnderlier,
+	as_packed_field::PackedType,
+	tower::{AESTowerFamily, CanonicalTowerFamily, PackedTop, TowerFamily},
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
 use binius_math::{
 	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -106,6 +117,79 @@ fn regular_sumcheck(c: &mut Criterion) {
 	}
 }
 
-criterion_group!(sumcheck_benches, regular_sumcheck);
+fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
+	c: &mut Criterion,
+	field: &str,
+	n_vars: usize,
+) {
+	let mut rng = thread_rng();
+	let multilins = repeat_with(|| {
+		let values = repeat_with(|| P::random(&mut rng))
+			.take(1 << n_vars.saturating_sub(P::LOG_WIDTH))
+			.collect::<Vec<_>>();
+		MLEDirectAdapter::from(MultilinearExtension::new(n_vars, values).unwrap())
+	})
+	.take(2)
+	.collect::<Vec<_>>();
+
+	let bivariate_composition = BivariateProduct::default();
+
+	let witness =
+		MultilinearComposite::new(n_vars, bivariate_composition, multilins.clone()).unwrap();
+
+	let sum = (0..(1 << n_vars))
+		.into_par_iter()
+		.map(|j| witness.evaluate_on_hypercube(j).unwrap())
+		.sum();
+	let composite_sum_claim = CompositeSumClaim {
+		composition: IndexComposition::new(2, [0, 1], bivariate_composition).unwrap(),
+		sum,
+	};
+
+	let multilins = multilins
+		.iter()
+		.map(|mle| PackedMemorySlice::new_slice(mle.packed_evals().unwrap()))
+		.collect::<Vec<_>>();
+	let claim =
+		SumcheckClaim::<T::B128, _>::new(n_vars, multilins.len(), vec![composite_sum_claim])
+			.unwrap();
+	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+
+	let mut group = c.benchmark_group(format!("SumcheckV3/{field}"));
+	let mut cpu_memory = vec![T::B128::ZERO; 1 << n_vars];
+	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
+	let hal = FastCpuLayer::default();
+
+	group.bench_function(format!("n_vars={n_vars}"), |b| {
+		b.iter(|| {
+			let cpu_allocator = HostBumpAllocator::new(&mut cpu_memory);
+			let device_memory = PackedMemorySliceMut::new_slice(&mut device_memory);
+			let device_allocator = BumpAllocator::new(device_memory);
+
+			let prover = BivariateSumcheckProver::new(
+				&hal,
+				&device_allocator,
+				&cpu_allocator,
+				&claim,
+				multilins.clone(),
+			)
+			.unwrap();
+
+			batch_prove(vec![prover], &mut prover_transcript).unwrap();
+		});
+	});
+}
+
+fn sumcheck_v3(c: &mut Criterion) {
+	bench_sumcheck_v3::<CanonicalTowerFamily, PackedType<OptimalUnderlier, BinaryField128b>>(
+		c,
+		"BinaryField128b",
+		20,
+	);
+
+	bench_sumcheck_v3::<AESTowerFamily, ByteSlicedAES32x128b>(c, "ByteSlicedAES32x128b", 20);
+}
+
+criterion_group!(sumcheck_benches, regular_sumcheck, sumcheck_v3);
 
 criterion_main!(sumcheck_benches);

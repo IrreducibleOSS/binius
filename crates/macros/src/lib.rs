@@ -1,82 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 extern crate proc_macro;
-mod arith_circuit_poly;
-mod arith_expr;
-mod composition_poly;
 mod deserialize_bytes;
 
 use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
-
-use crate::{
-	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
-	composition_poly::CompositionPolyItem,
-};
-
-/// Useful for concisely creating structs that implement CompositionPoly.
-/// This currently only supports creating composition polynomials of tower level 0.
-///
-/// ```
-/// use binius_macros::composition_poly;
-/// use binius_math::CompositionPoly;
-/// use binius_field::{Field, BinaryField1b as F};
-///
-/// // Defines named struct without any fields that implements CompositionPoly
-/// composition_poly!(MyComposition[x, y, z] = x + y * z);
-/// assert_eq!(
-///     MyComposition.evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
-///     F::ZERO
-/// );
-///
-/// // If you omit the name you get an anonymous instance instead, which can be used inline
-/// assert_eq!(
-///     composition_poly!([x, y, z] = x + y * z)
-///         .evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
-///     F::ZERO
-/// );
-/// ```
-#[deprecated]
-#[proc_macro]
-pub fn composition_poly(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as CompositionPolyItem)
-		.into_token_stream()
-		.into()
-}
-
-/// Define polynomial expressions compactly using named positional arguments
-///
-/// ```
-/// use binius_macros::arith_expr;
-/// use binius_field::{Field, BinaryField1b, BinaryField8b};
-/// use binius_math::ArithExpr as Expr;
-///
-/// assert_eq!(
-///     arith_expr!([x, y] = x + y + 1),
-///     (Expr::Var(0) + Expr::Var(1) + Expr::Const(BinaryField1b::ONE)).into()
-/// );
-///
-/// assert_eq!(
-///     arith_expr!(BinaryField8b[x] = 3*x + 15),
-///     (Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))).into()
-/// );
-/// ```
-#[deprecated]
-#[proc_macro]
-pub fn arith_expr(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as ArithExprItem)
-		.into_token_stream()
-		.into()
-}
-
-#[proc_macro]
-pub fn arith_circuit_poly(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as ArithCircuitPolyItem)
-		.into_token_stream()
-		.into()
-}
 
 /// Derives the trait binius_utils::DeserializeBytes for a struct or enum
 ///

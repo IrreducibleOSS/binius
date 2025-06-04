@@ -58,13 +58,10 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	#[allow(clippy::type_complexity)]
 	pub fn build(self) -> Result<ConstraintSystem<F>, anyhow::Error> {
 		let table_constraints = self.constraints.build(&self.oracles.borrow())?;
+		let max_channel_id = self.flushes.iter().map(|flush| flush.channel_id).max();
+		let channel_count = max_channel_id.map_or(0, |id| id + 1);
 		Ok(ConstraintSystem {
-			max_channel_id: self
-				.flushes
-				.iter()
-				.map(|flush| flush.channel_id)
-				.max()
-				.unwrap_or(0),
+			channel_count,
 			table_constraints,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			oracles: Rc::into_inner(self.oracles)

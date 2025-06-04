@@ -6,7 +6,6 @@ use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	BinaryField8b, BinaryField32b, TowerField, tower_levels::TowerLevel, underlier::WithUnderlier,
 };
-use binius_macros::arith_expr;
 
 use super::{byte_sliced_add_carryfree, byte_sliced_mul};
 use crate::{
@@ -177,7 +176,10 @@ pub fn byte_sliced_modular_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = 
 		lookup_batch_dci.execute::<BinaryField32b>(builder)?;
 	}
 
-	let consistency = arith_expr!([x, y] = x - y);
+	let consistency = binius_math::ArithCircuit::from(
+		binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+			- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize),
+	);
 
 	for byte_idx in 0..LevelOut::WIDTH {
 		builder.assert_zero(

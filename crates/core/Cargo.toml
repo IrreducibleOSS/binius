@@ -46,7 +46,7 @@ rand = { workspace = true, features = ["std"] }
 bench = false
 
 [[bench]]
-name = "composition_poly"
+name = "arith_circuit_poly"
 harness = false
 
 [[bench]]
