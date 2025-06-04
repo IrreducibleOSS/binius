@@ -24,13 +24,10 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
-	type KernelExec: KernelExecutor<F, Mem = Self::DevMem, Value = Self::KernelValue, ExprEval = Self::ExprEval>;
+	type KernelExec: KernelExecutor<F, Mem = Self::DevMem, ExprEval = Self::ExprEval>;
 
 	/// The operation (scalar) value type.
 	type OpValue;
-
-	/// The kernel(core)-level operation (scalar) type;
-	type KernelValue;
 
 	/// The evaluator for arithmetic expressions (polynomials).
 	type ExprEval: Sync;
@@ -161,7 +158,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		) -> Result<Vec<<Self::KernelExec as KernelExecutor<F>>::Value>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
 

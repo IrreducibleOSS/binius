@@ -3,7 +3,7 @@
 use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelBuilder, KernelMemMap,
+	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelExecutor, KernelMemMap,
 	SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };

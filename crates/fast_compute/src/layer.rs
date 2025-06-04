@@ -62,7 +62,6 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	type KernelExec = FastKernelBuilder<T, P>;
 	type DevMem = PackedMemory<P>;
 	type OpValue = T::B128;
-	type KernelValue = T::B128;
 	type ExprEval = ArithCircuitPoly<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
@@ -209,7 +208,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		) -> Result<Vec<T::B128>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)

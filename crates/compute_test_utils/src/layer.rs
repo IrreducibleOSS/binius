@@ -3,7 +3,7 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	FSliceMut, KernelBuilder,
+	FSliceMut, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
