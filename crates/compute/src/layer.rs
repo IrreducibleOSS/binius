@@ -71,15 +71,6 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
 
-	/// Declares a kernel-level value.
-	fn kernel_decl_value(
-		&self,
-		exec: &mut Self::KernelExec,
-		init: F,
-	) -> Result<Self::KernelValue, Error> {
-		exec.decl_value(init)
-	}
-
 	/// Executes an operation.
 	///
 	/// A HAL operation is an abstract function that runs with an executor reference.
@@ -288,38 +279,6 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
-
-	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
-	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
-	///
-	/// Mathematically, let there be $m$ input buffers, $P_0, \ldots, P_{m-1}$, each of length
-	/// $2^n$ elements. Let $c$ be the scaling coefficient (`batch_coeff`) and
-	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
-	///
-	/// $$
-	/// \sum_{i=0}^{2^n - 1} c C(P_0\[i\], \ldots, P_{m-1}\[i\]).
-	/// $$
-	///
-	/// The result is added back to an accumulator value.
-	///
-	/// ## Arguments
-	///
-	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
-	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
-	/// * `composition` - the compiled composition polynomial expression. This is an output of
-	///   [`Self::compile_expr`].
-	/// * `batch_coeff` - the scaling coefficient.
-	/// * `accumulator` - the output where the result is accumulated to.
-	fn sum_composition_evals(
-		&self,
-		exec: &mut Self::KernelExec,
-		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
-		composition: &Self::ExprEval,
-		batch_coeff: F,
-		accumulator: &mut Self::KernelValue,
-	) -> Result<(), Error> {
-		exec.sum_composition_evals(inputs, composition, batch_coeff, accumulator)
-	}
 
 	/// A kernel-local operation that performs point-wise addition of two input buffers into an
 	/// output buffer.
