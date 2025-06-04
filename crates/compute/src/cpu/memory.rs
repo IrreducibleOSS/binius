@@ -8,7 +8,7 @@ use crate::memory::ComputeMemory;
 pub struct CpuMemory;
 
 impl<F: 'static + Sync> ComputeMemory<F> for CpuMemory {
-	const MIN_SLICE_LEN: usize = 1;
+	const ALIGNMENT: usize = 1;
 
 	type FSlice<'a> = &'a [F];
 	type FSliceMut<'a> = &'a mut [F];

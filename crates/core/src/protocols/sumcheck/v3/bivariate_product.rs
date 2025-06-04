@@ -46,7 +46,7 @@ where
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
-		if Hal::DevMem::MIN_SLICE_LEN != 1 {
+		if Hal::DevMem::ALIGNMENT != 1 {
 			todo!("support non-trivial minimum slice lengths");
 		}
 

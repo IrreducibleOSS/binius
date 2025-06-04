@@ -443,9 +443,9 @@ where
 	let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << n_vars).unwrap();
 
 	{
-		let mut host_min_slice = zeroed_vec(Hal::DevMem::MIN_SLICE_LEN);
+		let mut host_min_slice = zeroed_vec(Hal::DevMem::ALIGNMENT);
 		let mut dev_min_slice =
-			Hal::DevMem::slice_mut(&mut eq_ind_partial_evals_buffer, 0..Hal::DevMem::MIN_SLICE_LEN);
+			Hal::DevMem::slice_mut(&mut eq_ind_partial_evals_buffer, 0..Hal::DevMem::ALIGNMENT);
 		host_min_slice[0] = F::ONE;
 
 		hal.copy_h2d(&host_min_slice, &mut dev_min_slice).unwrap();
