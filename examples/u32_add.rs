@@ -1,20 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-#![allow(deprecated)]
-
 use anyhow::Result;
-use binius_circuits::{
-	arithmetic::Flags,
-	builder::{ConstraintSystemBuilder, types::U},
-};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_field::{BinaryField1b, tower::CanonicalTowerFamily};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
-use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use binius_m3::{
+	builder::{B1, B128, Statement, WitnessIndex, test_utils::ClosureFiller},
+	gadgets::add::{U32Add, U32AddFlags},
+};
+use binius_utils::rayon::adjust_thread_pool;
+use bumpalo::Bump;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
+use rand::{Rng as _, SeedableRng as _, rngs::StdRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -40,52 +41,74 @@ fn main() -> Result<()> {
 
 	println!("Verifying {} u32 additions", args.n_additions);
 
-	let log_n_additions = log2_ceil_usize(args.n_additions as usize);
+	let mut rng = StdRng::seed_from_u64(0);
+	let test_vector: Vec<(u32, u32)> = (0..args.n_additions)
+		.map(|_| (rng.r#gen(), rng.r#gen()))
+		.collect();
 
-	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let mut cs = binius_m3::builder::ConstraintSystem::new();
+	let mut table = cs.add_table("u32_add");
 
+	let flags = U32AddFlags {
+		carry_in_bit: None,
+		expose_final_carry: false,
+		commit_zout: true,
+	};
+
+	let xin = table.add_committed::<B1, 32>("xin");
+	let yin = table.add_committed::<B1, 32>("yin");
+	let adder = U32Add::new(&mut table, xin, yin, flags);
+
+	let table_id = table.id();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![test_vector.len()],
+	};
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-		&mut builder,
-		"in_a",
-		log_n_additions + 5,
-	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-		&mut builder,
-		"in_b",
-		log_n_additions + 5,
-	)?;
-	let _sum =
-		binius_circuits::arithmetic::u32::add(&mut builder, "sum", in_a, in_b, Flags::Unchecked)?;
+	let allocator = Bump::new();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+	witness
+		.fill_table_parallel(
+			&ClosureFiller::new(table_id, |events, index| {
+				let mut xin_bits = index.get_mut_as::<u32, _, 32>(adder.xin)?;
+				let mut yin_bits = index.get_mut_as::<u32, _, 32>(adder.yin)?;
+				for (i, (x, y)) in events.iter().enumerate() {
+					xin_bits[i] = *x;
+					yin_bits[i] = *y;
+				}
+				drop((xin_bits, yin_bits));
+				adder.populate(index)?;
+				Ok(())
+			}),
+			&test_vector,
+		)
+		.unwrap();
 	drop(trace_gen_scope);
 
-	let witness = builder
-		.take_witness()
-		.expect("builder created with witness");
-	let constraint_system = builder.build()?;
-
-	let backend = make_portable_backend();
+	let ccs = cs.compile(&statement).unwrap();
+	let witness = witness.into_multilinear_extension_index();
 
 	let proof =
 		constraint_system::prove::<
-			U,
+			OptimalUnderlier,
 			CanonicalTowerFamily,
 			Groestl256Parallel,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+		>(
+			&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &make_portable_backend()
+		)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	constraint_system::verify::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }
