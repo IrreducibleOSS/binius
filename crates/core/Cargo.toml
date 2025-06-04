@@ -34,6 +34,7 @@ serde_json_any_key.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tracing-profile.workspace = true
 
 [dev-dependencies]
 binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
