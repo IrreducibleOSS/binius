@@ -3,7 +3,7 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	FSliceMut, KernelExecutor,
+	FSliceMut, KernelExecutor, KernelMem,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
@@ -460,7 +460,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 					};
 					let log_len = checked_log_2(a.len());
 					kernel_exec.add(log_len, a, b, &mut c)?;
-					let c = C::DevMem::as_const(&c);
+					let c = <KernelMem<F, C>>::as_const(&c);
 					let mut res = kernel_exec.decl_value(F::ZERO)?;
 					kernel_exec.sum_composition_evals(
 						&SlicesBatch::new(vec![c], c.len()),

@@ -24,7 +24,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
-	type KernelExec: KernelExecutor<F, Mem = Self::DevMem, ExprEval = Self::ExprEval>;
+	type KernelExec: KernelExecutor<F, ExprEval = Self::ExprEval>;
 
 	/// The operation (scalar) value type.
 	type OpValue;
@@ -157,7 +157,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+			Vec<KernelBuffer<'a, F, <Self::KernelExec as KernelExecutor<F>>::Mem>>,
 		) -> Result<Vec<<Self::KernelExec as KernelExecutor<F>>::Value>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
@@ -598,6 +598,10 @@ pub enum Error {
 pub type FSlice<'a, F, HAL> = <<HAL as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSlice<'a>;
 pub type FSliceMut<'a, F, HAL> =
 	<<HAL as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'a>;
+
+pub type KernelMem<F, HAL> = <<HAL as ComputeLayer<F>>::KernelExec as KernelExecutor<F>>::Mem;
+pub type KernelSlice<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSlice<'a>;
+pub type KernelSliceMut<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSliceMut<'a>;
 
 #[cfg(test)]
 mod tests {

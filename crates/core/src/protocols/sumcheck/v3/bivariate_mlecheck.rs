@@ -3,8 +3,8 @@
 use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelExecutor, KernelMemMap,
-	SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelExecutor, KernelMem,
+	KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{
@@ -214,7 +214,7 @@ where
 					};
 					local_exec.add_assign(
 						log_chunk_size,
-						Hal::DevMem::as_const(evals_1),
+						<KernelMem<F, Hal>>::as_const(evals_1),
 						evals_0,
 					)?;
 
