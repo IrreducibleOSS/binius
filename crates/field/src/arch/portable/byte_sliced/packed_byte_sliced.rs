@@ -58,7 +58,7 @@ macro_rules! define_byte_sliced_3d {
 			pub const BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH * <$packed_storage>::WIDTH;
 
 			const SCALAR_BYTES: usize = <$scalar_type>::N_BITS / 8;
-			pub(crate) const HEIGHT_BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH;
+			pub const HEIGHT_BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH;
 			const HEIGHT: usize = Self::HEIGHT_BYTES / Self::SCALAR_BYTES;
 			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT);
 
@@ -633,7 +633,7 @@ macro_rules! define_byte_sliced_3d_1b {
 			pub const BYTES: usize =
 				<$storage_tower_level as TowerLevel>::WIDTH * <$packed_storage>::WIDTH;
 
-			pub(crate) const HEIGHT_BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH;
+			pub const HEIGHT_BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH;
 			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT_BYTES);
 
 			/// Get the byte at the given index.

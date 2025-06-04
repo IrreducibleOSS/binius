@@ -7,8 +7,8 @@ use binius_compute_test_utils::layer::{
 };
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
-	BinaryField16b, BinaryField128b, PackedBinaryField2x128b, PackedField,
-	tower::CanonicalTowerFamily,
+	BinaryField16b, BinaryField128b, PackedBinaryField1x128b, PackedBinaryField2x128b,
+	PackedBinaryField4x128b, PackedField, tower::CanonicalTowerFamily,
 };
 
 #[test]
@@ -137,8 +137,34 @@ fn test_exec_kernel_add() {
 }
 
 #[test]
-fn test_extrapolate_line() {
+fn test_extrapolate_line_128b() {
+	type P = PackedBinaryField1x128b;
+	let log_len = 10;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	binius_compute_test_utils::layer::test_extrapolate_line(
+		&compute,
+		PackedMemorySliceMut::new_slice(&mut device_memory),
+		log_len,
+	);
+}
+
+#[test]
+fn test_extrapolate_line_256b() {
 	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	binius_compute_test_utils::layer::test_extrapolate_line(
+		&compute,
+		PackedMemorySliceMut::new_slice(&mut device_memory),
+		log_len,
+	);
+}
+
+#[test]
+fn test_extrapolate_line_512b() {
+	type P = PackedBinaryField4x128b;
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];

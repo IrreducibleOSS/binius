@@ -1,6 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, iter, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
+use std::{
+	any::TypeId,
+	cell::RefCell,
+	iter::{repeat_with, zip},
+	marker::PhantomData,
+	mem::{MaybeUninit, transmute},
+	slice,
+};
 
 use binius_compute::{
 	KernelExecutor,
@@ -11,8 +18,15 @@ use binius_compute::{
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField,
+	AESTowerField8b, AESTowerField128b, BinaryField8b, BinaryField128b, ByteSlicedUnderlier,
+	ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField2x128b,
+	PackedBinaryField4x128b, PackedExtension, PackedField,
+	as_packed_field::{PackScalar, PackedType},
+	linear_transformation::{PackedTransformationFactory, Transformation},
+	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
 	tower::{PackedTop, TowerFamily},
+	tower_levels::TowerLevel16,
+	underlier::{NumCast, UnderlierWithBitOps, WithUnderlier},
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
 };
@@ -29,7 +43,7 @@ use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
 	rayon::get_log_max_threads,
 };
-use bytemuck::zeroed_vec;
+use bytemuck::{Pod, zeroed_vec};
 use itertools::izip;
 use thread_local::ThreadLocal;
 
@@ -422,11 +436,28 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			));
 		}
 
-		evals_0
-			.as_slice_mut()
-			.par_iter_mut()
-			.zip(evals_1.as_slice().par_iter())
-			.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
+		if try_extrapolate_line_byte_sliced::<_, PackedBinaryField1x128b>(
+			evals_0.as_slice_mut(),
+			evals_1.as_slice(),
+			z,
+		) || try_extrapolate_line_byte_sliced::<_, PackedBinaryField2x128b>(
+			evals_0.as_slice_mut(),
+			evals_1.as_slice(),
+			z,
+		) || try_extrapolate_line_byte_sliced::<_, PackedBinaryField4x128b>(
+			evals_0.as_slice_mut(),
+			evals_1.as_slice(),
+			z,
+		) {
+		} else {
+			let z = P::broadcast(z);
+			evals_0
+				.as_slice_mut()
+				.par_iter_mut()
+				.zip(evals_1.as_slice().par_iter())
+				.for_each(|(x0, x1)| *x0 += (*x1 - *x0) * z);
+		}
+
 		Ok(())
 	}
 
@@ -472,6 +503,151 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			});
 
 		Ok(())
+	}
+}
+
+/// In case when `P1` and `P2` are the same type, this function performs the extrapolation
+/// using the byte-sliced representation of the packed field elements.
+///
+/// `P2` is supposed to be one of the following types: `PackedBinaryField1x128b`,
+/// `PackedBinaryField2x128b` or `PackedBinaryField4x128b`.
+#[inline(always)]
+fn try_extrapolate_line_byte_sliced<P1, P2>(
+	evals_0: &mut [P1],
+	evals_1: &[P1],
+	z: P1::Scalar,
+) -> bool
+where
+	P1: PackedField,
+	P2: PackedField<Scalar = BinaryField128b> + WithUnderlier,
+	P2::Underlier: UnderlierWithBitOps
+		+ PackScalar<BinaryField128b, Packed = P2>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<BinaryField8b>
+		+ PackScalar<AESTowerField8b>
+		+ From<u8>
+		+ Pod,
+	u8: NumCast<P2::Underlier>,
+	ByteSlicedUnderlier<P2::Underlier, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	PackedType<P2::Underlier, BinaryField8b>:
+		PackedTransformationFactory<PackedType<P2::Underlier, AESTowerField8b>>,
+	PackedType<P2::Underlier, AESTowerField8b>:
+		PackedTransformationFactory<PackedType<P2::Underlier, BinaryField8b>>,
+{
+	if TypeId::of::<P1>() == TypeId::of::<P2>() {
+		// Safety: The transmute calls are safe because source and destination types are the same.
+		extrapolate_line_byte_sliced::<P2::Underlier>(
+			unsafe { transmute::<&mut [P1], &mut [P2]>(evals_0) },
+			unsafe { transmute::<&[P1], &[P2]>(evals_1) },
+			*unsafe { transmute::<&P1::Scalar, &BinaryField128b>(&z) },
+		);
+
+		true
+	} else {
+		false
+	}
+}
+
+// Extrapolate line function that converts packed field elements to byte-sliced representation and
+// back.
+fn extrapolate_line_byte_sliced<Underlier>(
+	evals_0: &mut [PackedType<Underlier, BinaryField128b>],
+	evals_1: &[PackedType<Underlier, BinaryField128b>],
+	z: BinaryField128b,
+) where
+	Underlier: UnderlierWithBitOps
+		+ PackScalar<BinaryField128b>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<BinaryField8b>
+		+ PackScalar<AESTowerField8b>
+		+ From<u8>
+		+ Pod,
+	u8: NumCast<Underlier>,
+	ByteSlicedUnderlier<Underlier, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	PackedType<Underlier, BinaryField8b>:
+		PackedTransformationFactory<PackedType<Underlier, AESTowerField8b>>,
+	PackedType<Underlier, AESTowerField8b>:
+		PackedTransformationFactory<PackedType<Underlier, BinaryField8b>>,
+{
+	let fwd_transform = make_binary_to_aes_packed_transformer::<
+		PackedType<Underlier, BinaryField128b>,
+		PackedType<Underlier, AESTowerField128b>,
+	>();
+	let inv_transform = make_aes_to_binary_packed_transformer::<
+		PackedType<Underlier, AESTowerField128b>,
+		PackedType<Underlier, BinaryField128b>,
+	>();
+
+	// Process the chunks that have the size of a full byte-sliced packed field.
+	const BYTES_COUNT: usize = 16;
+	let byte_sliced_z =
+		PackedType::<ByteSlicedUnderlier<Underlier, 16>, AESTowerField128b>::broadcast(z.into());
+	evals_0
+		.par_chunks_exact_mut(BYTES_COUNT)
+		.zip(evals_1.par_chunks_exact(BYTES_COUNT))
+		.for_each(|(x0, x1)| {
+			// Transform x0 to byte-sliced representation
+			let mut x0_aes =
+				[MaybeUninit::<PackedType<Underlier, AESTowerField128b>>::uninit(); BYTES_COUNT];
+			for (x0_aes, x0) in x0_aes.iter_mut().zip(x0.iter()) {
+				_ = *x0_aes.write(fwd_transform.transform(x0));
+			}
+			// Safety: all array elements are initialized at this moment
+			let x0_aes = unsafe {
+				transmute::<
+					&mut [MaybeUninit<PackedType<Underlier, AESTowerField128b>>; BYTES_COUNT],
+					&mut [Underlier; BYTES_COUNT],
+				>(&mut x0_aes)
+			};
+			Underlier::transpose_bytes_to_byte_sliced::<TowerLevel16>(x0_aes);
+
+			// Transform x1 to byte-sliced representation
+			let mut x1_aes =
+				[MaybeUninit::<PackedType<Underlier, AESTowerField128b>>::uninit(); BYTES_COUNT];
+			for (x1_aes, x1) in x1_aes.iter_mut().zip(x1.iter()) {
+				_ = *x1_aes.write(fwd_transform.transform(x1));
+			}
+			// Safety: all array elements are initialized at this moment
+			let x1_aes = unsafe {
+				transmute::<
+					&mut [MaybeUninit<PackedType<Underlier, AESTowerField128b>>; BYTES_COUNT],
+					&mut [Underlier; BYTES_COUNT],
+				>(&mut x1_aes)
+			};
+			Underlier::transpose_bytes_to_byte_sliced::<TowerLevel16>(x1_aes);
+
+			// Perform the extrapolation in the byte-sliced representation
+			{
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<Underlier, 16>, AESTowerField128b>,
+				>(x0_aes);
+				let x1_bytes_sliced = bytemuck::must_cast_ref::<
+					_,
+					PackedType<ByteSlicedUnderlier<Underlier, 16>, AESTowerField128b>,
+				>(x1_aes);
+
+				*x0_bytes_sliced += (*x1_bytes_sliced - *x0_bytes_sliced) * byte_sliced_z;
+			}
+
+			// Transform x0 back to the original packed representation
+			Underlier::transpose_bytes_from_byte_sliced::<TowerLevel16>(x0_aes);
+			for (x0, x0_aes) in x0.iter_mut().zip(x0_aes.iter()) {
+				*x0 = inv_transform.transform(
+					PackedType::<Underlier, AESTowerField128b>::from_underlier_ref(x0_aes),
+				);
+			}
+		});
+
+	// Process the remainder
+	let packed_z = PackedType::<Underlier, BinaryField128b>::broadcast(z);
+	for (x0, x1) in evals_0
+		.chunks_exact_mut(BYTES_COUNT)
+		.into_remainder()
+		.iter_mut()
+		.zip(evals_1.chunks_exact(BYTES_COUNT).remainder())
+	{
+		*x0 += (*x1 - *x0) * packed_z;
 	}
 }
 
@@ -594,7 +770,7 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuil
 			));
 		}
 
-		for (dst_i, &src_i) in iter::zip(dst.as_slice_mut().iter_mut(), src.as_slice()) {
+		for (dst_i, &src_i) in zip(dst.as_slice_mut().iter_mut(), src.as_slice()) {
 			*dst_i += src_i;
 		}
 
