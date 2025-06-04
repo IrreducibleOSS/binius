@@ -90,7 +90,7 @@ pub trait ComputeMemory<F> {
 	fn as_const<'a>(data: &'a Self::FSliceMut<'_>) -> Self::FSlice<'a>;
 
 	/// Borrows a mutable memory slice as immutable.
-	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_>;
+	fn into_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_>;
 
 	/// Borrows a subslice of an immutable memory slice.
 	///

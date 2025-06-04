@@ -22,7 +22,7 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 		PackedMemorySlice { data: data.data }
 	}
 
-	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
+	fn into_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
 		PackedMemorySlice { data: data.data }
 	}
 

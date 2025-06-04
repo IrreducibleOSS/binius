@@ -5,6 +5,7 @@ use std::{iter, sync::Arc};
 use binius_compute::{
 	ComputeLayer, FSlice,
 	alloc::{BumpAllocator, HostBumpAllocator},
+	layer,
 };
 use binius_field::{
 	Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
@@ -297,7 +298,7 @@ where
 				|exec, (claim_desc, &mixing_coeff)| {
 					let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
 
-					Ok(make_ring_switch_eq_ind::<Tower, _>(
+					make_ring_switch_eq_ind::<Tower, _>(
 						suffix_desc,
 						row_batch_coeffs.clone(),
 						mixing_coeff,
@@ -306,10 +307,10 @@ where
 						dev_alloc,
 						host_alloc,
 					)
-					.unwrap())
+					.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
 				},
 			)
-			.unwrap();
+			.map_err(|e| layer::Error::CoreLibError(Box::new(e)))?;
 		eq_inds.extend(res);
 		Ok(vec![])
 	});

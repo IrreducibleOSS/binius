@@ -6,12 +6,12 @@ use binius_compute::{
 	ComputeLayer, ComputeMemory, FSlice, SizedSlice, SubfieldSlice,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
-use binius_fast_compute_math::tensor_prod_eq_ind;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_utils::bail;
 
 use super::error::Error;
 use crate::{
+	compute_math::tensor_prod_eq_ind,
 	polynomial::{Error as PolynomialError, MultivariatePoly},
 	tensor_algebra::TensorAlgebra,
 };
@@ -111,7 +111,7 @@ where
 			&mut mle,
 		)?;
 
-		Ok(Hal::DevMem::to_const(mle))
+		Ok(Hal::DevMem::into_const(mle))
 	}
 }
 
@@ -159,7 +159,6 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
-	use binius_fast_compute_math::eq_ind_partial_eval;
 	use binius_field::{BinaryField8b, BinaryField128b, tower::CanonicalTowerFamily};
 	use binius_math::MultilinearQuery;
 	use bytemuck::zeroed_vec;
@@ -167,6 +166,7 @@ mod tests {
 	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
+	use crate::compute_math::eq_ind_partial_eval;
 
 	#[test]
 	fn test_evaluation_consistency() {
