@@ -182,25 +182,21 @@ where
 	}
 
 	pub fn fold_eq_ind(&mut self) -> Result<(), Error> {
-		let split_n_vars = self.n_vars_remaining - 2;
+		let eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
 
-		let mut eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
+		let split_n_vars = self.n_vars_remaining - 2;
+		debug_assert_eq!(eq_ind_partial_evals.len(), 1 << (split_n_vars + 1));
+		let (mut evals_0, mut evals_1) = Hal::DevMem::split_half_mut(eq_ind_partial_evals);
 
 		let _ = self.hal.execute(|exec| {
-			let (evals_0, evals_1) =
-				Hal::DevMem::split_at_mut_borrowed(&mut eq_ind_partial_evals, 1 << split_n_vars);
-
 			let kernel_mappings = vec![
 				KernelMemMap::ChunkedMut {
-					data: evals_0,
+					data: Hal::DevMem::to_owned_mut(&mut evals_0),
 					log_min_chunk_size: 0,
 				},
 				KernelMemMap::ChunkedMut {
-					data: evals_1,
+					data: Hal::DevMem::to_owned_mut(&mut evals_1),
 					log_min_chunk_size: 0,
-				},
-				KernelMemMap::Local {
-					log_size: split_n_vars,
 				},
 			];
 
@@ -209,26 +205,18 @@ where
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
-					let Ok(
-						[
-							KernelBuffer::Mut(evals_0),
-							KernelBuffer::Mut(evals_1),
-							KernelBuffer::Mut(result),
-						],
-					) = TryInto::<&mut [_; 3]>::try_into(buffers.as_mut_slice())
+					let Ok([KernelBuffer::Mut(evals_0), KernelBuffer::Mut(evals_1)]) =
+						TryInto::<&mut [_; 2]>::try_into(buffers.as_mut_slice())
 					else {
 						panic!(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					local_exec.add(
+					local_exec.add_assign(
 						log_chunk_size,
-						Hal::DevMem::as_const(evals_0),
 						Hal::DevMem::as_const(evals_1),
-						result,
+						evals_0,
 					)?;
-
-					self.hal.copy_d2d(Hal::DevMem::as_const(result), evals_0)?;
 
 					Ok(Vec::new())
 				},
@@ -238,10 +226,7 @@ where
 			Ok(Vec::new())
 		})?;
 
-		let (new_eq_ind_partial_evals, _) =
-			Hal::DevMem::split_at_mut(eq_ind_partial_evals, 1 << split_n_vars);
-
-		self.eq_ind_partial_evals = Some(new_eq_ind_partial_evals);
+		self.eq_ind_partial_evals = Some(evals_0);
 
 		Ok(())
 	}
