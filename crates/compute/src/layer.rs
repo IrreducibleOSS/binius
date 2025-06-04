@@ -454,6 +454,20 @@ pub trait KernelExecutor<F> {
 		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
 		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
+
+	/// A kernel-local operation that adds a source buffer into a destination buffer, in place.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in the two buffers.
+	/// * `src` - the source buffer.
+	/// * `dst` - the destination buffer.
+	fn add_assign(
+		&mut self,
+		log_len: usize,
+		src: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
 }
 
 /// A memory mapping specification for a kernel execution.
