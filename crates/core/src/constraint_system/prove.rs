@@ -20,6 +20,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
