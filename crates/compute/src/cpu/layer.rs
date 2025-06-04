@@ -14,6 +14,7 @@ use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
+	KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
@@ -27,7 +28,7 @@ pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type Exec = CpuExecutor;
-	type KernelExec = CpuExecutor;
+	type KernelExec = CpuKernelBuilder;
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
 	type KernelValue = T::B128;
@@ -75,10 +76,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
-	fn kernel_decl_value(&self, _exec: &mut CpuExecutor, init: T::B128) -> Result<T::B128, Error> {
-		Ok(init)
-	}
-
 	fn execute(
 		&self,
 		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
@@ -113,7 +110,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
 				let kernel_data =
 					Self::map_kernel_mem(&mut inputs, &local_buffer_alloc, log_chunks, i);
-				map(&mut CpuExecutor, log_chunks, kernel_data)
+				map(&mut CpuKernelBuilder, log_chunks, kernel_data)
 			})
 			.reduce(|out1, out2| {
 				let mut out1 = out1?;
@@ -234,43 +231,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				*y_i += prod;
 			}
 		}
-		Ok(())
-	}
-
-	fn sum_composition_evals(
-		&self,
-		_exec: &mut Self::KernelExec,
-		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
-		composition: &ArithCircuit<T::B128>,
-		batch_coeff: T::B128,
-		accumulator: &mut T::B128,
-	) -> Result<(), Error> {
-		let ret = (0..inputs.row_len())
-			.map(|i| {
-				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
-				composition.evaluate(&row).expect("Evaluation to succeed")
-			})
-			.sum::<T::B128>();
-		*accumulator += ret * batch_coeff;
-		Ok(())
-	}
-
-	fn kernel_add(
-		&self,
-		_exec: &mut Self::KernelExec,
-		log_len: usize,
-		src1: FSlice<'_, T::B128, Self>,
-		src2: FSlice<'_, T::B128, Self>,
-		dst: &mut FSliceMut<'_, T::B128, Self>,
-	) -> Result<(), Error> {
-		assert_eq!(src1.len(), 1 << log_len);
-		assert_eq!(src2.len(), 1 << log_len);
-		assert_eq!(dst.len(), 1 << log_len);
-
-		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
-			*dst_i = src1_i + src2_i;
-		}
-
 		Ok(())
 	}
 
@@ -408,6 +368,54 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			}
 
 			*output = composition.evaluate(&query).expect("Evaluation to succeed");
+		}
+
+		Ok(())
+	}
+}
+
+#[derive(Debug)]
+pub struct CpuKernelBuilder;
+
+impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
+	type Mem = CpuMemory;
+	type Value = F;
+	type ExprEval = ArithCircuit<F>;
+
+	fn decl_value(&mut self, init: F) -> Result<F, Error> {
+		Ok(init)
+	}
+
+	fn sum_composition_evals(
+		&mut self,
+		inputs: &SlicesBatch<<Self::Mem as ComputeMemory<F>>::FSlice<'_>>,
+		composition: &Self::ExprEval,
+		batch_coeff: F,
+		accumulator: &mut Self::Value,
+	) -> Result<(), Error> {
+		let ret = (0..inputs.row_len())
+			.map(|i| {
+				let row = inputs.iter().map(|input| input[i]).collect::<Vec<_>>();
+				composition.evaluate(&row).expect("Evaluation to succeed")
+			})
+			.sum::<F>();
+		*accumulator += ret * batch_coeff;
+		Ok(())
+	}
+
+	fn add(
+		&mut self,
+		log_len: usize,
+		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error> {
+		assert_eq!(src1.len(), 1 << log_len);
+		assert_eq!(src2.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
+			*dst_i = src1_i + src2_i;
 		}
 
 		Ok(())
