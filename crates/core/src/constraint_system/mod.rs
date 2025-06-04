@@ -48,3 +48,5 @@ impl Proof {
 		self.transcript.len()
 	}
 }
+
+pub type TableId = usize;
