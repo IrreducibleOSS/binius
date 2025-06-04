@@ -89,19 +89,26 @@ fn main() -> Result<()> {
 	drop(trace_gen_scope);
 
 	let ccs = cs.compile(&statement).unwrap();
+	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
-	let proof =
-		constraint_system::prove::<
-			OptimalUnderlier,
-			CanonicalTowerFamily,
-			Groestl256Parallel,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(
-			&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &make_portable_backend()
-		)?;
+	let proof = constraint_system::prove::<
+		OptimalUnderlier,
+		CanonicalTowerFamily,
+		Groestl256Parallel,
+		Groestl256ByteCompression,
+		HasherChallenger<Groestl256>,
+		_,
+	>(
+		&ccs,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&cs_digest,
+		&statement.boundaries,
+		&statement.table_sizes,
+		witness,
+		&make_portable_backend(),
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
@@ -111,7 +118,14 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
+	>(
+		&ccs,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&cs_digest,
+		&statement.boundaries,
+		proof,
+	)?;
 
 	Ok(())
 }

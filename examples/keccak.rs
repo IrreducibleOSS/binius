@@ -110,6 +110,7 @@ fn main() -> Result<()> {
 	drop(trace_gen_scope);
 
 	let ccs = cs.compile(&statement).unwrap();
+	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
@@ -123,7 +124,9 @@ fn main() -> Result<()> {
 		&ccs,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
+		&cs_digest,
 		&statement.boundaries,
+		&statement.table_sizes,
 		witness,
 		&binius_hal::make_portable_backend(),
 	)
@@ -137,7 +140,14 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &statement.boundaries, proof)
+	>(
+		&ccs,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&cs_digest,
+		&statement.boundaries,
+		proof,
+	)
 	.unwrap();
 
 	Ok(())

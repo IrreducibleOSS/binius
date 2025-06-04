@@ -12,8 +12,10 @@ mod verify;
 mod tests;
 
 use binius_field::{BinaryField128b, TowerField};
+use binius_hash::hash_serialize;
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use channel::Flush;
+use digest::{Digest, Output, core_api::BlockSizeUser};
 use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
@@ -38,7 +40,12 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub channel_count: usize,
 }
 
-impl<F: TowerField> ConstraintSystem<F> {}
+impl<F: TowerField> ConstraintSystem<F> {
+	/// Returns the hash digest of this constraint system.
+	pub fn digest<Hash: Digest + BlockSizeUser>(&self) -> Output<Hash> {
+		hash_serialize::<Self, Hash>([self])
+	}
+}
 
 /// Constraint system proof that has been serialized into bytes
 #[derive(Debug, Clone)]

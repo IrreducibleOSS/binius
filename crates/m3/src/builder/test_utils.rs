@@ -123,6 +123,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 	binius_core::constraint_system::validate::validate_witness(
 		&ccs,
 		&statement.boundaries,
+		&statement.table_sizes,
 		&witness,
 	)
 	.unwrap();
@@ -131,6 +132,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
 
+		let ccs_digest = ccs.digest::<Groestl256>();
 		let proof = binius_core::constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
@@ -142,7 +144,9 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			&ccs,
 			LOG_INV_RATE,
 			SECURITY_BITS,
+			&ccs_digest,
 			&statement.boundaries,
+			&statement.table_sizes,
 			witness,
 			&binius_hal::make_portable_backend(),
 		)
@@ -154,7 +158,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
+		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &statement.boundaries, proof)
 		.unwrap();
 	}
 }

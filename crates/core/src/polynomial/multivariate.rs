@@ -7,7 +7,7 @@ use binius_field::{Field, PackedField, TowerField};
 use binius_math::{
 	ArithCircuit, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::{SerializationError, SerializationMode, bail};
+use binius_utils::{SerializationError, SerializationMode, SerializeBytes as _, bail};
 use bytes::BufMut;
 use itertools::Itertools;
 use rand::{SeedableRng, rngs::StdRng};
@@ -92,6 +92,14 @@ impl<F: TowerField> MultivariatePoly<F> for ArithCircuit<F> {
 
 	fn binary_tower_level(&self) -> usize {
 		self.binary_tower_level()
+	}
+
+	fn erased_serialize(
+		&self,
+		write_buf: &mut dyn BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		self.serialize(write_buf, mode)
 	}
 }
 
