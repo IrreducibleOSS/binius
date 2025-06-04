@@ -186,17 +186,22 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	)
 	.unwrap();
 
-	let mut host_mem =
-		hal.host_alloc(<BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim));
+	let claim_req_mem = <BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim);
+	let max_eval_len = evals.iter().map(|elem| elem.len()).max().unwrap();
+	let host_mem_size = usize::max(claim_req_mem, max_eval_len);
+	let mut host_mem = hal.host_alloc(host_mem_size);
+	let host_mem = &mut host_mem.as_mut()[..host_mem_size];
 
-	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
 	let dev_alloc = BumpAllocator::new(dev_mem);
 
 	let dev_multilins = evals
 		.iter()
 		.map(|evals_i| {
 			let mut dev_multilin = dev_alloc.alloc(evals_i.len()).unwrap();
-			hal.copy_h2d(evals_i, &mut dev_multilin).unwrap();
+			let host_alloc = HostBumpAllocator::new(host_mem);
+			let host_evals_slice = host_alloc.alloc(evals_i.len()).unwrap();
+			host_evals_slice.as_mut().copy_from_slice(evals_i);
+			hal.copy_h2d(host_evals_slice, &mut dev_multilin).unwrap();
 			dev_multilin
 		})
 		.collect::<Vec<_>>();
@@ -209,6 +214,8 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	assert!(
 		dev_alloc.capacity() >= <BivariateSumcheckProver<F, Hal>>::required_device_memory(&claim)
 	);
+
+	let host_alloc = HostBumpAllocator::new(host_mem);
 
 	let prover =
 		BivariateSumcheckProver::new(hal, &dev_alloc, &host_alloc, &claim, dev_multilins).unwrap();
