@@ -405,9 +405,9 @@ impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 	fn add(
 		&mut self,
 		log_len: usize,
-		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
-		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
-		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+		src1: &'_ [F],
+		src2: &'_ [F],
+		dst: &mut &'_ mut [F],
 	) -> Result<(), Error> {
 		assert_eq!(src1.len(), 1 << log_len);
 		assert_eq!(src2.len(), 1 << log_len);
@@ -415,6 +415,22 @@ impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 
 		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
 			*dst_i = src1_i + src2_i;
+		}
+
+		Ok(())
+	}
+
+	fn add_assign(
+		&mut self,
+		log_len: usize,
+		src: &'_ [F],
+		dst: &mut &'_ mut [F],
+	) -> Result<(), Error> {
+		assert_eq!(src.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src_i) in iter::zip(&mut **dst, src) {
+			*dst_i += src_i;
 		}
 
 		Ok(())

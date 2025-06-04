@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
+use std::{cell::RefCell, iter, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
 	KernelExecutor,
@@ -572,6 +572,30 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuil
 			izip!(dst.as_slice_mut().iter_mut(), src1.as_slice(), src2.as_slice())
 		{
 			*dst_i = src1_i + src2_i;
+		}
+
+		Ok(())
+	}
+
+	fn add_assign(
+		&mut self,
+		log_len: usize,
+		src: <Self::Mem as ComputeMemory<T::B128>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+	) -> Result<(), Error> {
+		if src.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"src1 length must be equal to 2^log_len".to_string(),
+			));
+		}
+		if dst.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"dst length must be equal to 2^log_len".to_string(),
+			));
+		}
+
+		for (dst_i, &src_i) in iter::zip(dst.as_slice_mut().iter_mut(), src.as_slice()) {
+			*dst_i += src_i;
 		}
 
 		Ok(())
