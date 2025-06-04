@@ -2,7 +2,6 @@
 
 extern crate proc_macro;
 mod arith_circuit_poly;
-mod arith_expr;
 mod deserialize_bytes;
 
 use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
@@ -10,32 +9,7 @@ use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
 
-use crate::{arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem};
-
-/// Define polynomial expressions compactly using named positional arguments
-///
-/// ```
-/// use binius_macros::arith_expr;
-/// use binius_field::{Field, BinaryField1b, BinaryField8b};
-/// use binius_math::ArithExpr as Expr;
-///
-/// assert_eq!(
-///     arith_expr!([x, y] = x + y + 1),
-///     (Expr::Var(0) + Expr::Var(1) + Expr::Const(BinaryField1b::ONE)).into()
-/// );
-///
-/// assert_eq!(
-///     arith_expr!(BinaryField8b[x] = 3*x + 15),
-///     (Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))).into()
-/// );
-/// ```
-#[deprecated]
-#[proc_macro]
-pub fn arith_expr(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as ArithExprItem)
-		.into_token_stream()
-		.into()
-}
+use crate::arith_circuit_poly::ArithCircuitPolyItem;
 
 #[proc_macro]
 pub fn arith_circuit_poly(input: TokenStream) -> TokenStream {
