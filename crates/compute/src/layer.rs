@@ -24,7 +24,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
-	type KernelExec: KernelBuilder<F, Mem = Self::DevMem, Value = Self::KernelValue, ExprEval = Self::ExprEval>;
+	type KernelExec: KernelExecutor<F, Mem = Self::DevMem, Value = Self::KernelValue, ExprEval = Self::ExprEval>;
 
 	/// The operation (scalar) value type.
 	type OpValue;
@@ -454,13 +454,13 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	) -> Result<(), Error>;
 }
 
-/// An interface for constructing execution kernels.
+/// An interface for defining execution kernels.
 ///
 /// A _kernel_ is a program that executes synchronously in one thread, with access to
 /// local memory buffers.
 ///
 /// See [`ComputeLayer::accumulate_kernels`] for more information.
-pub trait KernelBuilder<F> {
+pub trait KernelExecutor<F> {
 	/// The type for kernel-local memory buffers.
 	type Mem: ComputeMemory<F>;
 

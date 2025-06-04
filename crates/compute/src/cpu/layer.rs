@@ -14,7 +14,7 @@ use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
-	KernelBuilder,
+	KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
@@ -377,7 +377,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 #[derive(Debug)]
 pub struct CpuKernelBuilder;
 
-impl<F: TowerField> KernelBuilder<F> for CpuKernelBuilder {
+impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 	type Mem = CpuMemory;
 	type Value = F;
 	type ExprEval = ArithCircuit<F>;

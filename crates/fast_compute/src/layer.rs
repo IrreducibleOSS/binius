@@ -3,7 +3,7 @@
 use std::{cell::RefCell, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
-	KernelBuilder,
+	KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::layer::count_total_local_buffer_sizes,
 	each_tower_subfield,
@@ -485,7 +485,7 @@ impl<T, P> Default for FastKernelBuilder<T, P> {
 	}
 }
 
-impl<T: TowerFamily, P: PackedTop<T>> KernelBuilder<T::B128> for FastKernelBuilder<T, P> {
+impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuilder<T, P> {
 	type Mem = PackedMemory<P>;
 	type Value = T::B128;
 	type ExprEval = ArithCircuitPoly<T::B128>;
