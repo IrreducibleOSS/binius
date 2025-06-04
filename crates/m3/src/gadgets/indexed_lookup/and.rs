@@ -326,7 +326,7 @@ mod tests {
 		.collect::<Vec<_>>();
 
 		witness
-			.fill_table_sequential(
+			.fill_table_parallel(
 				&ClosureFiller::new(looker_id, |inputs, segment| {
 					bitand_1.populate(segment, inputs.iter().copied())
 				}),
