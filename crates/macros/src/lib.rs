@@ -1,22 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 extern crate proc_macro;
-mod arith_circuit_poly;
 mod deserialize_bytes;
 
 use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
-
-use crate::arith_circuit_poly::ArithCircuitPolyItem;
-
-#[proc_macro]
-pub fn arith_circuit_poly(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as ArithCircuitPolyItem)
-		.into_token_stream()
-		.into()
-}
 
 /// Derives the trait binius_utils::DeserializeBytes for a struct or enum
 ///
