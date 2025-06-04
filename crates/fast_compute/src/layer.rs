@@ -196,15 +196,6 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.map_err(|_| Error::InputValidation("tensor dimensions are invalid".to_string()))
 	}
 
-	#[inline(always)]
-	fn kernel_decl_value(
-		&self,
-		exec: &mut Self::KernelExec,
-		init: T::B128,
-	) -> Result<Self::KernelValue, Error> {
-		exec.decl_value(init)
-	}
-
 	fn compile_expr(&self, expr: &ArithCircuit<T::B128>) -> Result<Self::ExprEval, Error> {
 		let expr = ArithCircuitPoly::new(expr.clone());
 		Ok(expr)
@@ -371,50 +362,6 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		)
 	}
 
-	fn sum_composition_evals(
-		&self,
-		exec: &mut Self::KernelExec,
-		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
-		composition: &Self::ExprEval,
-		batch_coeff: T::B128,
-		accumulator: &mut Self::KernelValue,
-	) -> Result<(), Error> {
-		exec.sum_composition_evals(inputs, composition, batch_coeff, accumulator)
-	}
-
-	fn kernel_add(
-		&self,
-		_exec: &mut Self::KernelExec,
-		log_len: usize,
-		src1: FSlice<'_, T::B128, Self>,
-		src2: FSlice<'_, T::B128, Self>,
-		dst: &mut FSliceMut<'_, T::B128, Self>,
-	) -> Result<(), Error> {
-		if src1.len() != 1 << log_len {
-			return Err(Error::InputValidation(
-				"src1 length must be equal to 2^log_len".to_string(),
-			));
-		}
-		if src2.len() != 1 << log_len {
-			return Err(Error::InputValidation(
-				"src2 length must be equal to 2^log_len".to_string(),
-			));
-		}
-		if dst.len() != 1 << log_len {
-			return Err(Error::InputValidation(
-				"dst length must be equal to 2^log_len".to_string(),
-			));
-		}
-
-		for (dst_i, &src1_i, &src2_i) in
-			izip!(dst.as_slice_mut().iter_mut(), src1.as_slice(), src2.as_slice())
-		{
-			*dst_i = src1_i + src2_i;
-		}
-
-		Ok(())
-	}
-
 	fn fri_fold<FSub>(
 		&self,
 		_exec: &mut Self::Exec,
@@ -543,6 +490,7 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelBuilder<T::B128> for FastKernelBuild
 	type Value = T::B128;
 	type ExprEval = ArithCircuitPoly<T::B128>;
 
+	#[inline(always)]
 	fn decl_value(&mut self, init: T::B128) -> Result<Self::Value, Error> {
 		Ok(init)
 	}
@@ -593,6 +541,38 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelBuilder<T::B128> for FastKernelBuild
 
 			*accumulator +=
 				batch_coeff * output.into_iter().take(inputs.row_len()).sum::<T::B128>();
+		}
+
+		Ok(())
+	}
+
+	fn add(
+		&mut self,
+		log_len: usize,
+		src1: <Self::Mem as ComputeMemory<T::B128>>::FSlice<'_>,
+		src2: <Self::Mem as ComputeMemory<T::B128>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+	) -> Result<(), Error> {
+		if src1.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"src1 length must be equal to 2^log_len".to_string(),
+			));
+		}
+		if src2.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"src2 length must be equal to 2^log_len".to_string(),
+			));
+		}
+		if dst.len() != 1 << log_len {
+			return Err(Error::InputValidation(
+				"dst length must be equal to 2^log_len".to_string(),
+			));
+		}
+
+		for (dst_i, &src1_i, &src2_i) in
+			izip!(dst.as_slice_mut().iter_mut(), src1.as_slice(), src2.as_slice())
+		{
+			*dst_i = src1_i + src2_i;
 		}
 
 		Ok(())

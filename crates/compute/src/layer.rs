@@ -76,7 +76,9 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		&self,
 		exec: &mut Self::KernelExec,
 		init: F,
-	) -> Result<Self::KernelValue, Error>;
+	) -> Result<Self::KernelValue, Error> {
+		exec.decl_value(init)
+	}
 
 	/// Executes an operation.
 	///
@@ -315,7 +317,9 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::KernelValue,
-	) -> Result<(), Error>;
+	) -> Result<(), Error> {
+		exec.sum_composition_evals(inputs, composition, batch_coeff, accumulator)
+	}
 
 	/// A kernel-local operation that performs point-wise addition of two input buffers into an
 	/// output buffer.
@@ -333,7 +337,9 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		src1: FSlice<'_, F, Self>,
 		src2: FSlice<'_, F, Self>,
 		dst: &mut FSliceMut<'_, F, Self>,
-	) -> Result<(), Error>;
+	) -> Result<(), Error> {
+		exec.add(log_len, src1, src2, dst)
+	}
 
 	/// FRI-fold the interleaved codeword using the given challenges.
 	///
@@ -494,6 +500,23 @@ pub trait KernelBuilder<F> {
 		composition: &Self::ExprEval,
 		batch_coeff: F,
 		accumulator: &mut Self::Value,
+	) -> Result<(), Error>;
+
+	/// A kernel-local operation that performs point-wise addition of two input buffers into an
+	/// output buffer.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in all three buffers.
+	/// * `src1` - the first input buffer.
+	/// * `src2` - the second input buffer.
+	/// * `dst` - the output buffer that receives the element-wise sum.
+	fn add(
+		&mut self,
+		log_len: usize,
+		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 }
 

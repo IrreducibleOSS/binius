@@ -76,14 +76,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
-	fn kernel_decl_value(
-		&self,
-		exec: &mut CpuKernelBuilder,
-		init: T::B128,
-	) -> Result<T::B128, Error> {
-		exec.decl_value(init)
-	}
-
 	fn execute(
 		&self,
 		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
@@ -239,36 +231,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 				*y_i += prod;
 			}
 		}
-		Ok(())
-	}
-
-	fn sum_composition_evals(
-		&self,
-		exec: &mut Self::KernelExec,
-		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
-		composition: &ArithCircuit<T::B128>,
-		batch_coeff: T::B128,
-		accumulator: &mut T::B128,
-	) -> Result<(), Error> {
-		exec.sum_composition_evals(inputs, composition, batch_coeff, accumulator)
-	}
-
-	fn kernel_add(
-		&self,
-		_exec: &mut Self::KernelExec,
-		log_len: usize,
-		src1: FSlice<'_, T::B128, Self>,
-		src2: FSlice<'_, T::B128, Self>,
-		dst: &mut FSliceMut<'_, T::B128, Self>,
-	) -> Result<(), Error> {
-		assert_eq!(src1.len(), 1 << log_len);
-		assert_eq!(src2.len(), 1 << log_len);
-		assert_eq!(dst.len(), 1 << log_len);
-
-		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
-			*dst_i = src1_i + src2_i;
-		}
-
 		Ok(())
 	}
 
@@ -438,6 +400,24 @@ impl<F: TowerField> KernelBuilder<F> for CpuKernelBuilder {
 			})
 			.sum::<F>();
 		*accumulator += ret * batch_coeff;
+		Ok(())
+	}
+
+	fn add(
+		&mut self,
+		log_len: usize,
+		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error> {
+		assert_eq!(src1.len(), 1 << log_len);
+		assert_eq!(src2.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
+			*dst_i = src1_i + src2_i;
+		}
+
 		Ok(())
 	}
 }
