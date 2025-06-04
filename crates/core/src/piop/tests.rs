@@ -171,7 +171,7 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 			let evals = P::iter_slice(mle.evals()).collect::<Vec<_>>();
 
 			hal.copy_h2d(&evals, &mut buffer).unwrap();
-			<CpuLayer<Tower> as ComputeLayer<Tower::B128>>::DevMem::to_const(buffer)
+			<CpuLayer<Tower> as ComputeLayer<Tower::B128>>::DevMem::into_const(buffer)
 		})
 		.collect::<Vec<_>>();
 
