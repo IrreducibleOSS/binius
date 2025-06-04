@@ -45,9 +45,6 @@ path = "modular_mul.rs"
 name = "groestl"
 path = "groestl.rs"
 
-[[example]]
-name = "vision32b_circuit"
-path = "vision32b_circuit.rs"
 
 [[example]]
 name = "sha256_circuit"

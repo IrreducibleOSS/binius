@@ -42,7 +42,6 @@ class BenchmarkConfig:
 _RAW_BENCH_ROWS = [
     ("keccakf",   "Keccak-f",           ["keccak", "--", "--n-permutations"],                 1 << 13, True),
     ("groestl",   "Grøstl-256",         ["groestl", "--", "--n-permutations"],                1 << 14, True),
-    ("vision32b", "Vision Mark-32",     ["vision32b_circuit", "--", "--n-permutations"],      1 << 14, True),
     ("sha256",    "SHA-256",            ["sha256_circuit", "--", "--n-compressions"],         1 << 14, True),
     ("b32_mul",   "BinaryField32b mul", ["b32_mul", "--", "--n-ops"],                         1 << 20, False),
     ("u32_add",   "u32 add",            ["u32_add", "--", "--n-additions"],                   1 << 22, False),
