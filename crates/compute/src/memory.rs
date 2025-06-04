@@ -67,6 +67,7 @@ impl<Slice: SizedSlice> SlicesBatch<Slice> {
 
 /// Interface for manipulating handles to memory in a compute device.
 pub trait ComputeMemory<F> {
+	/// The required alignment of indices for the split methods. This must be a power of two.
 	const ALIGNMENT: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
