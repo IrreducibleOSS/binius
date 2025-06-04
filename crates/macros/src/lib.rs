@@ -3,7 +3,6 @@
 extern crate proc_macro;
 mod arith_circuit_poly;
 mod arith_expr;
-mod composition_poly;
 mod deserialize_bytes;
 
 use deserialize_bytes::{GenericsSplit, parse_container_attributes, split_for_impl};
@@ -11,40 +10,7 @@ use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Data, DeriveInput, Fields, ItemImpl, parse_macro_input, parse_quote, spanned::Spanned};
 
-use crate::{
-	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
-	composition_poly::CompositionPolyItem,
-};
-
-/// Useful for concisely creating structs that implement CompositionPoly.
-/// This currently only supports creating composition polynomials of tower level 0.
-///
-/// ```
-/// use binius_macros::composition_poly;
-/// use binius_math::CompositionPoly;
-/// use binius_field::{Field, BinaryField1b as F};
-///
-/// // Defines named struct without any fields that implements CompositionPoly
-/// composition_poly!(MyComposition[x, y, z] = x + y * z);
-/// assert_eq!(
-///     MyComposition.evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
-///     F::ZERO
-/// );
-///
-/// // If you omit the name you get an anonymous instance instead, which can be used inline
-/// assert_eq!(
-///     composition_poly!([x, y, z] = x + y * z)
-///         .evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
-///     F::ZERO
-/// );
-/// ```
-#[deprecated]
-#[proc_macro]
-pub fn composition_poly(input: TokenStream) -> TokenStream {
-	parse_macro_input!(input as CompositionPolyItem)
-		.into_token_stream()
-		.into()
-}
+use crate::{arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem};
 
 /// Define polynomial expressions compactly using named positional arguments
 ///
