@@ -40,8 +40,14 @@ use crate::{
 pub struct FastCpuExecutor;
 
 /// Optimized CPU implementation of the compute layer.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>>(PhantomData<(T, P)>);
+
+impl<T: TowerFamily, P: PackedTop<T>> Default for FastCpuLayer<T, P> {
+	fn default() -> Self {
+		Self(PhantomData)
+	}
+}
 
 impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, P> {
 	type Exec = FastCpuExecutor;
