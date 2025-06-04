@@ -11,7 +11,7 @@ use binius_utils::{
 	bytes::{Buf, BufMut},
 	serialization::{assert_enough_data_for, assert_enough_space_for},
 };
-use bytemuck::{Pod, Zeroable, must_cast};
+use bytemuck::{Pod, Zeroable};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -917,22 +917,35 @@ where
 	#[inline(always)]
 	fn broadcast(scalar: Scalar) -> Self {
 		let tower_level = Scalar::N_BITS.ilog2() as usize;
-		let mut value = u128::from(scalar.to_underlier());
-		for n in tower_level..3 {
-			value |= value << (1 << n);
+		match tower_level {
+			0..=3 => {
+				let mut value = u128::from(scalar.to_underlier()) as u8;
+				for n in tower_level..3 {
+					value |= value << (1 << n);
+				}
+
+				unsafe { _mm_set1_epi8(value as i8) }.into()
+			}
+			4 => {
+				let value = u128::from(scalar.to_underlier()) as u16;
+				unsafe { _mm_set1_epi16(value as i16) }.into()
+			}
+			5 => {
+				let value = u128::from(scalar.to_underlier()) as u32;
+				unsafe { _mm_set1_epi32(value as i32) }.into()
+			}
+			6 => {
+				let value = u128::from(scalar.to_underlier()) as u64;
+				unsafe { _mm_set1_epi64x(value as i64) }.into()
+			}
+			7 => {
+				let value = u128::from(scalar.to_underlier());
+				value.into()
+			}
+			_ => {
+				unreachable!("invalid tower level")
+			}
 		}
-
-		let value = must_cast(value);
-		let value = match tower_level {
-			0..=3 => unsafe { _mm_broadcastb_epi8(value) },
-			4 => unsafe { _mm_broadcastw_epi16(value) },
-			5 => unsafe { _mm_broadcastd_epi32(value) },
-			6 => unsafe { _mm_broadcastq_epi64(value) },
-			7 => value,
-			_ => unreachable!(),
-		};
-
-		value.into()
 	}
 }
 
