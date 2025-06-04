@@ -350,7 +350,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					hal.kernel_add(local_exec, log_chunk_size, *evals_0, *evals_1, evals_inf)?;
+					local_exec.add(log_chunk_size, *evals_0, *evals_1, evals_inf)?;
 				}
 
 				// Compute the composite evaluations at the point Infinity.

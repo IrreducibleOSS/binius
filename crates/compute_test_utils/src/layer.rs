@@ -459,7 +459,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 						_ => unreachable!(),
 					};
 					let log_len = checked_log_2(a.len());
-					compute.kernel_add(kernel_exec, log_len, a, b, &mut c)?;
+					kernel_exec.add(log_len, a, b, &mut c)?;
 					let c = C::DevMem::as_const(&c);
 					let mut res = kernel_exec.decl_value(F::ZERO)?;
 					kernel_exec.sum_composition_evals(
