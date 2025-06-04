@@ -448,8 +448,17 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	) -> Result<(), Error>;
 }
 
+/// An interface for constructing execution kernels.
+///
+/// A _kernel_ is a program that executes synchronously in one thread, with access to
+/// local memory buffers.
+///
+/// See [`ComputeLayer::accumulate_kernels`] for more information.
 pub trait KernelBuilder<F> {
+	/// The type for kernel-local memory buffers.
 	type Mem: ComputeMemory<F>;
+
+	/// The kernel(core)-level operation (scalar) type. This is a promise for a returned value.
 	type Value;
 
 	/// The evaluator for arithmetic expressions (polynomials).
@@ -476,7 +485,7 @@ pub trait KernelBuilder<F> {
 	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
 	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
 	/// * `composition` - the compiled composition polynomial expression. This is an output of
-	///   [`Self::compile_expr`].
+	///   [`ComputeLayer::compile_expr`].
 	/// * `batch_coeff` - the scaling coefficient.
 	/// * `accumulator` - the output where the result is accumulated to.
 	fn sum_composition_evals(
