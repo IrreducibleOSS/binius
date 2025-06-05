@@ -231,7 +231,10 @@ where
 			let mut allocated_mem = dev_alloc
 				.alloc(1 << packed_committed_multilin.n_vars())
 				.map_err(Error::Alloc)?;
-			let _ = hal.copy_h2d(&unpacked_hypercube_evals[..1 << packed_committed_multilin.n_vars()], &mut allocated_mem);
+			let _ = hal.copy_h2d(
+				&unpacked_hypercube_evals[..1 << packed_committed_multilin.n_vars()],
+				&mut allocated_mem,
+			);
 			Ok(allocated_mem)
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
@@ -251,12 +254,10 @@ where
 			let mut allocated_mem = dev_alloc
 				.alloc(1 << transparent_multilin.n_vars())
 				.map_err(Error::Alloc)?;
-			println!("upe: {:?}", unpacked_hypercube_evals);
-			let _ = hal.copy_h2d(&unpacked_hypercube_evals[..1 << transparent_multilin.n_vars()], &mut allocated_mem);
-			if transparent_multilin.n_vars() == 0 {
-				println!("{:?}",allocated_mem);
-			}
-			
+			let _ = hal.copy_h2d(
+				&unpacked_hypercube_evals[..1 << transparent_multilin.n_vars()],
+				&mut allocated_mem,
+			);
 			Ok(allocated_mem)
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
@@ -371,7 +372,6 @@ where
 		)
 		.entered();
 
-		println!("made it to step before fold");
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 		drop(bivariate_sumcheck_all_folds_span);
 		drop(bivariate_sumcheck_span);

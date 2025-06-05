@@ -427,9 +427,6 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.par_iter_mut()
 			.zip(evals_1.as_slice().par_iter())
 			.for_each(|(x0, x1)| {
-				println!("x0:{:?}", *x0);
-				println!("x1:{:?}", *x1);
-				println!("z:{:?}", z);
 				*x0 += (*x1 - *x0) * z
 			});
 		Ok(())
