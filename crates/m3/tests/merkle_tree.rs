@@ -507,7 +507,7 @@ mod arithmetization {
 	///
 	/// The module is designed to be used in tests and as a reference for implementing Merkle
 	/// tree inclusion proofs in the Binius M3 framework.
-	use std::{array, cell::RefMut};
+	use std::{array, cell::RefMut, cmp::Reverse};
 
 	use array_util::ArrayExt;
 	use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
@@ -523,12 +523,16 @@ mod arithmetization {
 	use binius_m3::{
 		builder::{
 			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, FlushDirection, TableBuilder,
-			TableFiller, TableId, TableWitnessSegment, WitnessIndex,
+			TableFiller, TableId, TableWitnessSegment, WitnessIndex, tally,
 			test_utils::validate_system_witness, upcast_col,
 		},
-		gadgets::hash::groestl::{Permutation, PermutationVariant},
+		gadgets::{
+			hash::groestl::{Permutation, PermutationVariant},
+			indexed_lookup::incr::{Incr, IncrIndexedLookup, IncrLookup, merge_incr_vals},
+		},
 	};
 	use bumpalo::Bump;
+	use itertools::Itertools;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use crate::model::{
@@ -549,6 +553,7 @@ mod arithmetization {
 		/// Table for reconciling the final values of the merkle paths with the roots.
 		pub root_table: RootTable,
 
+		pub incr_table: IncrLookup,
 		/// Channel for all intermediate nodes in the merkle paths being verified.
 		/// Follows format [Root ID, Digest, Depth, Index].
 		pub nodes_channel: ChannelId,
@@ -557,22 +562,31 @@ mod arithmetization {
 		/// (deduped for multiple paths in the same tree).
 		/// Follows format [Root ID, Digest].
 		pub roots_channel: ChannelId,
+
+		/// Channel for verifying that child depth is one more than parent depth
+		/// (deduped for multiple paths in the same tree).
+		/// has one value.
+		pub lookup_channel: ChannelId,
 	}
 
 	impl MerkleTreeCS {
 		pub fn new(cs: &mut ConstraintSystem) -> Self {
 			let nodes_channel = cs.add_channel("merkle_tree_nodes");
 			let roots_channel = cs.add_channel("merkle_tree_roots");
+			let lookup_channel = cs.add_channel("incr_lookup");
+			let permutation_channel = cs.add_channel("permutation");
 
 			let merkle_path_table_left =
-				NodesTable::new(cs, MerklePathPullChild::Left, nodes_channel);
+				NodesTable::new(cs, MerklePathPullChild::Left, nodes_channel, lookup_channel);
 			let merkle_path_table_right =
-				NodesTable::new(cs, MerklePathPullChild::Right, nodes_channel);
+				NodesTable::new(cs, MerklePathPullChild::Right, nodes_channel, lookup_channel);
 			let merkle_path_table_both =
-				NodesTable::new(cs, MerklePathPullChild::Both, nodes_channel);
+				NodesTable::new(cs, MerklePathPullChild::Both, nodes_channel, lookup_channel);
 
 			let root_table = RootTable::new(cs, nodes_channel, roots_channel);
 
+			let mut table = cs.add_table("incr_lookup_table");
+			let incr_table = IncrLookup::new(&mut table, lookup_channel, permutation_channel, 8);
 			Self {
 				merkle_path_table_left,
 				merkle_path_table_right,
@@ -580,12 +594,15 @@ mod arithmetization {
 				root_table,
 				nodes_channel,
 				roots_channel,
+				lookup_channel,
+				incr_table,
 			}
 		}
 
 		pub fn fill_tables(
 			&self,
 			trace: &MerkleTreeTrace,
+			cs: &ConstraintSystem,
 			witness: &mut WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
 		) {
 			// Filter the MerklePathEvents into three iterators based on the pull child type.
@@ -626,6 +643,22 @@ mod arithmetization {
 					&trace.root.clone().into_iter().collect::<Vec<_>>(),
 				)
 				.expect("Failed to fill roots table");
+
+			let lookup_counts = tally(cs, witness, &[], self.lookup_channel, &IncrIndexedLookup)
+				.expect("Failed to tally lookup counts");
+
+			// Fill the lookup table with the sorted counts
+			let sorted_counts = lookup_counts
+				.into_iter()
+				.enumerate()
+				.sorted_by_key(|(_, count)| Reverse(*count))
+				.collect::<Vec<_>>();
+			witness
+				.fill_table_parallel(&self.incr_table, &sorted_counts)
+				.expect("Failed to fill incr lookup table");
+			witness
+				.fill_constant_cols()
+				.expect("Failed to fill constant columns");
 		}
 
 		pub fn make_boundaries(&self, trace: &MerkleTreeTrace) -> Vec<Boundary<B128>> {
@@ -712,14 +745,15 @@ mod arithmetization {
 		left_columns: [Col<B8, 4>; 8],
 		right_columns: [Col<B8, 4>; 8],
 		parent_columns: [Col<B8, 4>; 8],
-		pub parent_depth: Col<B32>,
-		pub child_depth: Col<B32>,
+		pub parent_depth: Col<B8>,
+		pub child_depth: Col<B8>,
 		parent_index: Col<B1, 32>,
 		left_index: Col<B1, 32>,
 		right_index_packed: Col<B32>,
 		/// A gadget representing the Groestl-256 P pemutation. The output transformation as
 		/// per the Groestl-256 specification (https://www.groestl.info/Groestl.pdf) is being used as a digest compression function here.
 		permutation: Permutation,
+		increment: Incr,
 		pub _pull_child: MerklePathPullChild,
 	}
 
@@ -728,6 +762,7 @@ mod arithmetization {
 			cs: &mut ConstraintSystem,
 			pull_child: MerklePathPullChild,
 			nodes_channel_id: ChannelId,
+			lookup_chan: ChannelId,
 		) -> Self {
 			let mut table = cs.add_table(format!("merkle_tree_nodes_{}", {
 				match pull_child {
@@ -807,8 +842,11 @@ mod arithmetization {
 
 			let parent_depth = table.add_committed("parent_depth");
 
-			// TODO: constrain child depth to be parent depth + 1 with incr lookup.
-			let child_depth = table.add_committed("child_depth");
+			let one = table.add_constant("one", [B1::ONE]);
+
+			let increment = Incr::new(&mut table, lookup_chan, parent_depth, one);
+			let child_depth = increment.output;
+
 			let parent_index: Col<B1, 32> = table.add_committed("parent_index");
 			let left_index: Col<B1, 32> =
 				table.add_shifted("left_index", parent_index, 5, 1, ShiftVariant::LogicalLeft);
@@ -879,6 +917,7 @@ mod arithmetization {
 				right_index_packed,
 				_pull_child: pull_child,
 				permutation,
+				increment,
 			}
 		}
 	}
@@ -999,15 +1038,13 @@ mod arithmetization {
 					digest
 				})
 				.collect::<Vec<_>>();
-
 			self.permutation.populate_state_in(witness, &state_ins)?;
 			self.permutation.populate(witness)?;
 
 			let mut witness_root_id: RefMut<'_, [u8]> = witness.get_mut_as(self.root_id)?;
-			let mut witness_parent_depth: RefMut<'_, [u32]> =
+			let mut witness_parent_depth: RefMut<'_, [u8]> =
 				witness.get_mut_as(self.parent_depth)?;
-			let mut witness_child_depth: RefMut<'_, [u32]> =
-				witness.get_mut_as(self.child_depth)?;
+			let mut witness_child_depth: RefMut<'_, [u8]> = witness.get_mut_as(self.child_depth)?;
 			let mut witness_parent_index: RefMut<'_, [u32]> =
 				witness.get_mut_as(self.parent_index)?;
 			// The left and right indexes are packed into a single column, so we need to unpack them
@@ -1038,53 +1075,71 @@ mod arithmetization {
 				.parent_columns
 				.try_map_ext(|col| witness.get_mut_as(col))?;
 
-			for (i, event) in rows.enumerate() {
-				let &MerklePathEvent {
-					root_id,
-					parent_depth,
-					parent_index,
-					left,
-					right,
-					parent,
-					..
-				} = event;
+			let mut increment_merged: RefMut<'_, [u32]> =
+				witness.get_mut_as(self.increment.merged)?;
 
-				witness_root_id[i] = root_id;
-				witness_parent_depth[i] = parent_depth as u32;
-				witness_parent_index[i] = parent_index as u32;
-				witness_child_depth[i] = parent_depth as u32 + 1;
-				witness_left_index[i] = 2 * parent_index as u32;
-				witness_right_index_packed[i] = 2 * parent_index as u32 + 1;
-				let left_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(left);
-				let right_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(right);
-				let parent_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(parent);
+			{
+				for (i, event) in rows.enumerate() {
+					let &MerklePathEvent {
+						root_id,
+						parent_depth,
+						parent_index,
+						left,
+						right,
+						parent,
+						..
+					} = event;
 
-				for jk in 0..32 {
-					// Row in the state
-					let j = jk % 8;
-					// Col in the state
-					let k = jk / 8;
+					witness_root_id[i] = root_id;
+					witness_parent_depth[i] = parent_depth
+						.try_into()
+						.expect("Parent depth must fit in u8");
+					witness_parent_index[i] = parent_index as u32;
+					witness_child_depth[i] = witness_parent_depth[i] + 1;
+					witness_left_index[i] = 2 * parent_index as u32;
+					witness_right_index_packed[i] = 2 * parent_index as u32 + 1;
 
-					// Set the packed slice for the rows.
-					set_packed_slice(&mut left_columns[j], i * 4 + k, left_bytes[8 * k + j]);
-					set_packed_slice(&mut right_columns[j], i * 4 + k, right_bytes[8 * k + j]);
-					set_packed_slice(&mut parent_columns[j], i * 4 + k, parent_bytes[8 * k + j]);
-
-					// Filling the shifted state output, and trimmed out columns.
-					let permutation_output = get_packed_slice(&witness_state_out[j], i * 8 + 4 + k);
-					set_packed_slice(
-						&mut witness_state_out_shifted[j],
-						i * 8 + k,
-						permutation_output,
+					increment_merged[i] = merge_incr_vals(
+						witness_parent_depth[i],
+						true,
+						witness_child_depth[i],
+						false,
 					);
-					set_packed_slice(
-						&mut witness_permutation_output_columns[j],
-						i * 4 + k,
-						permutation_output,
-					);
+					let left_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(left);
+					let right_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(right);
+					let parent_bytes: [BinaryField8b; 32] = B8::from_underliers_arr(parent);
+
+					for jk in 0..32 {
+						// Row in the state
+						let j = jk % 8;
+						// Col in the state
+						let k = jk / 8;
+
+						// Set the packed slice for the rows.
+						set_packed_slice(&mut left_columns[j], i * 4 + k, left_bytes[8 * k + j]);
+						set_packed_slice(&mut right_columns[j], i * 4 + k, right_bytes[8 * k + j]);
+						set_packed_slice(
+							&mut parent_columns[j],
+							i * 4 + k,
+							parent_bytes[8 * k + j],
+						);
+
+						// Filling the shifted state output, and trimmed out columns.
+						let permutation_output =
+							get_packed_slice(&witness_state_out[j], i * 8 + 4 + k);
+						set_packed_slice(
+							&mut witness_state_out_shifted[j],
+							i * 8 + k,
+							permutation_output,
+						);
+						set_packed_slice(
+							&mut witness_permutation_output_columns[j],
+							i * 4 + k,
+							permutation_output,
+						);
+					}
 				}
 			}
-
 			Ok(())
 		}
 	}
@@ -1148,8 +1203,9 @@ mod arithmetization {
 	fn test_nodes_table_constructor() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
+		let lookup_channel = cs.add_channel("lookup");
 		let pull_child = MerklePathPullChild::Left;
-		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
+		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel, lookup_channel);
 		assert_eq!(nodes_table.left_columns.len(), 8);
 		assert_eq!(nodes_table.right_columns.len(), 8);
 		assert_eq!(nodes_table.parent_columns.len(), 8);
@@ -1166,9 +1222,10 @@ mod arithmetization {
 	fn test_node_table_filling() {
 		let mut cs = ConstraintSystem::new();
 		let nodes_channel = cs.add_channel("nodes");
+		let lookup_channel = cs.add_channel("lookup");
 		// Create a nodes table with the left child pull.
 		let pull_child = MerklePathPullChild::Left;
-		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel);
+		let nodes_table = NodesTable::new(&mut cs, pull_child, nodes_channel, lookup_channel);
 		let tree = MerkleTree::new(&[
 			[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
 		]);
@@ -1247,7 +1304,7 @@ mod arithmetization {
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
-		merkle_tree_cs.fill_tables(&trace, &mut witness);
+		merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
 	}
 
 	#[test]
@@ -1289,7 +1346,7 @@ mod arithmetization {
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
 		// Fill the tables with the trace
-		merkle_tree_cs.fill_tables(&trace, &mut witness);
+		merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
 
 		// Create boundary values based on the trace's boundaries
 		let boundaries = merkle_tree_cs.make_boundaries(&trace);
