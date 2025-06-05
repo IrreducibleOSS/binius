@@ -177,7 +177,10 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_maybe_rayon::iter::IntoParallelRefIterator;
-	use digest::{FixedOutput, HashMarker, OutputSizeUser, Reset, Update, consts::{U1,U32}};
+	use digest::{
+		FixedOutput, HashMarker, OutputSizeUser, Reset, Update,
+		consts::{U1, U32},
+	};
 	use itertools::izip;
 	use rand::{RngCore, SeedableRng, rngs::StdRng};
 
