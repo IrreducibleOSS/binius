@@ -12,8 +12,6 @@ use binius_field::{
 	underlier::WithUnderlier,
 	util::powers,
 };
-
-
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{

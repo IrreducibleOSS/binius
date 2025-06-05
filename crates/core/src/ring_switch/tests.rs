@@ -1,17 +1,16 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{cmp::Ordering, iter::repeat_with};
-use binius_field::tower::CanonicalTowerFamily;
+
 use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
+	tower::{CanonicalTowerFamily, TowerFamily},
 	underlier::UnderlierType,
 };
-use binius_field::tower::TowerFamily;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-
 use binius_math::{
 	B1, B8, B16, B32, B64, B128, DefaultEvaluationDomainFactory, MLEEmbeddingAdapter,
 	MultilinearExtension, MultilinearPoly, MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
@@ -379,5 +378,9 @@ fn test_prove_verify_piop_integration() {
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
-	commit_prove_verify_piop::<U, F, _, _, CanonicalTowerFamily>(&merkle_prover, &oracles, log_inv_rate);
+	commit_prove_verify_piop::<U, F, _, _, CanonicalTowerFamily>(
+		&merkle_prover,
+		&oracles,
+		log_inv_rate,
+	);
 }
