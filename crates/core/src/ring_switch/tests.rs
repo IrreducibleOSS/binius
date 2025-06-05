@@ -12,8 +12,8 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
-	B1, B8, B16, B32, B64, B128, DefaultEvaluationDomainFactory, MLEEmbeddingAdapter,
-	MultilinearExtension, MultilinearPoly, MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
+	B1, B8, B16, B32, B64, B128, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
