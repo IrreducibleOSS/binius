@@ -13,7 +13,7 @@ binius_core = { path = "../crates/core", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
 binius_hal = { path = "../crates/hal", default-features = false }
 binius_hash = { path = "../crates/hash", default-features = false }
-binius_m3 = { path = "../crates/m3", default-features = false }
+binius_m3 = { path = "../crates/m3", default-features = true }
 binius_macros = { path = "../crates/macros", default-features = false }
 binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
@@ -76,6 +76,10 @@ path = "blake3_circuit.rs"
 [[example]]
 name = "u32_mul_gkr"
 path = "u32_mul_gkr.rs"
+
+[[example]]
+name = "merkle_tree"
+path = "merkle_tree.rs"
 
 [features]
 default = ["rayon", "nightly_features"]

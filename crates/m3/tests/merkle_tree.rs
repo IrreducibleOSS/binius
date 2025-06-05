@@ -524,7 +524,8 @@ pub mod arithmetization {
 		builder::{
 			B1, B8, B32, B64, B128, Boundary, Col, ConstraintSystem, FlushDirection, TableBuilder,
 			TableFiller, TableId, TableWitnessSegment, WitnessIndex, tally,
-			test_utils::validate_system_witness, upcast_col,
+			test_utils::{validate_system_witness, validate_system_witness_with_prove_verify},
+			upcast_col,
 		},
 		gadgets::{
 			hash::groestl::{Permutation, PermutationVariant},
@@ -1302,35 +1303,30 @@ pub mod arithmetization {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		// Create a Merkle tree with 8 leaves
-		let index = rng.gen_range(0..1 << 10);
-		let leaves = (0..3)
-			.map(|_| {
-				(0..1 << 10)
-					.map(|_| rng.r#gen::<[u8; 32]>())
-					.collect::<Vec<_>>()
+		let leaves = (0..1 << 20)
+			.map(|_| rng.r#gen::<[u8; 32]>())
+			.collect::<Vec<_>>();
+
+		let tree = MerkleTree::new(&leaves);
+
+		let roots = tree.root();
+		let paths = (0..3)
+			.map(|i| {
+				let index = rng.gen_range(0..1 << 10);
+				MerklePath {
+					root_id: 0,
+					index,
+					leaf: leaves[index],
+					nodes: tree.merkle_path(index),
+				}
 			})
 			.collect::<Vec<_>>();
 
-		let trees = (0..3)
-			.map(|i| MerkleTree::new(&leaves[i]))
-			.collect::<Vec<_>>();
-		let roots = (0..3).map(|i| trees[i].root()).collect::<Vec<_>>();
-		let paths = trees
-			.iter()
-			.enumerate()
-			.map(|(i, tree)| MerklePath {
-				root_id: i as u8,
-				index,
-				leaf: leaves[i][index],
-				nodes: tree.merkle_path(index),
-			})
-			.collect::<Vec<_>>();
-
-		let trace = MerkleTreeTrace::generate(roots, &paths);
+		let trace = MerkleTreeTrace::generate(vec![roots], &paths);
 
 		// Allocate memory for the witness
 		let allocator = Bump::new();
-		let mut witness = WitnessIndex::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		// Fill the tables with the trace
 		merkle_tree_cs
@@ -1339,7 +1335,6 @@ pub mod arithmetization {
 
 		// Create boundary values based on the trace's boundaries
 		let boundaries = merkle_tree_cs.make_boundaries(&trace);
-
 		// Validate the system and witness
 		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
 	}
