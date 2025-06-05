@@ -465,23 +465,21 @@ impl MultiDigest<4> for Groestl256Multi {
 		}
 
 		while i + STATE_SIZE <= data[0].len() {
-			self.consume_single_block_parallel(array::from_fn(
-				|parallel_idx|{
-					if data[parallel_idx].len() > 0{
-						&data[parallel_idx][i..i + STATE_SIZE]
-					} else {
-						&[0u8; 64]
-					}
+			self.consume_single_block_parallel(array::from_fn(|parallel_idx| {
+				if data[parallel_idx].len() > 0 {
+					&data[parallel_idx][i..i + STATE_SIZE]
+				} else {
+					&[0u8; 64]
 				}
-			));
+			}));
 
 			i += STATE_SIZE;
 		}
 
 		for (parallel_idx, data_lane) in data.iter().enumerate() {
-			if data[parallel_idx].len() > 0{
-			self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
-				.copy_from_slice(&data_lane[i..]);
+			if data[parallel_idx].len() > 0 {
+				self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
+					.copy_from_slice(&data_lane[i..]);
 			}
 		}
 
