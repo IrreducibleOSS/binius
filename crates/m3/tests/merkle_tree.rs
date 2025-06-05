@@ -514,7 +514,7 @@ mod arithmetization {
 	use binius_field::{
 		BinaryField8b, Field, PackedBinaryField4x8b, PackedBinaryField8x8b, PackedExtension,
 		PackedField, PackedFieldIndexable, PackedSubfield,
-		arch::OptimalUnderlier128b,
+		arch::{OptimalUnderlier, OptimalUnderlier128b},
 		as_packed_field::PackedType,
 		linear_transformation::PackedTransformationFactory,
 		packed::{get_packed_slice, set_packed_slice},
@@ -564,7 +564,6 @@ mod arithmetization {
 		pub roots_channel: ChannelId,
 
 		/// Channel for verifying that child depth is one more than parent depth
-		/// (deduped for multiple paths in the same tree).
 		/// has one value.
 		pub lookup_channel: ChannelId,
 	}
@@ -753,6 +752,8 @@ mod arithmetization {
 		/// A gadget representing the Groestl-256 P pemutation. The output transformation as
 		/// per the Groestl-256 specification (https://www.groestl.info/Groestl.pdf) is being used as a digest compression function here.
 		permutation: Permutation,
+		/// A gadget for handling integer increments in the Merkle tree. It is used to
+		/// constrain that the depth of the child node is one more than the parent node.
 		increment: Incr,
 		pub _pull_child: MerklePathPullChild,
 	}
@@ -1342,8 +1343,7 @@ mod arithmetization {
 
 		// Allocate memory for the witness
 		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::new(&cs, &allocator);
 
 		// Fill the tables with the trace
 		merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
@@ -1352,6 +1352,6 @@ mod arithmetization {
 		let boundaries = merkle_tree_cs.make_boundaries(&trace);
 
 		// Validate the system and witness
-		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, boundaries);
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
 	}
 }
