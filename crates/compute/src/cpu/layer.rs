@@ -14,24 +14,18 @@ use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
-	KernelExecutor,
+	ComputeLayerExecutor, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
 
-#[derive(Debug)]
-pub struct CpuExecutor;
-
 #[derive(Debug, Default)]
 pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
 
 impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
-	type Exec = CpuExecutor;
-	type KernelExec = CpuKernelBuilder;
+	type Exec<'a> = CpuLayerExecutor<T>;
 	type DevMem = CpuMemory;
-	type OpValue = T::B128;
-	type ExprEval = ArithCircuit<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
 		vec![<T::B128 as Field>::ZERO; n]
@@ -75,20 +69,85 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
-	fn execute(
-		&self,
-		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<T::B128>, Error>,
-	) -> Result<Vec<T::B128>, Error> {
-		f(&mut CpuExecutor)
+	fn execute<'a, 'b>(
+		&'b self,
+		f: impl FnOnce(&mut Self::Exec<'a>) -> Result<Vec<T::B128>, Error>,
+	) -> Result<Vec<T::B128>, Error>
+	where
+		'b: 'a,
+	{
+		f(&mut CpuLayerExecutor::<T>::default())
 	}
 
-	fn compile_expr(&self, expr: &ArithCircuit<T::B128>) -> Result<Self::ExprEval, Error> {
+	fn compile_expr(
+		&self,
+		expr: &ArithCircuit<T::B128>,
+	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<T::B128>>::ExprEval, Error> {
 		Ok(expr.clone())
 	}
+}
+
+pub struct CpuLayerExecutor<T: TowerFamily>(PhantomData<T::B128>);
+
+impl<T: TowerFamily> CpuLayerExecutor<T> {
+	fn new() -> Self {
+		Self(PhantomData)
+	}
+
+	fn map_kernel_mem<'a>(
+		mappings: &'a mut [MemMap<'_, Self, T::B128>],
+		local_buffer_alloc: &'a BumpAllocator<
+			T::B128,
+			<Self as ComputeLayerExecutor<T::B128>>::DevMem,
+		>,
+		log_chunks: usize,
+		i: usize,
+	) -> Vec<Buffer<'a, Self, T::B128>> {
+		mappings
+			.iter_mut()
+			.map(|mapping| match mapping {
+				KernelMemMap::Chunked { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Ref(<Self as ComputeLayerExecutor<T::B128>>::DevMem::slice(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::ChunkedMut { data, .. } => {
+					let log_size = checked_log_2(data.len());
+					let log_chunk_size = log_size - log_chunks;
+					KernelBuffer::Mut(<Self as ComputeLayerExecutor<T::B128>>::DevMem::slice_mut(
+						data,
+						(i << log_chunk_size)..((i + 1) << log_chunk_size),
+					))
+				}
+				KernelMemMap::Local { log_size } => {
+					let log_chunk_size = *log_size - log_chunks;
+					let buffer = local_buffer_alloc.alloc(1 << log_chunk_size).expect(
+						"precondition: allocator must have enough space for all local buffers",
+					);
+					KernelBuffer::Mut(buffer)
+				}
+			})
+			.collect()
+	}
+}
+
+impl<T: TowerFamily> Default for CpuLayerExecutor<T> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
+impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
+	type OpValue = T::B128;
+	type ExprEval = ArithCircuit<T::B128>;
+	type KernelExec = CpuKernelBuilder;
+	type DevMem = CpuMemory;
 
 	fn accumulate_kernels(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		map: impl Sync
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
@@ -124,8 +183,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	fn inner_product<'a>(
-		&'a self,
-		_exec: &'a mut Self::Exec,
+		&'a mut self,
 		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		b_in: &'a [T::B128],
 	) -> Result<T::B128, Error> {
@@ -160,12 +218,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(result)
 	}
 
-	fn fold_left<'a>(
-		&'a self,
-		_exec: &'a mut Self::Exec,
+	fn fold_left(
+		&mut self,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		vec: FSlice<'_, T::B128, Self>,
-		out: &mut FSliceMut<'_, T::B128, Self>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
 		if mat.tower_level > T::B128::TOWER_LEVEL {
 			return Err(Error::InputValidation(format!(
@@ -185,12 +242,11 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		)
 	}
 
-	fn fold_right<'a>(
-		&'a self,
-		_exec: &'a mut Self::Exec,
+	fn fold_right(
+		&mut self,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		vec: FSlice<'_, T::B128, Self>,
-		out: &mut FSliceMut<'_, T::B128, Self>,
+		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
 		if mat.tower_level > T::B128::TOWER_LEVEL {
 			return Err(Error::InputValidation(format!(
@@ -211,8 +267,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	fn tensor_expand(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		log_n: usize,
 		coordinates: &[T::B128],
 		data: &mut &mut [T::B128],
@@ -234,8 +289,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	fn fri_fold<FSub>(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
@@ -327,8 +381,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	fn extrapolate_line(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		evals_0: &mut &mut [T::B128],
 		evals_1: &[T::B128],
 		z: T::B128,
@@ -345,10 +398,9 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	}
 
 	fn compute_composite(
-		&self,
-		_exec: &mut Self::Exec,
-		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
-		output: &mut FSliceMut<'_, T::B128, Self>,
+		&mut self,
+		inputs: &SlicesBatch<<Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>>,
+		output: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 		composition: &Self::ExprEval,
 	) -> Result<(), Error> {
 		if inputs.row_len() != output.len() {
@@ -439,46 +491,8 @@ impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 
 // Note: shortcuts for kernel memory so that clippy does not complain about the type complexity in
 // signatures.
-type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayer<F>>::DevMem>;
-type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayer<F>>::DevMem>;
-
-impl<T: TowerFamily> CpuLayer<T> {
-	fn map_kernel_mem<'a>(
-		mappings: &'a mut [MemMap<'_, Self, T::B128>],
-		local_buffer_alloc: &'a BumpAllocator<T::B128, <Self as ComputeLayer<T::B128>>::DevMem>,
-		log_chunks: usize,
-		i: usize,
-	) -> Vec<Buffer<'a, Self, T::B128>> {
-		mappings
-			.iter_mut()
-			.map(|mapping| match mapping {
-				KernelMemMap::Chunked { data, .. } => {
-					let log_size = checked_log_2(data.len());
-					let log_chunk_size = log_size - log_chunks;
-					KernelBuffer::Ref(<Self as ComputeLayer<T::B128>>::DevMem::slice(
-						data,
-						(i << log_chunk_size)..((i + 1) << log_chunk_size),
-					))
-				}
-				KernelMemMap::ChunkedMut { data, .. } => {
-					let log_size = checked_log_2(data.len());
-					let log_chunk_size = log_size - log_chunks;
-					KernelBuffer::Mut(<Self as ComputeLayer<T::B128>>::DevMem::slice_mut(
-						data,
-						(i << log_chunk_size)..((i + 1) << log_chunk_size),
-					))
-				}
-				KernelMemMap::Local { log_size } => {
-					let log_chunk_size = *log_size - log_chunks;
-					let buffer = local_buffer_alloc.alloc(1 << log_chunk_size).expect(
-						"precondition: allocator must have enough space for all local buffers",
-					);
-					KernelBuffer::Mut(buffer)
-				}
-			})
-			.collect()
-	}
-}
+type MemMap<'a, C, F> = KernelMemMap<'a, F, <C as ComputeLayerExecutor<F>>::DevMem>;
+type Buffer<'a, C, F> = KernelBuffer<'a, F, <C as ComputeLayerExecutor<F>>::DevMem>;
 
 pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
 	mappings: &[KernelMemMap<F, Mem>],

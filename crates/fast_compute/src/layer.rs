@@ -3,7 +3,7 @@
 use std::{cell::RefCell, iter, iter::repeat_with, marker::PhantomData, mem::MaybeUninit, slice};
 
 use binius_compute::{
-	KernelExecutor,
+	ComputeLayerExecutor, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::layer::count_total_local_buffer_sizes,
 	each_tower_subfield,
@@ -38,9 +38,6 @@ use crate::{
 	memory::{PackedMemory, PackedMemorySliceMut},
 };
 
-#[derive(Debug)]
-pub struct FastCpuExecutor;
-
 /// Optimized CPU implementation of the compute layer.
 #[derive(Debug)]
 pub struct FastCpuLayer<T: TowerFamily, P: PackedTop<T>> {
@@ -58,11 +55,8 @@ impl<T: TowerFamily, P: PackedTop<T>> Default for FastCpuLayer<T, P> {
 }
 
 impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, P> {
-	type Exec = FastCpuExecutor;
-	type KernelExec = FastKernelBuilder<T, P>;
+	type Exec<'b> = FastCpuExecutor<'b, T, P>;
 	type DevMem = PackedMemory<P>;
-	type OpValue = T::B128;
-	type ExprEval = ArithCircuitPoly<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
 		zeroed_vec(n)
@@ -147,18 +141,51 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		Ok(())
 	}
 
-	fn execute(
+	fn compile_expr(
 		&self,
-		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<Self::OpValue>, Error>,
-	) -> Result<Vec<T::B128>, Error> {
-		f(&mut FastCpuExecutor)
+		expr: &ArithCircuit<T::B128>,
+	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<T::B128>>::ExprEval, Error> {
+		let expr = ArithCircuitPoly::new(expr.clone());
+		Ok(expr)
 	}
 
+	fn execute<'a, 'b>(
+		&'b self,
+		f: impl FnOnce(&mut Self::Exec<'a>) -> Result<Vec<T::B128>, Error>,
+	) -> Result<Vec<T::B128>, Error>
+	where
+		'b: 'a,
+	{
+		f(&mut FastCpuExecutor::<'a, T, P>::new(&self.kernel_buffers))
+	}
+}
+
+pub struct FastCpuExecutor<'a, T: TowerFamily, P: PackedTop<T>> {
+	kernel_buffers: &'a ThreadLocal<RefCell<Vec<P>>>,
+	_phantom_data: PhantomData<T>,
+}
+
+impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
+	pub fn new(kernel_buffers: &'a ThreadLocal<RefCell<Vec<P>>>) -> Self {
+		Self {
+			kernel_buffers,
+			_phantom_data: PhantomData,
+		}
+	}
+}
+
+impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
+	for FastCpuExecutor<'a, T, P>
+{
+	type KernelExec = FastKernelBuilder<T, P>;
+	type DevMem = PackedMemory<P>;
+	type OpValue = T::B128;
+	type ExprEval = ArithCircuitPoly<T::B128>;
+
 	fn inner_product(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		b_in: FSlice<'_, T::B128, Self>,
+		b_in: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
 	) -> Result<Self::OpValue, Error> {
 		if a_in.slice.len() << (<T::B128 as ExtensionField<T::B1>>::LOG_DEGREE - a_in.tower_level)
 			!= b_in.len()
@@ -185,8 +212,7 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	}
 
 	fn tensor_expand(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		log_n: usize,
 		coordinates: &[T::B128],
 		data: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
@@ -195,19 +221,13 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.map_err(|_| Error::InputValidation("tensor dimensions are invalid".to_string()))
 	}
 
-	fn compile_expr(&self, expr: &ArithCircuit<T::B128>) -> Result<Self::ExprEval, Error> {
-		let expr = ArithCircuitPoly::new(expr.clone());
-		Ok(expr)
-	}
-
 	fn accumulate_kernels(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		map: impl Sync
-		+ for<'a> Fn(
-			&'a mut Self::KernelExec,
+		+ for<'b> Fn(
+			&'b mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+			Vec<KernelBuffer<'b, T::B128, Self::DevMem>>,
 		) -> Result<Vec<T::B128>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
@@ -277,9 +297,8 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			.expect("range is not empty")
 	}
 
-	fn fold_left<'a>(
-		&'a self,
-		_exec: &'a mut Self::Exec,
+	fn fold_left(
+		&mut self,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
@@ -320,9 +339,8 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		)
 	}
 
-	fn fold_right<'a>(
-		&'a self,
-		_exec: &'a mut Self::Exec,
+	fn fold_right(
+		&mut self,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
 		vec: <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSlice<'_>,
 		out: &mut <Self::DevMem as binius_compute::memory::ComputeMemory<T::B128>>::FSliceMut<'_>,
@@ -362,14 +380,13 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	}
 
 	fn fri_fold<FSub>(
-		&self,
-		_exec: &mut Self::Exec,
+		&mut self,
 		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[T::B128],
-		data_in: FSlice<T::B128, Self>,
-		data_out: &mut FSliceMut<T::B128, Self>,
+		data_in: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		data_out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 	) -> Result<(), Error>
 	where
 		FSub: binius_field::BinaryField,
@@ -410,10 +427,9 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	}
 
 	fn extrapolate_line(
-		&self,
-		_exec: &mut Self::Exec,
-		evals_0: &mut FSliceMut<T::B128, Self>,
-		evals_1: FSlice<T::B128, Self>,
+		&mut self,
+		evals_0: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		evals_1: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
 		z: T::B128,
 	) -> Result<(), Error> {
 		if evals_0.len() != evals_1.len() {
@@ -431,10 +447,9 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	}
 
 	fn compute_composite(
-		&self,
-		_exec: &mut Self::Exec,
-		inputs: &SlicesBatch<FSlice<'_, T::B128, Self>>,
-		output: &mut FSliceMut<'_, T::B128, Self>,
+		&mut self,
+		inputs: &SlicesBatch<<Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>>,
+		output: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 		composition: &ArithCircuitPoly<T::B128>,
 	) -> Result<(), Error> {
 		if inputs.row_len() != output.len() {

@@ -3,7 +3,7 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	FSliceMut, KernelExecutor, KernelMem,
+	ComputeLayerExecutor, FSliceMut, KernelExecutor, KernelMem,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::CpuMemory,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
@@ -49,7 +49,7 @@ pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 	// Run the HAL operation
 	compute
 		.execute(|exec| {
-			compute.tensor_expand(exec, 2, &coordinates[2..], &mut buffer_slice)?;
+			exec.tensor_expand(2, &coordinates[2..], &mut buffer_slice)?;
 			Ok(vec![])
 		})
 		.unwrap();
@@ -101,7 +101,7 @@ pub fn test_generic_single_inner_product<
 	// Run the HAL operation to compute the inner product
 	let a_subslice = SubfieldSlice::new(a_slice, F2::TOWER_LEVEL);
 	let actual = compute
-		.execute(|exec| Ok(vec![compute.inner_product(exec, a_subslice, b_slice)?]))
+		.execute(|exec| Ok(vec![exec.inner_product(a_subslice, b_slice)?]))
 		.unwrap()
 		.remove(0);
 
@@ -177,25 +177,12 @@ pub fn test_generic_multiple_multilinear_evaluations<
 				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
 			}
 
-			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
+			exec.tensor_expand(0, &coordinates, &mut eq_ind_slice)?;
 
 			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
-			let (eval1, eval2) = compute.join(
-				exec,
-				|exec| {
-					compute.inner_product(
-						exec,
-						SubfieldSlice::new(mle1_slice, F1::TOWER_LEVEL),
-						eq_ind,
-					)
-				},
-				|exec| {
-					compute.inner_product(
-						exec,
-						SubfieldSlice::new(mle2_slice, F2::TOWER_LEVEL),
-						eq_ind,
-					)
-				},
+			let (eval1, eval2) = exec.join(
+				|exec| exec.inner_product(SubfieldSlice::new(mle1_slice, F1::TOWER_LEVEL), eq_ind),
+				|exec| exec.inner_product(SubfieldSlice::new(mle2_slice, F2::TOWER_LEVEL), eq_ind),
 			)?;
 			Ok(vec![eval1, eval2])
 		})
@@ -285,11 +272,11 @@ pub fn test_generic_map_with_multilinear_evaluations<
 				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
 			}
 
-			compute.tensor_expand(exec, 0, &coordinates, &mut eq_ind_slice)?;
+			exec.tensor_expand(0, &coordinates, &mut eq_ind_slice)?;
 
 			let eq_ind = <C::DevMem as ComputeMemory<F>>::as_const(&eq_ind_slice);
-			let res = compute.map(exec, [mle1_slice, mle2_slice].iter(), |exec, iter_item| {
-				compute.inner_product(exec, SubfieldSlice::new(*iter_item, F::TOWER_LEVEL), eq_ind)
+			let res = exec.map([mle1_slice, mle2_slice].iter(), |exec, iter_item| {
+				exec.inner_product(SubfieldSlice::new(*iter_item, F::TOWER_LEVEL), eq_ind)
 			})?;
 			Ok(res)
 		})
@@ -364,8 +351,7 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 				data: b_slice,
 				log_min_chunk_size,
 			};
-			let results = compute.accumulate_kernels(
-				exec,
+			let results = exec.accumulate_kernels(
 				|kernel_exec, _log_chunks, kernel_data| {
 					let kernel_data = kernel_data
 						.iter()
@@ -446,8 +432,7 @@ pub fn test_generic_kernel_add<'a, F: Field, C: ComputeLayer<F>>(
 				log_min_chunk_size,
 			};
 			let c_slice = KernelMemMap::Local { log_size: log_len };
-			let results = compute.accumulate_kernels(
-				exec,
+			let results = exec.accumulate_kernels(
 				|kernel_exec, _log_chunks, kernel_data| {
 					let [a, b, c] = kernel_data
 						.try_into()
@@ -531,8 +516,7 @@ pub fn test_generic_fri_fold<'a, F, FSub, C>(
 	// Run the HAL operation
 	compute
 		.execute(|exec| {
-			compute.fri_fold(
-				exec,
+			exec.fri_fold(
 				&ntt,
 				log_len,
 				log_batch_size,
@@ -606,8 +590,7 @@ pub fn test_generic_single_left_fold<
 		);
 	compute
 		.execute(|exec| {
-			compute
-				.fold_left(exec, evals_slice_with_tower_level, const_query_slice, &mut out_slice)
+			exec.fold_left(evals_slice_with_tower_level, const_query_slice, &mut out_slice)
 				.unwrap();
 			Ok(vec![])
 		})
@@ -690,8 +673,7 @@ pub fn test_generic_single_right_fold<
 		);
 	compute
 		.execute(|exec| {
-			compute
-				.fold_right(exec, evals_slice_with_tower_level, const_query_slice, &mut out_slice)
+			exec.fold_right(evals_slice_with_tower_level, const_query_slice, &mut out_slice)
 				.unwrap();
 			Ok(vec![])
 		})
@@ -744,7 +726,7 @@ pub fn test_extrapolate_line<'a, F: Field, Hal: ComputeLayer<F>>(
 
 	let _ = hal
 		.execute(|exec| {
-			hal.extrapolate_line(exec, &mut evals_0_dev, Hal::DevMem::as_const(&evals_1_dev), z)?;
+			exec.extrapolate_line(&mut evals_0_dev, Hal::DevMem::as_const(&evals_1_dev), z)?;
 			Ok(Vec::new())
 		})
 		.unwrap();
@@ -794,7 +776,7 @@ pub fn test_generic_compute_composite<'a, F: Field, Hal: ComputeLayer<F>>(
 	let inputs = SlicesBatch::new(vec![input_0_dev, input_1_dev], 1 << log_len);
 
 	hal.execute(|exec| {
-		hal.compute_composite(exec, &inputs, &mut output_dev, &bivariate_product_expr)
+		exec.compute_composite(&inputs, &mut output_dev, &bivariate_product_expr)
 			.unwrap();
 		Ok(vec![])
 	})
