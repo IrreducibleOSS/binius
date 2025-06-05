@@ -242,7 +242,7 @@ impl TableFiller for IncrLookup {
 }
 
 /// Internal struct for indexed lookup logic for increment operations.
-struct IncrIndexedLookup;
+pub struct IncrIndexedLookup;
 
 impl IndexedLookup<B128> for IncrIndexedLookup {
 	/// Returns the log2 size of the table (9 for 8 bits + 1 carry).
