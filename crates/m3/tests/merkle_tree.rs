@@ -602,8 +602,8 @@ mod arithmetization {
 			&self,
 			trace: &MerkleTreeTrace,
 			cs: &ConstraintSystem,
-			witness: &mut WitnessIndex<PackedType<OptimalUnderlier128b, B128>>,
-		) {
+			witness: &mut WitnessIndex,
+		) -> anyhow::Result<()> {
 			// Filter the MerklePathEvents into three iterators based on the pull child type.
 			let left_events = trace
 				.nodes
@@ -625,26 +625,17 @@ mod arithmetization {
 				.collect::<Vec<_>>();
 
 			// Fill the nodes tables based on the filtered events.
-			witness
-				.fill_table_parallel(&self.merkle_path_table_left, &left_events)
-				.expect("Failed to fill left nodes table");
-			witness
-				.fill_table_parallel(&self.merkle_path_table_right, &right_events)
-				.expect("Failed to fill right nodes table");
-			witness
-				.fill_table_parallel(&self.merkle_path_table_both, &both_events)
-				.expect("Failed to fill both nodes table");
+			witness.fill_table_parallel(&self.merkle_path_table_left, &left_events)?;
+			witness.fill_table_parallel(&self.merkle_path_table_right, &right_events)?;
+			witness.fill_table_parallel(&self.merkle_path_table_both, &both_events)?;
 
 			// Fill the roots table.
-			witness
-				.fill_table_parallel(
-					&self.root_table,
-					&trace.root.clone().into_iter().collect::<Vec<_>>(),
-				)
-				.expect("Failed to fill roots table");
+			witness.fill_table_parallel(
+				&self.root_table,
+				&trace.root.clone().into_iter().collect::<Vec<_>>(),
+			)?;
 
-			let lookup_counts = tally(cs, witness, &[], self.lookup_channel, &IncrIndexedLookup)
-				.expect("Failed to tally lookup counts");
+			let lookup_counts = tally(cs, witness, &[], self.lookup_channel, &IncrIndexedLookup)?;
 
 			// Fill the lookup table with the sorted counts
 			let sorted_counts = lookup_counts
@@ -652,12 +643,9 @@ mod arithmetization {
 				.enumerate()
 				.sorted_by_key(|(_, count)| Reverse(*count))
 				.collect::<Vec<_>>();
-			witness
-				.fill_table_parallel(&self.incr_table, &sorted_counts)
-				.expect("Failed to fill incr lookup table");
-			witness
-				.fill_constant_cols()
-				.expect("Failed to fill constant columns");
+			witness.fill_table_parallel(&self.incr_table, &sorted_counts)?;
+			witness.fill_constant_cols()?;
+			Ok(())
 		}
 
 		pub fn make_boundaries(&self, trace: &MerkleTreeTrace) -> Vec<Boundary<B128>> {
@@ -1305,7 +1293,9 @@ mod arithmetization {
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
-		merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
+		merkle_tree_cs
+			.fill_tables(&trace, &cs, &mut witness)
+			.unwrap();
 	}
 
 	#[test]
@@ -1346,7 +1336,9 @@ mod arithmetization {
 		let mut witness = WitnessIndex::new(&cs, &allocator);
 
 		// Fill the tables with the trace
-		merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
+		merkle_tree_cs
+			.fill_tables(&trace, &cs, &mut witness)
+			.unwrap();
 
 		// Create boundary values based on the trace's boundaries
 		let boundaries = merkle_tree_cs.make_boundaries(&trace);
