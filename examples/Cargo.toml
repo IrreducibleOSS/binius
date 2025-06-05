@@ -8,7 +8,6 @@ authors.workspace = true
 anyhow.workspace = true
 alloy-primitives.workspace = true
 array-util.workspace = true
-binius_circuits = { path = "../crates/circuits", default-features = false }
 binius_core = { path = "../crates/core", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
 binius_hal = { path = "../crates/hal", default-features = false }
