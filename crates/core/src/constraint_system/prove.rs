@@ -70,7 +70,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
-	Tower::B128: PackedTop<Tower>,
+	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
@@ -83,7 +83,8 @@ where
 		+ RepackedExtension<PackedType<U, Tower::B32>>
 		+ RepackedExtension<PackedType<U, Tower::B64>>
 		+ RepackedExtension<PackedType<U, Tower::B128>>
-		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
+		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>
+		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
 	tracing::debug!(
@@ -465,12 +466,7 @@ where
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _>(
-		&system,
-		&committed_multilins,
-		&mut transcript,
-		memoized_data,
-	)?;
+	} = ring_switch::prove(&system, &committed_multilins, &mut transcript, memoized_data)?;
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler

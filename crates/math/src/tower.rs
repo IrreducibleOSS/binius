@@ -6,7 +6,10 @@ pub use binius_field::{
 	BinaryField1b as B1, BinaryField8b as B8, BinaryField16b as B16, BinaryField32b as B32,
 	BinaryField64b as B64, BinaryField128b as B128,
 };
-use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
+use binius_field::{
+	ExtensionField, PackedExtension, PackedField, TowerField, as_packed_field::PackScalar,
+	underlier::UnderlierType,
+};
 
 trait_set::trait_set! {
 	/// The top packed field in a tower.
@@ -28,4 +31,14 @@ trait_set::trait_set! {
 		+ PackedExtension<B32>
 		+ PackedExtension<B64>
 		+ PackedExtension<B128>;
+
+		/// An underlier with associated packed types for fields in a tower.
+	pub trait TowerUnderlier =
+		UnderlierType
+		+ PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B64>
+		+ PackScalar<B128>;
 }
