@@ -31,7 +31,6 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 	type KernelExec = CpuKernelBuilder;
 	type DevMem = CpuMemory;
 	type OpValue = T::B128;
-	type KernelValue = T::B128;
 	type ExprEval = ArithCircuit<T::B128>;
 
 	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
@@ -95,7 +94,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 			&'a mut Self::KernelExec,
 			usize,
 			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+		) -> Result<Vec<T::B128>, Error>,
 		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
@@ -406,9 +405,9 @@ impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 	fn add(
 		&mut self,
 		log_len: usize,
-		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
-		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
-		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+		src1: &'_ [F],
+		src2: &'_ [F],
+		dst: &mut &'_ mut [F],
 	) -> Result<(), Error> {
 		assert_eq!(src1.len(), 1 << log_len);
 		assert_eq!(src2.len(), 1 << log_len);
@@ -416,6 +415,22 @@ impl<F: TowerField> KernelExecutor<F> for CpuKernelBuilder {
 
 		for (dst_i, &src1_i, &src2_i) in izip!(&mut **dst, src1, src2) {
 			*dst_i = src1_i + src2_i;
+		}
+
+		Ok(())
+	}
+
+	fn add_assign(
+		&mut self,
+		log_len: usize,
+		src: &'_ [F],
+		dst: &mut &'_ mut [F],
+	) -> Result<(), Error> {
+		assert_eq!(src.len(), 1 << log_len);
+		assert_eq!(dst.len(), 1 << log_len);
+
+		for (dst_i, &src_i) in iter::zip(&mut **dst, src) {
+			*dst_i += src_i;
 		}
 
 		Ok(())

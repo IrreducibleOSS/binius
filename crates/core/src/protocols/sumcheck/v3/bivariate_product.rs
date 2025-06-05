@@ -3,7 +3,8 @@
 use std::{iter, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelExecutor, KernelMemMap, SizedSlice,
+	SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
@@ -317,7 +318,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 				let log_chunk_size = split_n_vars - log_chunks;
 
 				// Compute the composite evaluations at the point ONE.
-				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_1 = local_exec.decl_value(F::ZERO)?;
 				{
 					let eval_1s = SlicesBatch::new(
 						(0..multilins.len())
@@ -326,8 +327,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 						1 << log_chunk_size,
 					);
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						hal.sum_composition_evals(
-							local_exec,
+						local_exec.sum_composition_evals(
 							&eval_1s,
 							evaluator,
 							batch_coeff,
@@ -350,11 +350,11 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					hal.kernel_add(local_exec, log_chunk_size, *evals_0, *evals_1, evals_inf)?;
+					local_exec.add(log_chunk_size, *evals_0, *evals_1, evals_inf)?;
 				}
 
 				// Compute the composite evaluations at the point Infinity.
-				let mut acc_inf = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_inf = local_exec.decl_value(F::ZERO)?;
 				let eval_infs = SlicesBatch::new(
 					(0..multilins.len())
 						.map(|i| buffers[i * 3 + 2].to_ref())
@@ -362,8 +362,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 					1 << log_chunk_size,
 				);
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					hal.sum_composition_evals(
-						local_exec,
+					local_exec.sum_composition_evals(
 						&eval_infs,
 						evaluator,
 						batch_coeff,

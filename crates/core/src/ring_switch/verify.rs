@@ -2,11 +2,10 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{
-	Field, TowerField,
-	tower::{PackedTop, TowerFamily},
+use binius_field::{Field, TowerField};
+use binius_math::{
+	B1, B8, B16, B32, B64, B128, MultilinearExtension, MultilinearQuery, PackedTop, TowerTop,
 };
-use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytes::Buf;
 use itertools::izip;
@@ -23,21 +22,18 @@ use crate::{
 	transcript::{TranscriptReader, VerifierTranscript},
 };
 
-type FExt<Tower> = <Tower as TowerFamily>::B128;
-
 #[derive(Debug)]
 pub struct ReducedClaim<'a, F: Field> {
 	pub transparents: Vec<Box<dyn MultivariatePoly<F> + 'a>>,
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<F>>,
 }
 
-pub fn verify<'a, F, Tower, Challenger_>(
+pub fn verify<'a, F, Challenger_>(
 	system: &'a EvalClaimSystem<F>,
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<ReducedClaim<'a, F>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerTop + PackedTop<Scalar = F>,
 	Challenger_: Challenger,
 {
 	// Sample enough randomness to batch tensor elements corresponding to claims that share an
@@ -76,7 +72,7 @@ where
 	}
 
 	// Create the reduced PIOP sumcheck claims.
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, Tower>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		&row_batch_coeffs,
@@ -101,14 +97,13 @@ where
 	})
 }
 
-fn verify_receive_tensor_elems<F, Tower, B>(
+fn verify_receive_tensor_elems<F, B>(
 	system: &EvalClaimSystem<F>,
 	mixing_coeffs: &[F],
 	transcript: &mut TranscriptReader<B>,
-) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
+) -> Result<Vec<TowerTensorAlgebra<F>>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerTop + PackedTop<Scalar = F>,
 	B: Buf,
 {
 	let expected_tensor_elem_evals = compute_mixed_evaluations(
@@ -174,60 +169,58 @@ fn accumulate_evaluations_by_prefixes<F: TowerField>(
 	batched_evals
 }
 
-fn make_ring_switch_eq_inds<F, Tower>(
+fn make_ring_switch_eq_inds<F>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: &Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
 ) -> Result<Vec<Box<dyn MultivariatePoly<F>>>, Error>
 where
-	F: TowerField + PackedTop<Tower>,
-	Tower: TowerFamily<B128 = F>,
+	F: TowerTop + PackedTop<Scalar = F>,
 {
 	iter::zip(sumcheck_claim_descs, mixing_coeffs)
 		.map(|(claim_desc, &mixing_coeff)| {
 			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
-			make_ring_switch_eq_ind::<Tower>(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
+			make_ring_switch_eq_ind(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
 		})
 		.collect()
 }
 
-fn make_ring_switch_eq_ind<Tower>(
-	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
-	row_batch_coeffs: Arc<RowBatchCoeffs<FExt<Tower>>>,
-	mixing_coeff: FExt<Tower>,
-) -> Result<Box<dyn MultivariatePoly<FExt<Tower>>>, Error>
+fn make_ring_switch_eq_ind<F>(
+	suffix_desc: &EvalClaimSuffixDesc<F>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
+	mixing_coeff: F,
+) -> Result<Box<dyn MultivariatePoly<F>>, Error>
 where
-	Tower: TowerFamily,
-	FExt<Tower>: PackedTop<Tower>,
+	F: TowerTop + PackedTop<Scalar = F>,
 {
-	let eq_ind = match suffix_desc.kappa {
-		7 => Box::new(RingSwitchEqInd::<Tower::B1, _>::new(
+	let eq_ind = match F::TOWER_LEVEL - suffix_desc.kappa {
+		0 => Box::new(RingSwitchEqInd::<B1, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?) as Box<dyn MultivariatePoly<_>>,
-		4 => Box::new(RingSwitchEqInd::<Tower::B8, _>::new(
+		3 => Box::new(RingSwitchEqInd::<B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?) as Box<dyn MultivariatePoly<_>>,
-		3 => Box::new(RingSwitchEqInd::<Tower::B16, _>::new(
+		4 => Box::new(RingSwitchEqInd::<B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?) as Box<dyn MultivariatePoly<_>>,
-		2 => Box::new(RingSwitchEqInd::<Tower::B32, _>::new(
+		5 => Box::new(RingSwitchEqInd::<B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?) as Box<dyn MultivariatePoly<_>>,
-		1 => Box::new(RingSwitchEqInd::<Tower::B64, _>::new(
+		6 => Box::new(RingSwitchEqInd::<B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?) as Box<dyn MultivariatePoly<_>>,
-		0 => Box::new(RingSwitchEqInd::<Tower::B128, _>::new(
+		7 => Box::new(RingSwitchEqInd::<B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,

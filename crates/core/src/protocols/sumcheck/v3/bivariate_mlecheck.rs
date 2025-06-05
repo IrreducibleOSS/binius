@@ -3,8 +3,8 @@
 use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelMemMap, SizedSlice,
-	SlicesBatch,
+	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelExecutor, KernelMem,
+	KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{
@@ -182,25 +182,21 @@ where
 	}
 
 	pub fn fold_eq_ind(&mut self) -> Result<(), Error> {
-		let split_n_vars = self.n_vars_remaining - 2;
+		let eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
 
-		let mut eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
+		let split_n_vars = self.n_vars_remaining - 2;
+		debug_assert_eq!(eq_ind_partial_evals.len(), 1 << (split_n_vars + 1));
+		let (mut evals_0, mut evals_1) = Hal::DevMem::split_half_mut(eq_ind_partial_evals);
 
 		let _ = self.hal.execute(|exec| {
-			let (evals_0, evals_1) =
-				Hal::DevMem::split_at_mut_borrowed(&mut eq_ind_partial_evals, 1 << split_n_vars);
-
 			let kernel_mappings = vec![
 				KernelMemMap::ChunkedMut {
-					data: evals_0,
+					data: Hal::DevMem::to_owned_mut(&mut evals_0),
 					log_min_chunk_size: 0,
 				},
 				KernelMemMap::ChunkedMut {
-					data: evals_1,
+					data: Hal::DevMem::to_owned_mut(&mut evals_1),
 					log_min_chunk_size: 0,
-				},
-				KernelMemMap::Local {
-					log_size: split_n_vars,
 				},
 			];
 
@@ -209,27 +205,18 @@ where
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
-					let Ok(
-						[
-							KernelBuffer::Mut(evals_0),
-							KernelBuffer::Mut(evals_1),
-							KernelBuffer::Mut(result),
-						],
-					) = TryInto::<&mut [_; 3]>::try_into(buffers.as_mut_slice())
+					let Ok([KernelBuffer::Mut(evals_0), KernelBuffer::Mut(evals_1)]) =
+						TryInto::<&mut [_; 2]>::try_into(buffers.as_mut_slice())
 					else {
 						panic!(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					self.hal.kernel_add(
-						local_exec,
+					local_exec.add_assign(
 						log_chunk_size,
-						Hal::DevMem::as_const(evals_0),
-						Hal::DevMem::as_const(evals_1),
-						result,
+						<KernelMem<F, Hal>>::as_const(evals_1),
+						evals_0,
 					)?;
-
-					self.hal.copy_d2d(Hal::DevMem::as_const(result), evals_0)?;
 
 					Ok(Vec::new())
 				},
@@ -239,10 +226,7 @@ where
 			Ok(Vec::new())
 		})?;
 
-		let (new_eq_ind_partial_evals, _) =
-			Hal::DevMem::split_at_mut(eq_ind_partial_evals, 1 << split_n_vars);
-
-		self.eq_ind_partial_evals = Some(new_eq_ind_partial_evals);
+		self.eq_ind_partial_evals = Some(evals_0);
 
 		Ok(())
 	}
@@ -439,7 +423,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 				);
 
 				// Compute the composite evaluations at the point ONE.
-				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_1 = local_exec.decl_value(F::ZERO)?;
 				{
 					let mut eval_1s_with_eq_ind = (0..multilins.len())
 						.map(|i| buffers[i * 3 + 1].to_ref())
@@ -451,8 +435,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 						SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
 
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						hal.sum_composition_evals(
-							local_exec,
+						local_exec.sum_composition_evals(
 							&eval_1s_with_eq_ind,
 							evaluator,
 							batch_coeff,
@@ -475,11 +458,11 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					hal.kernel_add(local_exec, log_chunk_size, *evals_0, *evals_1, evals_inf)?;
+					local_exec.add(log_chunk_size, *evals_0, *evals_1, evals_inf)?;
 				}
 
 				// Compute the composite evaluations at the point Infinity.
-				let mut acc_inf = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_inf = local_exec.decl_value(F::ZERO)?;
 				let mut eval_infs_with_eq_ind = (0..multilins.len())
 					.map(|i| buffers[i * 3 + 2].to_ref())
 					.collect::<Vec<_>>();
@@ -490,8 +473,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 					SlicesBatch::new(eval_infs_with_eq_ind, 1 << log_chunk_size);
 
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					hal.sum_composition_evals(
-						local_exec,
+					local_exec.sum_composition_evals(
 						&eval_infs_with_eq_ind,
 						evaluator,
 						batch_coeff,

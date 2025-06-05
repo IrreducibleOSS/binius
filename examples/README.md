@@ -12,7 +12,6 @@ bytes) per permutation
 | Keccakf (SHA256 Merkle trees)    | Plonky3 / BB31 | 2^13                   | 4.19             | 216                    | 1.1              | 0.262                |
 | Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 2^13                   | 5.38             | 260                    | 1.1              | 0.204                |
 | Groestl (*)                      | Binius         | 2^14                   | 1.45             | 116                    | 1.049            | 0.721                |
-| Vision32b                        | Binius         | 2^14                   | 4.63             | 162                    | 1.049            | 0.226                |
 | SHA-256                          | Binius         | 2^14                   | 4.51             | 40                     | 1.049            | 0.232                |
 
 (*) Our Current Groestl SNARK only has the P permutation as opposed to the compression function which has both P and Q
@@ -129,7 +128,7 @@ constraint_system::verify [ 116.39ms | 100.00% ]
 
 ### Vision
 
-``` 
+```
 Verifying 16384 Vision-32b permutations
 generating trace [ 599.12ms | 100.00% ]
 
