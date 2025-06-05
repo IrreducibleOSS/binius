@@ -2,7 +2,7 @@
 
 /// High-level model for binary Merkle trees using the Grøstl-256 output transformation as a 2-to-1
 /// compression function.
-mod model {
+pub mod model {
 	use std::{
 		collections::{HashMap, HashSet},
 		hash::Hash,
@@ -491,7 +491,7 @@ mod model {
 	}
 }
 
-mod arithmetization {
+pub mod arithmetization {
 	/// This module provides the arithmetisation of the Merkle tree inclusion proof.
 	///
 	/// It defines the constraint system, witness filling, and boundary construction for

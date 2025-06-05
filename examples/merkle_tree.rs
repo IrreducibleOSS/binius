@@ -29,90 +29,61 @@ use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
 struct Args {
-	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(1 << 9..))]
-	n_permutations: u32,
+	/// The number of leaves to verify.
+	#[arg(short, long, default_value_t = 1<<20, value_parser = value_parser!(u32).range(1 << 9..))]
+	n_leaves: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
 }
 
-pub struct PermutationTable {
-	table_id: TableId,
-	keccakf: Keccakf,
-}
-
-impl PermutationTable {
-	pub fn new(cs: &mut ConstraintSystem) -> Self {
-		let mut table = cs.add_table("Keccak permutation");
-
-		let keccakf = Keccakf::new(&mut table);
-
-		Self {
-			table_id: table.id(),
-			keccakf,
-		}
-	}
-}
-
-impl<P> TableFiller<P> for PermutationTable
-where
-	P: PackedFieldIndexable<Scalar = B128>
-		+ PackedExtension<B1>
-		+ PackedExtension<B8>
-		+ PackedExtension<B64>,
-	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
-{
-	type Event = StateMatrix<u64>;
-
-	fn id(&self) -> TableId {
-		self.table_id
-	}
-
-	fn fill<'a>(
-		&self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		self.keccakf.populate_state_in(witness, rows)?;
-		self.keccakf.populate(witness)?;
-		Ok(())
-	}
-}
-
 fn main() -> Result<()> {
-	const SECURITY_BITS: usize = 100;
+	let merkle_tree_cs = MerkleTreeCS::new(&mut cs);
 
-	adjust_thread_pool()
-		.as_ref()
-		.expect("failed to init thread pool");
+	let mut rng = StdRng::seed_from_u64(0);
+	// Create a Merkle tree with 8 leaves
+	let index = rng.gen_range(0..1 << 10);
+	let leaves = (0..3)
+		.map(|_| {
+			(0..1 << 10)
+				.map(|_| rng.r#gen::<[u8; 32]>())
+				.collect::<Vec<_>>()
+		})
+		.collect::<Vec<_>>();
 
-	let args = Args::parse();
-
-	let _guard = init_tracing().expect("failed to initialize tracing");
-
-	let n_permutations = args.n_permutations as usize;
-	println!("Verifying {n_permutations} Keccakf permutations");
-
-	let allocator = bumpalo::Bump::new();
-	let mut cs = ConstraintSystem::new();
-	let table = PermutationTable::new(&mut cs);
-
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![n_permutations],
-	};
-
-	let mut rng = thread_rng();
-	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
-		.take(n_permutations)
+	let trees = (0..3)
+		.map(|i| MerkleTree::new(&leaves[i]))
+		.collect::<Vec<_>>();
+	let roots = (0..3).map(|i| trees[i].root()).collect::<Vec<_>>();
+	let paths = trees
+		.iter()
+		.enumerate()
+		.map(|(i, tree)| MerklePath {
+			root_id: i as u8,
+			index,
+			leaf: leaves[i][index],
+			nodes: tree.merkle_path(index),
+		})
 		.collect::<Vec<_>>();
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
-	witness.fill_table_parallel(&table, &events)?;
+	let trace = MerkleTreeTrace::generate(roots, &paths);
+
+	// Allocate memory for the witness
+	let allocator = Bump::new();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+
+	// Fill the tables with the trace
+	merkle_tree_cs.fill_tables(&trace, &cs, &mut witness);
+
+	// Create boundary values based on the trace's boundaries
+	let boundaries = merkle_tree_cs.make_boundaries(&trace);
 	drop(trace_gen_scope);
 
+	let statement = Statement {
+		boundaries,
+		table_sizes: vec![n_permutations],
+	};
 	let ccs = cs.compile(&statement).unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
