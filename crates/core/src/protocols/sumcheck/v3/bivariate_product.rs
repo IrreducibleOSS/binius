@@ -48,7 +48,7 @@ where
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
-
+		println!("n vars: {n_vars}" );
 		// Check shape of multilinear witness inputs.
 		assert_eq!(claim.n_multilinears(), multilins.len());
 		for multilin in &multilins {
@@ -58,7 +58,7 @@ where
 		}
 
 		// Wrap multilinear witness inputs as SumcheckMultilinears.
-		let multilins = multilins
+		let multilins: Vec<_> = multilins
 			.into_iter()
 			.map(SumcheckMultilinear::PreFold)
 			.collect();
@@ -68,6 +68,18 @@ where
 			.iter()
 			.map(|CompositeSumClaim { composition, sum }| (composition.clone(), *sum))
 			.unzip();
+
+		if n_vars == 0 {
+			for i in 0..multilins.len() {
+				let data = match &multilins[i] {
+					SumcheckMultilinear::PreFold(evals) => {evals},
+					SumcheckMultilinear::PostFold(evals) => { todo!() },
+				};
+				// let mut single_val = host_alloc.alloc(1)?;
+				// hal.copy_d2h(data, &mut single_val)?;
+				println!("ml {:?}", data);
+			}
+		}
 
 		Ok(Self {
 			hal,
@@ -114,11 +126,17 @@ where
 	}
 
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		println!("called exec");
+
+		println!("batch coeff: {batch_coeff}");
+
 		let multilins = self
 			.multilins
 			.iter()
 			.map(|multilin| multilin.const_slice())
 			.collect::<Vec<_>>();
+		println!("here");
+
 		let round_evals = calculate_round_evals(
 			self.hal,
 			self.n_vars_remaining,
@@ -126,6 +144,8 @@ where
 			&multilins,
 			&self.compositions,
 		)?;
+
+		println!("here");
 
 		let batched_sum = match self.last_coeffs_or_sums {
 			PhaseState::Coeffs(_) => {
@@ -136,6 +156,8 @@ where
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
+		println!("n vars: {}", self.n_vars_initial );
+		println!("round coeffs: {:?}", round_coeffs);
 
 		// This is because the batched verifier reads a batched polynomial from the transcript with
 		// max degree from all compositions being proven. If our compoisition is empty, we add a
@@ -149,6 +171,8 @@ where
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
+		println!("called fold");
+		println!("original n vars: {}",self.n_vars_initial);
 		if self.n_vars_remaining == 0 {
 			bail!(Error::ExpectedFinish);
 		}
@@ -172,14 +196,19 @@ where
 					let folded_evals = match multilin {
 						SumcheckMultilinear::PreFold(evals) => {
 							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-							let (evals_0, evals_1) =
-								Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
+							println!("evals before: {:?}", evals);
 
+							let (evals_0, evals_1) =
+								Hal::DevMem::split_half(evals);
 							// Allocate new buffer for the folded evaluations and copy in evals_0.
 							let mut folded_evals =
 								self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
 							// This is kind of sketchy to do a copy without an execution context.
 							self.hal.copy_d2d(evals_0, &mut folded_evals)?;
+							println!("evals 0 before: {:?}", evals_0);
+							println!("evals 1 before: {:?}", evals_1);
+
+							println!("folded evals before: {:?}", folded_evals);
 
 							self.hal.extrapolate_line(
 								exec,
@@ -187,6 +216,9 @@ where
 								evals_1,
 								challenge,
 							)?;
+
+							println!("folded evals: {:?}", folded_evals);
+
 							folded_evals
 						}
 						SumcheckMultilinear::PostFold(evals) => {
@@ -224,11 +256,15 @@ where
 
 		// Copy the fully folded multilinear evaluations to the host.
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
-		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
-			let vals = multilin.const_slice();
+
+		println!("len {} buffer from finish: {:?}", buffer.len(), buffer);
+		for i in 0..self.multilins.len() {
+			let vals = self.multilins[i].const_slice();
+			println!("vals: {:?}",vals);
 			debug_assert_eq!(vals.len(), 1);
-			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
+			self.hal.copy_d2h(vals, &mut buffer[i..i+1])?;
 		}
+		println!("after copy len {} buffer from finish: {:?}", buffer.len(), buffer);
 		Ok(buffer.to_vec())
 	}
 }
