@@ -16,7 +16,7 @@ use binius_core::{
 };
 use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_utils::rayon::adjust_thread_pool;
 use clap::{Parser, value_parser};
 use tracing_profile::init_tracing;
@@ -72,7 +72,7 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		Groestl256,
+		Groestl256Parallel,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,

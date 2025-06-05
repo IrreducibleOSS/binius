@@ -11,7 +11,7 @@ use binius_circuits::{
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId};
 use binius_field::{BinaryField1b, tower::CanonicalTowerFamily};
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -71,7 +71,7 @@ fn main() -> Result<()> {
 		constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
-			Groestl256,
+			Groestl256Parallel,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
