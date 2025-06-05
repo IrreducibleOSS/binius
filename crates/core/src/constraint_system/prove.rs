@@ -6,7 +6,6 @@ use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator, cpu::Cp
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
-	arch::OptimalUnderlier128b,
 	as_packed_field::PackedType,
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
@@ -166,21 +165,19 @@ where
 
 	reorder_exponents(&mut exponents, &oracles);
 
-	let piop_hal_span =
-		tracing::info_span!("HAL Setup", phase = "piop_compiler", perfetto_category = "phase.sub")
-			.entered();
+	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
 
-	let hal = FastCpuLayer::<Tower, PackedType<OptimalUnderlier128b, Tower::B128>>::default();
+	let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
 
-	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 20);
-	let mut dev_mem_owned: Vec<PackedType<OptimalUnderlier128b, Tower::B128>> = zeroed_vec(1 << 26);
+	let mut host_mem = zeroed_vec(1 << 20);
+	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<U, Tower::B128>::LOG_WIDTH));
 
-	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 
 	let host_alloc = HostBumpAllocator::new(&mut host_mem);
 	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
 
-	drop(piop_hal_span);
+	drop(hal_span);
 
 	let witness_span = tracing::info_span!(
 		"[phase] Witness Finalization",

@@ -219,6 +219,13 @@ where
 			.iter()
 	)?;
 
+	let dev_memory_copy_span = tracing::info_span!(
+		"[phase] Copy packed_committed to device memory",
+		phase = "piop_compiler",
+		perfetto_category = "phase.sub"
+	)
+	.entered();
+
 	// The committed multilinears provided by argument are committed *small field* multilinears.
 	// Create multilinears representing the packed polynomials here. Eventually, we would like to
 	// refactor the calling code so that the PIOP only handles *big field* multilinear witnesses.
@@ -244,15 +251,14 @@ where
 				.packed_evals()
 				.expect("Prover should always populate witnesses");
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
-			let mut allocated_mem = dev_alloc
-				.alloc(1 << packed_committed_multilin.n_vars())
-				.map_err(Error::Alloc)?;
+			let mut allocated_mem = dev_alloc.alloc(1 << packed_committed_multilin.n_vars())?;
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
 			Ok(Hal::DevMem::into_const(allocated_mem))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
 	drop(copy_span);
+
 
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()

@@ -205,18 +205,18 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	Hal: ComputeLayer<F>,
 	HalHolder: ComputeHolder<F, Hal>,
 {
-	let hal = FastCpuLayer::<Tower, PackedType<OptimalUnderlier128b, Tower::B128>>::default();
+	let mut rng = StdRng::seed_from_u64(0);
+	let merkle_scheme = merkle_prover.scheme();
 
-	let mut host_mem: Vec<Tower::B128> = zeroed_vec(1 << 7);
-	let mut dev_mem_owned: Vec<PackedType<OptimalUnderlier128b, Tower::B128>> = zeroed_vec(1 << 12);
+	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<U, F>>::default();
 
-	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+	let mut host_mem = zeroed_vec(1 << 7);
+	let mut dev_mem_owned = zeroed_vec(1 << 12);
+
+	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 
 	let host_alloc = HostBumpAllocator::new(&mut host_mem);
 	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
-
-	let mut rng = StdRng::seed_from_u64(0);
-	let merkle_scheme = merkle_prover.scheme();
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
