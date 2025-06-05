@@ -554,7 +554,7 @@ where
 }
 
 #[instrument(skip_all, level = "debug")]
-fn make_masked_flush_witnesses<'a, U, Tower>(
+pub fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
