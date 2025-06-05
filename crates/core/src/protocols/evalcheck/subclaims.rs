@@ -19,14 +19,16 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
+use itertools::izip;
 use tracing::instrument;
 
 use super::{EvalPoint, EvalPointOracleIdMap, error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
-		MultilinearOracleSet, OracleId, Packed, Shifted,
+		CompositeMLE, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
+		Packed, Shifted, SizedConstraintSet,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -300,6 +302,49 @@ pub struct OracleIdPartialEval<P: PackedField> {
 	pub partial_eval: MultilinearExtension<P>,
 }
 
+pub fn try_build_partial_eval<F: TowerField, P: PackedField<Scalar = F>>(
+	partial_evals: &EvalPointOracleIdMap<MultilinearExtension<P>, F>,
+	oracles: &MultilinearOracleSet<F>,
+	id: OracleId,
+	suffix: &[F],
+	acc: &mut [P],
+	coeff: P,
+) -> bool {
+	match &oracles[id].variant {
+		crate::oracle::MultilinearPolyVariant::LinearCombination(lc) => {
+			for (poly_id, internal_coeff) in izip!(lc.polys(), lc.coefficients()) {
+				let new_coeff = coeff * P::broadcast(internal_coeff);
+
+				if !try_build_partial_eval(partial_evals, oracles, poly_id, suffix, acc, new_coeff)
+				{
+					return false;
+				}
+			}
+
+			if lc.offset() != F::zero() {
+				let offset = P::broadcast(lc.offset());
+				for acc in acc.iter_mut() {
+					*acc += offset;
+				}
+			}
+		}
+		_ => {
+			let mle = match partial_evals.get(id, suffix) {
+				Some(mle) => mle,
+				None => return false,
+			};
+			for (acc, eval) in acc.iter_mut().zip(mle.evals()) {
+				*acc += if coeff == P::one() {
+					*eval
+				} else {
+					*eval * coeff
+				};
+			}
+		}
+	};
+	true
+}
+
 /// shifted / packed oracle compute the projected MLE (i.e. the inner oracle evaluated on the
 /// projected eval_point)
 #[allow(clippy::type_complexity)]
@@ -312,6 +357,7 @@ pub fn collect_projected_mles<F, P>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedData<P>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	oracles: &MultilinearOracleSet<F>,
 	witness_index: &MultilinearExtensionIndex<P>,
 	partial_evals: &mut EvalPointOracleIdMap<MultilinearExtension<P>, F>,
 ) -> Result<(), Error>
@@ -319,38 +365,64 @@ where
 	P: PackedField<Scalar = F>,
 	F: TowerField,
 {
-	let mut queries_to_memoize = Vec::new();
-	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
-		queries_to_memoize.push(&claim.eval_point[meta.projected_n_vars..]);
+	let mut suffix_oracle_id = HashSet::new();
+
+	for (claim, meta) in projected_bivariate_claims.iter().zip(metas.iter()) {
+		if meta.projected_id.is_some() {
+			let suffix = &claim.eval_point[meta.projected_n_vars..];
+			suffix_oracle_id.insert((suffix, meta.inner_id));
+		}
 	}
+
+	let queries_to_memoize = suffix_oracle_id
+		.iter()
+		.copied()
+		.map(|(suffix, _)| suffix)
+		.collect::<Vec<_>>();
+
 	memoized_queries.memoize_query_par(queries_to_memoize)?;
 
-	let new_partial_evals = projected_bivariate_claims
-		.par_iter()
-		.zip(metas)
-		.map(|(claim, meta)| match meta.projected_id {
-			Some(_) => {
-				let inner_multilin = witness_index.get_multilin_poly(meta.inner_id)?;
-				let eval_point = &claim.eval_point[meta.projected_n_vars..];
-				let query = memoized_queries
-					.full_query_readonly(eval_point)
-					.ok_or(Error::MissingQuery)?;
+	let suffix_oracle_id = suffix_oracle_id.into_iter().collect::<Vec<_>>();
 
-				if partial_evals.get(meta.inner_id, eval_point).is_some() {
-					return Ok(None);
-				}
+	let new_partial_evals = suffix_oracle_id
+		.into_par_iter()
+		.map(|(suffix, inner_id)| {
+			let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
 
-				let partial_eval = inner_multilin
-					.evaluate_partial_high(query.to_ref())
-					.map_err(Error::from)?;
+			let query = memoized_queries
+				.full_query_readonly(suffix)
+				.ok_or(Error::MissingQuery)?;
 
-				Ok(Some(OracleIdPartialEval {
-					id: meta.inner_id,
-					suffix: eval_point.into(),
-					partial_eval,
-				}))
+			if partial_evals.get(inner_id, suffix).is_some() {
+				return Ok(None);
 			}
-			_ => Ok(None),
+
+			let n_vars = inner_multilin.n_vars() - suffix.len();
+
+			let mut buffer = zeroed_vec(1 << n_vars.saturating_sub(P::LOG_WIDTH));
+
+			let is_built = try_build_partial_eval(
+				partial_evals,
+				oracles,
+				inner_id,
+				suffix,
+				&mut buffer,
+				P::one(),
+			);
+
+			let partial_eval = if is_built {
+				MultilinearExtension::new(n_vars, buffer).unwrap()
+			} else {
+				inner_multilin
+					.evaluate_partial_high(query.to_ref())
+					.map_err(Error::from)?
+			};
+
+			Ok(Some(OracleIdPartialEval {
+				id: inner_id,
+				suffix: suffix.into(),
+				partial_eval,
+			}))
 		})
 		.collect::<Result<Vec<Option<_>>, Error>>();
 
@@ -476,7 +548,7 @@ type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
 pub fn prove_bivariate_sumchecks_with_switchover<F, P, DomainField, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<P>,
-	constraint_sets: Vec<ConstraintSet<F>>,
+	constraint_sets: Vec<SizedConstraintSet<F>>,
 	transcript: &mut ProverTranscript<Transcript>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
@@ -516,7 +588,7 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn prove_mlecheck_with_switchover<'a, F, P, DomainField, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<P>,
-	constraint_set: ConstraintSet<F>,
+	constraint_set: SizedConstraintSet<F>,
 	eq_ind_challenges: EvalPoint<F>,
 	memoized_data: &mut MemoizedData<'a, P>,
 	transcript: &mut ProverTranscript<Transcript>,

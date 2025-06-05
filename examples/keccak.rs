@@ -19,7 +19,7 @@ use binius_m3::{
 		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
 		WitnessIndex,
 	},
-	gadgets::hash::keccak::{self, Keccakf, StateMatrix},
+	gadgets::hash::keccak::{StateMatrix, stacked::Keccakf},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytesize::ByteSize;
@@ -46,7 +46,7 @@ impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem) -> Self {
 		let mut table = cs.add_table("Keccak permutation");
 
-		let keccakf = keccak::Keccakf::new(&mut table);
+		let keccakf = Keccakf::new(&mut table);
 
 		Self {
 			table_id: table.id(),

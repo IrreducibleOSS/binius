@@ -24,7 +24,7 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeScheme,
-	oracle::{MultilinearOracleSet, OracleId},
+	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
 		gkr_exp,
@@ -48,21 +48,34 @@ pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower>,
+	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
 	Hash: Digest + BlockSizeUser,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 {
 	let ConstraintSystem {
 		mut oracles,
-		mut table_constraints,
+		table_constraints,
 		mut flushes,
 		non_zero_oracle_ids,
-		max_channel_id,
+		channel_count,
 		mut exponents,
 		..
 	} = constraint_system.clone();
 
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.map(|u| {
+			// Pick the first oracle and get its n_vars.
+			//
+			// TODO(pep): I know that this invariant is not guaranteed to hold at this point, but
+			//            this is fine and is going away in a follow up where we read the sizes of
+			//            tables from the transcript or pass it in the prover.
+			let first_oracle_id = u.oracle_ids[0];
+			let n_vars = oracles.n_vars(first_oracle_id);
+			SizedConstraintSet::new(n_vars, u)
+		})
+		.collect::<Vec<_>>();
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
@@ -121,7 +134,7 @@ where
 	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
 	// TODO(cryptographers): Find a way to sample less randomness
-	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
+	let permutation_challenges = transcript.sample_vec(channel_count);
 
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let flush_oracle_ids =
@@ -190,7 +203,7 @@ where
 	let ring_switch::ReducedClaim {
 		transparents,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::verify::<_, Tower, _>(&system, &mut transcript)?;
+	} = ring_switch::verify(&system, &mut transcript)?;
 
 	// Prove evaluation claims using PIOP compiler
 	piop::verify(

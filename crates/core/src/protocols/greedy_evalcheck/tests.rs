@@ -8,8 +8,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::Groestl256;
-use binius_macros::arith_expr;
-use binius_math::{DefaultEvaluationDomainFactory, MultilinearExtension};
+use binius_math::{ArithCircuit, ArithExpr, DefaultEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::Pod;
 use either::Either;
 use rand::{SeedableRng, rngs::StdRng};
@@ -78,8 +77,11 @@ where
 	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
 
-	#[allow(deprecated)]
-	let comp = arith_expr!(FExtension[x, y, z] = x*y + x*z +  z);
+	let comp: ArithCircuit<FExtension> = ArithCircuit::from(
+		ArithExpr::Var(0) * ArithExpr::Var(1)
+			+ ArithExpr::Var(0) * ArithExpr::Var(2)
+			+ ArithExpr::Var(2),
+	);
 
 	let composite_id = oracles
 		.add_composite_mle(

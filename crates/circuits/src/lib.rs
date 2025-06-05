@@ -7,9 +7,6 @@
 //! more complex constraint systems.
 
 #![deprecated = "use binius_m3 instead"]
-// This is because there are quite some arith_expr! in this codebase and it's acceptable to blanket
-// allow(deprecated) here since it's going away anyway.
-#![allow(deprecated)]
 #![allow(clippy::module_inception)]
 
 pub mod arithmetic;
@@ -45,7 +42,6 @@ mod tests {
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-	use binius_macros::arith_expr;
 	use binius_math::CompositionPoly;
 	use rand::{seq::SliceRandom, thread_rng};
 
@@ -183,11 +179,53 @@ mod tests {
 		let n_vars = 8;
 		let log_inv_rate = 1;
 		let security_bits = 30;
-		let comp_1 = arith_expr!(B128[x, y] = x*y*y*0x85 +x*x*y*0x9 + y + 0x123);
-		let comp_2 =
-			arith_expr!(B128[x, y, z] = x*z*y*0x81115 +x*y*0x98888 + y*z + z*z*z*z*z*z + 0x155523);
-		let comp_3 = arith_expr!(B128[a, b, c, d, e, f] = e*f*f + a*b*c*2 + d*0x999 + 0x123);
-		let comp_4 = arith_expr!(B128[a, b] = a*(b+a));
+		let comp_1 = binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<B128>::Var(0usize)
+				* binius_math::ArithExpr::<B128>::Var(1usize)
+				* binius_math::ArithExpr::<B128>::Var(1usize)
+				* binius_math::ArithExpr::<B128>::Const(B128::new(0x85))
+				+ binius_math::ArithExpr::<B128>::Var(0usize)
+					* binius_math::ArithExpr::<B128>::Var(0usize)
+					* binius_math::ArithExpr::<B128>::Var(1usize)
+					* binius_math::ArithExpr::<B128>::Const(B128::new(0x9))
+				+ binius_math::ArithExpr::<B128>::Var(1usize)
+				+ binius_math::ArithExpr::<B128>::Const(B128::new(0x123)),
+		);
+		let comp_2 = binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<B128>::Var(0usize)
+				* binius_math::ArithExpr::<B128>::Var(2usize)
+				* binius_math::ArithExpr::<B128>::Var(1usize)
+				* binius_math::ArithExpr::<B128>::Const(B128::new(0x81115))
+				+ binius_math::ArithExpr::<B128>::Var(0usize)
+					* binius_math::ArithExpr::<B128>::Var(1usize)
+					* binius_math::ArithExpr::<B128>::Const(B128::new(0x98888))
+				+ binius_math::ArithExpr::<B128>::Var(1usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+				+ binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+				+ binius_math::ArithExpr::<B128>::Const(B128::new(0x155523)),
+		);
+		let comp_3 = binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<B128>::Var(4usize)
+				* binius_math::ArithExpr::<B128>::Var(5usize)
+				* binius_math::ArithExpr::<B128>::Var(5usize)
+				+ binius_math::ArithExpr::<B128>::Var(0usize)
+					* binius_math::ArithExpr::<B128>::Var(1usize)
+					* binius_math::ArithExpr::<B128>::Var(2usize)
+					* binius_math::ArithExpr::<B128>::Const(B128::new(2))
+				+ binius_math::ArithExpr::<B128>::Var(3usize)
+					* binius_math::ArithExpr::<B128>::Const(B128::new(0x999))
+				+ binius_math::ArithExpr::<B128>::Const(B128::new(0x123)),
+		);
+		let comp_4 = binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<B128>::Var(0usize)
+				* (binius_math::ArithExpr::<B128>::Var(1usize)
+					+ binius_math::ArithExpr::<B128>::Var(0usize)),
+		);
 
 		let column_x = builder.add_committed("x", n_vars, 7);
 		let column_y = builder.add_committed("y", n_vars, 7);

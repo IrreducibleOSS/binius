@@ -121,7 +121,7 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		log_inv_rate,
 	)
 	.unwrap();
-	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len()).unwrap();
+	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();
 
 	let mut rng = StdRng::seed_from_u64(0);
 

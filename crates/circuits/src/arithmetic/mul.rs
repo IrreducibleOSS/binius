@@ -17,7 +17,6 @@ use binius_field::{
 	as_packed_field::PackedType,
 	packed::{get_packed_slice, set_packed_slice},
 };
-use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
@@ -116,7 +115,12 @@ where
 	builder.assert_zero(
 		name.clone(),
 		[xin_bits[0], yin_bits[0], cout_bits[0]],
-		arith_expr!([xin, yin, cout] = xin * yin - cout).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+		)
+		.convert_field(),
 	);
 
 	// $(g^x)^y = g^{clow} * (g^{2^{len(clow)}})^{chigh}$
@@ -127,7 +131,12 @@ where
 			cout_low_exp_result_id,
 			cout_high_exp_result_id,
 		],
-		arith_expr!([yin, low, high] = low * high - yin).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize),
+		)
+		.convert_field(),
 	);
 
 	let (cout_low_bits, cout_high_bits) = cout_bits.split_at(cout_bits.len() / 2);
@@ -227,9 +236,10 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	builder.assert_zero(
 		"xin_exp_res_id zerocheck",
 		[xin_low_exp_res_id, xin_high_exp_res_id, xin_exp_res_id],
-		arith_expr!(
-			[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id] =
-				xin_low_exp_res * xin_high_exp_res - xin_exp_result_id
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
 		)
 		.convert_field(),
 	);
@@ -343,7 +353,12 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	builder.assert_zero(
 		name.clone(),
 		[xin_bits[0], yin_bits[0], cout_bits[0]],
-		arith_expr!([x, y, c] = x * y - c).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+		)
+		.convert_field(),
 	);
 
 	// $(g^{xlow} \cdot (g^{2^{16}})^{xhigh})^y = \prod_{i=0}^{3} (g^{2^{(16 \cdot i)}})^{c_i} $
@@ -356,8 +371,12 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 			cout_exp_res_id[2],
 			cout_exp_res_id[3],
 		],
-		arith_expr!(
-			[yin, cout_0, cout_1, cout_2, cout_3] = cout_0 * cout_1 * cout_2 * cout_3 - yin
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize)
+				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(4usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize),
 		)
 		.convert_field(),
 	);

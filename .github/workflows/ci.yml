@@ -62,11 +62,14 @@ jobs:
           - runner: "r7a-2xlarge"
             name: "docs"
             cmd: 'cargo doc --no-deps; echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=/binius_core/\"></head><body></body></html>" > target/doc/index.html'
+          - runner: "r7a-2xlarge"
+            name: "cpu_extensions-check"
+            cmd: 'scripts/check_cpu_extensions_sets.sh'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
       - name: Install deps
-        run: sudo yum -y install gcc openssl-devel
+        run: sudo yum -y install gcc openssl-devel curl jq
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: AMD job configuration template with stable Rust

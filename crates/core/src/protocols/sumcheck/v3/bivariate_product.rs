@@ -3,7 +3,8 @@
 use std::{iter, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelMemMap, SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelExecutor, KernelMemMap, SizedSlice,
+	SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
@@ -46,10 +47,6 @@ where
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
-		if Hal::DevMem::MIN_SLICE_LEN != 1 {
-			todo!("support non-trivial minimum slice lengths");
-		}
-
 		let n_vars = claim.n_vars();
 
 		// Check shape of multilinear witness inputs.
@@ -194,8 +191,7 @@ where
 						}
 						SumcheckMultilinear::PostFold(evals) => {
 							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-							let (mut evals_0, evals_1) =
-								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars_remaining - 1));
+							let (mut evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
 							self.hal.extrapolate_line(
 								exec,
 								&mut evals_0,
@@ -239,13 +235,13 @@ where
 
 /// A multilinear polynomial that is being processed by a sumcheck prover.
 #[derive(Debug, Clone)]
-enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
+pub enum SumcheckMultilinear<'a, F, Mem: ComputeMemory<F>> {
 	PreFold(Mem::FSlice<'a>),
 	PostFold(Mem::FSliceMut<'a>),
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> SumcheckMultilinear<'a, F, Mem> {
-	fn const_slice(&self) -> Mem::FSlice<'_> {
+	pub fn const_slice(&self) -> Mem::FSlice<'_> {
 		match self {
 			Self::PreFold(slice) => Mem::narrow(slice),
 			Self::PostFold(slice) => Mem::as_const(slice),
@@ -302,7 +298,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 		.iter()
 		.copied()
 		.flat_map(|multilin| {
-			let (lo_half, hi_half) = HAL::DevMem::split_at(multilin, 1 << split_n_vars);
+			let (lo_half, hi_half) = HAL::DevMem::split_half(multilin);
 			[
 				KernelMemMap::Chunked {
 					data: lo_half,
@@ -331,7 +327,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 				let log_chunk_size = split_n_vars - log_chunks;
 
 				// Compute the composite evaluations at the point ONE.
-				let mut acc_1 = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_1 = local_exec.decl_value(F::ZERO)?;
 				{
 					let eval_1s = SlicesBatch::new(
 						(0..multilins.len())
@@ -340,8 +336,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 						1 << log_chunk_size,
 					);
 					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						hal.sum_composition_evals(
-							local_exec,
+						local_exec.sum_composition_evals(
 							&eval_1s,
 							evaluator,
 							batch_coeff,
@@ -364,11 +359,11 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					hal.kernel_add(local_exec, log_chunk_size, *evals_0, *evals_1, evals_inf)?;
+					local_exec.add(log_chunk_size, *evals_0, *evals_1, evals_inf)?;
 				}
 
 				// Compute the composite evaluations at the point Infinity.
-				let mut acc_inf = hal.kernel_decl_value(local_exec, F::ZERO)?;
+				let mut acc_inf = local_exec.decl_value(F::ZERO)?;
 				let eval_infs = SlicesBatch::new(
 					(0..multilins.len())
 						.map(|i| buffers[i * 3 + 2].to_ref())
@@ -376,8 +371,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 					1 << log_chunk_size,
 				);
 				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					hal.sum_composition_evals(
-						local_exec,
+					local_exec.sum_composition_evals(
 						&eval_infs,
 						evaluator,
 						batch_coeff,
@@ -411,7 +405,7 @@ fn calculate_round_coeffs_from_evals<F: Field>(sum: F, evals: [F; 2]) -> RoundCo
 }
 
 #[derive(Debug)]
-enum PhaseState<F: Field> {
+pub enum PhaseState<F: Field> {
 	Coeffs(RoundCoeffs<F>),
 	InitialSums(Vec<F>),
 	BatchedSum(F),
@@ -423,7 +417,11 @@ mod tests {
 	use binius_compute_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
-	use binius_field::{BinaryField128b, tower::CanonicalTowerFamily};
+	use binius_fast_compute::layer::FastCpuLayer;
+	use binius_field::{
+		BinaryField128b, PackedField, arch::OptimalUnderlier, as_packed_field::PackedType,
+		tower::CanonicalTowerFamily,
+	};
 	use bytemuck::zeroed_vec;
 
 	use super::*;
@@ -440,6 +438,21 @@ mod tests {
 	}
 
 	#[test]
+	fn test_calculate_round_evals_fast_cpu() {
+		type F = BinaryField128b;
+		type Packed = PackedType<OptimalUnderlier, F>;
+		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
+
+		let hal = Hal::default();
+		let mut dev_mem = vec![Packed::zero(); 1 << (10 - Packed::LOG_WIDTH)];
+		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
+			&mut dev_mem,
+		);
+		let n_vars = 8;
+		generic_test_calculate_round_evals(&hal, dev_mem, n_vars)
+	}
+
+	#[test]
 	fn test_bivariate_sumcheck_prove_verify() {
 		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
@@ -449,6 +462,29 @@ mod tests {
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			&mut dev_mem,
+			n_vars,
+			n_multilins,
+			n_compositions,
+		)
+	}
+
+	#[test]
+	fn test_bivariate_sumcheck_prove_verify_fast() {
+		type F = BinaryField128b;
+		type Packed = PackedType<OptimalUnderlier, F>;
+		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
+
+		let hal = Hal::default();
+		let mut dev_mem = zeroed_vec(1 << (12 - Packed::LOG_WIDTH));
+		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
+			&mut dev_mem,
+		);
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+		generic_test_bivariate_sumcheck_prove_verify(
+			&hal,
+			dev_mem,
 			n_vars,
 			n_multilins,
 			n_compositions,

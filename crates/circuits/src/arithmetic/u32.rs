@@ -8,7 +8,6 @@ use binius_field::{
 	BinaryField1b, BinaryField32b, Field, PackedField, TowerField, as_packed_field::PackedType,
 	packed::set_packed_slice, underlier::WithUnderlier,
 };
-use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{Pod, pod_collect_to_vec};
@@ -77,7 +76,14 @@ pub fn mul_const(
 		// Shift overflow checking
 		for i in 32 - offset..32 {
 			let x = select_bit(builder, format!("bit{i}"), input, i)?;
-			builder.assert_zero("overflow", [x], arith_expr!([x] = x).convert_field());
+			builder.assert_zero(
+				"overflow",
+				[x],
+				binius_math::ArithCircuit::from(binius_math::ArithExpr::<
+					binius_field::BinaryField1b,
+				>::Var(0usize))
+				.convert_field(),
+			);
 		}
 	}
 
@@ -118,13 +124,27 @@ pub fn add(
 	builder.assert_zero(
 		"sum",
 		[xin, yin, cin, zout],
-		arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+		)
+		.convert_field(),
 	);
 
 	builder.assert_zero(
 		"carry",
 		[xin, yin, cin, cout],
-		arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout).convert_field(),
+		binius_math::ArithCircuit::from(
+			(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+				* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+		)
+		.convert_field(),
 	);
 
 	// Overflow checking
@@ -133,7 +153,10 @@ pub fn add(
 		builder.assert_zero(
 			"overflow",
 			[last_cout],
-			arith_expr!([last_cout] = last_cout).convert_field(),
+			binius_math::ArithCircuit::from(
+				binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize),
+			)
+			.convert_field(),
 		);
 	}
 
@@ -174,14 +197,27 @@ pub fn sub(
 	builder.assert_zero(
 		"sum",
 		[xout, yin, cin, zin],
-		arith_expr!([xout, yin, cin, zin] = xout + yin + cin - zin).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+		)
+		.convert_field(),
 	);
 
 	builder.assert_zero(
 		"carry",
 		[xout, yin, cin, cout],
-		arith_expr!([xout, yin, cin, cout] = (xout + cin) * (yin + cin) + cin - cout)
-			.convert_field(),
+		binius_math::ArithCircuit::from(
+			(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+				* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+				+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+		)
+		.convert_field(),
 	);
 
 	// Underflow checking
@@ -190,7 +226,10 @@ pub fn sub(
 		builder.assert_zero(
 			"underflow",
 			[last_cout],
-			arith_expr!([last_cout] = last_cout).convert_field(),
+			binius_math::ArithCircuit::from(
+				binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize),
+			)
+			.convert_field(),
 		);
 	}
 
@@ -207,7 +246,14 @@ pub fn half(
 	if matches!(flags, super::Flags::Checked) {
 		// Assert that the number is even
 		let lsb = select_bit(builder, "lsb", input, 0)?;
-		builder.assert_zero("is_even", [lsb], arith_expr!([lsb] = lsb).convert_field());
+		builder.assert_zero(
+			"is_even",
+			[lsb],
+			binius_math::ArithCircuit::from(
+				binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize),
+			)
+			.convert_field(),
+		);
 	}
 	shr(builder, name, input, 1)
 }
@@ -313,7 +359,11 @@ pub fn constant(
 	builder.assert_zero(
 		"unpack",
 		[output_packed, transparent],
-		arith_expr!([x, y] = x - y).convert_field(),
+		binius_math::ArithCircuit::from(
+			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize),
+		)
+		.convert_field(),
 	);
 	builder.pop_namespace();
 	Ok(output)

@@ -24,13 +24,10 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
-	type KernelExec;
+	type KernelExec: KernelExecutor<F, ExprEval = Self::ExprEval>;
 
 	/// The operation (scalar) value type.
 	type OpValue;
-
-	/// The kernel(core)-level operation (scalar) type;
-	type KernelValue;
 
 	/// The evaluator for arithmetic expressions (polynomials).
 	type ExprEval: Sync;
@@ -70,13 +67,6 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		src: FSlice<'_, F, Self>,
 		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
-
-	/// Declares a kernel-level value.
-	fn kernel_decl_value(
-		&self,
-		exec: &mut Self::KernelExec,
-		init: F,
-	) -> Result<Self::KernelValue, Error>;
 
 	/// Executes an operation.
 	///
@@ -167,8 +157,8 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, F, Self::DevMem>>,
-		) -> Result<Vec<Self::KernelValue>, Error>,
+			Vec<KernelBuffer<'a, F, <Self::KernelExec as KernelExecutor<F>>::Mem>>,
+		) -> Result<Vec<<Self::KernelExec as KernelExecutor<F>>::Value>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
 
@@ -287,54 +277,6 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>;
 
-	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
-	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
-	///
-	/// Mathematically, let there be $m$ input buffers, $P_0, \ldots, P_{m-1}$, each of length
-	/// $2^n$ elements. Let $c$ be the scaling coefficient (`batch_coeff`) and
-	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
-	///
-	/// $$
-	/// \sum_{i=0}^{2^n - 1} c C(P_0\[i\], \ldots, P_{m-1}\[i\]).
-	/// $$
-	///
-	/// The result is added back to an accumulator value.
-	///
-	/// ## Arguments
-	///
-	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
-	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
-	/// * `composition` - the compiled composition polynomial expression. This is an output of
-	///   [`Self::compile_expr`].
-	/// * `batch_coeff` - the scaling coefficient.
-	/// * `accumulator` - the output where the result is accumulated to.
-	fn sum_composition_evals(
-		&self,
-		exec: &mut Self::KernelExec,
-		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
-		composition: &Self::ExprEval,
-		batch_coeff: F,
-		accumulator: &mut Self::KernelValue,
-	) -> Result<(), Error>;
-
-	/// A kernel-local operation that performs point-wise addition of two input buffers into an
-	/// output buffer.
-	///
-	/// ## Arguments
-	///
-	/// * `log_len` - the binary logarithm of the number of elements in all three buffers.
-	/// * `src1` - the first input buffer.
-	/// * `src2` - the second input buffer.
-	/// * `dst` - the output buffer that receives the element-wise sum.
-	fn kernel_add(
-		&self,
-		exec: &mut Self::KernelExec,
-		log_len: usize,
-		src1: FSlice<'_, F, Self>,
-		src2: FSlice<'_, F, Self>,
-		dst: &mut FSliceMut<'_, F, Self>,
-	) -> Result<(), Error>;
-
 	/// FRI-fold the interleaved codeword using the given challenges.
 	///
 	/// The FRI-fold operation folds a length $2^{n+b+\eta}$ vector of field elements into a length
@@ -448,6 +390,86 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	) -> Result<(), Error>;
 }
 
+/// An interface for defining execution kernels.
+///
+/// A _kernel_ is a program that executes synchronously in one thread, with access to
+/// local memory buffers.
+///
+/// See [`ComputeLayer::accumulate_kernels`] for more information.
+pub trait KernelExecutor<F> {
+	/// The type for kernel-local memory buffers.
+	type Mem: ComputeMemory<F>;
+
+	/// The kernel(core)-level operation (scalar) type. This is a promise for a returned value.
+	type Value;
+
+	/// The evaluator for arithmetic expressions (polynomials).
+	type ExprEval: Sync;
+
+	/// Declares a kernel-level value.
+	fn decl_value(&mut self, init: F) -> Result<Self::Value, Error>;
+
+	/// A kernel-local operation that evaluates a composition polynomial over several buffers,
+	/// row-wise, and returns the sum of the evaluations, scaled by a batching coefficient.
+	///
+	/// Mathematically, let there be $m$ input buffers, $P_0, \ldots, P_{m-1}$, each of length
+	/// $2^n$ elements. Let $c$ be the scaling coefficient (`batch_coeff`) and
+	/// $C(X_0, \ldots, X_{m-1})$ be the composition polynomial. The operation computes
+	///
+	/// $$
+	/// \sum_{i=0}^{2^n - 1} c C(P_0\[i\], \ldots, P_{m-1}\[i\]).
+	/// $$
+	///
+	/// The result is added back to an accumulator value.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in each input buffer.
+	/// * `inputs` - the input buffers. Each row contains the values for a single variable.
+	/// * `composition` - the compiled composition polynomial expression. This is an output of
+	///   [`ComputeLayer::compile_expr`].
+	/// * `batch_coeff` - the scaling coefficient.
+	/// * `accumulator` - the output where the result is accumulated to.
+	fn sum_composition_evals(
+		&mut self,
+		inputs: &SlicesBatch<<Self::Mem as ComputeMemory<F>>::FSlice<'_>>,
+		composition: &Self::ExprEval,
+		batch_coeff: F,
+		accumulator: &mut Self::Value,
+	) -> Result<(), Error>;
+
+	/// A kernel-local operation that performs point-wise addition of two input buffers into an
+	/// output buffer.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in all three buffers.
+	/// * `src1` - the first input buffer.
+	/// * `src2` - the second input buffer.
+	/// * `dst` - the output buffer that receives the element-wise sum.
+	fn add(
+		&mut self,
+		log_len: usize,
+		src1: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		src2: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+
+	/// A kernel-local operation that adds a source buffer into a destination buffer, in place.
+	///
+	/// ## Arguments
+	///
+	/// * `log_len` - the binary logarithm of the number of elements in the two buffers.
+	/// * `src` - the source buffer.
+	/// * `dst` - the destination buffer.
+	fn add_assign(
+		&mut self,
+		log_len: usize,
+		src: <Self::Mem as ComputeMemory<F>>::FSlice<'_>,
+		dst: &mut <Self::Mem as ComputeMemory<F>>::FSliceMut<'_>,
+	) -> Result<(), Error>;
+}
+
 /// A memory mapping specification for a kernel execution.
 ///
 /// See [`ComputeLayer::accumulate_kernels`] for context on kernel execution.
@@ -482,6 +504,9 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
+					let log_min_chunk_size = (*log_min_chunk_size)
+						.max(checked_log_2(Mem::ALIGNMENT))
+						.min(log_data_size);
 					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::ChunkedMut {
@@ -489,6 +514,9 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 					log_min_chunk_size,
 				} => {
 					let log_data_size = checked_log_2(data.len());
+					let log_min_chunk_size = (*log_min_chunk_size)
+						.max(checked_log_2(Mem::ALIGNMENT))
+						.min(log_data_size);
 					0..(log_data_size - log_min_chunk_size)
 				}
 				Self::Local { log_size } => 0..*log_size,
@@ -570,6 +598,10 @@ pub enum Error {
 pub type FSlice<'a, F, HAL> = <<HAL as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSlice<'a>;
 pub type FSliceMut<'a, F, HAL> =
 	<<HAL as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'a>;
+
+pub type KernelMem<F, HAL> = <<HAL as ComputeLayer<F>>::KernelExec as KernelExecutor<F>>::Mem;
+pub type KernelSlice<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSlice<'a>;
+pub type KernelSliceMut<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSliceMut<'a>;
 
 #[cfg(test)]
 mod tests {

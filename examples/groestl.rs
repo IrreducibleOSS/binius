@@ -1,14 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-//
-// See crates/m3/tests/groestl.rs
-#![allow(deprecated)]
-
 use std::{array, iter::repeat_with};
 
 use anyhow::Result;
-use binius_circuits::builder::types::U;
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
@@ -120,7 +114,7 @@ fn main() -> Result<()> {
 	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

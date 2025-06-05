@@ -45,9 +45,6 @@ path = "modular_mul.rs"
 name = "groestl"
 path = "groestl.rs"
 
-[[example]]
-name = "vision32b_circuit"
-path = "vision32b_circuit.rs"
 
 [[example]]
 name = "sha256_circuit"
@@ -91,9 +88,7 @@ path = "u32_mul_gkr.rs"
 
 [features]
 default = ["rayon", "nightly_features"]
-aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
-fp-tower = []
 perfetto = ["tracing-profile/perfetto"]
 rayon = ["binius_utils/rayon"]
 nightly_features = [

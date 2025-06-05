@@ -477,7 +477,16 @@ where
 			let mut expr = composition.expression();
 			let mut expr_at_inf = composition.expression().leading_term();
 
+			let expr_vars = expr.vars_usage();
+			let expr_at_inf_vars = expr_at_inf.vars_usage();
+
 			for &(var_index, (suffix_eval, suffix)) in &const_suffixes {
+				if !expr_at_inf_vars.get(var_index).unwrap_or(&false)
+					|| !expr_vars.get(var_index).unwrap_or(&false)
+				{
+					continue;
+				}
+
 				expr = expr
 					.const_subst(var_index, suffix_eval)
 					.optimize_constants();

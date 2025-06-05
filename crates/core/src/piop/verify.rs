@@ -4,7 +4,8 @@ use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
-use binius_utils::{DeserializeBytes, bail, checked_arithmetics::log2_ceil_usize};
+use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
+use binius_utils::{DeserializeBytes, bail};
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -16,12 +17,11 @@ use crate::{
 	piop::util::ResizeableIndex,
 	polynomial::MultivariatePoly,
 	protocols::{
-		fri::{self, FRIParams, FRIVerifier, estimate_optimal_arity},
+		fri::{FRIParams, FRIVerifier, estimate_optimal_arity},
 		sumcheck::{
 			CompositeSumClaim, SumcheckClaim, front_loaded::BatchVerifier as SumcheckBatchVerifier,
 		},
 	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::VerifierTranscript,
 };
 
@@ -115,6 +115,7 @@ pub struct PIOPSumcheckClaim<F: Field> {
 }
 
 fn make_commit_params_with_constant_arity<F, FEncode>(
+	ntt: &impl AdditiveNTT<FEncode>,
 	commit_meta: &CommitMeta,
 	security_bits: usize,
 	log_inv_rate: usize,
@@ -124,68 +125,24 @@ where
 	F: BinaryField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 {
-	assert!(arity > 0);
-
-	let log_dim = commit_meta.total_vars.saturating_sub(arity);
-	let log_batch_size = commit_meta.total_vars.min(arity);
-	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate)?;
-	let n_test_queries = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
-
-	let cap_height = log2_ceil_usize(n_test_queries);
-	let fold_arities = std::iter::repeat_n(
+	let params = FRIParams::choose_with_constant_fold_arity(
+		ntt,
+		commit_meta.total_vars(),
+		security_bits,
+		log_inv_rate,
 		arity,
-		(commit_meta.total_vars).saturating_sub(cap_height.saturating_sub(log_inv_rate)) / arity,
-	)
-	.collect::<Vec<_>>();
-	// here is the down-to-earth explanation of what we're doing: we want the terminal codeword's
-	// log-length to be at least as large as the Merkle cap height. note that `total_vars +
-	// log_inv_rate - sum(fold_arities)` is exactly the log-length of the terminal codeword; we want
-	// this number to be ≥ cap height. so fold_arities will repeat `arity` the maximal number of
-	// times possible, while maintaining that `total_vars + log_inv_rate - sum(fold_arities) ≥
-	// cap_height` stays true. this arity-selection strategy can be characterized as: "terminate as
-	// late as you can, while maintaining that no Merkle cap is strictly smaller than `cap_height`."
-	// this strategy does attain that property: the Merkle path height of the last non-terminal
-	// codeword will equal the log-length of the terminal codeword, which is ≥ cap height by fiat.
-	// moreover, if we terminated later than we are above, then this would stop being true. imagine
-	// what would happen if we took the above terminal codeword and continued folding.
-	// in that case, we would Merklize this word, again with the coset-bundling trick; the
-	// post-bundling path height would thus be `total_vars + log_inv_rate - sum(fold_arities) -
-	// arity`. but we already agreed (by the maximality of the number of times we subtracted
-	// `arity`) that the above number will be < cap_height. in other words, its Merkle cap will be
-	// short. equivalently: this is the latest termination for which the `min` in
-	// `optimal_verify_layer` will never trigger; i.e., we will have log2_ceil_usize(n_queries) ≤
-	// tree_depth there. it can be shown that this strategy beats any strategy which terminates
-	// later than it does (in other words, by doing this, we are NOT terminating TOO early!).
-	// this doesn't mean that we should't terminate EVEN earlier (maybe we should). but this
-	// approach is conservative and simple; and it's easy to show that you won't lose by doing this.
-
-	// see https://github.com/IrreducibleOSS/binius/pull/300 for proof of this fact
-
-	// how should we handle the case `fold_arities = []`, i.e. total_vars + log_inv_rate -
-	// cap_height < arity? in that case, we would lose nothing by making the entire thing
-	// interleaved, i.e., setting `log_batch_size := total_vars`, so `terminal_codeword` lives in
-	// the interleaving of the repetition code (and so is itself a repetition codeword!). encoding
-	// is trivial. but there's a circularity: whether `total_vars + log_inv_rate - cap_height <
-	// arity` or not depends on `cap_height`, which depends on `n_test_queries`, which depends on
-	// `log_dim`--- soundness depends on block length!---which finally itself depends on whether
-	// we're using the repetition code or not. of course this circular dependency is artificial,
-	// since in the case `log_batch_size = total_vars` and `log_dim = 0`, we're sending the entire
-	// message anyway, so the FRI portion is essentially trivial / superfluous, and the security is
-	// perfect. and in any case we could evade it simply by calculating `n_test_queries` and
-	// `cap_height` using the provisional `log_dim := total_vars.saturating_sub(arity)`, proceeding
-	// as above, and only then, if we find out post facto that `fold_arities = []`, overwriting
-	// `log_batch_size := total_vars` and `log_dim = 0`---and even recalculating `n_test_queries` if
-	// we wanted (though of course it doesn't matter---we could do 0 queries in that case, and we
-	// would still get security---and in fact during the actual querying part we will skip querying
-	// anyway). in any case, from a purely code-simplicity point of view, the simplest approach is
-	// to bite the bullet and let `log_batch_size := min(total_vars, arity)` for good---and keep it
-	// there, even if we post-facto find out that `fold_arities = []`. the cost of this is that the
-	// prover has to do a nontrivial (though small!) interleaved encoding, as opposed to a trivial
-	// one.
-	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
-	Ok(fri_params)
+	)?;
+	Ok(params)
 }
 
+/// Choose commit parameters based on protocol parameters.
+///
+/// ## Arguments
+///
+/// * `commit_meta` - the metadata about the committed batch of multilinears.
+/// * `merkle_scheme` - the Merkle tree commitment scheme used in FRI.
+/// * `security_bits` - the target security level in bits.
+/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
 pub fn make_commit_params_with_optimal_arity<F, FEncode, MTScheme>(
 	commit_meta: &CommitMeta,
 	_merkle_scheme: &MTScheme,
@@ -197,12 +154,17 @@ where
 	FEncode: BinaryField,
 	MTScheme: MerkleTreeScheme<F>,
 {
+	// Choose the NTT with the maximum domain size, to be independent of the commit parameters. We
+	// then choose FRI parameters based on a compatible subspace of the NTT, and then create
+	// another NTT object for encoding, using the appropriate subspace.
+	let ntt = SingleThreadedNTT::<FEncode>::new(FEncode::N_BITS)?;
+
 	let arity = estimate_optimal_arity(
 		commit_meta.total_vars + log_inv_rate,
 		size_of::<MTScheme::Digest>(),
 		size_of::<F>(),
 	);
-	make_commit_params_with_constant_arity(commit_meta, security_bits, log_inv_rate, arity)
+	make_commit_params_with_constant_arity(&ntt, commit_meta, security_bits, log_inv_rate, arity)
 }
 
 /// A description of a sumcheck claim arising from a FRI PCS sumcheck.

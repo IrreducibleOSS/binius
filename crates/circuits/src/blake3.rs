@@ -3,7 +3,6 @@
 use anyhow::anyhow;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, BinaryField32b, Field, TowerField};
-use binius_macros::arith_expr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 
 use crate::{
@@ -485,14 +484,27 @@ pub fn blake3_compress(
 		builder.assert_zero(
 			format!("sum{idx}"),
 			[xin, yin, cin[idx], zout],
-			arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
+			binius_math::ArithCircuit::from(
+				binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+					- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+			)
+			.convert_field(),
 		);
 
 		builder.assert_zero(
 			format!("carry{idx}"),
 			[xin, yin, cin[idx], cout[idx]],
-			arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout)
-				.convert_field(),
+			binius_math::ArithCircuit::from(
+				(binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+					* (binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
+						+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize))
+					+ binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize)
+					- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(3usize),
+			)
+			.convert_field(),
 		);
 	}
 

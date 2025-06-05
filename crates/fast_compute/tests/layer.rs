@@ -19,7 +19,7 @@ fn test_exec_single_tensor_expand() {
 	let mut device_memory = vec![P::zero(); 1 << n_vars];
 	test_generic_single_tensor_expand(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		n_vars,
 	);
 }
@@ -34,7 +34,7 @@ fn test_exec_single_left_fold() {
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	test_generic_single_left_fold::<F, F2, _>(
 		&compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -50,7 +50,7 @@ fn test_exec_single_right_fold() {
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	test_generic_single_right_fold::<F, F2, _>(
 		&compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -65,7 +65,7 @@ fn test_exec_single_inner_product() {
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
 	test_generic_single_inner_product::<F2, _, _>(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		n_vars,
 	);
 }
@@ -79,7 +79,7 @@ fn test_exec_single_inner_product_using_kernel_accumulator() {
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
 	test_generic_single_inner_product_using_kernel_accumulator::<F, _>(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		n_vars,
 	);
 }
@@ -96,7 +96,7 @@ fn test_exec_fri_fold_non_zero_log_batch() {
 	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
 	test_generic_fri_fold::<F, FSub, _>(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -115,7 +115,7 @@ fn test_exec_fri_fold_zero_log_batch() {
 	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
 	test_generic_fri_fold::<F, FSub, _>(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -131,7 +131,7 @@ fn test_exec_kernel_add() {
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
 	test_generic_kernel_add::<F, _>(
 		compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		log_len,
 	);
 }
@@ -144,7 +144,7 @@ fn test_extrapolate_line() {
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		log_len,
 	);
 }
@@ -157,7 +157,7 @@ fn test_compute_composite() {
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
 	binius_compute_test_utils::layer::test_generic_compute_composite(
 		&compute,
-		PackedMemorySliceMut::new(&mut device_memory),
+		PackedMemorySliceMut::new_slice(&mut device_memory),
 		log_len,
 	);
 }
