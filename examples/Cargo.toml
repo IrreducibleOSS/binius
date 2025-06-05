@@ -45,15 +45,6 @@ path = "modular_mul.rs"
 name = "groestl"
 path = "groestl.rs"
 
-
-[[example]]
-name = "sha256_circuit"
-path = "sha256_circuit.rs"
-
-[[example]]
-name = "sha256_circuit_with_lookup"
-path = "sha256_circuit_with_lookup.rs"
-
 [[example]]
 name = "collatz"
 path = "collatz.rs"
