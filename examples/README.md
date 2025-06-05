@@ -12,7 +12,6 @@ bytes) per permutation
 | Keccakf (SHA256 Merkle trees)    | Plonky3 / BB31 | 2^13                   | 4.19             | 216                    | 1.1              | 0.262                |
 | Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 2^13                   | 5.38             | 260                    | 1.1              | 0.204                |
 | Groestl (*)                      | Binius         | 2^14                   | 1.45             | 116                    | 1.049            | 0.721                |
-| SHA-256                          | Binius         | 2^14                   | 4.51             | 40                     | 1.049            | 0.232                |
 
 (*) Our Current Groestl SNARK only has the P permutation as opposed to the compression function which has both P and Q
 permutations, the number of permutations for groestl in the table assumes that both P and Q permutations would take the
