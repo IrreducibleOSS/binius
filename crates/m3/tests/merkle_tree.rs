@@ -514,7 +514,7 @@ mod arithmetization {
 	use binius_field::{
 		BinaryField8b, Field, PackedBinaryField4x8b, PackedBinaryField8x8b, PackedExtension,
 		PackedField, PackedFieldIndexable, PackedSubfield,
-		arch::{OptimalUnderlier, OptimalUnderlier128b},
+		arch::OptimalUnderlier,
 		as_packed_field::PackedType,
 		linear_transformation::PackedTransformationFactory,
 		packed::{get_packed_slice, set_packed_slice},
@@ -1231,8 +1231,7 @@ mod arithmetization {
 			}],
 		);
 		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&nodes_table, &trace.nodes)
@@ -1260,8 +1259,7 @@ mod arithmetization {
 			}],
 		);
 		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		witness
 			.fill_table_sequential(&root_table, &trace.root.into_iter().collect::<Vec<_>>())
@@ -1290,8 +1288,7 @@ mod arithmetization {
 		);
 
 		let allocator = Bump::new();
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		merkle_tree_cs
 			.fill_tables(&trace, &cs, &mut witness)
