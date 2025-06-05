@@ -12,6 +12,8 @@ use binius_field::{
 	underlier::WithUnderlier,
 	util::powers,
 };
+
+
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
@@ -503,7 +505,7 @@ where
 	let mut dev_mem_owned =
 		vec![Tower::B128::zero(); dev_mem_size_committed + dev_mem_size_transparent];
 
-	let dev_mem = PackedMemorySliceMut::new(&mut dev_mem_owned);
+	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 
 	drop(piop_hal_span);
 	piop::prove(

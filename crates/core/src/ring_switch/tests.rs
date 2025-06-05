@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{cmp::Ordering, iter::repeat_with};
-
+use binius_field::tower::CanonicalTowerFamily;
 use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
@@ -9,6 +9,7 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 };
+use binius_field::tower::TowerFamily;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 
 use binius_math::{
@@ -261,7 +262,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	});
 }
 
-fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
+fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Tower>(
 	merkle_prover: &MTProver,
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
@@ -271,6 +272,7 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	F: TowerTop + PackedTop<Scalar = F>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Tower: TowerFamily<B128 = F> + Default,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -377,5 +379,5 @@ fn test_prove_verify_piop_integration() {
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
-	commit_prove_verify_piop::<U, F, _, _>(&merkle_prover, &oracles, log_inv_rate);
+	commit_prove_verify_piop::<U, F, _, _, CanonicalTowerFamily>(&merkle_prover, &oracles, log_inv_rate);
 }
