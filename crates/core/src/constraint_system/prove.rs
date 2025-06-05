@@ -485,23 +485,35 @@ where
 	)
 	.entered();
 
-	let hal = FastCpuLayer::<Tower, PackedType<U,Tower::B128>>::default();
+	let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
 
 	let host_mem_size_committed = committed_multilins.len();
 	let dev_mem_size_committed = committed_multilins
 		.iter()
-		.map(|multilin| 1 << (multilin.n_vars().saturating_sub(PackedType::<U,Tower::B128>::LOG_WIDTH) + 1))
+		.map(|multilin| {
+			1 << (multilin
+				.n_vars()
+				.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
+				+ 1)
+		})
 		.sum::<usize>();
 
 	let host_mem_size_transparent = transparent_multilins.len();
 	let dev_mem_size_transparent = transparent_multilins
 		.iter()
-		.map(|multilin| 1 << (multilin.n_vars().saturating_sub(PackedType::<U,Tower::B128>::LOG_WIDTH) + 1))
+		.map(|multilin| {
+			1 << (multilin
+				.n_vars()
+				.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
+				+ 1)
+		})
 		.sum::<usize>();
 
 	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem_owned =
-		vec![PackedType::<U,Tower::B128>::zero(); dev_mem_size_committed + dev_mem_size_transparent];
+	let mut dev_mem_owned = vec![
+		PackedType::<U, Tower::B128>::zero();
+		dev_mem_size_committed + dev_mem_size_transparent
+	];
 
 	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 
