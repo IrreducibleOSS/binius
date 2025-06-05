@@ -51,7 +51,7 @@ pub fn tensor_prod_eq_ind<'a, 'alloc, F: Field, Hal: ComputeLayer<F>>(
 	let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << new_n_vars)?;
 
 	{
-		let host_min_slice = host_alloc.alloc(Hal::DevMem::MIN_SLICE_LEN.max(vales.len()))?;
+		let host_min_slice = host_alloc.alloc(Hal::DevMem::ALIGNMENT.max(vales.len()))?;
 		let mut dev_min_slice =
 			Hal::DevMem::slice_mut(&mut eq_ind_partial_evals_buffer, 0..host_min_slice.len());
 		host_min_slice[0..vales.len()].copy_from_slice(vales);
@@ -110,7 +110,7 @@ mod tests {
 		let mut dev_mem = zeroed_vec(1 << 5);
 		let mut host_mem = zeroed_vec(1 << 5);
 
-		let dev_mem = PackedMemorySliceMut::new(&mut dev_mem);
+		let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem);
 
 		let host_alloc = HostBumpAllocator::new(&mut host_mem);
 		let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);

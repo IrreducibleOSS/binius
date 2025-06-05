@@ -200,7 +200,7 @@ mod tests {
 		let mut dev_mem = zeroed_vec(1 << 10);
 		let mut host_mem = zeroed_vec(1 << 10);
 
-		let dev_mem = PackedMemorySliceMut::new(&mut dev_mem);
+		let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem);
 
 		let host_alloc = HostBumpAllocator::new(&mut host_mem);
 		let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);

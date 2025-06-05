@@ -26,7 +26,10 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 	}
 
 	fn into_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
-		PackedMemorySlice { data: data.data }
+		match data {
+			PackedMemorySliceMut::Slice(slice) => PackedMemorySlice::Slice(slice),
+			PackedMemorySliceMut::Owned(chunk) => PackedMemorySlice::Owned(chunk),
+		}
 	}
 
 	fn slice(data: Self::FSlice<'_>, range: impl std::ops::RangeBounds<usize>) -> Self::FSlice<'_> {
@@ -287,7 +290,6 @@ impl<'a, P: PackedField> SizedSlice for PackedMemorySlice<'a, P> {
 		}
 	}
 }
-
 
 pub enum PackedMemorySliceMut<'a, P: PackedField> {
 	Slice(&'a mut [P]),
