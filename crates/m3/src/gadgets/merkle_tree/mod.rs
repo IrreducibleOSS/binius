@@ -284,10 +284,9 @@ impl NodesTable {
 		for i in 0..8 {
 			table.assert_zero(
 				format!("state_in_assert[{i}]"),
-				(state_in_packed[i]
+				state_in_packed[i]
 					- upcast_col(left_packed[i])
-					- upcast_col(right_packed[i]) * B64::from(1 << 32))
-				.into(),
+					- upcast_col(right_packed[i]) * B64::from(1 << 32),
 			);
 		}
 		let permutation = Permutation::new(
