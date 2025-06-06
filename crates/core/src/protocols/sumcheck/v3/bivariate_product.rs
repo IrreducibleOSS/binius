@@ -317,14 +317,12 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 							.collect(),
 						1 << log_chunk_size,
 					);
-					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						local_exec.sum_composition_evals(
-							&eval_1s,
-							evaluator,
-							batch_coeff,
-							&mut acc_1,
-						)?;
-					}
+					local_exec.sum_compositions_evals(
+						&eval_1s,
+						&prod_evaluators,
+						&batch_coeffs,
+						&mut acc_1,
+					)?;
 				}
 
 				// Extrapolate the multilinear evaluations at the point Infinity.
@@ -352,14 +350,12 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 						.collect(),
 					1 << log_chunk_size,
 				);
-				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					local_exec.sum_composition_evals(
-						&eval_infs,
-						evaluator,
-						batch_coeff,
-						&mut acc_inf,
-					)?;
-				}
+				local_exec.sum_compositions_evals(
+					&eval_infs,
+					&prod_evaluators,
+					&batch_coeffs,
+					&mut acc_inf,
+				)?;
 
 				Ok(vec![acc_1, acc_inf])
 			},
@@ -457,7 +453,7 @@ mod tests {
 		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
 
 		let hal = Hal::default();
-		let mut dev_mem = zeroed_vec(1 << (12 - Packed::LOG_WIDTH));
+		let mut dev_mem = zeroed_vec(1 << (16 - Packed::LOG_WIDTH));
 		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
 			&mut dev_mem,
 		);

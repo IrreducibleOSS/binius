@@ -306,7 +306,10 @@ pub fn test_generic_map_with_multilinear_evaluations<
 	assert_eq!(eval2, expected_eval2);
 }
 
-pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+pub fn test_generic_single_inner_product_using_kernel_accumulator<
+	F: BinaryField,
+	C: ComputeLayer<F>,
+>(
 	compute: C,
 	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	n_vars: usize,
@@ -339,8 +342,13 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 	let b_slice = C::DevMem::as_const(&b_slice);
 
 	// Run the HAL operation to compute the inner product
-	let arith = ArithCircuit::var(0) * ArithCircuit::var(1);
-	let eval = compute.compile_expr(&arith).unwrap();
+	let arith_0 = ArithCircuit::var(0) * ArithCircuit::var(1);
+	let arith_1 = ArithCircuit::var(0) * ArithCircuit::constant(F::MULTIPLICATIVE_GENERATOR)
+		+ ArithCircuit::var(1);
+	let eval = [
+		compute.compile_expr(&arith_0).unwrap(),
+		compute.compile_expr(&arith_1).unwrap(),
+	];
 	let [actual] = compute
 		.execute(|exec| {
 			let a_slice = KernelMemMap::Chunked {
@@ -361,7 +369,12 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 					let slice_batch = SlicesBatch::new(kernel_data, row_len);
 					let mut res = kernel_exec.decl_value(F::ZERO)?;
 					kernel_exec
-						.sum_composition_evals(&slice_batch, &eval, F::ONE, &mut res)
+						.sum_compositions_evals(
+							&slice_batch,
+							&eval,
+							&[F::MULTIPLICATIVE_GENERATOR, F::ONE],
+							&mut res,
+						)
 						.unwrap();
 					Ok(vec![res])
 				},
@@ -375,8 +388,10 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 		.unwrap();
 
 	// Compute the expected value and compare
-	let expected = std::iter::zip(PackedField::iter_slice(F::cast_bases(&a)), &b)
-		.map(|(a_i, &b_i)| b_i * a_i)
+	let expected = std::iter::zip(PackedField::iter_slice(&a), &b)
+		.map(|(a_i, &b_i)| {
+			b_i * a_i * F::MULTIPLICATIVE_GENERATOR + a_i * F::MULTIPLICATIVE_GENERATOR + b_i
+		})
 		.sum::<F>();
 	assert_eq!(actual, expected);
 }
