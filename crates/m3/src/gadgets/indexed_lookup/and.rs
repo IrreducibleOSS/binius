@@ -31,17 +31,17 @@ pub struct BitAndLookup {
 	lookup_producer: LookupProducer,
 }
 
-pub struct BitAnd {
+pub struct BitAnd<const V: usize = 1> {
 	/// Input column A (8 bits)
-	in_a: Col<B8>,
+	in_a: Col<B8, V>,
 	/// Input column B (8 bits)
-	in_b: Col<B8>,
+	in_b: Col<B8, V>,
 	/// Output column (8 bits), result of in_a & in_b
-	pub output: Col<B8>,
+	pub output: Col<B8, V>,
 	/// Merged column for lookup (32 bits)
-	merged: Col<B32>,
+	merged: Col<B32, V>,
 }
-impl BitAnd {
+impl<const V: usize> BitAnd<V> {
 	/// Constructs a new bitwise-AND gadget, registering the necessary columns in the table.
 	///
 	/// # Arguments
@@ -55,12 +55,12 @@ impl BitAnd {
 	pub fn new(
 		table: &mut TableBuilder,
 		lookup_chan: ChannelId,
-		in_a: Col<B8>,
-		in_b: Col<B8>,
+		in_a: Col<B8, V>,
+		in_b: Col<B8, V>,
 	) -> Self {
-		let output = table.add_committed::<B8, 1>("output");
+		let output = table.add_committed::<B8, V>("output");
 		let merged = merge_and_columns(table, in_a, in_b, output);
-		table.pull(lookup_chan, [merged]);
+		table.read(lookup_chan, [merged]);
 		Self {
 			in_a,
 			in_b,
@@ -77,31 +77,31 @@ impl BitAnd {
 	/// # Returns
 	/// `Ok(())` if successful, or an error otherwise.
 	pub fn populate(&self, witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
-		let in_a_col = witness.get_as(self.in_a)?;
-		let in_b_col = witness.get_as(self.in_b)?;
-		let mut output_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.output)?;
-		let mut merged_col: std::cell::RefMut<'_, [u32]> = witness.get_mut_as(self.merged)?;
+		let in_a_col = witness.get_scalars(self.in_a)?;
+		let in_b_col = witness.get_scalars(self.in_b)?;
+		let mut output_col: std::cell::RefMut<'_, [B8]> = witness.get_scalars_mut(self.output)?;
+		let mut merged_col: std::cell::RefMut<'_, [B32]> = witness.get_scalars_mut(self.merged)?;
 
 		for i in 0..witness.size() {
-			let in_a = in_a_col[i];
-			let in_b = in_b_col[i];
+			let in_a = in_a_col[i].val();
+			let in_b = in_b_col[i].val();
 			let output = in_a & in_b;
-			output_col[i] = output;
+			output_col[i] = output.into();
 
 			// Merge the values into a single u32
-			merged_col[i] = merge_bitand_vals(in_a, in_b, output);
+			merged_col[i] = merge_bitand_vals(in_a, in_b, output).into();
 		}
 		Ok(())
 	}
 }
 
 /// Merges the input and output columns into a single B32 column for lookup.
-pub fn merge_and_columns(
+pub fn merge_and_columns<const V: usize>(
 	table: &mut TableBuilder,
-	in_a: Col<B8>,
-	in_b: Col<B8>,
-	output: Col<B8>,
-) -> Col<B32> {
+	in_a: Col<B8, V>,
+	in_b: Col<B8, V>,
+	output: Col<B8, V>,
+) -> Col<B32, V> {
 	table.add_computed(
 		"merged",
 		upcast_col(in_a)
@@ -195,12 +195,12 @@ impl BitAndLooker {
 		inputs: impl Iterator<Item = &'a (u8, u8)> + Clone,
 	) -> anyhow::Result<()> {
 		{
-			let mut in_a_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.in_a)?;
-			let mut in_b_col: std::cell::RefMut<'_, [u8]> = witness.get_mut_as(self.in_b)?;
+			let mut in_a_col: std::cell::RefMut<'_, [B8]> = witness.get_scalars_mut(self.in_a)?;
+			let mut in_b_col: std::cell::RefMut<'_, [B8]> = witness.get_scalars_mut(self.in_b)?;
 
 			for (i, &(in_a, in_b)) in inputs.enumerate() {
-				in_a_col[i] = in_a;
-				in_b_col[i] = in_b;
+				in_a_col[i] = in_a.into();
+				in_b_col[i] = in_b.into();
 			}
 		}
 
