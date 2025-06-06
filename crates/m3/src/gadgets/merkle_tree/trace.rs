@@ -115,7 +115,7 @@ fn compress(left: &[u8], right: &[u8], output: &mut [u8]) {
 	output.copy_from_slice(&state_bytes[32..]);
 }
 
-/// Merkle tree implementation for the model, assumes the leaf layer consists of [u8;32] blobs.
+/// Merkle tree implementation for the model, assumes the leaf layer consists of 32 byte blobs.
 /// The tree is built in a flattened manner, where the leaves are at the beginning of the vector
 /// and layers are placed adjacent to each other.
 pub struct MerkleTree {

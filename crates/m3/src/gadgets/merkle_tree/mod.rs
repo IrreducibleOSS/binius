@@ -237,7 +237,7 @@ pub struct NodesTable {
 	left_index: Col<B1, 32>,
 	right_index_packed: Col<B32>,
 	/// A gadget representing the Groestl-256 P pemutation. The output transformation as
-	/// per the Groestl-256 specification (https://www.groestl.info/Groestl.pdf) is being used as a digest compression function here.
+	/// per the Groestl-256 specification is being used as a digest compression function.
 	permutation: Permutation,
 	/// A gadget for handling integer increments in the Merkle tree. It is used to
 	/// constrain that the depth of the child node is one more than the parent node.
