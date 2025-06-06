@@ -1,9 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{cell::RefCell, fmt::Debug, sync::Arc};
 
-use binius_field::PackedField;
+use binius_compute::{
+	ComputeLayer, ComputeMemory, FSlice,
+	alloc::{BumpAllocator, ComputeAllocator},
+};
+use binius_field::{Field, PackedField};
 use binius_math::MultilinearPoly;
+use binius_utils::sparse_index::SparseIndex;
 
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 
@@ -45,6 +50,10 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Compute Layer error: {0}")]
+	ComputeError(#[from] binius_compute::Error),
+	#[error("Alloc error: {0}")]
+	AllocError(#[from] binius_compute::alloc::Error),
 	#[error("Math error: {0}")]
 	MathError(#[from] binius_math::Error),
 }
@@ -102,6 +111,84 @@ where
 				multilin_poly,
 				nonzero_scalars_prefix,
 			});
+		}
+		Ok(())
+	}
+}
+
+pub struct HalMultilinearExtensionIndex<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
+	indexes: RefCell<SparseIndex<FSlice<'a, F, Hal>>>,
+	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
+	hal: &'a Hal,
+}
+
+impl<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> HalMultilinearExtensionIndex<'a, 'alloc, F, Hal> {
+	pub fn new(dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>, hal: &'a Hal) -> Self {
+		Self {
+			indexes: RefCell::new(SparseIndex::default()),
+			dev_alloc,
+			hal,
+		}
+	}
+
+	pub fn lazy_get<'b, P: PackedField<Scalar = F>>(
+		&self,
+		id: OracleId,
+		witness_index: &MultilinearExtensionIndex<'b, P>,
+	) -> Result<FSlice<'a, F, Hal>, Error> {
+		if !self.has(id) {
+			self.update_multilin_polys_from_witness(&[id], witness_index)?;
+		}
+
+		self.get_multilin_poly(id)
+	}
+
+	pub fn get_multilin_poly(&self, id: OracleId) -> Result<FSlice<'a, F, Hal>, Error> {
+		self.indexes
+			.borrow()
+			.get(id.index())
+			.ok_or(Error::MissingWitness { id })
+			.copied()
+	}
+
+	pub fn update_multilin_polys_from_witness<'b, P>(
+		&self,
+		ids: &[OracleId],
+		witness_index: &MultilinearExtensionIndex<'b, P>,
+	) -> Result<(), Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
+		for id in ids {
+			if !self.indexes.borrow().contains_key(id.index()) {
+				let poly = witness_index.get_multilin_poly(*id)?;
+				let n_vars = poly.n_vars();
+
+				let evals = (0..1 << n_vars)
+					.map(|i| poly.evaluate_on_hypercube(i).expect("correct size"))
+					.collect::<Vec<_>>();
+
+				self.update_multilin_poly([(*id, &evals[..])])?;
+			}
+		}
+		Ok(())
+	}
+
+	/// Whether has data for the given oracle id.
+	pub fn has(&self, id: OracleId) -> bool {
+		self.indexes.borrow().contains_key(id.index())
+	}
+
+	pub fn update_multilin_poly<'b>(
+		&self,
+		witnesses: impl IntoIterator<Item = (OracleId, &'b [F])>,
+	) -> Result<(), Error> {
+		for (id, evals) in witnesses {
+			let mut buffer = self.dev_alloc.alloc(evals.len())?;
+			self.hal.copy_h2d(evals, &mut buffer)?;
+			self.indexes
+				.borrow_mut()
+				.set(id.index(), Hal::DevMem::to_const(buffer));
 		}
 		Ok(())
 	}
