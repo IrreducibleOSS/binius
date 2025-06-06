@@ -59,6 +59,7 @@ use crate::{
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
+#[allow(clippy::too_many_arguments)]
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
 	hal: &Hal,
