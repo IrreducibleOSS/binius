@@ -597,7 +597,7 @@ where
 }
 
 #[instrument(skip_all, level = "debug")]
-fn make_masked_flush_witnesses<'a, U, Tower>(
+pub fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
@@ -696,6 +696,11 @@ where
 				.map(|i| {
 					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
 						let index = i << log_width | j;
+
+						// If n_vars < P::LOG_WIDTH, fill the remaining scalars with zeroes.
+						if index >= 1 << n_vars {
+							return <FExt<Tower>>::ZERO;
+						}
 
 						// Compute the product of all selectors at this point
 						let selector_off = selectors.iter().any(|selector| {

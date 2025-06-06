@@ -15,22 +15,12 @@ use super::{
 use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static + Sync {
+pub trait ComputeLayer<F: Field>: 'static {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
 	/// The executor that can execute operations on the device.
-	type Exec;
-
-	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
-	/// core).
-	type KernelExec: KernelExecutor<F, ExprEval = Self::ExprEval>;
-
-	/// The operation (scalar) value type.
-	type OpValue;
-
-	/// The evaluator for arithmetic expressions (polynomials).
-	type ExprEval: Sync;
+	type Exec<'a>: ComputeLayerExecutor<F, DevMem = Self::DevMem>;
 
 	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
 	///
@@ -68,38 +58,68 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error>;
 
+	/// Compiles an arithmetic expression to the evaluator.
+	fn compile_expr(
+		&self,
+		expr: &ArithCircuit<F>,
+	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<F>>::ExprEval, Error>;
+
 	/// Executes an operation.
 	///
 	/// A HAL operation is an abstract function that runs with an executor reference.
-	fn execute(
-		&self,
-		f: impl FnOnce(&mut Self::Exec) -> Result<Vec<Self::OpValue>, Error>,
-	) -> Result<Vec<F>, Error>;
+	fn execute<'a, 'b>(
+		&'b self,
+		f: impl FnOnce(
+			&mut Self::Exec<'a>,
+		) -> Result<Vec<<Self::Exec<'a> as ComputeLayerExecutor<F>>::OpValue>, Error>,
+	) -> Result<Vec<F>, Error>
+	where
+		'b: 'a;
+}
+
+/// An interface for executing a sequence of operations on an accelerated compute device
+///
+/// This component defines a sequence of accelerated data transformations that must appear to
+/// execute in order on the selected compute device. Implementations may defer execution of any
+/// component of the defined sequence under the condition that the store-to-load ordering of the
+/// appended transformations is preserved.
+///
+/// The root [`ComputeLayerExecutor`] is obtained from [`ComputeLayer::execute`]. Nested instances
+/// for parallel and sequential blocks can be obtained via [`ComputeLayerExecutor::join`] and
+/// [`ComputeLayerExecutor::map`] respectively.
+pub trait ComputeLayerExecutor<F: Field> {
+	/// The evaluator for arithmetic expressions (polynomials).
+	type ExprEval: Sync;
+
+	/// The device memory.
+	type DevMem: ComputeMemory<F>;
+
+	/// The operation (scalar) value type.
+	type OpValue;
+
+	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
+	/// core).
+	type KernelExec: KernelExecutor<F, ExprEval = Self::ExprEval>;
 
 	/// Creates an operation that depends on the concurrent execution of two inner operations.
 	fn join<Out1, Out2>(
-		&self,
-		exec: &mut Self::Exec,
-		op1: impl FnOnce(&mut Self::Exec) -> Result<Out1, Error>,
-		op2: impl FnOnce(&mut Self::Exec) -> Result<Out2, Error>,
+		&mut self,
+		op1: impl FnOnce(&mut Self) -> Result<Out1, Error>,
+		op2: impl FnOnce(&mut Self) -> Result<Out2, Error>,
 	) -> Result<(Out1, Out2), Error> {
-		let out1 = op1(exec)?;
-		let out2 = op2(exec)?;
+		let out1 = op1(self)?;
+		let out2 = op2(self)?;
 		Ok((out1, out2))
 	}
 
 	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
 	fn map<Out, I: ExactSizeIterator>(
-		&self,
-		exec: &mut Self::Exec,
+		&mut self,
 		iter: I,
-		map: impl Fn(&mut Self::Exec, I::Item) -> Result<Out, Error>,
+		map: impl Fn(&mut Self, I::Item) -> Result<Out, Error>,
 	) -> Result<Vec<Out>, Error> {
-		iter.map(|item| map(exec, item)).collect()
+		iter.map(|item| map(self, item)).collect()
 	}
-
-	/// Compiles an arithmetic expression to the evaluator.
-	fn compile_expr(&self, expr: &ArithCircuit<F>) -> Result<Self::ExprEval, Error>;
 
 	/// Launch many kernels in parallel and accumulate the scalar results with field addition.
 	///
@@ -151,8 +171,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// * `map` - the kernel specification closure. See the "Kernel specification" section above.
 	/// * `mem_maps` - the memory mappings for the kernel-local buffers.
 	fn accumulate_kernels(
-		&self,
-		exec: &mut Self::Exec,
+		&mut self,
 		map: impl Sync
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
@@ -179,8 +198,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	///
 	/// Returns the inner product of `a_in` and `b_in`.
 	fn inner_product(
-		&self,
-		exec: &mut Self::Exec,
+		&mut self,
 		a_in: SubfieldSlice<'_, F, Self::DevMem>,
 		b_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 	) -> Result<Self::OpValue, Error>;
@@ -208,8 +226,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	///
 	/// * unless `2**(log_n + coordinates.len())` equals `data.len()`
 	fn tensor_expand(
-		&self,
-		exec: &mut Self::Exec,
+		&mut self,
 		log_n: usize,
 		coordinates: &[F],
 		data: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
@@ -238,9 +255,8 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	///
 	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
 	/// * Returns an error if `mat` is not a subfield of `F`.
-	fn fold_left<'a>(
-		&'a self,
-		exec: &'a mut Self::Exec,
+	fn fold_left(
+		&mut self,
 		mat: SubfieldSlice<'_, F, Self::DevMem>,
 		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
@@ -269,9 +285,8 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	///
 	/// * Returns an error if `mat.len()` does not equal `vec.len() * out.len()`.
 	/// * Returns an error if `mat` is not a subfield of `F`.
-	fn fold_right<'a>(
-		&'a self,
-		exec: &'a mut Self::Exec,
+	fn fold_right(
+		&mut self,
 		mat: SubfieldSlice<'_, F, Self::DevMem>,
 		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
@@ -309,14 +324,13 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// [DP24]: <https://eprint.iacr.org/2024/504>
 	#[allow(clippy::too_many_arguments)]
 	fn fri_fold<FSub>(
-		&self,
-		exec: &mut Self::Exec,
+		&mut self,
 		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
 		challenges: &[F],
-		data_in: FSlice<F, Self>,
-		data_out: &mut FSliceMut<F, Self>,
+		data_in: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		data_out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error>
 	where
 		FSub: BinaryField,
@@ -342,10 +356,9 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// * if `evals_0` and `evals_1` are not equal sizes.
 	/// * if the sizes of `evals_0` and `evals_1` are not powers of two.
 	fn extrapolate_line(
-		&self,
-		exec: &mut Self::Exec,
-		evals_0: &mut FSliceMut<F, Self>,
-		evals_1: FSlice<F, Self>,
+		&mut self,
+		evals_0: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		evals_1: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
 		z: F,
 	) -> Result<(), Error>;
 
@@ -372,7 +385,6 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	///
 	/// ## Arguments
 	///
-	/// * `exec` - The execution environment.
 	/// * `inputs` - A slice of input slices, where each slice contains field elements.
 	/// * `output` - A mutable output slice where the results will be stored.
 	/// * `composition` - The compiled arithmetic expression to apply.
@@ -382,10 +394,9 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 	/// * Returns an error if any input or output slice has a length that is not a power of two.
 	/// * Returns an error if the input and output slices do not all have the same length.
 	fn compute_composite(
-		&self,
-		exec: &mut Self::Exec,
-		inputs: &SlicesBatch<FSlice<'_, F, Self>>,
-		output: &mut FSliceMut<'_, F, Self>,
+		&mut self,
+		inputs: &SlicesBatch<<Self::DevMem as ComputeMemory<F>>::FSlice<'_>>,
+		output: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		composition: &Self::ExprEval,
 	) -> Result<(), Error>;
 }
@@ -395,7 +406,7 @@ pub trait ComputeLayer<F: Field>: 'static + Sync {
 /// A _kernel_ is a program that executes synchronously in one thread, with access to
 /// local memory buffers.
 ///
-/// See [`ComputeLayer::accumulate_kernels`] for more information.
+/// See [`ComputeLayerExecutor::accumulate_kernels`] for more information.
 pub trait KernelExecutor<F> {
 	/// The type for kernel-local memory buffers.
 	type Mem: ComputeMemory<F>;
@@ -472,7 +483,7 @@ pub trait KernelExecutor<F> {
 
 /// A memory mapping specification for a kernel execution.
 ///
-/// See [`ComputeLayer::accumulate_kernels`] for context on kernel execution.
+/// See [`ComputeLayerExecutor::accumulate_kernels`] for context on kernel execution.
 pub enum KernelMemMap<'a, F, Mem: ComputeMemory<F>> {
 	/// This maps a chunk of a buffer in global device memory to a read-only kernel buffer.
 	Chunked {
@@ -559,7 +570,7 @@ impl<'a, F, Mem: ComputeMemory<F>> KernelMemMap<'a, F, Mem> {
 
 /// A memory buffer mapped into a kernel.
 ///
-/// See [`ComputeLayer::accumulate_kernels`] for context on kernel execution.
+/// See [`ComputeLayerExecutor::accumulate_kernels`] for context on kernel execution.
 pub enum KernelBuffer<'a, F, Mem: ComputeMemory<F>> {
 	Ref(Mem::FSlice<'a>),
 	Mut(Mem::FSliceMut<'a>),
@@ -599,9 +610,10 @@ pub type FSlice<'a, F, HAL> = <<HAL as ComputeLayer<F>>::DevMem as ComputeMemory
 pub type FSliceMut<'a, F, HAL> =
 	<<HAL as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'a>;
 
-pub type KernelMem<F, HAL> = <<HAL as ComputeLayer<F>>::KernelExec as KernelExecutor<F>>::Mem;
-pub type KernelSlice<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSlice<'a>;
-pub type KernelSliceMut<'a, F, HAL> = <KernelMem<F, HAL> as ComputeMemory<F>>::FSliceMut<'a>;
+pub type KernelMem<'a, F, HAL> = <<<HAL as ComputeLayer<F>>::Exec<'a> as ComputeLayerExecutor<F>>::KernelExec as KernelExecutor<F>>::Mem;
+pub type KernelSlice<'a, 'b, F, HAL> = <KernelMem<'b, F, HAL> as ComputeMemory<F>>::FSlice<'a>;
+pub type KernelSliceMut<'a, 'b, F, HAL> =
+	<KernelMem<'b, F, HAL> as ComputeMemory<F>>::FSliceMut<'a>;
 
 #[cfg(test)]
 mod tests {

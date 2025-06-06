@@ -8,6 +8,9 @@ mod prove;
 pub mod validate;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 use binius_field::{BinaryField128b, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use channel::Flush;

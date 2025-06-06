@@ -210,7 +210,7 @@ impl BitAndLooker {
 }
 
 /// Internal struct for indexed lookup logic for AND operations.
-struct BitAndIndexedLookup;
+pub struct BitAndIndexedLookup;
 
 impl IndexedLookup<B128> for BitAndIndexedLookup {
 	/// Returns the log2 size of the table (16 for 8 bits + 8 bits).

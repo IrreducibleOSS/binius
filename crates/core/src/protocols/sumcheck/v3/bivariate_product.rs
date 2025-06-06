@@ -3,8 +3,8 @@
 use std::iter;
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, KernelBuffer, KernelExecutor, KernelMemMap, SizedSlice,
-	SlicesBatch,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, KernelBuffer, KernelExecutor,
+	KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{Field, TowerField, util::powers};
@@ -322,8 +322,7 @@ pub fn calculate_round_evals<'a, F: TowerField, HAL: ComputeLayer<F>>(
 		.collect::<Vec<_>>();
 
 	let evals = hal.execute(|exec| {
-		hal.accumulate_kernels(
-			exec,
+		exec.accumulate_kernels(
 			|local_exec, log_chunks, mut buffers| {
 				let log_chunk_size = split_n_vars - log_chunks;
 
