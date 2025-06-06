@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::iter;
+use std::{iter, slice};
 
 use binius_compute::{
 	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, KernelBuffer, KernelExecutor,
