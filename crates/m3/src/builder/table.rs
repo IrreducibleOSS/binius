@@ -871,8 +871,15 @@ pub fn log_capacity(table_size: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-	use super::{Table, TableBuilder};
-	use crate::builder::B128;
+	use binius_core::witness;
+	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
+	use bumpalo::Bump;
+
+	use super::{B1, B128, Col, Table, TableBuilder};
+	use crate::{
+		builder::{B8, ConstraintSystem, WitnessIndex, test_utils::validate_system_witness},
+		gadgets::lookup,
+	};
 
 	#[test]
 	fn namespace_nesting() {
@@ -883,5 +890,30 @@ mod tests {
 		assert_eq!(tb_ns_2.namespaced_name("column"), "ns1::ns2::column");
 	}
 
-	
+	#[test]
+	fn test_read_method() {
+		let mut cs = ConstraintSystem::<B128>::new();
+		let lookup_chan = cs.add_channel("lookup");
+		let mut read_table = cs.add_table("stacked_reads");
+		const LOG_STACKING_FACTOR: usize = 3;
+		const LOG_READ_TABLE_SIZE: usize = 3;
+		let read_col =
+			read_table.add_constant("constant_reads", [B8::new(3); 1 << LOG_STACKING_FACTOR]);
+		read_table.require_fixed_size(LOG_READ_TABLE_SIZE);
+
+		read_table.read(lookup_chan, [read_col]);
+		drop(read_table);
+		let mut write_table = cs.add_table("packed_write");
+		write_table.require_fixed_size(LOG_READ_TABLE_SIZE + LOG_STACKING_FACTOR);
+		let write_col = write_table.add_constant("constant_writes", [B8::new(3)]);
+		write_table.push(lookup_chan, [write_col]);
+
+		let alloc = Bump::new();
+		let mut witness: WitnessIndex<PackedType<OptimalUnderlier, B128>> =
+			WitnessIndex::new(&cs, &alloc);
+		witness.fill_constant_cols().unwrap();
+		let boundaries = vec![];
+
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
+	}
 }
