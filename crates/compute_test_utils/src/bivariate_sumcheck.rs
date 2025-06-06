@@ -6,7 +6,7 @@ use std::{
 };
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSliceMut,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSliceMut,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_core::{
@@ -458,7 +458,7 @@ where
 	}
 
 	hal.execute(|exec| {
-		hal.tensor_expand(exec, 0, eq_ind_challenges, &mut eq_ind_partial_evals_buffer)?;
+		exec.tensor_expand(0, eq_ind_challenges, &mut eq_ind_partial_evals_buffer)?;
 		Ok(vec![])
 	})
 	.unwrap();

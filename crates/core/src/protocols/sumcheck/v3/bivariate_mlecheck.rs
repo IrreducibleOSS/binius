@@ -3,8 +3,8 @@
 use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, FSliceMut, KernelBuffer, KernelExecutor, KernelMem,
-	KernelMemMap, SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, FSliceMut, KernelBuffer,
+	KernelExecutor, KernelMem, KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{
@@ -137,44 +137,36 @@ where
 
 	pub fn fold_multilinears(&mut self, challenge: F) -> Result<(), Error> {
 		self.hal.execute(|exec| {
-			self.multilins = self
-				.hal
-				.map(exec, self.multilins.drain(..), |exec, multilin| {
-					let folded_evals = match multilin {
-						SumcheckMultilinear::PreFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-							let (evals_0, evals_1) =
-								Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
+			self.multilins = exec.map(self.multilins.drain(..), |exec, multilin| {
+				let folded_evals = match multilin {
+					SumcheckMultilinear::PreFold(evals) => {
+						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+						let (evals_0, evals_1) =
+							Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
 
-							// Allocate new buffer for the folded evaluations and copy in evals_0.
-							let mut folded_evals =
-								self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
-							// This is kind of sketchy to do a copy without an execution context.
-							self.hal.copy_d2d(evals_0, &mut folded_evals)?;
+						// Allocate new buffer for the folded evaluations and copy in evals_0.
+						let mut folded_evals =
+							self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
+						// This is kind of sketchy to do a copy without an execution context.
+						self.hal.copy_d2d(evals_0, &mut folded_evals)?;
 
-							self.hal.extrapolate_line(
-								exec,
-								&mut folded_evals,
-								evals_1,
-								challenge,
-							)?;
-							folded_evals
-						}
-						SumcheckMultilinear::PostFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-							let (mut evals_0, evals_1) =
-								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars_remaining - 1));
-							self.hal.extrapolate_line(
-								exec,
-								&mut evals_0,
-								Hal::DevMem::as_const(&evals_1),
-								challenge,
-							)?;
-							evals_0
-						}
-					};
-					Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
-				})?;
+						exec.extrapolate_line(&mut folded_evals, evals_1, challenge)?;
+						folded_evals
+					}
+					SumcheckMultilinear::PostFold(evals) => {
+						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+						let (mut evals_0, evals_1) =
+							Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars_remaining - 1));
+						exec.extrapolate_line(
+							&mut evals_0,
+							Hal::DevMem::as_const(&evals_1),
+							challenge,
+						)?;
+						evals_0
+					}
+				};
+				Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
+			})?;
 
 			Ok(Vec::new())
 		})?;
@@ -200,8 +192,7 @@ where
 				},
 			];
 
-			self.hal.accumulate_kernels(
-				exec,
+			exec.accumulate_kernels(
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
@@ -413,8 +404,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 		.collect::<Vec<_>>();
 
 	let evals = hal.execute(|exec| {
-		hal.accumulate_kernels(
-			exec,
+		exec.accumulate_kernels(
 			|local_exec, log_chunks, mut buffers| {
 				let log_chunk_size = split_n_vars - log_chunks;
 
