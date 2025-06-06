@@ -166,43 +166,35 @@ where
 
 		// Fold the multilinears
 		let _ = self.hal.execute(|exec| {
-			self.multilins = self
-				.hal
-				.map(exec, self.multilins.drain(..), |exec, multilin| {
-					let folded_evals = match multilin {
-						SumcheckMultilinear::PreFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+			self.multilins = exec.map(self.multilins.drain(..), |exec, multilin| {
+				let folded_evals = match multilin {
+					SumcheckMultilinear::PreFold(evals) => {
+						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
 
-							let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
-							// Allocate new buffer for the folded evaluations and copy in evals_0.
-							let mut folded_evals =
-								self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
-							// This is kind of sketchy to do a copy without an execution context.
-							self.hal.copy_d2d(evals_0, &mut folded_evals)?;
+						let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
+						// Allocate new buffer for the folded evaluations and copy in evals_0.
+						let mut folded_evals =
+							self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
+						// This is kind of sketchy to do a copy without an execution context.
+						self.hal.copy_d2d(evals_0, &mut folded_evals)?;
 
-							self.hal.extrapolate_line(
-								exec,
-								&mut folded_evals,
-								evals_1,
-								challenge,
-							)?;
+						exec.extrapolate_line(&mut folded_evals, evals_1, challenge)?;
 
-							folded_evals
-						}
-						SumcheckMultilinear::PostFold(evals) => {
-							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-							let (mut evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
-							self.hal.extrapolate_line(
-								exec,
-								&mut evals_0,
-								Hal::DevMem::as_const(&evals_1),
-								challenge,
-							)?;
-							evals_0
-						}
-					};
-					Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
-				})?;
+						folded_evals
+					}
+					SumcheckMultilinear::PostFold(evals) => {
+						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+						let (mut evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
+						exec.extrapolate_line(
+							&mut evals_0,
+							Hal::DevMem::as_const(&evals_1),
+							challenge,
+						)?;
+						evals_0
+					}
+				};
+				Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
+			})?;
 
 			Ok(Vec::new())
 		})?;
