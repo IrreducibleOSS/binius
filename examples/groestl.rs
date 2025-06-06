@@ -136,7 +136,7 @@ fn main() -> Result<()> {
 		&ccs,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
-		&[],
+		&statement.boundaries,
 		witness,
 		&make_portable_backend(),
 	)

@@ -260,8 +260,7 @@ fn main() -> Result<()> {
 		&[],
 		witness,
 		&make_portable_backend(),
-	)
-	.unwrap();
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 

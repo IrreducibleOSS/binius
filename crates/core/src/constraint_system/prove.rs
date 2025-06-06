@@ -2,7 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
-use binius_compute::{ComputeLayer, ComputeMemory, cpu::CpuMemory};
+use binius_compute::{ComputeLayer, ComputeMemory, FSliceMut, cpu::CpuMemory};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -64,9 +64,7 @@ use crate::{
 pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
 	hal: &Hal,
 	host_mem: <CpuMemory as ComputeMemory<Tower::B128>>::FSliceMut<'_>,
-	dev_mem: <<Hal as ComputeLayer<Tower::B128>>::DevMem as ComputeMemory<Tower::B128>>::FSliceMut<
-		'_,
-	>,
+	dev_mem: FSliceMut<'_, Tower::B128, Hal>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
