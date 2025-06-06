@@ -21,7 +21,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
+use digest::{FixedOutputReset, Output, OutputSizeUser, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
@@ -59,11 +59,14 @@ use crate::{
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
+#[allow(clippy::too_many_arguments)]
 pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
+	constraint_system_digest: &Output<Hash>,
 	boundaries: &[Boundary<FExt<Tower>>],
+	table_sizes: &[usize],
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
 ) -> Result<Proof, Error>
@@ -71,7 +74,7 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
-	Hash: ParallelDigest,
+	Hash: ParallelDigest + OutputSizeUser,
 	Hash::Digest: BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
@@ -88,6 +91,7 @@ where
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
+	let _ = (constraint_system_digest, table_sizes);
 	tracing::debug!(
 		arch = env::consts::ARCH,
 		rayon_threads = binius_maybe_rayon::current_num_threads(),

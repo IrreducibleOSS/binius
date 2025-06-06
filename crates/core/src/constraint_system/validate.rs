@@ -24,12 +24,14 @@ use crate::{
 pub fn validate_witness<F, P>(
 	constraint_system: &ConstraintSystem<F>,
 	boundaries: &[Boundary<F>],
+	table_sizes: &[usize],
 	witness: &MultilinearExtensionIndex<'_, P>,
 ) -> Result<(), Error>
 where
 	P: PackedField<Scalar = F> + PackedExtension<BinaryField1b>,
 	F: TowerField,
 {
+	let _ = table_sizes;
 	// Check the constraint sets
 	for constraint_set in &constraint_system.table_constraints {
 		let multilinears = constraint_set
