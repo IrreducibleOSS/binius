@@ -657,49 +657,6 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		});
 	}
 
-	/// Writes a group of columns from a specified lookup table.
-	///
-	/// This method enforces that the values of the provided columns are obtained from a lookup
-	/// table through the specified lookup channel. The lookup channel identifies the target
-	/// table for writing values.
-	///
-	/// # Parameters
-	///
-	/// - `lookup_chan`: The channel ID that specifies the lookup table through which the values
-	///   will be constrained.
-	/// - `cols`: An iterable of columns (`Col`) that will be constrained based on the lookup
-	///   values.
-	///
-	/// # Type Parameters
-	///
-	/// - `FSub`: The field type used for the column values.
-	/// - `V`: The number of stacked values (vertical stacking factor) per cell of each column.
-	pub fn write<FSub, const V: usize>(
-		&mut self,
-		lookup_chan: ChannelId,
-		cols: impl IntoIterator<Item = Col<FSub, V>>,
-	) where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let partition = self.table.partition_mut(V);
-		let columns = cols
-			.into_iter()
-			.map(|col| {
-				assert_eq!(col.table_id, partition.table_id);
-				col.id()
-			})
-			.collect();
-
-		partition.flushes.push(Flush {
-			columns,
-			channel_id: lookup_chan,
-			direction: FlushDirection::Push,
-			multiplicity: 1,
-			selectors: vec![],
-		});
-	}
-
 	fn namespaced_name(&self, name: impl ToString) -> String {
 		let name = name.to_string();
 		match &self.namespace {
