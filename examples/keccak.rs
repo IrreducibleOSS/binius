@@ -13,7 +13,7 @@ use binius_field::{
 	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
 		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
@@ -119,7 +119,7 @@ fn main() -> Result<()> {
 	let proof = binius_core::constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		Groestl256,
+		Groestl256Parallel,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
