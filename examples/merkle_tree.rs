@@ -23,11 +23,11 @@ use tracing_profile::init_tracing;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of leaves in the merkle tree.
-	#[arg(short, long, default_value_t = 20, value_parser = value_parser!(u32).range(1..))]
+	#[arg(long, default_value_t = 20, value_parser = value_parser!(u32).range(1..))]
 	log_leaves: u32,
 
 	/// The number of Merkle paths to verify.
-	#[arg(short, long, default_value_t = 10, value_parser = value_parser!(u32).range(1..))]
+	#[arg(short,long, default_value_t = 10, value_parser = value_parser!(u32).range(1..))]
 	log_paths: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 2, value_parser = value_parser!(u32).range(1..))]
