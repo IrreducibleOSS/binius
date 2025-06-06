@@ -875,7 +875,10 @@ mod tests {
 	use bumpalo::Bump;
 
 	use super::{B128, Table, TableBuilder};
-	use crate::builder::{B8, ConstraintSystem, WitnessIndex, test_utils::validate_system_witness};
+	use crate::builder::{
+		B8, ConstraintSystem, FlushOpts, WitnessIndex,
+		test_utils::{validate_system_witness, validate_system_witness_with_prove_verify},
+	};
 
 	#[test]
 	fn namespace_nesting() {
@@ -900,9 +903,16 @@ mod tests {
 		read_table.read(lookup_chan, [read_col]);
 		drop(read_table);
 		let mut write_table = cs.add_table("packed_write");
-		write_table.require_fixed_size(LOG_READ_TABLE_SIZE + LOG_STACKING_FACTOR);
+		write_table.require_fixed_size(LOG_READ_TABLE_SIZE);
 		let write_col = write_table.add_constant("constant_writes", [B8::new(3)]);
-		write_table.push(lookup_chan, [write_col]);
+		write_table.push_with_opts(
+			lookup_chan,
+			[write_col],
+			FlushOpts {
+				multiplicity: 1 << LOG_STACKING_FACTOR as u32,
+				selectors: vec![],
+			},
+		);
 
 		let alloc = Bump::new();
 		let mut witness: WitnessIndex<PackedType<OptimalUnderlier, B128>> =
@@ -910,6 +920,8 @@ mod tests {
 		witness.fill_constant_cols().unwrap();
 		let boundaries = vec![];
 
-		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
+		validate_system_witness_with_prove_verify::<OptimalUnderlier>(
+			&cs, witness, boundaries, true,
+		);
 	}
 }
