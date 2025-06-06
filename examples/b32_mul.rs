@@ -1,18 +1,20 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-#![allow(deprecated)]
-
 use anyhow::Result;
-use binius_circuits::builder::{ConstraintSystemBuilder, types::U};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_field::{BinaryField32b, TowerField, tower::CanonicalTowerFamily};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+};
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
+use binius_m3::builder::{
+	B32, B128, ConstraintSystem, Statement, WitnessIndex, test_utils::ClosureFiller,
+};
+use binius_utils::rayon::adjust_thread_pool;
+use bumpalo::Bump;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
-use itertools::izip;
+use rand::{Rng as _, SeedableRng as _, rngs::StdRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -38,83 +40,78 @@ fn main() -> Result<()> {
 
 	println!("Verifying {} number of BinaryField32b multiplication", args.n_ops);
 
-	let log_n_muls = log2_ceil_usize(args.n_ops as usize);
+	let mut rng = StdRng::seed_from_u64(0);
+	let test_vector: Vec<(u32, u32)> = (0..args.n_ops)
+		.map(|_| (rng.r#gen(), rng.r#gen()))
+		.collect();
 
-	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let mut cs = ConstraintSystem::new();
+	let mut table = cs.add_table("b32_mul");
+
+	let in_a = table.add_committed::<B32, 1>("in_a");
+	let in_b = table.add_committed::<B32, 1>("in_b");
+	let out = table.add_committed::<B32, 1>("out");
+
+	table.assert_zero("b32_mul", in_a * in_b - out);
+
+	let table_id = table.id();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![test_vector.len()],
+	};
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let allocator = Bump::new();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
-	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField32b>(
-		&mut builder,
-		"in_a",
-		log_n_muls,
-	)
-	.unwrap();
+	witness
+		.fill_table_parallel(
+			&ClosureFiller::new(table_id, |events, index| {
+				let mut in_a_vals = index.get_mut_as::<B32, _, 1>(in_a).unwrap();
+				let mut in_b_vals = index.get_mut_as::<B32, _, 1>(in_b).unwrap();
+				let mut out_vals = index.get_mut_as::<B32, _, 1>(out).unwrap();
 
-	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField32b>(
-		&mut builder,
-		"in_b",
-		log_n_muls,
-	)
-	.unwrap();
-	let out = builder.add_committed("out", log_n_muls, BinaryField32b::TOWER_LEVEL);
+				for (i, (a, b)) in events.iter().enumerate() {
+					let a_field = B32::new(*a);
+					let b_field = B32::new(*b);
+					let result = a_field * b_field;
 
-	if let Some(witness) = builder.witness() {
-		let in_a_witness = witness
-			.get::<BinaryField32b>(in_a)?
-			.as_slice::<BinaryField32b>();
-		let in_b_witness = witness
-			.get::<BinaryField32b>(in_b)?
-			.as_slice::<BinaryField32b>();
-		let mut out_witness = witness.new_column::<BinaryField32b>(out);
+					in_a_vals[i] = a_field;
+					in_b_vals[i] = b_field;
+					out_vals[i] = result;
+				}
 
-		let out_scalars = out_witness.as_mut_slice::<BinaryField32b>();
-
-		for (&a, &b, out) in izip!(in_a_witness, in_b_witness, out_scalars) {
-			*out = a * b;
-		}
-	}
-
-	builder.assert_zero(
-		"b32_mul",
-		[in_a, in_b, out],
-		binius_math::ArithCircuit::from(
-			binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(0usize)
-				* binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(1usize)
-				- binius_math::ArithExpr::<binius_field::BinaryField1b>::Var(2usize),
+				Ok(())
+			}),
+			&test_vector,
 		)
-		.convert_field(),
-	);
-
+		.unwrap();
 	drop(trace_gen_scope);
 
-	let witness = builder
-		.take_witness()
-		.expect("builder created with witness");
-	let constraint_system = builder.build()?;
-
-	let backend = make_portable_backend();
+	let ccs = cs.compile(&statement).unwrap();
+	let witness = witness.into_multilinear_extension_index();
 
 	let proof =
 		constraint_system::prove::<
-			U,
+			OptimalUnderlier,
 			CanonicalTowerFamily,
-			Groestl256,
+			Groestl256Parallel,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+		>(
+			&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &make_portable_backend()
+		)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	constraint_system::verify::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }

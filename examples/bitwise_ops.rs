@@ -1,19 +1,23 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-#![allow(deprecated)]
-
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::Result;
-use binius_circuits::builder::{ConstraintSystemBuilder, types::U};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_field::{BinaryField1b, BinaryField32b, TowerField, tower::CanonicalTowerFamily};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+};
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
+use binius_m3::builder::{
+	B1, B128, Col, Statement, TableBuilder, TableWitnessSegment, WitnessIndex,
+	test_utils::ClosureFiller,
+};
+use binius_utils::rayon::adjust_thread_pool;
+use bumpalo::Bump;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
+use rand::{Rng as _, SeedableRng as _, rngs::StdRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Clone, Copy)]
@@ -38,12 +42,15 @@ impl FromStr for BitwiseOp {
 
 impl Display for BitwiseOp {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let str = match self {
-			BitwiseOp::And => String::from("And"),
-			BitwiseOp::Xor => String::from("Xor"),
-			BitwiseOp::Or => String::from("Or"),
-		};
-		write!(f, "{str}")
+		write!(
+			f,
+			"{}",
+			match self {
+				BitwiseOp::And => "and",
+				BitwiseOp::Xor => "xor",
+				BitwiseOp::Or => "or",
+			}
+		)
 	}
 }
 
@@ -52,12 +59,116 @@ struct Args {
 	/// The operation to perform.
 	#[arg(long, default_value_t = BitwiseOp::And)]
 	op: BitwiseOp,
-	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 32, value_parser = value_parser!(u32).range(32..))]
+	/// The number of operations to verify.
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(512..))]
 	n_u32_ops: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
+}
+
+pub struct BitwiseAnd {
+	pub xin: Col<B1, 32>,
+	pub yin: Col<B1, 32>,
+	pub zout: Col<B1, 32>,
+}
+
+impl BitwiseAnd {
+	pub fn new(table: &mut TableBuilder, xin: Col<B1, 32>, yin: Col<B1, 32>) -> Self {
+		let zout = table.add_committed::<B1, 32>("zout");
+		table.assert_zero("and", zout - xin * yin);
+		Self { xin, yin, zout }
+	}
+
+	pub fn populate<P>(&self, segment: &mut TableWitnessSegment<P>) -> Result<()>
+	where
+		P: binius_field::PackedFieldIndexable<Scalar = B128> + binius_field::PackedExtension<B1>,
+	{
+		let xin_values = segment.get_as::<u32, _, 32>(self.xin)?;
+		let yin_values = segment.get_as::<u32, _, 32>(self.yin)?;
+		let mut zout_values = segment.get_mut_as::<u32, _, 32>(self.zout)?;
+
+		for i in 0..xin_values.len() {
+			zout_values[i] = xin_values[i] & yin_values[i];
+		}
+		Ok(())
+	}
+}
+
+pub struct BitwiseXor {
+	pub xin: Col<B1, 32>,
+	pub yin: Col<B1, 32>,
+	pub zout: Col<B1, 32>,
+}
+
+impl BitwiseXor {
+	pub fn new(table: &mut TableBuilder, xin: Col<B1, 32>, yin: Col<B1, 32>) -> Self {
+		let zout = table.add_committed::<B1, 32>("zout");
+		table.assert_zero("xor", zout - xin - yin);
+		Self { xin, yin, zout }
+	}
+
+	pub fn populate<P>(&self, segment: &mut TableWitnessSegment<P>) -> Result<()>
+	where
+		P: binius_field::PackedFieldIndexable<Scalar = B128> + binius_field::PackedExtension<B1>,
+	{
+		let xin_values = segment.get_as::<u32, _, 32>(self.xin)?;
+		let yin_values = segment.get_as::<u32, _, 32>(self.yin)?;
+		let mut zout_values = segment.get_mut_as::<u32, _, 32>(self.zout)?;
+
+		for i in 0..xin_values.len() {
+			zout_values[i] = xin_values[i] ^ yin_values[i];
+		}
+		Ok(())
+	}
+}
+
+pub struct BitwiseOr {
+	pub xin: Col<B1, 32>,
+	pub yin: Col<B1, 32>,
+	pub zout: Col<B1, 32>,
+}
+
+impl BitwiseOr {
+	pub fn new(table: &mut TableBuilder, xin: Col<B1, 32>, yin: Col<B1, 32>) -> Self {
+		let zout = table.add_committed::<B1, 32>("zout");
+		// z = x + y - x * y in binary field
+		table.assert_zero("or", zout - xin - yin + xin * yin);
+		Self { xin, yin, zout }
+	}
+
+	pub fn populate<P>(&self, segment: &mut TableWitnessSegment<P>) -> Result<()>
+	where
+		P: binius_field::PackedFieldIndexable<Scalar = B128> + binius_field::PackedExtension<B1>,
+	{
+		let xin_values = segment.get_as::<u32, _, 32>(self.xin)?;
+		let yin_values = segment.get_as::<u32, _, 32>(self.yin)?;
+		let mut zout_values = segment.get_mut_as::<u32, _, 32>(self.zout)?;
+
+		for i in 0..xin_values.len() {
+			zout_values[i] = xin_values[i] | yin_values[i];
+		}
+		Ok(())
+	}
+}
+
+enum BitwiseGadget {
+	And(BitwiseAnd),
+	Xor(BitwiseXor),
+	Or(BitwiseOr),
+}
+
+impl BitwiseGadget {
+	fn populate<P>(&self, segment: &mut TableWitnessSegment<P>) -> Result<()>
+	where
+		P: binius_field::PackedFieldIndexable<Scalar = B128> + binius_field::PackedExtension<B1>,
+	{
+		match self {
+			BitwiseGadget::And(gadget) => gadget.populate(segment),
+			BitwiseGadget::Xor(gadget) => gadget.populate(segment),
+			BitwiseGadget::Or(gadget) => gadget.populate(segment),
+		}
+	}
 }
 
 fn main() -> Result<()> {
@@ -73,57 +184,76 @@ fn main() -> Result<()> {
 
 	println!("Verifying {} bitwise u32 {}'s", args.n_u32_ops, args.op);
 
-	let log_n_1b_operations =
-		log2_ceil_usize(args.n_u32_ops as usize) + BinaryField32b::TOWER_LEVEL;
+	let mut rng = StdRng::seed_from_u64(0);
+	let test_vector: Vec<(u32, u32)> = (0..args.n_u32_ops)
+		.map(|_| (rng.r#gen(), rng.r#gen()))
+		.collect();
 
-	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let mut cs = binius_m3::builder::ConstraintSystem::new();
+	let mut table = cs.add_table("bitwise_ops");
+
+	let xin = table.add_committed::<B1, 32>("xin");
+	let yin = table.add_committed::<B1, 32>("yin");
+
+	let bitwise_gadget = match args.op {
+		BitwiseOp::And => BitwiseGadget::And(BitwiseAnd::new(&mut table, xin, yin)),
+		BitwiseOp::Xor => BitwiseGadget::Xor(BitwiseXor::new(&mut table, xin, yin)),
+		BitwiseOp::Or => BitwiseGadget::Or(BitwiseOr::new(&mut table, xin, yin)),
+	};
+
+	let table_id = table.id();
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: vec![test_vector.len()],
+	};
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	// Assuming our 32bit values have been committed as bits
-	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-		&mut builder,
-		"in_a",
-		log_n_1b_operations,
-	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
-		&mut builder,
-		"in_b",
-		log_n_1b_operations,
-	)?;
-	let _result = match args.op {
-		BitwiseOp::And => binius_circuits::bitwise::and(&mut builder, "a_and_b", in_a, in_b),
-		BitwiseOp::Xor => binius_circuits::bitwise::xor(&mut builder, "a_xor_b", in_a, in_b),
-		BitwiseOp::Or => binius_circuits::bitwise::or(&mut builder, "a_or_b", in_a, in_b),
-	};
+	let allocator = Bump::new();
+	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
+
+	witness
+		.fill_table_parallel(
+			&ClosureFiller::new(table_id, |events, index| {
+				let mut xin_bits = index.get_mut_as::<u32, _, 32>(xin).unwrap();
+				let mut yin_bits = index.get_mut_as::<u32, _, 32>(yin).unwrap();
+				for (i, (x, y)) in events.iter().enumerate() {
+					xin_bits[i] = *x;
+					yin_bits[i] = *y;
+				}
+				drop((xin_bits, yin_bits));
+				bitwise_gadget.populate(index)?;
+				Ok(())
+			}),
+			&test_vector,
+		)
+		.unwrap();
+
 	drop(trace_gen_scope);
 
-	let witness = builder
-		.take_witness()
-		.expect("builder created with witness");
-	let constraint_system = builder.build()?;
-
-	let backend = make_portable_backend();
+	let ccs = cs.compile(&statement).unwrap();
+	let witness = witness.into_multilinear_extension_index();
 
 	let proof =
 		constraint_system::prove::<
-			U,
+			OptimalUnderlier,
 			CanonicalTowerFamily,
-			Groestl256,
+			Groestl256Parallel,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+		>(
+			&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &make_portable_backend()
+		)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	constraint_system::verify::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }

@@ -14,7 +14,7 @@ use binius_field::{
 };
 use binius_compute::ComputeLayer;
 use binius_hal::ComputationBackend;
-use binius_hash::PseudoCompressionFunction;
+use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
@@ -23,7 +23,7 @@ use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use digest::{Digest, FixedOutputReset, Output, core_api::BlockSizeUser};
+use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
 
@@ -110,8 +110,9 @@ where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
-	Hash: Digest + BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
-	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
+	Hash: ParallelDigest,
+	Hash::Digest: BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds

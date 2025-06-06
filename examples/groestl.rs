@@ -5,13 +5,11 @@ use std::{array, iter::repeat_with};
 use anyhow::Result;
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
-	Field, PackedExtension, PackedFieldIndexable, PackedSubfield,
-	arch::{OptimalUnderlier, OptimalUnderlier128b},
-	as_packed_field::PackedType,
-	linear_transformation::PackedTransformationFactory,
+	Field, PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
+	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
 		B1, B8, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
@@ -116,7 +114,7 @@ fn main() -> Result<()> {
 	let proof = binius_core::constraint_system::prove::<
 		OptimalUnderlier,
 		CanonicalTowerFamily,
-		Groestl256,
+		Groestl256Parallel,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
@@ -133,7 +131,7 @@ fn main() -> Result<()> {
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	binius_core::constraint_system::verify::<
-		OptimalUnderlier128b,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,

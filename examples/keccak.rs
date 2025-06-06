@@ -1,19 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
-// Uses binius_circuits which is being phased out.
-#![allow(deprecated)]
-
 use std::iter::repeat_with;
 
 use anyhow::Result;
-use binius_circuits::builder::types::U;
 use binius_core::fiat_shamir::HasherChallenger;
 use binius_field::{
 	PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
 	as_packed_field::PackedType, linear_transformation::PackedTransformationFactory,
 	tower::CanonicalTowerFamily,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
 		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
@@ -117,9 +113,9 @@ fn main() -> Result<()> {
 	let witness = witness.into_multilinear_extension_index();
 
 	let proof = binius_core::constraint_system::prove::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
-		Groestl256,
+		Groestl256Parallel,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
@@ -136,7 +132,7 @@ fn main() -> Result<()> {
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	binius_core::constraint_system::verify::<
-		U,
+		OptimalUnderlier,
 		CanonicalTowerFamily,
 		Groestl256,
 		Groestl256ByteCompression,
