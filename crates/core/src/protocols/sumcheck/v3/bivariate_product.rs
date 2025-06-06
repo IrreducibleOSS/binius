@@ -217,11 +217,12 @@ where
 		// Copy the fully folded multilinear evaluations to the host.
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
 
-		for i in 0..self.multilins.len() {
-			let vals = self.multilins[i].const_slice();
+		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
+			let vals = multilin.const_slice();
 			debug_assert_eq!(vals.len(), 1);
-			self.hal.copy_d2h(vals, &mut buffer[i..i + 1])?;
+			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
 		}
+
 		Ok(buffer.to_vec())
 	}
 }
