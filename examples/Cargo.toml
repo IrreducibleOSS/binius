@@ -30,36 +30,12 @@ name = "keccak"
 path = "keccak.rs"
 
 [[example]]
-name = "u8mul"
-path = "u8mul.rs"
-
-[[example]]
-name = "u32add_with_lookup"
-path = "u32add_with_lookup.rs"
-
-[[example]]
-name = "modular_mul"
-path = "modular_mul.rs"
-
-[[example]]
 name = "groestl"
 path = "groestl.rs"
 
 [[example]]
-name = "collatz"
-path = "collatz.rs"
-
-[[example]]
 name = "u32_add"
 path = "u32_add.rs"
-
-[[example]]
-name = "u32_mul"
-path = "u32_mul.rs"
-
-[[example]]
-name = "u64_mul"
-path = "u64_mul.rs"
 
 [[example]]
 name = "bitwise_ops"
@@ -69,9 +45,6 @@ path = "bitwise_ops.rs"
 name = "b32_mul"
 path = "b32_mul.rs"
 
-[[example]]
-name = "blake3_circuit"
-path = "blake3_circuit.rs"
 
 [[example]]
 name = "u32_mul_gkr"
