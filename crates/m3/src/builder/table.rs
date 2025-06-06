@@ -2,6 +2,7 @@
 
 use std::{ops::Index, sync::Arc};
 
+pub use binius_core::constraint_system::TableId;
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
@@ -29,8 +30,6 @@ use super::{
 	types::B128,
 	upcast_col,
 };
-
-pub type TableId = usize;
 
 #[derive(Debug)]
 pub struct TableBuilder<'a, F: TowerField = B128> {
