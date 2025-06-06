@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{env, iter, marker::PhantomData};
-
+use binius_compute::cpu::CpuMemory;
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
@@ -12,6 +12,7 @@ use binius_field::{
 	underlier::WithUnderlier,
 	util::powers,
 };
+use binius_compute::ComputeLayer;
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
@@ -57,10 +58,46 @@ use crate::{
 	transcript::ProverTranscript,
 	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
+use binius_compute::ComputeMemory;
+	// let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
 
+	// let host_mem_size_committed = committed_multilins.len();
+	// let dev_mem_size_committed = committed_multilins
+	// 	.iter()
+	// 	.map(|multilin| {
+	// 		1 << (multilin
+	// 			.n_vars()
+	// 			.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
+	// 			+ 1)
+	// 	})
+	// 	.sum::<usize>();
+
+	// let host_mem_size_transparent = transparent_multilins.len();
+	// let dev_mem_size_transparent = transparent_multilins
+	// 	.iter()
+	// 	.map(|multilin| {
+	// 		1 << (multilin
+	// 			.n_vars()
+	// 			.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
+	// 			+ 1)
+	// 	})
+	// 	.sum::<usize>();
+
+	// let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
+	// let mut dev_mem_owned = vec![
+	// 	PackedType::<U, Tower::B128>::zero();
+	// 	dev_mem_size_committed + dev_mem_size_transparent
+	// ];
+
+	// let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
+pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
+	hal: &Hal,
+	host_mem: <CpuMemory as ComputeMemory<Tower::B128>>::FSliceMut<'_>,
+	dev_mem: <<Hal as ComputeLayer<Tower::B128>>::DevMem as ComputeMemory<Tower::B128>>::FSliceMut<
+		'_,
+	>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -69,6 +106,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
+	Hal: ComputeLayer<Tower::B128> + Default,
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
@@ -478,49 +516,9 @@ where
 	)
 	.entered();
 
-	let piop_hal_span = tracing::info_span!(
-		"PIOP HAL Setup",
-		phase = "piop_compiler",
-		perfetto_category = "phase.sub"
-	)
-	.entered();
-
-	let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
-
-	let host_mem_size_committed = committed_multilins.len();
-	let dev_mem_size_committed = committed_multilins
-		.iter()
-		.map(|multilin| {
-			1 << (multilin
-				.n_vars()
-				.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
-				+ 1)
-		})
-		.sum::<usize>();
-
-	let host_mem_size_transparent = transparent_multilins.len();
-	let dev_mem_size_transparent = transparent_multilins
-		.iter()
-		.map(|multilin| {
-			1 << (multilin
-				.n_vars()
-				.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
-				+ 1)
-		})
-		.sum::<usize>();
-
-	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem_owned = vec![
-		PackedType::<U, Tower::B128>::zero();
-		dev_mem_size_committed + dev_mem_size_transparent
-	];
-
-	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
-
-	drop(piop_hal_span);
 	piop::prove(
-		&hal,
-		&mut host_mem,
+		hal,
+		host_mem,
 		dev_mem,
 		&fri_params,
 		&ntt,
