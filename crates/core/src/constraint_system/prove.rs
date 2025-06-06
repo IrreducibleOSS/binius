@@ -177,6 +177,7 @@ where
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &ntt, &merkle_prover, &committed_multilins)?;
+	emit_max_rss();
 	drop(commit_span);
 
 	// Observe polynomial commitment
@@ -220,6 +221,7 @@ where
 	.isomorphic();
 
 	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	emit_max_rss();
 	drop(exp_span);
 
 	// Grand product arguments
@@ -239,6 +241,7 @@ where
 	.entered();
 	let non_zero_fast_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+	emit_max_rss();
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -251,6 +254,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(nonzero_prodcheck_compute_layer_span);
 
 	let non_zero_products =
@@ -298,6 +302,7 @@ where
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+	emit_max_rss();
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -310,6 +315,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(flush_prodcheck_compute_layer_span);
 
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
@@ -347,6 +353,7 @@ where
 		chain!(flush_oracle_ids, non_zero_oracle_ids),
 		final_layer_claims,
 	)?;
+	emit_max_rss();
 	drop(prodcheck_span);
 
 	// Zerocheck
@@ -425,6 +432,7 @@ where
 	let zerocheck_eval_claims =
 		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
+	emit_max_rss();
 	drop(zerocheck_span);
 
 	let evalcheck_span = tracing::info_span!(
@@ -456,6 +464,7 @@ where
 		&eval_claims,
 	)?;
 
+	emit_max_rss();
 	drop(evalcheck_span);
 
 	let ring_switch_span = tracing::info_span!(
@@ -468,6 +477,7 @@ where
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
 	} = ring_switch::prove(&system, &committed_multilins, &mut transcript, memoized_data)?;
+	emit_max_rss();
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
@@ -491,6 +501,7 @@ where
 		&mut transcript,
 		&backend,
 	)?;
+	emit_max_rss();
 	drop(piop_compiler_span);
 
 	let proof = Proof {
@@ -506,6 +517,32 @@ where
 	);
 
 	Ok(proof)
+}
+
+fn emit_max_rss() {
+	if let Some(max_rss) = get_max_rss() {
+		let max_rss_mb = if cfg!(target_os = "linux") {
+			// The maxrss is in kbytes for Linux.
+			max_rss / 1024
+		} else if cfg!(target_os = "macos") {
+			// ... and in bytes for BSD/macOS.
+			max_rss / 1024 / 1024
+		} else {
+			// don't risk confusing.
+			0
+		};
+		tracing::event!(
+			name: "max rss mib",
+			tracing::Level::INFO,
+			value = max_rss_mb as u64,
+			counter = true
+		);
+	}
+	fn get_max_rss() -> Option<usize> {
+		let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+		let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut usage) };
+		(ret == 0).then_some(usage.ru_maxrss as usize)
+	}
 }
 
 type TypeErasedZerocheck<'a, P> = Box<dyn ZerocheckProver<'a, P> + 'a>;
