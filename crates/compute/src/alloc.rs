@@ -60,7 +60,6 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			.buffer
 			.take()
 			.expect("buffer is always Some by invariant");
-
 		// buffer temporarily contains None
 		if buffer.len() < n {
 			self.buffer.set(Some(buffer));
