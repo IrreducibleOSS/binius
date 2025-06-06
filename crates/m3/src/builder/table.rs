@@ -877,7 +877,7 @@ mod tests {
 	use super::{B128, Table, TableBuilder};
 	use crate::builder::{
 		B8, ConstraintSystem, FlushOpts, WitnessIndex,
-		test_utils::{validate_system_witness, validate_system_witness_with_prove_verify},
+		test_utils::validate_system_witness_with_prove_verify,
 	};
 
 	#[test]
@@ -921,7 +921,7 @@ mod tests {
 		let boundaries = vec![];
 
 		validate_system_witness_with_prove_verify::<OptimalUnderlier>(
-			&cs, witness, boundaries, true,
+			&cs, witness, boundaries, false,
 		);
 	}
 }
