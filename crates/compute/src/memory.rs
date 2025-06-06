@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{fmt::Debug, ops::RangeBounds};
+use std::ops::RangeBounds;
 
 use binius_field::TowerField;
 use binius_utils::checked_arithmetics::checked_int_div;
@@ -71,10 +71,10 @@ pub trait ComputeMemory<F> {
 	const ALIGNMENT: usize;
 
 	/// An opaque handle to an immutable slice of elements stored in a compute memory.
-	type FSlice<'a>: Copy + SizedSlice + Sync + Debug;
+	type FSlice<'a>: Copy + SizedSlice + Sync;
 
 	/// An opaque handle to a mutable slice of elements stored in a compute memory.
-	type FSliceMut<'a>: SizedSlice + Debug;
+	type FSliceMut<'a>: SizedSlice;
 
 	/// Borrows an immutable memory slice, narrowing the lifetime.
 	fn narrow<'a>(data: &'a Self::FSlice<'_>) -> Self::FSlice<'a>;

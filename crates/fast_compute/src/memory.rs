@@ -284,7 +284,6 @@ impl<'a, P: PackedField> SizedSlice for PackedMemorySlice<'a, P> {
 	}
 }
 
-#[derive(Debug)]
 pub enum PackedMemorySliceMut<'a, P: PackedField> {
 	Slice(&'a mut [P]),
 	Owned(SmallOwnedChunk<P>),
