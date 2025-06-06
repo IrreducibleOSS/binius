@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{env, iter, marker::PhantomData};
-use binius_compute::cpu::CpuMemory;
-use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
+
+use binius_compute::{ComputeLayer, ComputeMemory, cpu::CpuMemory};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -12,7 +12,6 @@ use binius_field::{
 	underlier::WithUnderlier,
 	util::powers,
 };
-use binius_compute::ComputeLayer;
 use binius_hal::ComputationBackend;
 use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
@@ -58,38 +57,7 @@ use crate::{
 	transcript::ProverTranscript,
 	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_compute::ComputeMemory;
-	// let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
 
-	// let host_mem_size_committed = committed_multilins.len();
-	// let dev_mem_size_committed = committed_multilins
-	// 	.iter()
-	// 	.map(|multilin| {
-	// 		1 << (multilin
-	// 			.n_vars()
-	// 			.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
-	// 			+ 1)
-	// 	})
-	// 	.sum::<usize>();
-
-	// let host_mem_size_transparent = transparent_multilins.len();
-	// let dev_mem_size_transparent = transparent_multilins
-	// 	.iter()
-	// 	.map(|multilin| {
-	// 		1 << (multilin
-	// 			.n_vars()
-	// 			.saturating_sub(PackedType::<U, Tower::B128>::LOG_WIDTH)
-	// 			+ 1)
-	// 	})
-	// 	.sum::<usize>();
-
-	// let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	// let mut dev_mem_owned = vec![
-	// 	PackedType::<U, Tower::B128>::zero();
-	// 	dev_mem_size_committed + dev_mem_size_transparent
-	// ];
-
-	// let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(

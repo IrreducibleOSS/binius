@@ -4,6 +4,7 @@ use std::iter::repeat_with;
 
 use anyhow::Result;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier,
 	as_packed_field::PackedType, tower::CanonicalTowerFamily,
@@ -18,6 +19,7 @@ use binius_m3::{
 	gadgets::mul::MulUU32,
 };
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
 use rand::thread_rng;
@@ -106,20 +108,36 @@ fn main() -> Result<()> {
 
 	drop(trace_gen_scope);
 
-	let constraint_system = cs.compile(&statement)?;
+	let ccs = cs.compile(&statement)?;
 	let witness = witness.into_multilinear_extension_index();
 
-	let backend = make_portable_backend();
+	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::default();
 
-	let proof =
-		constraint_system::prove::<
-			OptimalUnderlier,
-			CanonicalTowerFamily,
-			Groestl256Parallel,
-			Groestl256ByteCompression,
-			HasherChallenger<Groestl256>,
-			_,
-		>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], witness, &backend)?;
+	let mut host_mem = zeroed_vec(1 << 20);
+	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+
+	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+
+	let proof = constraint_system::prove::<
+		_,
+		OptimalUnderlier,
+		CanonicalTowerFamily,
+		Groestl256Parallel,
+		Groestl256ByteCompression,
+		HasherChallenger<Groestl256>,
+		_,
+	>(
+		&hal,
+		&mut host_mem,
+		dev_mem,
+		&ccs,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&[],
+		witness,
+		&make_portable_backend(),
+	)
+	.unwrap();
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
@@ -129,7 +147,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &[], proof)?;
 
 	Ok(())
 }
