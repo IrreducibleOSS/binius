@@ -793,7 +793,7 @@ mod tests {
 		let merkle_tree_cs = MerkleTreeCS::new(&mut cs);
 
 		let mut rng = StdRng::seed_from_u64(0);
-		// Create a Merkle tree with 8 leaves
+		// Create a Merkle tree with 1<<10 leaves.
 		let index = rng.gen_range(0..1 << 10);
 		let leaves = (0..3)
 			.map(|_| {
