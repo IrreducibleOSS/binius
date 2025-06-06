@@ -914,15 +914,11 @@ pub fn log_capacity(table_size: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-	use binius_core::witness;
 	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
 	use bumpalo::Bump;
 
-	use super::{B1, B128, Col, Table, TableBuilder};
-	use crate::{
-		builder::{B8, ConstraintSystem, WitnessIndex, test_utils::validate_system_witness},
-		gadgets::lookup,
-	};
+	use super::{B128, Table, TableBuilder};
+	use crate::builder::{B8, ConstraintSystem, WitnessIndex, test_utils::validate_system_witness};
 
 	#[test]
 	fn namespace_nesting() {
