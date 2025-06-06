@@ -309,6 +309,13 @@ impl<'a, P: PackedField> PackedMemorySliceMut<'a, P> {
 		}
 	}
 
+	pub fn to_const(self) -> PackedMemorySlice<'a, P> {
+		match self {
+			Self::Slice(data) => PackedMemorySlice::Slice(data),
+			Self::Owned(chunk) => PackedMemorySlice::Owned(chunk),
+		}
+	}
+
 	#[inline(always)]
 	pub fn as_slice(&'a self) -> &'a [P] {
 		match self {

@@ -74,7 +74,7 @@ fn test_exec_single_inner_product() {
 fn test_exec_single_inner_product_using_kernel_accumulator() {
 	type F = BinaryField128b;
 	type P = PackedBinaryField2x128b;
-	let n_vars = 8;
+	let n_vars = 16;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
 	test_generic_single_inner_product_using_kernel_accumulator::<F, _>(

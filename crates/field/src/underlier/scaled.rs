@@ -7,6 +7,7 @@ use std::{
 
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{NoUninit, Pod, Zeroable, must_cast_mut, must_cast_ref};
+use derive_more::{From, Into};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
@@ -15,7 +16,7 @@ use crate::tower_levels::TowerLevel;
 
 /// A type that represents a pair of elements of the same underlier type.
 /// We use it as an underlier for the `ScaledPackedField` type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Into)]
 #[repr(transparent)]
 pub struct ScaledUnderlier<U, const N: usize>(pub [U; N]);
 
@@ -28,18 +29,6 @@ impl<U: Default, const N: usize> Default for ScaledUnderlier<U, N> {
 impl<U: Random, const N: usize> Random for ScaledUnderlier<U, N> {
 	fn random(mut rng: impl RngCore) -> Self {
 		Self(array::from_fn(|_| U::random(&mut rng)))
-	}
-}
-
-impl<U, const N: usize> From<ScaledUnderlier<U, N>> for [U; N] {
-	fn from(val: ScaledUnderlier<U, N>) -> Self {
-		val.0
-	}
-}
-
-impl<T, U: From<T>, const N: usize> From<[T; N]> for ScaledUnderlier<U, N> {
-	fn from(value: [T; N]) -> Self {
-		Self(value.map(U::from))
 	}
 }
 

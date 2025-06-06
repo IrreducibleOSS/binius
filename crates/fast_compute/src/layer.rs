@@ -24,9 +24,10 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
+	packed::PackedSlice,
 	tower::{PackedTop, TowerFamily},
 	tower_levels::TowerLevel16,
-	underlier::{NumCast, UnderlierWithBitOps, WithUnderlier},
+	underlier::{NumCast, ScaledUnderlier, UnderlierWithBitOps, WithUnderlier},
 	unpack_if_possible, unpack_if_possible_mut,
 	util::inner_product_par,
 };
@@ -43,13 +44,14 @@ use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
 	rayon::get_log_max_threads,
 };
-use bytemuck::{Pod, zeroed_vec};
+use bytemuck::{AnyBitPattern, Pod, zeroed_vec};
 use itertools::izip;
+use stackalloc::{stackalloc_with, stackalloc_with_default, stackalloc_with_iter};
 use thread_local::ThreadLocal;
 
 use crate::{
 	arith_circuit::ArithCircuitPoly,
-	memory::{PackedMemory, PackedMemorySliceMut},
+	memory::{PackedMemory, PackedMemorySlice, PackedMemorySliceMut},
 };
 
 /// Optimized CPU implementation of the compute layer.
@@ -563,6 +565,56 @@ where
 	}
 }
 
+type ByteSliced128b<U> = PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>;
+type PackedCanonical128b<U> = PackedType<U, BinaryField128b>;
+type PackedAES128b<U> = PackedType<U, AESTowerField128b>;
+
+#[inline]
+fn canonical_to_byte_sliced<U>(
+	canonical: &[PackedCanonical128b<U>; 16],
+	fwd_transform: &impl Transformation<PackedCanonical128b<U>, PackedAES128b<U>>,
+) -> ByteSliced128b<U>
+where
+	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	U: PackScalar<BinaryField128b> + PackScalar<AESTowerField128b> + UnderlierWithBitOps + From<u8>,
+	u8: NumCast<U>,
+{
+	let mut data = std::array::from_fn(|i| {
+		WithUnderlier::to_underlier(fwd_transform.transform(&canonical[i]))
+	});
+
+	U::transpose_bytes_to_byte_sliced::<TowerLevel16>(&mut data);
+
+	WithUnderlier::from_underlier(ByteSlicedUnderlier::from(ScaledUnderlier::from(data)))
+}
+
+#[inline]
+fn byte_sliced_to_canonical<U>(
+	value: &ByteSliced128b<U>,
+	out: &mut [PackedCanonical128b<U>; 16],
+	inv_transform: &impl Transformation<PackedAES128b<U>, PackedCanonical128b<U>>,
+) where
+	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	U: PackScalar<BinaryField128b>
+		+ PackScalar<AESTowerField128b>
+		+ UnderlierWithBitOps
+		+ From<u8>
+		+ Pod
+		+ AnyBitPattern,
+	u8: NumCast<U>,
+{
+	let data: &mut [U; 16] = WithUnderlier::to_underliers_arr_ref_mut(out);
+	data.copy_from_slice(bytemuck::must_cast_ref::<_, [U; 16]>(value));
+
+	U::transpose_bytes_from_byte_sliced::<TowerLevel16>(data);
+
+	for elem in data {
+		*elem = inv_transform
+			.transform(PackedType::<U, AESTowerField128b>::from_underlier_ref(elem))
+			.to_underlier();
+	}
+}
+
 // Extrapolate line function that converts packed field elements to byte-sliced representation and
 // back.
 fn extrapolate_line_byte_sliced<Underlier>(
@@ -601,57 +653,20 @@ fn extrapolate_line_byte_sliced<Underlier>(
 		.par_chunks_exact_mut(BYTES_COUNT)
 		.zip(evals_1.par_chunks_exact(BYTES_COUNT))
 		.for_each(|(x0, x1)| {
-			// Transform x0 to byte-sliced representation
-			let mut x0_aes =
-				[MaybeUninit::<PackedType<Underlier, AESTowerField128b>>::uninit(); BYTES_COUNT];
-			for (x0_aes, x0) in x0_aes.iter_mut().zip(x0.iter()) {
-				_ = *x0_aes.write(fwd_transform.transform(x0));
-			}
-			// Safety: all array elements are initialized at this moment
-			let x0_aes = unsafe {
-				transmute::<
-					&mut [MaybeUninit<PackedType<Underlier, AESTowerField128b>>; BYTES_COUNT],
-					&mut [Underlier; BYTES_COUNT],
-				>(&mut x0_aes)
-			};
-			Underlier::transpose_bytes_to_byte_sliced::<TowerLevel16>(x0_aes);
+			let x0: &mut [PackedType<Underlier, BinaryField128b>; BYTES_COUNT] =
+				x0.try_into().expect("slice has 16 elements");
+			let x1: &[PackedType<Underlier, BinaryField128b>; BYTES_COUNT] =
+				x1.try_into().expect("slice has 16 elements");
 
-			// Transform x1 to byte-sliced representation
-			let mut x1_aes =
-				[MaybeUninit::<PackedType<Underlier, AESTowerField128b>>::uninit(); BYTES_COUNT];
-			for (x1_aes, x1) in x1_aes.iter_mut().zip(x1.iter()) {
-				_ = *x1_aes.write(fwd_transform.transform(x1));
-			}
-			// Safety: all array elements are initialized at this moment
-			let x1_aes = unsafe {
-				transmute::<
-					&mut [MaybeUninit<PackedType<Underlier, AESTowerField128b>>; BYTES_COUNT],
-					&mut [Underlier; BYTES_COUNT],
-				>(&mut x1_aes)
-			};
-			Underlier::transpose_bytes_to_byte_sliced::<TowerLevel16>(x1_aes);
+			// Transform x0 to byte-sliced representation
+			let mut x0_byte_sliced = canonical_to_byte_sliced(x0, &fwd_transform);
+			let x1_byte_sliced = canonical_to_byte_sliced(x1, &fwd_transform);
 
 			// Perform the extrapolation in the byte-sliced representation
-			{
-				let x0_bytes_sliced = bytemuck::must_cast_mut::<
-					_,
-					PackedType<ByteSlicedUnderlier<Underlier, 16>, AESTowerField128b>,
-				>(x0_aes);
-				let x1_bytes_sliced = bytemuck::must_cast_ref::<
-					_,
-					PackedType<ByteSlicedUnderlier<Underlier, 16>, AESTowerField128b>,
-				>(x1_aes);
-
-				*x0_bytes_sliced += (*x1_bytes_sliced - *x0_bytes_sliced) * byte_sliced_z;
-			}
+			x0_byte_sliced += (x1_byte_sliced - x0_byte_sliced) * byte_sliced_z;
 
 			// Transform x0 back to the original packed representation
-			Underlier::transpose_bytes_from_byte_sliced::<TowerLevel16>(x0_aes);
-			for (x0, x0_aes) in x0.iter_mut().zip(x0_aes.iter()) {
-				*x0 = inv_transform.transform(
-					PackedType::<Underlier, AESTowerField128b>::from_underlier_ref(x0_aes),
-				);
-			}
+			byte_sliced_to_canonical(&x0_byte_sliced, x0, &inv_transform);
 		});
 
 	// Process the remainder
@@ -736,6 +751,81 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuil
 		Ok(())
 	}
 
+	fn sum_compositions_evals(
+		&mut self,
+		inputs: &SlicesBatch<<Self::Mem as ComputeMemory<T::B128>>::FSlice<'_>>,
+		compositions: &[Self::ExprEval],
+		batch_coeffs: &[T::B128],
+		accumulator: &mut Self::Value,
+	) -> Result<(), Error> {
+		if try_sum_compositions_evals_byte_sliced::<_, PackedBinaryField1x128b>(
+			inputs,
+			compositions,
+			batch_coeffs,
+			accumulator,
+		) || try_sum_compositions_evals_byte_sliced::<_, PackedBinaryField2x128b>(
+			inputs,
+			compositions,
+			batch_coeffs,
+			accumulator,
+		) || try_sum_compositions_evals_byte_sliced::<_, PackedBinaryField4x128b>(
+			inputs,
+			compositions,
+			batch_coeffs,
+			accumulator,
+		) {
+			return Ok(());
+		}
+
+		// The batch size is chosen to balance the amount of additional memory needed
+		// for the each operation and to minimize the call overhead.
+		// The current value is chosen based on the intuition and may be changed in the future
+		// based on the performance measurements.
+		const BATCH_SIZE: usize = 64;
+
+		let rows = inputs
+			.iter()
+			.map(|slice| slice.as_slice())
+			.collect::<Vec<_>>();
+		if inputs.row_len() >= P::WIDTH {
+			let packed_row_len = checked_int_div(inputs.row_len(), P::WIDTH);
+
+			// Safety: `rows` is guaranteed to be valid as all slices have the same length
+			// (this is guaranteed by the `SlicesBatch` struct).
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, packed_row_len) };
+			let mut result = P::zero();
+			let mut output = [P::zero(); BATCH_SIZE];
+			for offset in (0..packed_row_len).step_by(BATCH_SIZE) {
+				let batch_size = packed_row_len.saturating_sub(offset).min(BATCH_SIZE);
+				let rows = rows_batch.columns_subrange(offset..offset + batch_size);
+				for (composition, &batch_coeff) in compositions.iter().zip(batch_coeffs.iter()) {
+					composition
+						.batch_evaluate(&rows, &mut output[..batch_size])
+						.expect("dimensions are correct");
+
+					result += output[..batch_size].iter().copied().sum::<P>() * batch_coeff;
+				}
+			}
+
+			*accumulator += result.into_iter().sum::<T::B128>();
+		} else {
+			let rows_batch = unsafe { RowsBatchRef::new_unchecked(&rows, 1) };
+
+			let mut output = P::zero();
+
+			for (composition, &batch_coeff) in compositions.iter().zip(batch_coeffs.iter()) {
+				composition
+					.batch_evaluate(&rows_batch, slice::from_mut(&mut output))
+					.expect("dimensions are correct");
+
+				*accumulator +=
+					batch_coeff * output.into_iter().take(inputs.row_len()).sum::<T::B128>();
+			}
+		}
+
+		Ok(())
+	}
+
 	fn add(
 		&mut self,
 		log_len: usize,
@@ -791,4 +881,114 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuil
 
 		Ok(())
 	}
+}
+
+fn try_sum_compositions_evals_byte_sliced<P1, P2>(
+	inputs: &SlicesBatch<PackedMemorySlice<P1>>,
+	compositions: &[ArithCircuitPoly<P1::Scalar>],
+	batch_coeff: &[P1::Scalar],
+	accumulator: &mut P1::Scalar,
+) -> bool
+where
+	P1: PackedField,
+	P2: PackedField<Scalar = BinaryField128b> + WithUnderlier,
+	P2::Underlier: UnderlierWithBitOps
+		+ PackScalar<BinaryField128b, Packed = P2>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<BinaryField8b>
+		+ PackScalar<AESTowerField8b>
+		+ From<u8>
+		+ Pod,
+	u8: NumCast<P2::Underlier>,
+	ByteSlicedUnderlier<P2::Underlier, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	PackedType<P2::Underlier, BinaryField8b>:
+		PackedTransformationFactory<PackedType<P2::Underlier, AESTowerField8b>>,
+	PackedType<P2::Underlier, AESTowerField8b>:
+		PackedTransformationFactory<PackedType<P2::Underlier, BinaryField8b>>,
+{
+	if TypeId::of::<P1>() == TypeId::of::<P2>() && inputs.row_len() % (64 << P1::LOG_WIDTH) == 0 {
+		sum_compositions_evals_byte_sliced::<P2::Underlier>(
+			unsafe { transmute(inputs) },
+			unsafe { transmute(compositions) },
+			unsafe { transmute(batch_coeff) },
+			unsafe { transmute(accumulator) },
+		);
+		true
+	} else {
+		false
+	}
+}
+
+fn sum_compositions_evals_byte_sliced<U>(
+	inputs: &SlicesBatch<PackedMemorySlice<PackedCanonical128b<U>>>,
+	compositions: &[ArithCircuitPoly<BinaryField128b>],
+	batch_coeffs: &[BinaryField128b],
+	accumulator: &mut BinaryField128b,
+) where
+	U: PackScalar<BinaryField128b>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<BinaryField8b>
+		+ PackScalar<AESTowerField8b>
+		+ UnderlierWithBitOps
+		+ From<u8>
+		+ Pod,
+	u8: NumCast<U>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, BinaryField8b>>,
+{
+	let fwd_transform =
+		make_binary_to_aes_packed_transformer::<PackedCanonical128b<U>, PackedAES128b<U>>();
+
+	assert_eq!(
+		inputs.row_len() % (64 << PackedCanonical128b::<U>::LOG_WIDTH) == 0,
+		true,
+		"batch_coeffs must be a multiple of 16"
+	);
+
+	let exprs_aes_iter = compositions
+		.iter()
+		.map(ArithCircuitPoly::convert_field::<AESTowerField128b>);
+	stackalloc_with_iter(compositions.len(), exprs_aes_iter, |compositions| {
+		stackalloc_with_default::<ByteSliced128b<U>, _, _>(4 * inputs.n_rows(), |rows_batch| {
+			let rows_iter = rows_batch.chunks_exact_mut(4);
+			stackalloc_with_iter(inputs.n_rows(), rows_iter, |byte_sliced_rows| {
+				let mut output = [ByteSliced128b::<U>::default(); 4];
+				for offset in
+					(0..inputs.row_len() >> PackedCanonical128b::<U>::LOG_WIDTH).step_by(64)
+				{
+					for (row_i, row) in byte_sliced_rows.iter_mut().enumerate() {
+						for col in 0..4 {
+							row[col] = canonical_to_byte_sliced(
+								&inputs.row(row_i).as_slice()
+									[offset + col * 16..offset + (col + 1) * 16]
+									.try_into()
+									.expect("slice size is 16"),
+								&fwd_transform,
+							);
+						}
+					}
+
+					let rows_batch_ref = unsafe {
+						RowsBatchRef::new_unchecked(std::mem::transmute(&mut *byte_sliced_rows), 4)
+					};
+
+					for (composition, &batch_coeff) in compositions.iter().zip(batch_coeffs.iter())
+					{
+						composition
+							.batch_evaluate(&rows_batch_ref, &mut output)
+							.expect("dimensions are correct");
+
+						let mut result = ByteSliced128b::<U>::zero();
+						for out in &output {
+							result += *out;
+						}
+
+						*accumulator += batch_coeff
+							* BinaryField128b::from(result.into_iter().sum::<AESTowerField128b>());
+					}
+				}
+			});
+		})
+	});
 }

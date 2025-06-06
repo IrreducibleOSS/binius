@@ -160,6 +160,15 @@ enum CircuitStepArgument<F> {
 	Const(F),
 }
 
+impl<F: Field> CircuitStepArgument<F> {
+	fn convert_field<FOther: Field + From<F>>(&self) -> CircuitStepArgument<FOther> {
+		match self {
+			CircuitStepArgument::Expr(node) => CircuitStepArgument::Expr(*node),
+			CircuitStepArgument::Const(value) => CircuitStepArgument::Const((*value).into()),
+		}
+	}
+}
+
 /// Describes computation symbolically. This is used internally by ArithCircuitPoly.
 ///
 /// ExprIds used by an Expr has to be less than the index of the Expr itself within the
@@ -171,6 +180,19 @@ enum CircuitStep<F: Field> {
 	Mul(CircuitStepArgument<F>, CircuitStepArgument<F>),
 	Square(CircuitStepArgument<F>),
 	AddMul(usize, CircuitStepArgument<F>, CircuitStepArgument<F>),
+}
+
+impl<F: Field> CircuitStep<F> {
+	fn convert_field<FOther: Field + From<F>>(&self) -> CircuitStep<FOther> {
+		match self {
+			CircuitStep::Add(x, y) => CircuitStep::Add(x.convert_field(), y.convert_field()),
+			CircuitStep::Mul(x, y) => CircuitStep::Mul(x.convert_field(), y.convert_field()),
+			CircuitStep::Square(x) => CircuitStep::Square(x.convert_field()),
+			CircuitStep::AddMul(target_slot, x, y) => {
+				CircuitStep::AddMul(*target_slot, x.convert_field(), y.convert_field())
+			}
+		}
+	}
 }
 
 /// Describes polynomial evaluations using a directed acyclic graph of expressions.
@@ -267,6 +289,26 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 			degree,
 			tower_level,
 		})
+	}
+
+	pub fn convert_field<FOther: TowerField + From<F>>(&self) -> ArithCircuitPoly<FOther> {
+		let expr = self.expr.convert_field();
+		let steps = self
+			.steps
+			.iter()
+			.map(CircuitStep::convert_field::<FOther>)
+			.collect::<Vec<_>>();
+		let retval = self.retval.convert_field();
+		let steps = steps.into();
+
+		ArithCircuitPoly {
+			expr,
+			steps,
+			retval,
+			degree: self.degree,
+			n_vars: self.n_vars,
+			tower_level: FOther::TOWER_LEVEL,
+		}
 	}
 }
 
