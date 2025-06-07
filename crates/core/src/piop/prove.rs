@@ -367,7 +367,6 @@ where
 			dimensions_data = ?provers_dimensions_data,
 		)
 		.entered();
-
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 		drop(bivariate_sumcheck_all_folds_span);
 		drop(bivariate_sumcheck_span);

@@ -483,7 +483,6 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-
 	piop::prove(
 		hal,
 		host_mem,

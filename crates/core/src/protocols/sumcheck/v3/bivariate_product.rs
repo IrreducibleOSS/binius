@@ -48,6 +48,7 @@ where
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
+
 		// Check shape of multilinear witness inputs.
 		assert_eq!(claim.n_multilinears(), multilins.len());
 		for multilin in &multilins {
@@ -57,7 +58,7 @@ where
 		}
 
 		// Wrap multilinear witness inputs as SumcheckMultilinears.
-		let multilins: Vec<_> = multilins
+		let multilins = multilins
 			.into_iter()
 			.map(SumcheckMultilinear::PreFold)
 			.collect();
@@ -118,7 +119,6 @@ where
 			.iter()
 			.map(|multilin| multilin.const_slice())
 			.collect::<Vec<_>>();
-
 		let round_evals = calculate_round_evals(
 			self.hal,
 			self.n_vars_remaining,
@@ -179,7 +179,6 @@ where
 						self.hal.copy_d2d(evals_0, &mut folded_evals)?;
 
 						exec.extrapolate_line(&mut folded_evals, evals_1, challenge)?;
-
 						folded_evals
 					}
 					SumcheckMultilinear::PostFold(evals) => {
@@ -216,13 +215,11 @@ where
 
 		// Copy the fully folded multilinear evaluations to the host.
 		let buffer = self.host_alloc.alloc(self.multilins.len())?;
-
 		for (multilin, dst_i) in iter::zip(self.multilins, &mut *buffer) {
 			let vals = multilin.const_slice();
 			debug_assert_eq!(vals.len(), 1);
 			self.hal.copy_d2h(vals, slice::from_mut(dst_i))?;
 		}
-
 		Ok(buffer.to_vec())
 	}
 }
