@@ -873,7 +873,7 @@ mod tests {
 
 	use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::prelude::*;
-	use rand::{SeedableRng, rngs::StdRng, thread_rng};
+	use rand::{Rng, SeedableRng, rngs::StdRng, thread_rng};
 	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
 
 	use super::{
