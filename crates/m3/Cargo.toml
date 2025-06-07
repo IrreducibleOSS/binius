@@ -11,7 +11,7 @@ binius_core = { path = "../core", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_fast_compute = { path = "../fast_compute", default-features = false }
 binius_hal = { path = "../hal", default-features = false, optional = true }
-binius_hash = { path = "../hash", default-features = false, optional = true }
+binius_hash = { path = "../hash", default-features = false, optional = false }
 binius_math = { path = "../math", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
@@ -31,7 +31,7 @@ rand.workspace = true
 
 [features]
 default = ["nightly_features"]
-test_utils = ["binius_hal", "binius_hash"]
+test_utils = ["binius_hal"]
 nightly_features = [
     "binius_core/nightly_features",
     "binius_hal/nightly_features",
