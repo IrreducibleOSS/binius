@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
 //! Utilities for testing M3 constraint systems and gadgets.
-
 use anyhow::Result;
 use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
@@ -13,6 +13,7 @@ use binius_field::{
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
+use bytemuck::zeroed_vec;
 
 use super::{
 	B1, B8, B16, B32, B64,
@@ -131,7 +132,15 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
 
+		let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<U, B128>>::default();
+
+		let mut host_mem = zeroed_vec(1 << 16);
+		let mut dev_mem_owned = zeroed_vec(1 << (24 - PackedType::<U, B128>::LOG_WIDTH));
+
+		let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+
 		let proof = binius_core::constraint_system::prove::<
+			_,
 			U,
 			CanonicalTowerFamily,
 			Groestl256,
@@ -139,6 +148,9 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			HasherChallenger<Groestl256>,
 			_,
 		>(
+			&hal,
+			&mut host_mem,
+			dev_mem,
 			&ccs,
 			LOG_INV_RATE,
 			SECURITY_BITS,
