@@ -119,7 +119,7 @@ fn main() -> Result<()> {
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &statement.boundaries, proof)
-	.unwrap();
+	?;
 
 	Ok(())
 }
