@@ -2,6 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
+use binius_compute::{ComputeLayer, ComputeMemory, FSliceMut, cpu::CpuMemory};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -58,8 +59,12 @@ use crate::{
 };
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
+#[allow(clippy::too_many_arguments)]
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
+pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
+	hal: &Hal,
+	host_mem: <CpuMemory as ComputeMemory<Tower::B128>>::FSliceMut<'_>,
+	dev_mem: FSliceMut<'_, Tower::B128, Hal>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -68,6 +73,7 @@ pub fn prove<U, Tower, Hash, Compress, Challenger_, Backend>(
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
+	Hal: ComputeLayer<Tower::B128> + Default,
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
 	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
@@ -477,11 +483,13 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+	piop::prove(
+		hal,
+		host_mem,
+		dev_mem,
 		&fri_params,
 		&ntt,
 		&merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -489,7 +497,6 @@ where
 		&transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
-		&backend,
 	)?;
 	drop(piop_compiler_span);
 

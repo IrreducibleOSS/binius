@@ -136,7 +136,16 @@ where
 		};
 		let round_coeffs = calculate_round_coeffs_from_evals(batched_sum, round_evals);
 		self.last_coeffs_or_sums = PhaseState::Coeffs(round_coeffs.clone());
-		Ok(round_coeffs)
+
+		// This is because the batched verifier reads a batched polynomial from the transcript with
+		// max degree from all compositions being proven. If our compoisition is empty, we add a
+		// degree 0 polynomial to whatever is already being written to the transcript by the batch
+		// prover.
+		if self.compositions.is_empty() {
+			Ok(RoundCoeffs(vec![]))
+		} else {
+			Ok(round_coeffs)
+		}
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
@@ -161,9 +170,8 @@ where
 				let folded_evals = match multilin {
 					SumcheckMultilinear::PreFold(evals) => {
 						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-						let (evals_0, evals_1) =
-							Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
 
+						let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
 						// Allocate new buffer for the folded evaluations and copy in evals_0.
 						let mut folded_evals =
 							self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;

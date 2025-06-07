@@ -8,7 +8,9 @@ authors.workspace = true
 anyhow.workspace = true
 alloy-primitives.workspace = true
 array-util.workspace = true
+bytemuck.workspace = true
 binius_core = { path = "../crates/core", default-features = false }
+binius_fast_compute = { path = "../crates/fast_compute", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
 binius_hal = { path = "../crates/hal", default-features = false }
 binius_hash = { path = "../crates/hash", default-features = false }

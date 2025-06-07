@@ -2,17 +2,18 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
+use binius_compute::cpu::CpuLayer;
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
+	tower::{CanonicalTowerFamily, TowerFamily},
 	underlier::UnderlierType,
 };
-use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{
-	B1, B8, B16, B32, B64, B128, DefaultEvaluationDomainFactory, MLEEmbeddingAdapter,
-	MultilinearExtension, MultilinearPoly, MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
+	B1, B8, B16, B32, B64, B128, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
@@ -260,7 +261,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	});
 }
 
-fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
+fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Tower>(
 	merkle_prover: &MTProver,
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
@@ -270,6 +271,7 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	F: TowerTop + PackedTop<Scalar = F>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Tower: TowerFamily<B128 = F> + Default,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -310,18 +312,33 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
 
-	let backend = make_portable_backend();
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
 	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
 
-	let domain_factory = DefaultEvaluationDomainFactory::<B8>::default();
+	let hal = CpuLayer::<Tower>::default();
+	let host_mem_size_committed = committed_multilins.len();
+	let dev_mem_size_committed = committed_multilins
+		.iter()
+		.map(|multilin| 1 << (multilin.n_vars() + 1))
+		.sum::<usize>();
+
+	let host_mem_size_transparent = transparent_multilins.len();
+	let dev_mem_size_transparent = transparent_multilins
+		.iter()
+		.map(|multilin| 1 << (multilin.n_vars() + 1))
+		.sum::<usize>();
+	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
+	let mut dev_mem = vec![Tower::B128::ZERO; dev_mem_size_committed + dev_mem_size_transparent];
+
 	piop::prove(
+		&hal,
+		&mut host_mem,
+		&mut dev_mem,
 		&fri_params,
 		&ntt,
 		merkle_prover,
-		domain_factory,
 		&commit_meta,
 		committed,
 		&codeword,
@@ -329,7 +346,6 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		&transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
-		&backend,
 	)
 	.unwrap();
 
@@ -362,5 +378,9 @@ fn test_prove_verify_piop_integration() {
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
-	commit_prove_verify_piop::<U, F, _, _>(&merkle_prover, &oracles, log_inv_rate);
+	commit_prove_verify_piop::<U, F, _, _, CanonicalTowerFamily>(
+		&merkle_prover,
+		&oracles,
+		log_inv_rate,
+	);
 }
