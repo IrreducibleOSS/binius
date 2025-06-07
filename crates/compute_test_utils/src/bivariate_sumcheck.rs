@@ -377,13 +377,8 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 		.map(|evals_i| {
 			let mut dev_multilin = dev_alloc.alloc(evals_i.len()).unwrap();
 			hal.copy_h2d(evals_i, &mut dev_multilin).unwrap();
-			dev_multilin
+			Hal::DevMem::to_const(dev_multilin)
 		})
-		.collect::<Vec<_>>();
-	// TODO: into_const would be useful here
-	let dev_multilins = dev_multilins
-		.iter()
-		.map(Hal::DevMem::as_const)
 		.collect::<Vec<_>>();
 
 	assert!(
