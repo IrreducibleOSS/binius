@@ -412,17 +412,17 @@ mod tests {
 		BinaryField128b, PackedField, arch::OptimalUnderlier, as_packed_field::PackedType,
 		tower::CanonicalTowerFamily,
 	};
+	use binius_math::B128;
 	use bytemuck::zeroed_vec;
 
 	use super::*;
 
 	#[test]
 	fn test_calculate_round_evals() {
-		type Hal = CpuLayer<CanonicalTowerFamily>;
-		type F = BinaryField128b;
+		type Hal = CpuLayer<B128>;
 
 		let hal = Hal::default();
-		let mut dev_mem = vec![F::ZERO; 1 << 10];
+		let mut dev_mem = vec![B128::ZERO; 1 << 10];
 		let n_vars = 8;
 		generic_test_calculate_round_evals(&hal, &mut dev_mem, n_vars)
 	}
@@ -444,7 +444,7 @@ mod tests {
 
 	#[test]
 	fn test_bivariate_sumcheck_prove_verify() {
-		let hal = <CpuLayer<CanonicalTowerFamily>>::default();
+		let hal = <CpuLayer<B128>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
 		let n_vars = 8;
 		let n_multilins = 8;
