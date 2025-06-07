@@ -90,6 +90,9 @@ pub trait ComputeMemory<F> {
 	/// This allows the immutable reference to be copied.
 	fn as_const<'a>(data: &'a Self::FSliceMut<'_>) -> Self::FSlice<'a>;
 
+	/// Converts a mutable memory slice to an immutable slice.
+	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_>;
+
 	/// Borrows a subslice of an immutable memory slice.
 	///
 	/// ## Preconditions
