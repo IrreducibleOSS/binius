@@ -2,11 +2,8 @@
 
 use std::{iter, marker::PhantomData};
 
-use binius_field::{
-	BinaryField, ExtensionField, Field, TowerField, tower::TowerFamily,
-	util::inner_product_unchecked,
-};
-use binius_math::{ArithCircuit, extrapolate_line_scalar};
+use binius_field::{BinaryField, ExtensionField, Field, TowerField, util::inner_product_unchecked};
+use binius_math::{ArithCircuit, TowerTop, extrapolate_line_scalar};
 use binius_ntt::AdditiveNTT;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::zeroed_vec;
@@ -21,21 +18,17 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
-pub struct CpuLayer<F: TowerFamily>(PhantomData<F>);
+pub struct CpuLayer<F>(PhantomData<F>);
 
-impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
-	type Exec<'a> = CpuLayerExecutor<T>;
+impl<F: TowerTop> ComputeLayer<F> for CpuLayer<F> {
+	type Exec<'a> = CpuLayerExecutor<F>;
 	type DevMem = CpuMemory;
 
-	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
-		vec![<T::B128 as Field>::ZERO; n]
+	fn host_alloc(&self, n: usize) -> impl AsMut<[F]> + '_ {
+		vec![<F as Field>::ZERO; n]
 	}
 
-	fn copy_h2d(
-		&self,
-		src: &[T::B128],
-		dst: &mut FSliceMut<'_, T::B128, Self>,
-	) -> Result<(), Error> {
+	fn copy_h2d(&self, src: &[F], dst: &mut FSliceMut<'_, F, Self>) -> Result<(), Error> {
 		assert_eq!(
 			src.len(),
 			dst.len(),
@@ -45,7 +38,7 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 		Ok(())
 	}
 
-	fn copy_d2h(&self, src: FSlice<'_, T::B128, Self>, dst: &mut [T::B128]) -> Result<(), Error> {
+	fn copy_d2h(&self, src: FSlice<'_, F, Self>, dst: &mut [F]) -> Result<(), Error> {
 		assert_eq!(
 			src.len(),
 			dst.len(),
@@ -57,8 +50,8 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 	fn copy_d2d(
 		&self,
-		src: FSlice<'_, T::B128, Self>,
-		dst: &mut FSliceMut<'_, T::B128, Self>,
+		src: FSlice<'_, F, Self>,
+		dst: &mut FSliceMut<'_, F, Self>,
 	) -> Result<(), Error> {
 		assert_eq!(
 			src.len(),
@@ -71,45 +64,39 @@ impl<T: TowerFamily> ComputeLayer<T::B128> for CpuLayer<T> {
 
 	fn execute<'a, 'b>(
 		&'b self,
-		f: impl FnOnce(&mut Self::Exec<'a>) -> Result<Vec<T::B128>, Error>,
-	) -> Result<Vec<T::B128>, Error>
+		f: impl FnOnce(&mut Self::Exec<'a>) -> Result<Vec<F>, Error>,
+	) -> Result<Vec<F>, Error>
 	where
 		'b: 'a,
 	{
-		f(&mut CpuLayerExecutor::<T>::default())
+		f(&mut CpuLayerExecutor::<F>::default())
 	}
 
 	fn compile_expr(
 		&self,
-		expr: &ArithCircuit<T::B128>,
-	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<T::B128>>::ExprEval, Error> {
+		expr: &ArithCircuit<F>,
+	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<F>>::ExprEval, Error> {
 		Ok(expr.clone())
 	}
 }
 
-pub struct CpuLayerExecutor<T: TowerFamily>(PhantomData<T::B128>);
+#[derive(Debug)]
+pub struct CpuLayerExecutor<F>(PhantomData<F>);
 
-impl<T: TowerFamily> CpuLayerExecutor<T> {
-	fn new() -> Self {
-		Self(PhantomData)
-	}
-
+impl<F: TowerTop> CpuLayerExecutor<F> {
 	fn map_kernel_mem<'a>(
-		mappings: &'a mut [MemMap<'_, Self, T::B128>],
-		local_buffer_alloc: &'a BumpAllocator<
-			T::B128,
-			<Self as ComputeLayerExecutor<T::B128>>::DevMem,
-		>,
+		mappings: &'a mut [MemMap<'_, Self, F>],
+		local_buffer_alloc: &'a BumpAllocator<F, <Self as ComputeLayerExecutor<F>>::DevMem>,
 		log_chunks: usize,
 		i: usize,
-	) -> Vec<Buffer<'a, Self, T::B128>> {
+	) -> Vec<Buffer<'a, Self, F>> {
 		mappings
 			.iter_mut()
 			.map(|mapping| match mapping {
 				KernelMemMap::Chunked { data, .. } => {
 					let log_size = checked_log_2(data.len());
 					let log_chunk_size = log_size - log_chunks;
-					KernelBuffer::Ref(<Self as ComputeLayerExecutor<T::B128>>::DevMem::slice(
+					KernelBuffer::Ref(<Self as ComputeLayerExecutor<F>>::DevMem::slice(
 						data,
 						(i << log_chunk_size)..((i + 1) << log_chunk_size),
 					))
@@ -117,7 +104,7 @@ impl<T: TowerFamily> CpuLayerExecutor<T> {
 				KernelMemMap::ChunkedMut { data, .. } => {
 					let log_size = checked_log_2(data.len());
 					let log_chunk_size = log_size - log_chunks;
-					KernelBuffer::Mut(<Self as ComputeLayerExecutor<T::B128>>::DevMem::slice_mut(
+					KernelBuffer::Mut(<Self as ComputeLayerExecutor<F>>::DevMem::slice_mut(
 						data,
 						(i << log_chunk_size)..((i + 1) << log_chunk_size),
 					))
@@ -134,15 +121,15 @@ impl<T: TowerFamily> CpuLayerExecutor<T> {
 	}
 }
 
-impl<T: TowerFamily> Default for CpuLayerExecutor<T> {
+impl<F> Default for CpuLayerExecutor<F> {
 	fn default() -> Self {
-		Self::new()
+		Self(PhantomData)
 	}
 }
 
-impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
-	type OpValue = T::B128;
-	type ExprEval = ArithCircuit<T::B128>;
+impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
+	type OpValue = F;
+	type ExprEval = ArithCircuit<F>;
 	type KernelExec = CpuKernelBuilder;
 	type DevMem = CpuMemory;
 
@@ -152,9 +139,9 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
-		) -> Result<Vec<T::B128>, Error>,
-		mut inputs: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+		) -> Result<Vec<F>, Error>,
+		mut inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
 			.expect("Many variant must have at least one entry");
@@ -184,11 +171,11 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 
 	fn inner_product<'a>(
 		&'a mut self,
-		a_in: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		b_in: &'a [T::B128],
-	) -> Result<T::B128, Error> {
-		if a_in.tower_level > T::B128::TOWER_LEVEL
-			|| a_in.slice.len() << (T::B128::TOWER_LEVEL - a_in.tower_level) != b_in.len()
+		a_in: SubfieldSlice<'_, F, Self::DevMem>,
+		b_in: &'a [F],
+	) -> Result<F, Error> {
+		if a_in.tower_level > F::TOWER_LEVEL
+			|| a_in.slice.len() << (F::TOWER_LEVEL - a_in.tower_level) != b_in.len()
 		{
 			return Err(Error::InputValidation(format!(
 				"invalid input: a_edeg={} |a|={} |b|={}",
@@ -210,67 +197,60 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 			)
 		}
 
-		let result = each_tower_subfield!(
-			a_in.tower_level,
-			T,
-			inner_product::<_, T::B128>(a_in.slice, b_in)
-		);
+		let result =
+			each_tower_subfield!(a_in.tower_level, inner_product::<_, F>(a_in.slice, b_in));
 		Ok(result)
 	}
 
 	fn fold_left(
 		&mut self,
-		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		if mat.tower_level > T::B128::TOWER_LEVEL {
+		if mat.tower_level > F::TOWER_LEVEL {
 			return Err(Error::InputValidation(format!(
 				"invalid evals: tower_level={} > {}",
 				mat.tower_level,
-				T::B128::TOWER_LEVEL
+				F::TOWER_LEVEL
 			)));
 		}
-		let log_evals_size =
-			mat.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - mat.tower_level;
+		let log_evals_size = mat.slice.len().ilog2() as usize + F::TOWER_LEVEL - mat.tower_level;
 		// Dispatch to the binary field of type T corresponding to the tower level of the evals
 		// slice.
 		each_tower_subfield!(
 			mat.tower_level,
-			T,
-			compute_left_fold::<_, T>(mat.slice, log_evals_size, vec, out)
+			compute_left_fold::<_, F>(mat.slice, log_evals_size, vec, out)
 		)
 	}
 
 	fn fold_right(
 		&mut self,
-		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,
-		vec: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		out: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		mat: SubfieldSlice<'_, F, Self::DevMem>,
+		vec: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		out: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	) -> Result<(), Error> {
-		if mat.tower_level > T::B128::TOWER_LEVEL {
+		if mat.tower_level > F::TOWER_LEVEL {
 			return Err(Error::InputValidation(format!(
 				"invalid evals: tower_level={} > {}",
 				mat.tower_level,
-				T::B128::TOWER_LEVEL
+				F::TOWER_LEVEL
 			)));
 		}
-		let log_evals_size =
-			mat.slice.len().ilog2() as usize + T::B128::TOWER_LEVEL - mat.tower_level;
+		let log_evals_size = mat.slice.len().ilog2() as usize + F::TOWER_LEVEL - mat.tower_level;
 		// Dispatch to the binary field of type T corresponding to the tower level of the evals
 		// slice.
 		each_tower_subfield!(
 			mat.tower_level,
-			T,
-			compute_right_fold::<_, T>(mat.slice, log_evals_size, vec, out)
+			compute_right_fold::<_, F>(mat.slice, log_evals_size, vec, out)
 		)
 	}
 
 	fn tensor_expand(
 		&mut self,
 		log_n: usize,
-		coordinates: &[T::B128],
-		data: &mut &mut [T::B128],
+		coordinates: &[F],
+		data: &mut &mut [F],
 	) -> Result<(), Error> {
 		if data.len() != 1 << (log_n + coordinates.len()) {
 			return Err(Error::InputValidation(format!("invalid data length: {}", data.len())));
@@ -293,13 +273,13 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 		ntt: &(impl AdditiveNTT<FSub> + Sync),
 		log_len: usize,
 		log_batch_size: usize,
-		challenges: &[T::B128],
-		data_in: &[T::B128],
-		data_out: &mut &mut [T::B128],
+		challenges: &[F],
+		data_in: &[F],
+		data_out: &mut &mut [F],
 	) -> Result<(), Error>
 	where
-		FSub: binius_field::BinaryField,
-		T::B128: BinaryField + ExtensionField<FSub>,
+		FSub: BinaryField,
+		F: ExtensionField<FSub>,
 	{
 		if data_in.len() != 1 << (log_len + log_batch_size) {
 			return Err(Error::InputValidation(format!(
@@ -332,7 +312,7 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
 		let log_size = fold_challenges.len();
 
-		let mut values = vec![T::B128::ZERO; 1 << challenges.len()];
+		let mut values = vec![F::ZERO; 1 << challenges.len()];
 		for (chunk_index, (chunk, out)) in data_in
 			.chunks_exact(1 << challenges.len())
 			.zip(data_out.iter_mut())
@@ -382,9 +362,9 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 
 	fn extrapolate_line(
 		&mut self,
-		evals_0: &mut &mut [T::B128],
-		evals_1: &[T::B128],
-		z: T::B128,
+		evals_0: &mut &mut [F],
+		evals_1: &[F],
+		z: F,
 	) -> Result<(), Error> {
 		if evals_0.len() != evals_1.len() {
 			return Err(Error::InputValidation(
@@ -399,8 +379,8 @@ impl<T: TowerFamily> ComputeLayerExecutor<T::B128> for CpuLayerExecutor<T> {
 
 	fn compute_composite(
 		&mut self,
-		inputs: &SlicesBatch<<Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>>,
-		output: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		inputs: &SlicesBatch<<Self::DevMem as ComputeMemory<F>>::FSlice<'_>>,
+		output: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		composition: &Self::ExprEval,
 	) -> Result<(), Error> {
 		if inputs.row_len() != output.len() {
@@ -512,18 +492,15 @@ pub fn count_total_local_buffer_sizes<F, Mem: ComputeMemory<F>>(
 /// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
-fn compute_left_fold<EvalType: TowerField, T: TowerFamily>(
-	evals_as_b128: &[T::B128],
+fn compute_left_fold<EvalType: TowerField, F: TowerTop + ExtensionField<EvalType>>(
+	evals_as_b128: &[F],
 	log_evals_size: usize,
-	query: &[T::B128],
-	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
-) -> Result<(), Error>
-where
-	<T as TowerFamily>::B128: ExtensionField<EvalType>,
-{
+	query: &[F],
+	out: FSliceMut<'_, F, CpuLayer<F>>,
+) -> Result<(), Error> {
 	let evals = evals_as_b128
 		.iter()
-		.flat_map(<T::B128 as ExtensionField<EvalType>>::iter_bases)
+		.flat_map(ExtensionField::<EvalType>::iter_bases)
 		.collect::<Vec<_>>();
 	let log_query_size = query.len().ilog2() as usize;
 	let num_cols = 1 << log_query_size;
@@ -554,9 +531,9 @@ where
 	}
 
 	for i in 0..num_rows {
-		let mut acc = T::B128::ZERO;
+		let mut acc = F::ZERO;
 		for j in 0..num_cols {
-			acc += T::B128::from(evals[j * num_rows + i]) * query[j];
+			acc += query[j] * evals[j * num_rows + i];
 		}
 		out[i] = acc;
 	}
@@ -569,18 +546,15 @@ where
 /// evals is treated as a matrix with `1 << log_query_size` columns and each row is dot-produced
 /// with the corresponding query element. The result is written to the `output` slice of values.
 /// The evals slice may be any field extension defined by the tower family T.
-fn compute_right_fold<EvalType: TowerField, T: TowerFamily>(
-	evals_as_b128: &[T::B128],
+fn compute_right_fold<EvalType: TowerField, F: TowerTop + ExtensionField<EvalType>>(
+	evals_as_b128: &[F],
 	log_evals_size: usize,
-	query: &[T::B128],
-	out: FSliceMut<'_, T::B128, CpuLayer<T>>,
-) -> Result<(), Error>
-where
-	<T as TowerFamily>::B128: ExtensionField<EvalType>,
-{
+	query: &[F],
+	out: FSliceMut<'_, F, CpuLayer<F>>,
+) -> Result<(), Error> {
 	let evals = evals_as_b128
 		.iter()
-		.flat_map(<T::B128 as ExtensionField<EvalType>>::iter_bases)
+		.flat_map(ExtensionField::<EvalType>::iter_bases)
 		.collect::<Vec<_>>();
 	let log_query_size = query.len().ilog2() as usize;
 	let num_rows = 1 << log_query_size;
@@ -611,9 +585,9 @@ where
 	}
 
 	for i in 0..num_cols {
-		let mut acc = T::B128::ZERO;
+		let mut acc = F::ZERO;
 		for j in 0..num_rows {
-			acc += T::B128::from(evals[i * num_rows + j]) * query[j];
+			acc += query[j] * evals[i * num_rows + j];
 		}
 		out[i] = acc;
 	}

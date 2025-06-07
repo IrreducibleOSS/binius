@@ -13,7 +13,7 @@ use binius_compute::{
 	ComputeLayerExecutor, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::layer::count_total_local_buffer_sizes,
-	each_tower_subfield,
+	each_generic_tower_subfield as each_tower_subfield,
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
