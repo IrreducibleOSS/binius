@@ -132,6 +132,8 @@ fn main() -> Result<()> {
 	let host_alloc = HostBumpAllocator::new(&mut host_mem);
 	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
 
+	drop(hal_span);
+
 	let proof = constraint_system::prove::<
 		_,
 		OptimalUnderlier,

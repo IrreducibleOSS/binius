@@ -165,10 +165,6 @@ where
 
 	reorder_exponents(&mut exponents, &oracles);
 
-	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
-
-	drop(hal_span);
-
 	let witness_span = tracing::info_span!(
 		"[phase] Witness Finalization",
 		phase = "witness",
