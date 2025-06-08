@@ -387,7 +387,7 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 			return Err(Error::InputValidation("composition not match with input".into()));
 		}
 
-		let mut query = zeroed_vec(inputs.row_len());
+		let mut query = zeroed_vec(inputs.n_rows());
 
 		for (i, output) in output.iter_mut().enumerate() {
 			for (j, query) in query.iter_mut().enumerate() {
