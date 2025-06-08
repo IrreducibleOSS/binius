@@ -95,17 +95,17 @@ pub trait ComputeLayerExecutor<F: Field> {
 	type DevMem: ComputeMemory<F>;
 
 	/// The operation (scalar) value type.
-	type OpValue;
+	type OpValue: Send;
 
 	/// The executor that can execute operations on a kernel-level granularity (i.e., a single
 	/// core).
 	type KernelExec: KernelExecutor<F, ExprEval = Self::ExprEval>;
 
 	/// Creates an operation that depends on the concurrent execution of two inner operations.
-	fn join<Out1, Out2>(
+	fn join<Out1: Send, Out2: Send>(
 		&mut self,
-		op1: impl FnOnce(&mut Self) -> Result<Out1, Error>,
-		op2: impl FnOnce(&mut Self) -> Result<Out2, Error>,
+		op1: impl Send + FnOnce(&mut Self) -> Result<Out1, Error>,
+		op2: impl Send + FnOnce(&mut Self) -> Result<Out2, Error>,
 	) -> Result<(Out1, Out2), Error> {
 		let out1 = op1(self)?;
 		let out2 = op2(self)?;
