@@ -2,14 +2,16 @@
 
 use std::{borrow::Cow, ops::Deref};
 
+use binius_compute::{
+	ComputeLayer, ComputeMemory,
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	cpu::CpuMemory,
+};
 use binius_field::{
-	BinaryField, Field, PackedExtension, PackedField, TowerField, packed::PackedSliceMut,
+	BinaryField, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	packed::PackedSliceMut,
 };
-use binius_hal::ComputationBackend;
-use binius_math::{
-	EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
-	MultilinearPoly,
-};
+use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
@@ -18,7 +20,6 @@ use binius_utils::{
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
 };
-use either::Either;
 use itertools::{Itertools, chain};
 
 use super::{
@@ -36,11 +37,9 @@ use crate::{
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
-			self, immediate_switchover_heuristic,
-			prove::{
-				RegularSumcheckProver, SumcheckProver,
-				front_loaded::BatchProver as SumcheckBatchProver,
-			},
+			self, SumcheckClaim,
+			prove::{SumcheckProver, front_loaded::BatchProver as SumcheckBatchProver},
+			v3::bivariate_product::BivariateSumcheckProver,
 		},
 	},
 	transcript::ProverTranscript,
@@ -170,23 +169,13 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove<
-	F,
-	FDomain,
-	FEncode,
-	P,
-	M,
-	NTT,
-	DomainFactory,
-	MTScheme,
-	MTProver,
-	Challenger_,
-	Backend,
->(
+pub fn prove<Hal, F, FEncode, P, M, NTT, MTScheme, MTProver, Challenger_>(
+	hal: &Hal,
+	host_mem: <CpuMemory as ComputeMemory<F>>::FSliceMut<'_>,
+	dev_mem: <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
 	merkle_prover: &MTProver,
-	domain_factory: DomainFactory,
 	commit_meta: &CommitMeta,
 	committed: MTProver::Committed,
 	codeword: &[P],
@@ -194,24 +183,25 @@ pub fn prove<
 	transparent_multilins: &[M],
 	claims: &[PIOPSumcheckClaim<F>],
 	transcript: &mut ProverTranscript<Challenger_>,
-	backend: &Backend,
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	FDomain: Field,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>
-		+ PackedExtension<FEncode>,
+		+ PackedExtension<FEncode>
+		+ PackedFieldIndexable<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
 	NTT: AdditiveNTT<FEncode> + Sync,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
-	Backend: ComputationBackend,
+	Hal: ComputeLayer<F> + Default,
 {
+	let host_alloc = HostBumpAllocator::new(host_mem);
+
+	let dev_alloc = BumpAllocator::<_, Hal::DevMem>::new(dev_mem);
+
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
 		commit_meta,
@@ -231,6 +221,48 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
+	let packed_committed_fslices_mut = packed_committed_multilins
+		.iter()
+		.map(|packed_committed_multilin| {
+			let hypercube_evals = packed_committed_multilin
+				.packed_evals()
+				.expect("Prover should always populate witnesses");
+			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
+			let mut allocated_mem = dev_alloc.alloc(1 << packed_committed_multilin.n_vars())?;
+			let _ = hal.copy_h2d(
+				&unpacked_hypercube_evals[..1 << packed_committed_multilin.n_vars()],
+				&mut allocated_mem,
+			);
+			Ok(allocated_mem)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	let packed_committed_fslices = packed_committed_fslices_mut
+		.iter()
+		.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
+		.collect::<Vec<_>>();
+
+	let transparent_fslices_mut = transparent_multilins
+		.iter()
+		.map(|transparent_multilin| {
+			let hypercube_evals = transparent_multilin
+				.packed_evals()
+				.expect("Prover should always populate witnesses");
+			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
+			let mut allocated_mem = dev_alloc.alloc(1 << transparent_multilin.n_vars())?;
+			let _ = hal.copy_h2d(
+				&unpacked_hypercube_evals[..1 << transparent_multilin.n_vars()],
+				&mut allocated_mem,
+			);
+			Ok(allocated_mem)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	let transparent_fslices = transparent_fslices_mut
+		.iter()
+		.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
+		.collect::<Vec<_>>();
+
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
 		.enumerate()
@@ -238,27 +270,30 @@ where
 		// indicates unconstrained columns, but we still need the final evaluations from the
 		// sumcheck prover in order to derive the final FRI value.
 		.filter(|(_n_vars, desc)| !desc.committed_indices.is_empty());
-	let sumcheck_provers = non_empty_sumcheck_descs
-		.map(|(_n_vars, desc)| {
-			let multilins = chain!(
-				packed_committed_multilins[desc.committed_indices.clone()]
-					.iter()
-					.map(Either::Left),
-				transparent_multilins[desc.transparent_indices.clone()]
-					.iter()
-					.map(Either::Right),
-			)
-			.collect::<Vec<_>>();
-			RegularSumcheckProver::new(
-				EvaluationOrder::HighToLow,
-				multilins,
-				desc.composite_sums.iter().cloned(),
-				&domain_factory,
-				immediate_switchover_heuristic,
-				backend,
-			)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
+
+	let mut sumcheck_provers = vec![];
+
+	for (_n_vars, desc) in non_empty_sumcheck_descs {
+		let multilins = chain!(
+			packed_committed_fslices[desc.committed_indices.clone()]
+				.iter()
+				.map(|fslice| Hal::DevMem::narrow(fslice)),
+			transparent_fslices[desc.transparent_indices.clone()]
+				.iter()
+				.map(|fslice| Hal::DevMem::narrow(fslice))
+		)
+		.collect::<Vec<_>>();
+
+		let claim = SumcheckClaim::new(_n_vars, multilins.len(), desc.composite_sums.clone())?;
+
+		sumcheck_provers.push(BivariateSumcheckProver::new(
+			hal,
+			&dev_alloc,
+			&host_alloc,
+			&claim,
+			multilins,
+		)?);
+	}
 
 	prove_interleaved_fri_sumcheck(
 		commit_meta.total_vars(),
