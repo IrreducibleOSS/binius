@@ -1,11 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_core::fiat_shamir::HasherChallenger;
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
+use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hal::make_portable_backend;
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{B128, ConstraintSystem, Statement, WitnessIndex},
 	gadgets::merkle_tree::{
@@ -15,6 +17,7 @@ use binius_m3::{
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bumpalo::Bump;
+use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -93,20 +96,31 @@ fn main() -> Result<()> {
 	let ccs = cs.compile(&statement).unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
-	let proof = binius_core::constraint_system::prove::<
+	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::default();
+
+	let mut host_mem = zeroed_vec(1 << 20);
+	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+
+	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+
+	let proof = constraint_system::prove::<
+		_,
 		OptimalUnderlier,
 		CanonicalTowerFamily,
-		Groestl256,
+		Groestl256Parallel,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
 	>(
+		&hal,
+		&mut host_mem,
+		dev_mem,
 		&ccs,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&statement.boundaries,
 		witness,
-		&binius_hal::make_portable_backend(),
+		&make_portable_backend(),
 	)
 	.unwrap();
 
