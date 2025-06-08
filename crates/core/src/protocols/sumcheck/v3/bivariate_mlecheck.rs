@@ -3,8 +3,8 @@
 use std::{iter, mem, slice};
 
 use binius_compute::{
-	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, FSliceMut, KernelBuffer,
-	KernelExecutor, KernelMem, KernelMemMap, SizedSlice, SlicesBatch,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, KernelBuffer, KernelExecutor,
+	KernelMemMap, SizedSlice, SlicesBatch,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{
@@ -39,7 +39,7 @@ pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	last_coeffs_or_sums: PhaseState<F>,
 	eq_ind_prefix_eval: F,
 	// Wrapping it in Option is a temporary workaround for the lifetime problem
-	eq_ind_partial_evals: Option<FSliceMut<'a, F, Hal>>,
+	eq_ind_partial_evals: Option<SumcheckMultilinear<'a, F, Hal::DevMem>>,
 	eq_ind_challenges: Vec<F>,
 }
 
@@ -88,12 +88,11 @@ where
 
 		// Only one value of the expanded equality indicator is used per each
 		// 1-variable subcube, thus it should be twice smaller.
-		let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << (n_vars - 1))?;
 		if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(1) {
 			bail!(Error::IncorrectEqIndPartialEvalsSize);
 		}
 
-		hal.copy_d2d(eq_ind_partial_evals, &mut eq_ind_partial_evals_buffer)?;
+		let eq_ind_partial_evals_buffer = SumcheckMultilinear::PreFold(eq_ind_partial_evals);
 
 		Ok(Self {
 			hal,
@@ -177,37 +176,49 @@ where
 		let eq_ind_partial_evals = mem::take(&mut self.eq_ind_partial_evals).expect("exist");
 
 		let split_n_vars = self.n_vars_remaining - 2;
-		debug_assert_eq!(eq_ind_partial_evals.len(), 1 << (split_n_vars + 1));
-		let (mut evals_0, mut evals_1) = Hal::DevMem::split_half_mut(eq_ind_partial_evals);
+
+		let (mut evals_0, evals_1) = match eq_ind_partial_evals {
+			SumcheckMultilinear::PreFold(evals) => {
+				let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
+
+				let mut buffer = self.dev_alloc.alloc(evals_0.len())?;
+				self.hal.copy_d2d(evals_0, &mut buffer)?;
+
+				(buffer, evals_1)
+			}
+			SumcheckMultilinear::PostFold(evals) => {
+				let (evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
+
+				let evals_1 = Hal::DevMem::to_const(evals_1);
+
+				(evals_0, evals_1)
+			}
+		};
+
+		let kernel_mappings = vec![
+			KernelMemMap::ChunkedMut {
+				data: Hal::DevMem::to_owned_mut(&mut evals_0),
+				log_min_chunk_size: 0,
+			},
+			KernelMemMap::Chunked {
+				data: Hal::DevMem::narrow(&evals_1),
+				log_min_chunk_size: 0,
+			},
+		];
 
 		let _ = self.hal.execute(|exec| {
-			let kernel_mappings = vec![
-				KernelMemMap::ChunkedMut {
-					data: Hal::DevMem::to_owned_mut(&mut evals_0),
-					log_min_chunk_size: 0,
-				},
-				KernelMemMap::ChunkedMut {
-					data: Hal::DevMem::to_owned_mut(&mut evals_1),
-					log_min_chunk_size: 0,
-				},
-			];
-
 			exec.accumulate_kernels(
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
-					let Ok([KernelBuffer::Mut(evals_0), KernelBuffer::Mut(evals_1)]) =
+					let Ok([KernelBuffer::Mut(evals_0), KernelBuffer::Ref(evals_1)]) =
 						TryInto::<&mut [_; 2]>::try_into(buffers.as_mut_slice())
 					else {
 						panic!(
 							"exec_kernels did not create the mapped buffers struct according to the mapping"
 						);
 					};
-					local_exec.add_assign(
-						log_chunk_size,
-						<KernelMem<F, Hal>>::as_const(evals_1),
-						evals_0,
-					)?;
+					local_exec.add_assign(log_chunk_size, *evals_1, evals_0)?;
 
 					Ok(Vec::new())
 				},
@@ -217,7 +228,7 @@ where
 			Ok(Vec::new())
 		})?;
 
-		self.eq_ind_partial_evals = Some(evals_0);
+		self.eq_ind_partial_evals = Some(SumcheckMultilinear::PostFold(evals_0));
 
 		Ok(())
 	}
@@ -248,7 +259,10 @@ where
 			self.n_vars_remaining,
 			batch_coeff,
 			&multilins,
-			Hal::DevMem::as_const(self.eq_ind_partial_evals.as_ref().expect("exist")),
+			self.eq_ind_partial_evals
+				.as_ref()
+				.expect("eq_ind_partial_evals not None")
+				.const_slice(),
 			&self.compositions,
 		)?;
 
