@@ -4,12 +4,12 @@ use std::iter::repeat_with;
 
 use binius_compute::cpu::CpuLayer;
 use binius_field::{
-	BinaryField, BinaryField8b, BinaryField16b, Field, PackedBinaryField2x128b, PackedExtension,
-	PackedField, PackedFieldIndexable,
-	tower::{CanonicalTowerFamily, TowerFamily},
+	BinaryField, Field, PackedBinaryField2x128b, PackedExtension, PackedField, PackedFieldIndexable,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
+use binius_math::{
+	B8, B16, B128, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, TowerTop,
+};
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -96,21 +96,20 @@ where
 	sumcheck_claims
 }
 
-fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
+fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme>(
 	commit_meta: &CommitMeta,
 	n_transparents: usize,
-	merkle_prover: &impl MerkleTreeProver<Tower::B128, Scheme = MTScheme>,
+	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
 	log_inv_rate: usize,
 ) where
 	FDomain: BinaryField,
 	FEncode: BinaryField,
-	P: PackedField<Scalar = Tower::B128>
+	F: TowerTop,
+	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
-		+ PackedExtension<Tower::B128, PackedSubfield = P>
-		+ PackedFieldIndexable<Scalar = Tower::B128>,
-	MTScheme: MerkleTreeScheme<Tower::B128, Digest: SerializeBytes + DeserializeBytes>,
-	Tower: TowerFamily + Default,
+		+ PackedExtension<F, PackedSubfield = P>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -165,10 +164,9 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
 
-	let hal = CpuLayer::<Tower>::default();
-	let mut host_mem = vec![Tower::B128::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem =
-		vec![Tower::B128::ZERO; dev_mem_size_committed + dev_mem_size_transparent - 1];
+	let hal = CpuLayer::<F>::default();
+	let mut host_mem = vec![F::ZERO; host_mem_size_committed + host_mem_size_transparent];
+	let mut dev_mem = vec![F::ZERO; dev_mem_size_committed + dev_mem_size_transparent - 1];
 	prove(
 		&hal,
 		&mut host_mem,
@@ -200,7 +198,7 @@ fn commit_prove_verify<FDomain, FEncode, P, MTScheme, Tower>(
 		.collect::<Vec<_>>();
 	let transparent_polys = transparent_polys
 		.iter()
-		.map(|poly| poly as &dyn MultivariatePoly<Tower::B128>)
+		.map(|poly| poly as &dyn MultivariatePoly<F>)
 		.collect::<Vec<_>>();
 
 	let commitment = proof.message().read().unwrap();
@@ -232,13 +230,12 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
 
 #[test]
@@ -248,13 +245,12 @@ fn test_without_opening_claims() {
 	let n_transparents = 0;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
 
 #[test]
@@ -264,13 +260,12 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
 
 #[test]
@@ -280,13 +275,12 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
 
 #[test]
@@ -296,13 +290,12 @@ fn test_commit_prove_verify_small() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
 
 #[test]
@@ -312,11 +305,10 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<
-		BinaryField8b,
-		BinaryField16b,
-		PackedBinaryField2x128b,
-		_,
-		CanonicalTowerFamily,
-	>(&commit_meta, n_transparents, &merkle_prover, log_inv_rate);
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _>(
+		&commit_meta,
+		n_transparents,
+		&merkle_prover,
+		log_inv_rate,
+	);
 }
