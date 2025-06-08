@@ -317,6 +317,75 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 			.expect("range is not empty")
 	}
 
+	fn map_kernels(
+		&mut self,
+		map: impl Sync
+		+ for<'b> Fn(
+			&'b mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'b, T::B128, Self::DevMem>>,
+		) -> Result<(), Error>,
+		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+	) -> Result<(), Error> {
+		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
+			.ok_or_else(|| Error::InputValidation("no chunks range found".to_string()))?;
+
+		// Choose the number of chunks based on the range and the number of threads available.
+		let log_chunks = (get_log_max_threads() + 1)
+			.min(log_chunks_range.end)
+			.max(log_chunks_range.start);
+		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
+
+		// Calculate memory needed for each chunk
+		let mem_maps_count = mem_maps.len();
+		let mut memory_chunks: Vec<KernelMemMap<'_, <T as TowerFamily>::B128, PackedMemory<P>>> =
+			repeat_with(|| KernelMemMap::Local { log_size: 0 })
+				.take(mem_maps_count << log_chunks)
+				.collect::<Vec<_>>();
+		for (i, mem_map) in mem_maps.into_iter().enumerate() {
+			for (j, chunk) in mem_map.chunks(log_chunks).enumerate() {
+				memory_chunks[i + j * mem_maps_count] = chunk;
+			}
+		}
+
+		memory_chunks
+			.par_chunks_exact_mut(mem_maps_count)
+			.map(|chunk| {
+				let buffer = self
+					.kernel_buffers
+					.get_or(|| RefCell::new(zeroed_vec(total_alloc)));
+				let mut buffer = buffer.borrow_mut();
+				if buffer.len() < total_alloc {
+					buffer.resize(total_alloc, P::zero());
+				}
+
+				let buffer = PackedMemorySliceMut::new_slice(&mut buffer);
+				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
+
+				let kernel_data = chunk
+					.iter_mut()
+					.map(|mem_map| {
+						match std::mem::replace(mem_map, KernelMemMap::Local { log_size: 0 }) {
+							KernelMemMap::Chunked { data, .. } => KernelBuffer::Ref(data),
+							KernelMemMap::ChunkedMut { data, .. } => KernelBuffer::Mut(data),
+							KernelMemMap::Local { log_size } => {
+								let data = allocator
+									.alloc(1 << log_size)
+									.expect("buffer must be large enough");
+
+								KernelBuffer::Mut(data)
+							}
+						}
+					})
+					.collect::<Vec<_>>();
+
+				map(&mut FastKernelBuilder::default(), log_chunks, kernel_data)
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+
+		Ok(())
+	}
+
 	fn fold_left(
 		&mut self,
 		mat: SubfieldSlice<'_, T::B128, Self::DevMem>,

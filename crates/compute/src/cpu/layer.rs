@@ -165,6 +165,34 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 			.expect("range is not empty")
 	}
 
+	fn map_kernels(
+		&mut self,
+		map: impl Sync
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+		) -> Result<(), Error>,
+		mut mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+	) -> Result<(), Error> {
+		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
+			.expect("Many variant must have at least one entry");
+
+		// For the reference implementation, use the smallest chunk size.
+		let log_chunks = log_chunks_range.end;
+		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
+		let mut local_buffer = zeroed_vec(total_alloc);
+		(0..1 << log_chunks)
+			.map(|i| {
+				let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
+				let kernel_data =
+					Self::map_kernel_mem(&mut mem_maps, &local_buffer_alloc, log_chunks, i);
+				map(&mut CpuKernelBuilder, log_chunks, kernel_data)
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+		Ok(())
+	}
+
 	fn inner_product<'a>(
 		&'a mut self,
 		a_in: SubfieldSlice<'_, F, Self::DevMem>,

@@ -174,6 +174,58 @@ pub trait ComputeLayerExecutor<F: Field> {
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error>;
 
+	/// Launch many kernels in parallel to process buffers without accumulating results.
+	///
+	/// Similar to [`accumulate_kernels`], this method provides low-level access to schedule
+	/// parallel kernel executions on the compute platform. The key difference is that this method
+	/// is focused on performing parallel operations on buffers without a reduction phase.
+	/// Each kernel operates on its assigned chunk of data and writes its results directly to
+	/// the mutable buffers provided in the memory mappings.
+	///
+	/// This method is suitable for operations where you need to transform data in parallel
+	/// without aggregating results, such as element-wise transformations of large arrays.
+	///
+	/// ## Buffer chunking
+	///
+	/// The kernel local memory buffers follow the same chunking approach as [`accumulate_kernels`].
+	/// Each kernel operates on a chunk of the larger buffers as specified by the memory mappings.
+	///
+	/// ## Kernel specification
+	///
+	/// The kernel logic is constructed within a closure, which is the `map` parameter. The closure
+	/// has three parameters:
+	///
+	/// * `kernel_exec` - the kernel execution environment.
+	/// * `log_chunks` - the binary logarithm of the number of kernels that are launched.
+	/// * `buffers` - a vector of kernel-local buffers.
+	///
+	/// Unlike [`accumulate_kernels`], this method does not expect the kernel to return any values
+	/// for accumulation. Instead, the kernel should write its results directly to the mutable
+	/// buffers provided in the `buffers` parameter.
+	///
+	/// The closure must respect certain assumptions:
+	///
+	/// * The kernel closure control flow is identical on each invocation when `log_chunks` is
+	///   unchanged.
+	///
+	/// [`ComputeLayer`] implementations are free to call the specification closure multiple times,
+	/// for example with different values for `log_chunks`.
+	///
+	/// ## Arguments
+	///
+	/// * `map` - the kernel specification closure. See the "Kernel specification" section above.
+	/// * `mem_maps` - the memory mappings for the kernel-local buffers.
+	fn map_kernels(
+		&mut self,
+		map: impl Sync
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+		) -> Result<(), Error>,
+		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
+	) -> Result<(), Error>;
+
 	/// Returns the inner product of a vector of subfield elements with big field elements.
 	///
 	/// ## Arguments
