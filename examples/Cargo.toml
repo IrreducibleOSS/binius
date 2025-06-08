@@ -51,6 +51,10 @@ path = "b32_mul.rs"
 name = "u32_mul_gkr"
 path = "u32_mul_gkr.rs"
 
+[[example]]
+name = "merkle_tree"
+path = "merkle_tree.rs"
+
 [features]
 default = ["rayon", "nightly_features"]
 bail_panic = ["binius_utils/bail_panic"]
