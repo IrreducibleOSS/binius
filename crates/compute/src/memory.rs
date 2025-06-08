@@ -3,7 +3,7 @@
 use std::{fmt::Debug, ops::RangeBounds};
 
 use binius_field::TowerField;
-use binius_utils::checked_arithmetics::checked_int_div;
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
 pub trait SizedSlice {
 	fn is_empty(&self) -> bool {
@@ -194,6 +194,39 @@ pub trait ComputeMemory<F> {
 		);
 		let mid = data.len() / 2;
 		Self::split_at_mut(data, mid)
+	}
+
+	/// Slices off the first `n` elements, mutably, where `n` is a power of two.
+	///
+	/// # Arguments
+	///
+	/// * `input` - The input slice to be trimmed
+	/// * `n` - The length of the requested subslice
+	///
+	/// # Pre-conditions
+	///
+	/// * `n` is a power of two
+	///
+	/// # Returns
+	///
+	/// A mutable slice with the first `n` elements. If the input is smaller than `n`, this returns
+	/// the whole input.
+	fn slice_power_of_two_mut<'a>(
+		input: &'a mut Self::FSliceMut<'_>,
+		n: usize,
+	) -> Self::FSliceMut<'a> {
+		if input.len() <= n {
+			return Self::to_owned_mut(input);
+		}
+
+		// Get a slice of the first n elements, aligning to the memory alignment requirement
+		let mut result = Self::slice_mut(input, ..n.max(Self::ALIGNMENT));
+
+		// If n is smaller than the alignment, narrow down the slice further
+		for _ in checked_log_2(n)..checked_log_2(Self::ALIGNMENT) {
+			(result, _) = Self::split_half_mut(result);
+		}
+		result
 	}
 }
 

@@ -6,9 +6,10 @@ use std::{
 };
 
 use binius_compute::{
-	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSliceMut,
+	ComputeLayer, ComputeMemory, FSliceMut,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 	cpu::CpuMemory,
+	ops::eq_ind_partial_eval,
 };
 use binius_core::{
 	composition::{BivariateProduct, IndexComposition},
@@ -38,7 +39,7 @@ use binius_math::{
 	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain, EvaluationOrder,
 	InterpolationDomain, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
-use bytemuck::{must_cast_slice, zeroed_vec};
+use bytemuck::must_cast_slice;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 pub fn generic_test_calculate_round_evals<
@@ -393,8 +394,13 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal, HostComputeAllocator
 			>= <BivariateMLEcheckProver<F, Hal>>::required_device_memory(&claim, false)
 	);
 
-	let eq_ind_partial_evals =
-		tensor_expand(hal, &eq_ind_challenges[..n_vars.saturating_sub(1)], &dev_alloc, n_vars - 1);
+	let eq_ind_partial_evals = eq_ind_partial_eval(
+		hal,
+		&dev_alloc,
+		&host_alloc,
+		&eq_ind_challenges[..n_vars.saturating_sub(1)],
+	)
+	.unwrap();
 
 	let prover = BivariateMLEcheckProver::new(
 		hal,
@@ -433,37 +439,4 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal, HostComputeAllocator
 	for (multilin_i, eval) in iter::zip(multilins, multilinear_evals) {
 		assert_eq!(multilin_i.evaluate(query.to_ref()).unwrap(), eval);
 	}
-}
-
-fn tensor_expand<'a, 'alloc, F, Hal>(
-	hal: &'a Hal,
-	eq_ind_challenges: &[F],
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	n_vars: usize,
-) -> FSliceMut<'a, F, Hal>
-where
-	F: TowerField
-		+ PackedField<Scalar = F>
-		+ ExtensionField<BinaryField8b>
-		+ PackedExtension<BinaryField8b>,
-	Hal: ComputeLayer<F>,
-{
-	let mut eq_ind_partial_evals_buffer = dev_alloc.alloc(1 << n_vars).unwrap();
-
-	{
-		let mut host_min_slice = zeroed_vec(Hal::DevMem::ALIGNMENT);
-		let mut dev_min_slice =
-			Hal::DevMem::slice_mut(&mut eq_ind_partial_evals_buffer, 0..Hal::DevMem::ALIGNMENT);
-		host_min_slice[0] = F::ONE;
-
-		hal.copy_h2d(&host_min_slice, &mut dev_min_slice).unwrap();
-	}
-
-	hal.execute(|exec| {
-		exec.tensor_expand(0, eq_ind_challenges, &mut eq_ind_partial_evals_buffer)?;
-		Ok(vec![])
-	})
-	.unwrap();
-
-	eq_ind_partial_evals_buffer
 }
