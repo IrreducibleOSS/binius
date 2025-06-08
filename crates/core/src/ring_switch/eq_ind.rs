@@ -3,7 +3,7 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
 use binius_compute::{
-	ComputeLayer, ComputeMemory, FSlice, SizedSlice, SubfieldSlice,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, SizedSlice, SubfieldSlice,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
@@ -76,7 +76,7 @@ where
 	pub fn multilinear_extension<'a, 'alloc, Hal: ComputeLayer<F>>(
 		&self,
 		hal: &'a Hal,
-		exec: &mut Hal::Exec,
+		exec: &mut Hal::Exec<'a>,
 		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 		host_alloc: &'a HostBumpAllocator<'a, F>,
 		tower_level: usize,
@@ -104,8 +104,7 @@ where
 
 		let mut mle = dev_alloc.alloc(evals.len())?;
 
-		hal.fold_right(
-			exec,
+		exec.fold_right(
 			subfield_vector,
 			Hal::DevMem::as_const(&row_batching_query_expansion),
 			&mut mle,
@@ -225,7 +224,7 @@ mod tests {
 			let query =
 				eq_ind_partial_eval(&hal, exec, &eval_point, &dev_alloc, &host_alloc).unwrap();
 
-			let val2 = hal.inner_product(exec, mle, query).unwrap();
+			let val2 = exec.inner_product(mle, query).unwrap();
 
 			assert_eq!(val1, val2);
 			Ok(vec![])

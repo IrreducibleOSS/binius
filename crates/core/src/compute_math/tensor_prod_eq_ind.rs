@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_compute::{
-	ComputeLayer, FSlice,
+	ComputeLayer, ComputeLayerExecutor, FSlice,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 	memory::ComputeMemory,
 };
@@ -37,7 +37,7 @@ pub fn tensor_prod_eq_ind<'a, 'alloc, F: Field, Hal: ComputeLayer<F>>(
 	log_n_values: usize,
 	vales: &[F],
 	extra_query_coordinates: &[F],
-	exec: &mut Hal::Exec,
+	exec: &mut Hal::Exec<'a>,
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: &'a HostBumpAllocator<'a, F>,
@@ -58,7 +58,7 @@ pub fn tensor_prod_eq_ind<'a, 'alloc, F: Field, Hal: ComputeLayer<F>>(
 		hal.copy_h2d(host_min_slice, &mut dev_min_slice)?;
 	}
 
-	hal.tensor_expand(exec, 0, extra_query_coordinates, &mut eq_ind_partial_evals_buffer)?;
+	exec.tensor_expand(0, extra_query_coordinates, &mut eq_ind_partial_evals_buffer)?;
 
 	Ok(Hal::DevMem::into_const(eq_ind_partial_evals_buffer))
 }
@@ -80,7 +80,7 @@ pub fn tensor_prod_eq_ind<'a, 'alloc, F: Field, Hal: ComputeLayer<F>>(
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 pub fn eq_ind_partial_eval<'a, 'alloc, F, Hal>(
 	hal: &'a Hal,
-	exec: &mut Hal::Exec,
+	exec: &mut Hal::Exec<'a>,
 	extra_query_coordinates: &[F],
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: &'a HostBumpAllocator<'a, F>,

@@ -167,16 +167,6 @@ where
 
 	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
 
-	let hal = FastCpuLayer::<Tower, PackedType<U, Tower::B128>>::default();
-
-	let mut host_mem = zeroed_vec(1 << 20);
-	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<U, Tower::B128>::LOG_WIDTH));
-
-	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
-
-	let host_alloc = HostBumpAllocator::new(&mut host_mem);
-	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
-
 	drop(hal_span);
 
 	let witness_span = tracing::info_span!(
@@ -539,9 +529,9 @@ where
 		&committed_multilins,
 		&mut transcript,
 		memoized_data,
-		&hal,
-		&dev_alloc,
-		&host_alloc,
+		hal,
+		dev_alloc,
+		host_alloc,
 	)?;
 	drop(ring_switch_span);
 

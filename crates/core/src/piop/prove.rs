@@ -259,7 +259,6 @@ where
 
 	drop(copy_span);
 
-
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
 		.enumerate()

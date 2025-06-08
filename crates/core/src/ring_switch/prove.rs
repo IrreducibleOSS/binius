@@ -3,7 +3,7 @@
 use std::{iter, sync::Arc};
 
 use binius_compute::{
-	ComputeLayer, FSlice,
+	ComputeLayer, ComputeLayerExecutor, FSlice,
 	alloc::{BumpAllocator, HostBumpAllocator},
 	layer,
 };
@@ -275,25 +275,21 @@ where
 {
 	let mut eq_inds = Vec::with_capacity(sumcheck_claim_descs.len());
 	let _ = hal.execute(|exec| {
-		let res = hal
-			.map(
-				exec,
-				izip!(sumcheck_claim_descs, mixing_coeffs),
-				|exec, (claim_desc, &mixing_coeff)| {
-					let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
+		let res = exec
+			.map(izip!(sumcheck_claim_descs, mixing_coeffs), |exec, (claim_desc, &mixing_coeff)| {
+				let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
 
-					make_ring_switch_eq_ind(
-						suffix_desc,
-						row_batch_coeffs.clone(),
-						mixing_coeff,
-						hal,
-						exec,
-						dev_alloc,
-						host_alloc,
-					)
-					.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
-				},
-			)
+				make_ring_switch_eq_ind(
+					suffix_desc,
+					row_batch_coeffs.clone(),
+					mixing_coeff,
+					hal,
+					exec,
+					dev_alloc,
+					host_alloc,
+				)
+				.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
+			})
 			.map_err(|e| layer::Error::CoreLibError(Box::new(e)))?;
 
 		eq_inds.extend(res);
@@ -308,7 +304,7 @@ fn make_ring_switch_eq_ind<'a, 'alloc, F, Hal>(
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeff: F,
 	hal: &'a Hal,
-	exec: &mut Hal::Exec,
+	exec: &mut Hal::Exec<'a>,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
 	host_alloc: &'a HostBumpAllocator<'a, F>,
 ) -> Result<FSlice<'a, F, Hal>, Error>

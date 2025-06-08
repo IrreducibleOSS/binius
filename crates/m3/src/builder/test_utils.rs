@@ -139,6 +139,9 @@ pub fn validate_system_witness_with_prove_verify<U>(
 				1 << (24 - PackedType::<U, B128>::LOG_WIDTH),
 			);
 		let ccs_digest = ccs.digest::<Groestl256>();
+		let host_alloc = HostBumpAllocator::new(&mut host_mem);
+		let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
 		let proof = binius_core::constraint_system::prove::<
 			_,
 			U,
