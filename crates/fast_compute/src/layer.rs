@@ -191,7 +191,7 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 	for FastCpuExecutor<'a, T, P>
 {
-	type KernelExec = FastKernelBuilder<T, P>;
+	type KernelExec = FastKernelExecutor<T, P>;
 	type DevMem = PackedMemory<P>;
 	type OpValue = T::B128;
 	type ExprEval = ArithCircuitPoly<T::B128>;
@@ -297,7 +297,7 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 					})
 					.collect::<Vec<_>>();
 
-				map(&mut FastKernelBuilder::default(), log_chunks, kernel_data)
+				map(&mut FastKernelExecutor::default(), log_chunks, kernel_data)
 			})
 			.reduce_with(|out1, out2| {
 				let mut out1 = out1?;
@@ -667,15 +667,15 @@ fn extrapolate_line_byte_sliced<Underlier>(
 }
 
 #[derive(Debug)]
-pub struct FastKernelBuilder<T, P>(PhantomData<(T, P)>);
+pub struct FastKernelExecutor<T, P>(PhantomData<(T, P)>);
 
-impl<T, P> Default for FastKernelBuilder<T, P> {
+impl<T, P> Default for FastKernelExecutor<T, P> {
 	fn default() -> Self {
 		Self(PhantomData)
 	}
 }
 
-impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelBuilder<T, P> {
+impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelExecutor<T, P> {
 	type Mem = PackedMemory<P>;
 	type Value = T::B128;
 	type ExprEval = ArithCircuitPoly<T::B128>;
