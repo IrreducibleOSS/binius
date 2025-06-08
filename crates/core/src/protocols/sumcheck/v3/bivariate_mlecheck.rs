@@ -424,14 +424,12 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 					let eval_1s_with_eq_ind =
 						SlicesBatch::new(eval_1s_with_eq_ind, 1 << log_chunk_size);
 
-					for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-						local_exec.sum_composition_evals(
-							&eval_1s_with_eq_ind,
-							evaluator,
-							batch_coeff,
-							&mut acc_1,
-						)?;
-					}
+					local_exec.sum_compositions_evals(
+						&eval_1s_with_eq_ind,
+						&prod_evaluators,
+						&batch_coeffs,
+						&mut acc_1,
+					)?;
 				}
 
 				// Extrapolate the multilinear evaluations at the point Infinity.
@@ -462,14 +460,12 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 				let eval_infs_with_eq_ind =
 					SlicesBatch::new(eval_infs_with_eq_ind, 1 << log_chunk_size);
 
-				for (&batch_coeff, evaluator) in iter::zip(&batch_coeffs, &prod_evaluators) {
-					local_exec.sum_composition_evals(
-						&eval_infs_with_eq_ind,
-						evaluator,
-						batch_coeff,
-						&mut acc_inf,
-					)?;
-				}
+				local_exec.sum_compositions_evals(
+					&eval_infs_with_eq_ind,
+					&prod_evaluators,
+					&batch_coeffs,
+					&mut acc_inf,
+				)?;
 
 				Ok(vec![acc_1, acc_inf])
 			},

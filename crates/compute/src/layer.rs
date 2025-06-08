@@ -407,7 +407,7 @@ pub trait ComputeLayerExecutor<F: Field> {
 /// local memory buffers.
 ///
 /// See [`ComputeLayerExecutor::accumulate_kernels`] for more information.
-pub trait KernelExecutor<F> {
+pub trait KernelExecutor<F: Field> {
 	/// The type for kernel-local memory buffers.
 	type Mem: ComputeMemory<F>;
 
@@ -448,6 +448,19 @@ pub trait KernelExecutor<F> {
 		batch_coeff: F,
 		accumulator: &mut Self::Value,
 	) -> Result<(), Error>;
+
+	fn sum_compositions_evals(
+		&mut self,
+		inputs: &SlicesBatch<<Self::Mem as ComputeMemory<F>>::FSlice<'_>>,
+		compositions: &[Self::ExprEval],
+		batch_coeffs: &[F],
+		accumulator: &mut Self::Value,
+	) -> Result<(), Error> {
+		for (composition, &batch_coeff) in compositions.iter().zip(batch_coeffs.iter()) {
+			self.sum_composition_evals(inputs, composition, batch_coeff, accumulator)?;
+		}
+		Ok(())
+	}
 
 	/// A kernel-local operation that performs point-wise addition of two input buffers into an
 	/// output buffer.
