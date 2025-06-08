@@ -12,7 +12,7 @@ pub use underlier::ByteSlicedUnderlier;
 #[cfg(test)]
 pub mod tests {
 	use proptest::prelude::*;
-	use rand::{SeedableRng, distributions::Uniform, rngs::StdRng};
+	use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 
 	use super::*;
 	use crate::{
