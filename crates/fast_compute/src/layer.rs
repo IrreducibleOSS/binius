@@ -36,6 +36,7 @@ use binius_maybe_rayon::{
 		IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
 		ParallelIterator,
 	},
+	prelude::ParallelBridge,
 	slice::{ParallelSlice, ParallelSliceMut},
 };
 use binius_ntt::{AdditiveNTT, fri::fold_interleaved_allocated};
@@ -538,6 +539,23 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 			binius_maybe_rayon::join(|| op1(&mut self.clone()), || op2(&mut self.clone()));
 
 		Ok((out1?, out2?))
+	}
+
+	fn map<Out: Send, I: ExactSizeIterator<Item: Send> + Send>(
+		&mut self,
+		iter: I,
+		map: impl Sync + Fn(&mut Self, I::Item) -> Result<Out, Error>,
+	) -> Result<Vec<Out>, Error> {
+		// `par_bridge` doesn't preserve the order of the items in the iterator,
+		// so we need to enumerate the items and sort them back after processing.
+		let mut result = iter
+			.enumerate()
+			.par_bridge()
+			.map(|(index, item)| (index, map(&mut self.clone(), item)))
+			.collect::<Vec<_>>();
+		result.sort_unstable_by_key(|(index, _)| *index);
+
+		result.into_iter().map(|(_, out)| out).collect()
 	}
 }
 

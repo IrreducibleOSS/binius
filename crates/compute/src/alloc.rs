@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::cell::Cell;
+use std::sync::Mutex;
 
 use binius_utils::checked_arithmetics::checked_log_2;
 
@@ -32,7 +32,7 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
 /// construction.
 pub struct BumpAllocator<'a, F, Mem: ComputeMemory<F>> {
-	buffer: Cell<Option<Mem::FSliceMut<'a>>>,
+	buffer: Mutex<Option<Mem::FSliceMut<'a>>>,
 }
 
 impl<'a, F, Mem> BumpAllocator<'a, F, Mem>
@@ -42,27 +42,28 @@ where
 {
 	pub fn new(buffer: Mem::FSliceMut<'a>) -> Self {
 		Self {
-			buffer: Cell::new(Some(buffer)),
+			buffer: Mutex::new(Some(buffer)),
 		}
 	}
 
 	pub fn from_ref<'b>(buffer: &'b mut Mem::FSliceMut<'a>) -> BumpAllocator<'b, F, Mem> {
 		let buffer = Mem::slice_mut(buffer, ..);
 		BumpAllocator {
-			buffer: Cell::new(Some(buffer)),
+			buffer: Mutex::new(Some(buffer)),
 		}
 	}
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error> {
-		let buffer = self
-			.buffer
+		let mut buffer_lock = self.buffer.lock().expect("mutex is always available");
+
+		let buffer = buffer_lock
 			.take()
 			.expect("buffer is always Some by invariant");
 		// buffer temporarily contains None
 		if buffer.len() < n {
-			self.buffer.set(Some(buffer));
+			*buffer_lock = Some(buffer);
 			// buffer contains Some, invariant restored
 			Err(Error::OutOfMemory)
 		} else {
@@ -73,7 +74,7 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 					(lhs, _) = Mem::split_half_mut(lhs)
 				}
 			}
-			self.buffer.set(Some(rhs));
+			*buffer_lock = Some(rhs);
 			// buffer contains Some, invariant restored
 			Ok(Mem::narrow_mut(lhs))
 		}
@@ -83,19 +84,19 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 		Mem::to_owned_mut(
 			self.buffer
 				.get_mut()
+				.expect("mutex is always available")
 				.as_mut()
 				.expect("buffer is always Some by invariant"),
 		)
 	}
 
 	fn capacity(&self) -> usize {
-		let buffer = self
-			.buffer
-			.take()
-			.expect("buffer is always Some by invariant");
-		let ret = buffer.len();
-		self.buffer.set(Some(buffer));
-		ret
+		self.buffer
+			.lock()
+			.expect("mutex is always available")
+			.as_ref()
+			.expect("buffer is always Some by invariant")
+			.len()
 	}
 }
 

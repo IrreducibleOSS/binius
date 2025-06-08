@@ -15,7 +15,7 @@ use super::{
 use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static {
+pub trait ComputeLayer<F: Field>: 'static + Send + Sync {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
@@ -113,10 +113,10 @@ pub trait ComputeLayerExecutor<F: Field> {
 	}
 
 	/// Creates an operation that depends on the concurrent execution of a sequence of operations.
-	fn map<Out, I: ExactSizeIterator>(
+	fn map<Out: Send, I: ExactSizeIterator<Item: Send> + Send>(
 		&mut self,
 		iter: I,
-		map: impl Fn(&mut Self, I::Item) -> Result<Out, Error>,
+		map: impl Sync + Fn(&mut Self, I::Item) -> Result<Out, Error>,
 	) -> Result<Vec<Out>, Error> {
 		iter.map(|item| map(self, item)).collect()
 	}
