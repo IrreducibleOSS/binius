@@ -286,8 +286,7 @@ struct RoundBatch {
 	d: StateRow<PackedLane8>,
 	a_theta: StateMatrix<PackedLane8>,
 	b: StateMatrix<PackedLane8>,
-	not_b: StateMatrix<PackedLane8>,
-	not_b1_and_b2: StateMatrix<PackedLane8>,
+	b1_and_b2: StateMatrix<PackedLane8>,
 	merged: StateMatrix<Col<B32, 64>>,
 	round_const: PackedLane8,
 }
@@ -300,9 +299,6 @@ impl RoundBatch {
 		batch_no: usize,
 	) -> Self {
 		assert!(batch_no < BATCHES_PER_PERMUTATION);
-		// let state_out =
-		// 	StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_out[{x},{y}]")));
-
 		// # θ step
 		//
 		// for x in 0…4:
@@ -347,36 +343,26 @@ impl RoundBatch {
 			}
 		});
 
-		// Represents the bitwise negation of `b` which is equivalently 1^b and corresponds to 1 + b
-		// in terms of binary fields. This is used in the chi step.
-		let not_b = StateMatrix::from_fn(|(x, y)| {
-			table.add_computed(format!("not_b[{x},{y}]"), b[(x, y)] - B1::from(1))
-		});
-
 		// The columns need to be packed to compute bitwise and using lookups.
 		let b_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
 			table.add_packed(format!("b_packed[{x},{y}]"), b[(x, y)])
 		});
 
-		let not_b_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
-			table.add_packed(format!("not_b_packed[{x},{y}]"), not_b[(x, y)])
+		let b1_and_b2: StateMatrix<Col<B1, { 64 * 8 }>> = StateMatrix::from_fn(|(x, y)| {
+			// B2[x,y] = B[x+2,y] and not B[x+1,y]
+			table.add_committed(format!("b1&b2[{x},{y}]"))
 		});
 
-		let not_b1_and_b2: StateMatrix<Col<B1, { 64 * 8 }>> = StateMatrix::from_fn(|(x, y)| {
+		let b1_and_b2_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
 			// B2[x,y] = B[x+2,y] and not B[x+1,y]
-			table.add_committed(format!("!b1&b2[{x},{y}]"))
-		});
-
-		let not_b1_and_b2_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
-			// B2[x,y] = B[x+2,y] and not B[x+1,y]
-			table.add_packed(format!("!b1&b2_packed[{x},{y}]"), not_b1_and_b2[(x, y)])
+			table.add_packed(format!("b1&b2_packed[{x},{y}]"), b1_and_b2[(x, y)])
 		});
 
 		let merged = StateMatrix::from_fn(|(x, y)| {
 			let b2 = b_packed[(x + 2, y)];
-			let not_b1 = not_b_packed[(x + 1, y)];
-			let not_b1_and_b2 = not_b1_and_b2_packed[(x, y)];
-			let col = merge_and_columns(table, not_b1, b2, not_b1_and_b2);
+			let b1 = b_packed[(x + 1, y)];
+			let b1_and_b2 = b1_and_b2_packed[(x, y)];
+			let col = merge_and_columns(table, b1, b2, b1_and_b2);
 			table.read(lookup_chan, [col]);
 			col
 		});
@@ -388,10 +374,13 @@ impl RoundBatch {
 			if (x, y) == (0, 0) {
 				table.add_computed(
 					format!("chi_iota[{x},{y}]"),
-					round_const + b[(x, y)] + not_b1_and_b2[(x, y)],
+					round_const + b[(x, y)] + b[(x + 2, y)] + b1_and_b2[(x, y)],
 				)
 			} else {
-				table.add_computed(format!("chi[{x},{y}]"), b[(x, y)] + not_b1_and_b2[(x, y)])
+				table.add_computed(
+					format!("chi[{x},{y}]"),
+					b[(x, y)] + b[(x + 2, y)] + b1_and_b2[(x, y)],
+				)
 			}
 		});
 
@@ -404,8 +393,7 @@ impl RoundBatch {
 			d,
 			a_theta,
 			b,
-			not_b,
-			not_b1_and_b2,
+			b1_and_b2,
 			merged,
 			round_const,
 		}
@@ -467,8 +455,6 @@ impl RoundBatch {
 					} else {
 						None
 					};
-					let mut not_b: std::cell::RefMut<'_, [u64]> =
-						index.get_mut_as(self.not_b[(x, y)])?;
 					for track in 0..TRACKS_PER_BATCH {
 						let cell_pos = TRACKS_PER_BATCH * k + track;
 						state_in[cell_pos] = brt[track].state_in[(x, y)];
@@ -476,9 +462,7 @@ impl RoundBatch {
 						a_theta[cell_pos] = brt[track].a_theta[(x, y)];
 						if let Some(ref mut b) = b {
 							b[cell_pos] = brt[track].b[(x, y)];
-							not_b[cell_pos] = b[cell_pos] ^ 0xFFFFFFFFFFFFFFFF;
 						} else {
-							not_b[cell_pos] = a_theta[cell_pos] ^ 0xFFFFFFFFFFFFFFFF;
 						}
 					}
 				}
@@ -490,17 +474,17 @@ impl RoundBatch {
 			let mut merged: std::cell::RefMut<'_, [B32]> =
 				index.get_scalars_mut(self.merged[(x, y)])?;
 
-			let not_b1: std::cell::Ref<'_, [B8]> = index.get_as(self.not_b[(x + 1, y)])?;
+			let b1: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 1, y)])?;
 
 			let b2: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 2, y)])?;
-			let mut not_b1_and_b2: std::cell::RefMut<'_, [B8]> =
-				index.get_mut_as(self.not_b1_and_b2[(x, y)])?;
+			let mut b1_and_b2: std::cell::RefMut<'_, [B8]> =
+				index.get_mut_as(self.b1_and_b2[(x, y)])?;
 			for i in 0..b2.len() {
 				// B[x,y] xor ((not B[x+1,y]) and B[x+2,y])
-				let in_a = not_b1[i].val();
+				let in_a = b1[i].val();
 				let in_b = b2[i].val();
 				let output = in_a & in_b;
-				not_b1_and_b2[i] = output.into();
+				b1_and_b2[i] = output.into();
 				merged[i] = merge_bitand_vals(in_a, in_b, output).into();
 			}
 		}

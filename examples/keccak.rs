@@ -112,7 +112,7 @@ fn main() -> Result<()> {
 	let lookup_chan = cs.add_channel("lookup");
 	let permutation_chan = cs.add_channel("permutation");
 	let mut lookup = cs.add_table("lookup");
-	let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation_chan, 15);
+	let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation_chan, 10);
 
 	let table = PermutationTable::new(&mut cs, lookup_chan);
 
