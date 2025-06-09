@@ -35,7 +35,7 @@ use crate::{
 		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 	},
 	protocols::{
-		fri::{self, FRIFolderCL, FRIParams, FoldRoundOutput},
+		fri::{self, FRIFolder, FRIParams, FoldRoundOutput},
 		sumcheck::{
 			self, SumcheckClaim,
 			prove::{SumcheckProver, front_loaded::BatchProver as SumcheckBatchProver},
@@ -334,8 +334,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover =
-		FRIFolderCL::new(fri_params, ntt, merkle_prover, codeword, committed, hal)?;
+	let mut fri_prover = FRIFolder::new(fri_params, ntt, merkle_prover, codeword, committed, hal)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

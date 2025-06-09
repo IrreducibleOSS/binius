@@ -216,7 +216,7 @@ where
 	pub committed: MerkleProver::Committed,
 }
 
-pub struct FRIFolderCL<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
+pub struct FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
 where
 	FA: BinaryField,
 	F: BinaryField,
@@ -238,7 +238,7 @@ where
 }
 
 impl<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
-	FRIFolderCL<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
+	FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,

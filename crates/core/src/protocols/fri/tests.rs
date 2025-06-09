@@ -25,7 +25,7 @@ use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
-		self, CommitOutput, FRIFolderCL, FRIParams, FRIVerifier, FoldRoundOutput,
+		self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput,
 		to_par_scalar_small_chunks,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
@@ -144,7 +144,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =
-		FRIFolderCL::new(&params, &ntt, &merkle_prover, &codeword, &codeword_committed, &hal)
+		FRIFolder::new(&params, &ntt, &merkle_prover, &codeword, &codeword_committed, &hal)
 			.unwrap();
 
 	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
