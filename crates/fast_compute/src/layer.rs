@@ -379,7 +379,7 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 					})
 					.collect::<Vec<_>>();
 
-				map(&mut FastKernelBuilder::default(), log_chunks, kernel_data)
+				map(&mut FastKernelExecutor::default(), log_chunks, kernel_data)
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 

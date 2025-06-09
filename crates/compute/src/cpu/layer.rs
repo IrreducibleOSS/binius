@@ -171,9 +171,9 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, T::B128, Self::DevMem>>,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
 		) -> Result<(), Error>,
-		mut mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
+		mut mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<(), Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
 			.expect("Many variant must have at least one entry");
