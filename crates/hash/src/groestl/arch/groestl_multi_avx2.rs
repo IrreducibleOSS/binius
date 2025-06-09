@@ -521,21 +521,26 @@ mod tests {
 	proptest! {
 		#[test]
 		fn test_multi_groestl_vs_reference(
-			inputs in proptest::collection::vec(proptest::collection::vec(0u8..255u8, 10..10000), 4)
-		) {
-			let input_lengths: [_; 4] = array::from_fn(|i|{inputs[i].len()});
-			let Some(&min_length) = input_lengths.iter().min() else { todo!() };
-			let inputs  = (0..4).map(|i|{&inputs[i][0..min_length]}).collect::<Vec<_>>();
+			inputs in proptest::collection::vec(proptest::collection::vec(0u8..255u8, 10..10000), 4))
+		 {
+			let input_lengths: [_; 4] = array::from_fn(|i| inputs[i].len());
+			let Some(&min_length) = input_lengths.iter().min() else {
+				todo!()
+			};
+			let inputs = (0..4)
+				.map(|i| &inputs[i][0..min_length])
+				.collect::<Vec<_>>();
 
-			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
+				unsafe { MaybeUninit::uninit().assume_init() };
 
-			Groestl256Multi::digest(array::from_fn(|i|{inputs[i]}), &mut multi_digest);
-			for i in 0..4{
+			Groestl256Multi::digest(array::from_fn(|i| inputs[i]), &mut multi_digest);
+			for i in 0..4 {
 				let single_digest = groestl_crypto::Groestl256::digest(inputs[i]);
 
 				let fully_initialized_multi: [u8; 32] = unsafe {
 					let ptr = multi_digest[i].assume_init_ref();
-					let generic_array = *ptr;  // Clone the GenericArray
+					let generic_array = *ptr; // Clone the GenericArray
 
 					// Convert the GenericArray<u8, U32> into [u8; 32]
 					let mut arr: [u8; 32] = [0; 32];
@@ -543,7 +548,7 @@ mod tests {
 					arr
 				};
 
-				for byte in 0..32{
+				for byte in 0..32 {
 					assert_eq!(single_digest[byte], fully_initialized_multi[byte]);
 				}
 			}
@@ -554,16 +559,19 @@ mod tests {
 			inputs in proptest::collection::vec(proptest::collection::vec(0u8..255u8, 11..100), 4),
 			middle_pause_idx in 1..10
 		) {
-			let input_lengths: [_; 4] = array::from_fn(|i|{inputs[i].len()});
-			let Some(&min_length) = input_lengths.iter().min() else { todo!() };
+			let input_lengths: [_; 4] = array::from_fn(|i| inputs[i].len());
+			let Some(&min_length) = input_lengths.iter().min() else {
+				todo!()
+			};
 
 			let middle_pause_idx = (middle_pause_idx as usize) % min_length;
 
-			let first_inputs  = array::from_fn(|i|{&inputs[i][0..middle_pause_idx]});
+			let first_inputs = array::from_fn(|i| &inputs[i][0..middle_pause_idx]);
 
-			let second_inputs  = array::from_fn(|i|{&inputs[i][middle_pause_idx..min_length]});
+			let second_inputs = array::from_fn(|i| &inputs[i][middle_pause_idx..min_length]);
 
-			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+			let mut multi_digest: [MaybeUninit<GenericArray<u8, U32>>; 4] =
+				unsafe { MaybeUninit::uninit().assume_init() };
 
 			let mut hasher = Groestl256Multi::new();
 
@@ -573,12 +581,12 @@ mod tests {
 
 			hasher.finalize_into(&mut multi_digest);
 
-			for i in 0..4{
+			for i in 0..4 {
 				let single_digest = groestl_crypto::Groestl256::digest(&inputs[i][..min_length]);
 
 				let fully_initialized_multi: [u8; 32] = unsafe {
 					let ptr = multi_digest[i].assume_init_ref();
-					let generic_array = *ptr;  // Clone the GenericArray
+					let generic_array = *ptr; // Clone the GenericArray
 
 					// Convert the GenericArray<u8, U32> into [u8; 32]
 					let mut arr: [u8; 32] = [0; 32];
@@ -586,7 +594,7 @@ mod tests {
 					arr
 				};
 
-				for byte in 0..32{
+				for byte in 0..32 {
 					assert_eq!(single_digest[byte], fully_initialized_multi[byte]);
 				}
 			}
