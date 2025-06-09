@@ -157,3 +157,16 @@ fn test_compute_composite() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_map_kernels() {
+	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
+	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	binius_compute_test_utils::layer::test_map_kernels(
+		&compute,
+		PackedMemorySliceMut::new_slice(&mut device_memory),
+		log_len,
+	);
+}

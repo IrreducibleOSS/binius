@@ -222,7 +222,7 @@ pub trait ComputeLayerExecutor<F: Field> {
 		+ for<'a> Fn(
 			&'a mut Self::KernelExec,
 			usize,
-			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+			Vec<KernelBuffer<'a, F, <Self::KernelExec as KernelExecutor<F>>::Mem>>,
 		) -> Result<(), Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<(), Error>;
