@@ -2,7 +2,7 @@
 
 use std::{borrow::Borrow, cmp::min};
 
-use binius_utils::{SerializationMode, SerializeBytes};
+use binius_utils::{SerializationError, SerializationMode, SerializeBytes};
 use bytes::{BufMut, buf::UninitSlice};
 use digest::{
 	Digest, Output,
@@ -65,7 +65,9 @@ impl<D: Digest + BlockSizeUser> Drop for HashBuffer<'_, D> {
 }
 
 /// Hashes a sequence of serializable items.
-pub fn hash_serialize<T, D>(items: impl IntoIterator<Item = impl Borrow<T>>) -> Output<D>
+pub fn hash_serialize<T, D>(
+	items: impl IntoIterator<Item = impl Borrow<T>>,
+) -> Result<Output<D>, SerializationError>
 where
 	T: SerializeBytes,
 	D: Digest + BlockSizeUser,
@@ -75,11 +77,10 @@ where
 		let mut buffer = HashBuffer::new(&mut hasher);
 		for item in items {
 			item.borrow()
-				.serialize(&mut buffer, SerializationMode::CanonicalTower)
-				.expect("HashBuffer has infinite capacity");
+				.serialize(&mut buffer, SerializationMode::CanonicalTower)?;
 		}
 	}
-	hasher.finalize()
+	Ok(hasher.finalize())
 }
 
 #[cfg(test)]

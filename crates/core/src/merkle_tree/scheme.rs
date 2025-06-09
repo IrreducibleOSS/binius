@@ -3,9 +3,9 @@
 use std::{array, fmt::Debug, marker::PhantomData};
 
 use binius_field::TowerField;
-use binius_hash::{HashBuffer, PseudoCompressionFunction};
+use binius_hash::{PseudoCompressionFunction, hash_serialize};
 use binius_utils::{
-	SerializationMode, SerializeBytes, bail,
+	bail,
 	checked_arithmetics::{log2_ceil_usize, log2_strict_usize},
 };
 use bytes::Buf;
@@ -76,7 +76,10 @@ where
 
 		let mut digests = data
 			.chunks(batch_size)
-			.map(|chunk| hash_field_elems::<_, H>(chunk))
+			.map(|chunk| {
+				hash_serialize::<F, H>(chunk)
+					.expect("values are of TowerField type which we expect to be serializable")
+			})
 			.collect::<Vec<_>>();
 
 		fold_digests_vector_inplace(&self.compression, &mut digests)?;
@@ -125,7 +128,8 @@ where
 			});
 		}
 
-		let mut leaf_digest = hash_field_elems::<_, H>(values);
+		let mut leaf_digest = hash_serialize::<F, H>(values)
+			.expect("values are of TowerField type which we expect to be serializable");
 		for branch_node in proof.read_vec(tree_depth - layer_depth)? {
 			leaf_digest = self.compression.compress(if index & 1 == 0 {
 				[leaf_digest, branch_node]
@@ -161,22 +165,4 @@ where
 	}
 
 	Ok(())
-}
-
-/// Hashes a slice of tower field elements.
-fn hash_field_elems<F, H>(elems: &[F]) -> Output<H>
-where
-	F: TowerField,
-	H: Digest + BlockSizeUser,
-{
-	let mut hasher = H::new();
-	{
-		let mut buffer = HashBuffer::new(&mut hasher);
-		for elem in elems {
-			let mode = SerializationMode::CanonicalTower;
-			SerializeBytes::serialize(elem, &mut buffer, mode)
-				.expect("HashBuffer has infinite capacity");
-		}
-	}
-	hasher.finalize()
 }
