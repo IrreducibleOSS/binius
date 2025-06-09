@@ -543,11 +543,11 @@ where
 		params: &'a FRIParams<F, FA>,
 		ntt: &'a NTT,
 		merkle_prover: &'a MerkleProver,
-		committed_codeword: &'a [P],
+		codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
 		cl: &'b CL,
 	) -> Result<Self, Error> {
-		if len_packed_slice(committed_codeword) < 1 << params.log_len() {
+		if len_packed_slice(codeword) < 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match interleaved codeword length".to_string(),
 			));
@@ -558,7 +558,7 @@ where
 			params,
 			ntt,
 			merkle_prover,
-			codeword: committed_codeword,
+			codeword: codeword,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(params.n_oracles()),
 			curr_round: 0,

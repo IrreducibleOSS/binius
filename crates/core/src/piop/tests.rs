@@ -155,6 +155,7 @@ fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme>(
 	let hal = CpuLayer::<F>::default();
 	let mut host_mem = vec![F::ZERO; 1 << 14];
 	let mut dev_mem = vec![F::ZERO; 1 << 22];
+	// If this unwraps on an out-of-memory error, allocate more above (tests are assumed to not require so much memory)
 	prove(
 		&hal,
 		&mut host_mem,
