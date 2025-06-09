@@ -91,7 +91,7 @@ where
 						let mut elems = vec![B128::ZERO; cols.len()];
 						// It's important that this is only the table size, not the full segment
 						// size. The entries after the table size are not flushed.
-						for i in 0..table_size {
+						for i in 0..table_size * partition.values_per_row {
 							for (elem, col) in iter::zip(&mut elems, &cols) {
 								*elem = col.get(i);
 							}
