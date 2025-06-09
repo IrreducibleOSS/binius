@@ -428,7 +428,7 @@ impl MultiDigest<4> for Groestl256Multi {
 	// If no data is passed in, the hasher will fill the data with zeroes
 	fn update(&mut self, data: [&[u8]; NUM_PARALLEL_SUBSTATES]) {
 		for parallel_idx in 1..NUM_PARALLEL_SUBSTATES {
-			assert!(data[parallel_idx].len() == data[0].len() || data[parallel_idx].len() == 0);
+			assert!(data[parallel_idx].len() == data[0].len() || data[parallel_idx].is_empty());
 		}
 
 		let mut i = 0;
@@ -437,7 +437,7 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		if data[0].len() + self.num_unfinished_bytes < STATE_SIZE {
 			for (parallel_idx, data_lane) in data.iter().enumerate() {
-				if data[parallel_idx].len() > 0 {
+				if !data[parallel_idx].is_empty() {
 					self.unfinished_block[parallel_idx]
 						[self.num_unfinished_bytes..new_num_unfinished_bytes]
 						.copy_from_slice(data_lane);
@@ -450,7 +450,7 @@ impl MultiDigest<4> for Groestl256Multi {
 		if self.num_unfinished_bytes != 0 {
 			let mut initial_block = self.unfinished_block;
 			for (parallel_idx, data_lane) in data.iter().enumerate() {
-				if data[parallel_idx].len() > 0 {
+				if !data[parallel_idx].is_empty() {
 					initial_block[parallel_idx][self.num_unfinished_bytes..]
 						.copy_from_slice(&data_lane[..(STATE_SIZE - self.num_unfinished_bytes)]);
 				}
@@ -466,10 +466,10 @@ impl MultiDigest<4> for Groestl256Multi {
 
 		while i + STATE_SIZE <= data[0].len() {
 			self.consume_single_block_parallel(array::from_fn(|parallel_idx| {
-				if data[parallel_idx].len() > 0 {
-					&data[parallel_idx][i..i + STATE_SIZE]
-				} else {
+				if data[parallel_idx].is_empty() {
 					&[0u8; 64]
+				} else {
+					&data[parallel_idx][i..i + STATE_SIZE]
 				}
 			}));
 
@@ -477,7 +477,7 @@ impl MultiDigest<4> for Groestl256Multi {
 		}
 
 		for (parallel_idx, data_lane) in data.iter().enumerate() {
-			if data[parallel_idx].len() > 0 {
+			if !data[parallel_idx].is_empty() {
 				self.unfinished_block[parallel_idx][0..new_num_unfinished_bytes]
 					.copy_from_slice(&data_lane[i..]);
 			}
