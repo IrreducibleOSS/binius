@@ -179,6 +179,15 @@ pub struct FastCpuExecutor<'a, T: TowerFamily, P: PackedTop<T>> {
 	_phantom_data: PhantomData<T>,
 }
 
+impl<'a, T: TowerFamily, P: PackedTop<T>> Clone for FastCpuExecutor<'a, T, P> {
+	fn clone(&self) -> Self {
+		Self {
+			kernel_buffers: self.kernel_buffers,
+			_phantom_data: PhantomData,
+		}
+	}
+}
+
 impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 	pub fn new(kernel_buffers: &'a ThreadLocal<RefCell<Vec<P>>>) -> Self {
 		Self {
@@ -518,6 +527,17 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 			});
 
 		Ok(())
+	}
+
+	fn join<Out1: Send, Out2: Send>(
+		&mut self,
+		op1: impl Send + FnOnce(&mut Self) -> Result<Out1, Error>,
+		op2: impl Send + FnOnce(&mut Self) -> Result<Out2, Error>,
+	) -> Result<(Out1, Out2), Error> {
+		let (out1, out2) =
+			binius_maybe_rayon::join(|| op1(&mut self.clone()), || op2(&mut self.clone()));
+
+		Ok((out1?, out2?))
 	}
 }
 
