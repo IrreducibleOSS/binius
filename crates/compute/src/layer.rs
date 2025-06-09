@@ -618,7 +618,8 @@ pub type KernelSliceMut<'a, 'b, F, HAL> =
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, Field, TowerField, tower::CanonicalTowerFamily};
+	use binius_field::{BinaryField128b, Field, TowerField};
+	use binius_math::B128;
 	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
@@ -670,13 +671,13 @@ mod tests {
 
 	#[test]
 	fn test_cpu_host_alloc() {
-		test_host_alloc(CpuLayer::<CanonicalTowerFamily>::default());
+		test_host_alloc(CpuLayer::<B128>::default());
 	}
 
 	#[test]
 	fn test_cpu_copy_host_device() {
-		let mut dev_mem = vec![BinaryField128b::ZERO; 256];
-		test_copy_host_device(CpuLayer::<CanonicalTowerFamily>::default(), dev_mem.as_mut_slice());
+		let mut dev_mem = vec![B128::ZERO; 256];
+		test_copy_host_device(CpuLayer::<B128>::default(), dev_mem.as_mut_slice());
 	}
 
 	#[test]
