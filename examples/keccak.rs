@@ -1,9 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::iter::repeat_with;
+use std::{cmp::Reverse, iter::repeat_with};
 
 use anyhow::Result;
-use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
+use binius_core::{
+	constraint_system::{self, channel::ChannelId},
+	fiat_shamir::HasherChallenger,
+	oracle::Packed,
+};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
 	PackedExtension, PackedFieldIndexable, PackedSubfield, arch::OptimalUnderlier,
@@ -11,19 +15,27 @@ use binius_field::{
 	tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
+use binius_hash::{
+	groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel},
+	permutation,
+};
 use binius_m3::{
 	builder::{
-		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
-		WitnessIndex,
+		B1, B8, B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId,
+		TableWitnessSegment, WitnessIndex, tally,
 	},
-	gadgets::hash::keccak::{StateMatrix, stacked::Keccakf},
+	gadgets::{
+		hash::keccak::{StateMatrix, stacked::Keccakf},
+		indexed_lookup::and::{BitAndIndexedLookup, BitAndLookup},
+		lookup,
+	},
 };
 use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
-use rand::{RngCore, thread_rng};
+use itertools::Itertools;
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -42,10 +54,10 @@ pub struct PermutationTable {
 }
 
 impl PermutationTable {
-	pub fn new(cs: &mut ConstraintSystem) -> Self {
+	pub fn new(cs: &mut ConstraintSystem, lookup_channel: ChannelId) -> Self {
 		let mut table = cs.add_table("Keccak permutation");
 
-		let keccakf = Keccakf::new(&mut table);
+		let keccakf = Keccakf::new(&mut table, lookup_channel);
 
 		Self {
 			table_id: table.id(),
@@ -59,8 +71,10 @@ where
 	P: PackedFieldIndexable<Scalar = B128>
 		+ PackedExtension<B1>
 		+ PackedExtension<B8>
+		+ PackedExtension<B32>
 		+ PackedExtension<B64>,
 	PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
+	PackedSubfield<P, B32>: PackedFieldIndexable<Scalar = B32>,
 {
 	type Event = StateMatrix<u64>;
 
@@ -95,14 +109,14 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 	let mut cs = ConstraintSystem::new();
-	let table = PermutationTable::new(&mut cs);
+	let lookup_chan = cs.add_channel("lookup");
+	let permutation_chan = cs.add_channel("permutation");
+	let mut lookup = cs.add_table("lookup");
+	let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation_chan, 15);
 
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![n_permutations],
-	};
+	let table = PermutationTable::new(&mut cs, lookup_chan);
 
-	let mut rng = thread_rng();
+	let mut rng = StdRng::seed_from_u64(0);
 	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
 		.take(n_permutations)
 		.collect::<Vec<_>>();
@@ -111,6 +125,23 @@ fn main() -> Result<()> {
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 	witness.fill_table_parallel(&table, &events)?;
 	drop(trace_gen_scope);
+
+	let counts = tally(&cs, &mut witness, &vec![], lookup_chan, &BitAndIndexedLookup).unwrap();
+	// Fill the lookup table with the sorted counts
+	let sorted_counts = counts
+		.into_iter()
+		.enumerate()
+		.sorted_by_key(|(_, count)| Reverse(*count))
+		.collect::<Vec<_>>();
+
+	witness
+		.fill_table_parallel(&bitand_lookup, &sorted_counts)
+		.unwrap();
+
+	let statement = Statement {
+		boundaries: vec![],
+		table_sizes: witness.table_sizes(),
+	};
 
 	let ccs = cs.compile(&statement).unwrap();
 	let cs_digest = ccs.digest::<Groestl256>();
