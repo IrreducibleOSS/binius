@@ -24,7 +24,7 @@ impl<F: 'static + Sync + Send + Debug> ComputeMemory<F> for CpuMemory {
 		data
 	}
 
-	fn into_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
+	fn to_const(data: Self::FSliceMut<'_>) -> Self::FSlice<'_> {
 		data
 	}
 

@@ -60,7 +60,7 @@ pub fn tensor_prod_eq_ind<'a, 'alloc, F: Field, Hal: ComputeLayer<F>>(
 
 	exec.tensor_expand(0, extra_query_coordinates, &mut eq_ind_partial_evals_buffer)?;
 
-	Ok(Hal::DevMem::into_const(eq_ind_partial_evals_buffer))
+	Ok(Hal::DevMem::to_const(eq_ind_partial_evals_buffer))
 }
 
 /// Computes the partial evaluation of the equality indicator polynomial.

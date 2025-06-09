@@ -253,7 +253,7 @@ where
 			let unpacked_hypercube_evals = P::unpack_scalars(hypercube_evals);
 			let mut allocated_mem = dev_alloc.alloc(1 << packed_committed_multilin.n_vars())?;
 			let _ = hal.copy_h2d(unpacked_hypercube_evals, &mut allocated_mem);
-			Ok(Hal::DevMem::into_const(allocated_mem))
+			Ok(Hal::DevMem::to_const(allocated_mem))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 

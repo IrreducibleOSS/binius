@@ -110,7 +110,7 @@ where
 			&mut mle,
 		)?;
 
-		Ok(Hal::DevMem::into_const(mle))
+		Ok(Hal::DevMem::to_const(mle))
 	}
 }
 
