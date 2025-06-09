@@ -144,7 +144,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =
-		FRIFolder::new(&params, &ntt, &merkle_prover, &codeword, &codeword_committed, &hal)
+		FRIFolder::new(&hal, &params, &ntt, &merkle_prover, &codeword, &codeword_committed)
 			.unwrap();
 
 	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();

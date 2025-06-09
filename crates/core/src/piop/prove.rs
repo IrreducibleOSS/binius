@@ -334,7 +334,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover = FRIFolder::new(fri_params, ntt, merkle_prover, codeword, committed, hal)?;
+	let mut fri_prover = FRIFolder::new(hal, fri_params, ntt, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

@@ -202,43 +202,43 @@ pub enum FoldRoundOutput<VCSCommitment> {
 }
 
 /// Represents the committed data for a single round in the FRI protocol when using a compute layer
-pub struct SingleRoundCommitted<'b, F, CL, MerkleProver>
+pub struct SingleRoundCommitted<'b, F, Hal, MerkleProver>
 where
 	F: BinaryField,
-	CL: ComputeLayer<F>,
+	Hal: ComputeLayer<F>,
 	MerkleProver: MerkleTreeProver<F>,
 {
 	/// The folded codeword on the host
 	pub host_codeword: Vec<F>,
 	/// The folded codeword on the device
-	pub device_codeword: <CL::DevMem as ComputeMemory<F>>::FSliceMut<'b>,
+	pub device_codeword: <Hal::DevMem as ComputeMemory<F>>::FSliceMut<'b>,
 	/// The Merkle tree commitment
 	pub committed: MerkleProver::Committed,
 }
 
-pub struct FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
+pub struct FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
 where
 	FA: BinaryField,
 	F: BinaryField,
 	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
-	CL: ComputeLayer<F>,
+	Hal: ComputeLayer<F>,
 {
 	params: &'a FRIParams<F, FA>,
 	ntt: &'a NTT,
 	merkle_prover: &'a MerkleProver,
 	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
-	round_committed: Vec<SingleRoundCommitted<'b, F, CL, MerkleProver>>,
+	round_committed: Vec<SingleRoundCommitted<'b, F, Hal, MerkleProver>>,
 	curr_round: usize,
 	next_commit_round: Option<usize>,
 	unprocessed_challenges: Vec<F>,
-	cl: &'b CL,
+	cl: &'b Hal,
 }
 
-impl<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
-	FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, CL>
+impl<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
+	FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
@@ -246,16 +246,16 @@ where
 	NTT: AdditiveNTT<FA> + Sync,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
-	CL: ComputeLayer<F>,
+	Hal: ComputeLayer<F>,
 {
 	/// Constructs a new folder.
 	pub fn new(
+		hal: &'b Hal,
 		params: &'a FRIParams<F, FA>,
 		ntt: &'a NTT,
 		merkle_prover: &'a MerkleProver,
 		codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
-		cl: &'b CL,
 	) -> Result<Self, Error> {
 		if len_packed_slice(codeword) < 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
@@ -274,7 +274,7 @@ where
 			curr_round: 0,
 			next_commit_round,
 			unprocessed_challenges: Vec::with_capacity(params.rs_code().log_dim()),
-			cl,
+			cl: hal,
 		})
 	}
 
@@ -308,7 +308,7 @@ where
 	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
-		allocator: &'b impl ComputeAllocator<F, CL::DevMem>,
+		allocator: &'b impl ComputeAllocator<F, Hal::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
@@ -353,7 +353,7 @@ where
 						log2_strict_usize(prev_round.device_codeword.len()),
 						0,
 						&self.unprocessed_challenges,
-						CL::DevMem::as_const(&prev_round.device_codeword),
+						Hal::DevMem::as_const(&prev_round.device_codeword),
 						&mut folded_codeword,
 					)?;
 
@@ -380,7 +380,7 @@ where
 						self.params.rs_code().log_len(),
 						self.params.log_batch_size(),
 						&self.unprocessed_challenges,
-						CL::DevMem::as_const(&original_codeword),
+						Hal::DevMem::as_const(&original_codeword),
 						&mut folded_codeword,
 					)?;
 
@@ -395,7 +395,7 @@ where
 
 		let mut folded_codeword_host = zeroed_vec(folded_codeword.len());
 		self.cl
-			.copy_d2h(CL::DevMem::as_const(&folded_codeword), &mut folded_codeword_host)?;
+			.copy_d2h(Hal::DevMem::as_const(&folded_codeword), &mut folded_codeword_host)?;
 
 		// take the first arity as coset_log_len, or use inv_rate if arities are empty
 		let coset_size = self
