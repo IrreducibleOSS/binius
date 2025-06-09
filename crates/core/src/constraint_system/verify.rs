@@ -19,6 +19,7 @@ use super::{
 };
 use crate::{
 	constraint_system::{
+		TableSizeSpec,
 		channel::{Flush, FlushDirection},
 		common::{FDomain, FEncode, FExt},
 	},
@@ -63,7 +64,7 @@ where
 		non_zero_oracle_ids,
 		channel_count,
 		mut exponents,
-		..
+		table_size_specs,
 	} = constraint_system.clone();
 
 	let mut table_constraints = table_constraints
@@ -85,7 +86,39 @@ where
 	let Proof { transcript } = proof;
 
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
+	transcript
+		.observe()
+		.write_slice(constraint_system_digest.as_ref());
 	transcript.observe().write_slice(boundaries);
+
+	let table_count = table_size_specs.len();
+	let mut reader = transcript.message();
+	let table_sizes: Vec<usize> = reader.read_vec(table_count)?;
+	assert_eq!(table_sizes.len(), table_count);
+
+	for (table_id, (&table_size, table_size_spec)) in
+		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
+	{
+		match table_size_spec {
+			TableSizeSpec::PowerOfTwo => {
+				if !table_size.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Fixed { log_size } => {
+				if table_size != 1 << log_size {
+					return Err(Error::TableSizeFixedRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Arbitrary => (),
+		}
+	}
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
