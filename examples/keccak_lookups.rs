@@ -6,7 +6,6 @@ use anyhow::Result;
 use binius_core::{
 	constraint_system::{self, channel::ChannelId},
 	fiat_shamir::HasherChallenger,
-	oracle::Packed,
 };
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -15,19 +14,15 @@ use binius_field::{
 	tower::CanonicalTowerFamily,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::{
-	groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel},
-	permutation,
-};
+use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
 		B1, B8, B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId,
 		TableWitnessSegment, WitnessIndex, tally,
 	},
 	gadgets::{
-		hash::keccak::{StateMatrix, stacked::Keccakf},
+		hash::keccak::{StateMatrix, lookedup::KeccakfLookedup},
 		indexed_lookup::and::{BitAndIndexedLookup, BitAndLookup},
-		lookup,
 	},
 };
 use binius_utils::rayon::adjust_thread_pool;
@@ -50,14 +45,14 @@ struct Args {
 
 pub struct PermutationTable {
 	table_id: TableId,
-	keccakf: Keccakf,
+	keccakf: KeccakfLookedup,
 }
 
 impl PermutationTable {
 	pub fn new(cs: &mut ConstraintSystem, lookup_channel: ChannelId) -> Self {
-		let mut table = cs.add_table("Keccak permutation");
+		let mut table = cs.add_table("Keccak permutation with lookup");
 
-		let keccakf = Keccakf::new(&mut table, lookup_channel);
+		let keccakf = KeccakfLookedup::new(&mut table, lookup_channel);
 
 		Self {
 			table_id: table.id(),

@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 //! The version of the Keccakf permutation taking the arithmetization approach that is based on
-//! stacked columns.
+//! stacked columns and lookups.
 
 // This implementation tries to be as close to the
 // [Keccak Specification Summary][keccak_spec_summary] and as such it is highly recommended to
@@ -75,8 +75,8 @@ const STATE_OUT_TRACK: usize = 7;
 ///
 /// To feed the input to permutation, you need to initialize the `state_in` column of the 0th batch
 /// with the input state matrix. See [`Self::populate_state_in`] if you have values handy.
-pub struct Keccakf {
-	batches: [RoundBatch; BATCHES_PER_PERMUTATION],
+pub struct KeccakfLookedup {
+	batches: [LookedupRoundBatch; BATCHES_PER_PERMUTATION],
 	/// The lanes of the input and output state columns. These are exposed to make it convenient to
 	/// use the gadget along with flushing.
 	pub input: StateMatrix<Col<B64>>,
@@ -97,7 +97,7 @@ pub struct Keccakf {
 	link_sel: Col<B1, TRACKS_PER_BATCH>,
 }
 
-impl Keccakf {
+impl KeccakfLookedup {
 	/// Creates a new instance of the gadget.
 	///
 	/// See the struct documentation for more details.
@@ -115,7 +115,7 @@ impl Keccakf {
 		// Constructing the batches of rounds. The final value of `state` will be the permutation
 		// output.
 		let batches = array::from_fn(|batch_no| {
-			let batch = RoundBatch::new(
+			let batch = LookedupRoundBatch::new(
 				&mut table.with_namespace(format!("batch[{batch_no}]")),
 				state.clone(),
 				lookup_chan,
@@ -277,7 +277,7 @@ impl Keccakf {
 ///
 /// This batch runs 8 rounds of keccak-f. Since SHA3-256 is defined to have 24 rounds, you would
 /// need to use 3 of these gadgets to implement a full permutation.
-struct RoundBatch {
+struct LookedupRoundBatch {
 	batch_no: usize,
 	state_in: StateMatrix<PackedLane8>,
 	state_out: StateMatrix<PackedLane8>,
@@ -291,7 +291,7 @@ struct RoundBatch {
 	round_const: PackedLane8,
 }
 
-impl RoundBatch {
+impl LookedupRoundBatch {
 	fn new(
 		table: &mut TableBuilder,
 		state_in: StateMatrix<PackedLane8>,
@@ -633,7 +633,7 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let lookup_chan = cs.add_channel("lookup_channel");
 		let mut table = cs.add_table("stacked permutation");
-		let _ = Keccakf::new(&mut table, lookup_chan);
+		let _ = KeccakfLookedup::new(&mut table, lookup_chan);
 		let id = table.id();
 		let stat = cs.tables[id].stat();
 		assert_eq!(stat.bits_per_row_committed(), 51200);
@@ -652,7 +652,7 @@ mod tests {
 		let mut table = cs.add_table("test");
 
 		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let rb = RoundBatch::new(&mut table, state_in, lookup_chan, 0);
+		let rb = LookedupRoundBatch::new(&mut table, state_in, lookup_chan, 0);
 
 		let allocator = Bump::new();
 		let table_id = table.id();
@@ -696,7 +696,7 @@ mod tests {
 		let mut lookup = cs.add_table("bitand_lookup");
 		let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation, 20);
 		let mut table = cs.add_table("test");
-		let keccakf = Keccakf::new(&mut table, lookup_chan);
+		let keccakf = KeccakfLookedup::new(&mut table, lookup_chan);
 
 		let allocator = Bump::new();
 		let table_id = table.id();

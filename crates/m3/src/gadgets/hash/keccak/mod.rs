@@ -6,8 +6,8 @@ mod state;
 mod test_vector;
 mod trace;
 
+pub mod lookedup;
 pub mod stacked;
-
 pub use state::StateMatrix;
 
 const ROUNDS_PER_PERMUTATION: usize = 24;

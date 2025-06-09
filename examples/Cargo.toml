@@ -31,6 +31,10 @@ name = "keccak"
 path = "keccak.rs"
 
 [[example]]
+name = "keccak_with_lookups"
+path = "keccak_lookups.rs"
+
+[[example]]
 name = "groestl"
 path = "groestl.rs"
 
