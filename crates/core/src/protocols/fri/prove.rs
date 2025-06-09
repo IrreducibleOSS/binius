@@ -572,7 +572,7 @@ where
 			params,
 			ntt,
 			merkle_prover,
-			codeword: codeword,
+			codeword,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(params.n_oracles()),
 			curr_round: 0,
