@@ -506,7 +506,12 @@ where
 }
 
 /// Represents the committed data for a single round in the FRI protocol when using a compute layer
-pub struct SingleRoundCommitted<'b, F, CL, MerkleProver> {
+pub struct SingleRoundCommitted<'b, F, CL, MerkleProver>
+where
+	F: BinaryField,
+	CL: ComputeLayer<F>,
+	MerkleProver: MerkleTreeProver<F>,
+{
 	/// The folded codeword on the host
 	pub host_codeword: Vec<F>,
 	/// The folded codeword on the device
@@ -642,8 +647,9 @@ where
 			Some(prev_round) => {
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
-				let mut folded_codeword = allocator
-					.alloc(prev_round.device_codeword.len() / (1 << self.unprocessed_challenges.len()))?;
+				let mut folded_codeword = allocator.alloc(
+					prev_round.device_codeword.len() / (1 << self.unprocessed_challenges.len()),
+				)?;
 
 				self.cl.execute(|exec| {
 					exec.fri_fold(
