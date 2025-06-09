@@ -25,7 +25,7 @@ jobs:
             cmd: "cargo fmt --check"
           - runner: "ubuntu-latest"
             name: "clippy"
-            cmd: "cargo clippy --all --all-features --tests --benches --examples -- -D warnings"
+            cmd: 'RUSTFLAGS="-C target-cpu=native" cargo clippy --all --all-features --tests --benches --examples -- -D warnings'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
