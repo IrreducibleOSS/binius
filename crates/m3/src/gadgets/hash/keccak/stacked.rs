@@ -373,7 +373,6 @@ impl RoundBatch {
 		});
 
 		let merged = StateMatrix::from_fn(|(x, y)| {
-			// B[x,y] xor ((not B[x+1,y]) and B[x+2,y])
 			let b2 = b_packed[(x + 2, y)];
 			let not_b1 = not_b_packed[(x + 1, y)];
 			let not_b1_and_b2 = not_b1_and_b2_packed[(x, y)];
