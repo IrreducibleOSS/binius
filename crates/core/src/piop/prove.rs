@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{borrow::Cow, ops::Deref};
-use crate::protocols::fri::FRIFolderCL;
+
 use binius_compute::{
 	ComputeLayer, ComputeMemory,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
@@ -35,7 +35,7 @@ use crate::{
 		logging::{FriFoldRoundsData, SumcheckBatchProverDimensionsData},
 	},
 	protocols::{
-		fri::{self, FRIParams, FoldRoundOutput},
+		fri::{self, FRIFolderCL, FRIParams, FoldRoundOutput},
 		sumcheck::{
 			self, SumcheckClaim,
 			prove::{SumcheckProver, front_loaded::BatchProver as SumcheckBatchProver},
@@ -334,7 +334,8 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover = FRIFolderCL::new(fri_params, ntt, merkle_prover, codeword, committed, hal)?;
+	let mut fri_prover =
+		FRIFolderCL::new(fri_params, ntt, merkle_prover, codeword, committed, hal)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

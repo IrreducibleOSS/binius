@@ -633,9 +633,9 @@ where
 			Some((_, prev_codeword, _)) => {
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
+				let mut folded_codeword = allocator
+					.alloc(prev_codeword.len() / (1 << self.unprocessed_challenges.len()))?;
 
-				let mut folded_codeword =
-					allocator.alloc(prev_codeword.len() - self.unprocessed_challenges.len())?;
 				self.cl.execute(|exec| {
 					exec.fri_fold(
 						self.ntt,
