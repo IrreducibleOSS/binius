@@ -2,6 +2,7 @@
 
 use std::{iter::repeat_with, vec};
 
+use binius_compute::{ComputeLayer, alloc::BumpAllocator, cpu::CpuLayer};
 use binius_field::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField,
 	PackedBinaryField16x16b, PackedField, TowerField,
@@ -11,7 +12,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackendExt, make_portable_backend};
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
-use binius_math::{MultilinearExtension, MultilinearQuery, fold_right};
+use binius_math::{MultilinearExtension, MultilinearQuery, TowerTop, fold_right};
 use binius_maybe_rayon::prelude::ParallelIterator;
 use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT, fri::fold_interleaved};
 use binius_utils::checked_arithmetics::log2_strict_usize;
@@ -24,7 +25,7 @@ use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
-		self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput,
+		self, CommitOutput, FRIFolderCL, FRIParams, FRIVerifier, FoldRoundOutput,
 		to_par_scalar_small_chunks,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
@@ -102,7 +103,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	arities: &[usize],
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA>,
-	F: TowerField + ExtensionField<FA> + PackedField<Scalar = F>,
+	F: TowerField + ExtensionField<FA> + PackedField<Scalar = F> + TowerTop,
 	FA: BinaryField,
 	PackedType<U, F>: PackedField,
 	PackedType<U, FA>: PackedField,
@@ -135,16 +136,25 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		codeword,
 	} = fri::commit_interleaved(&committed_rs_code, &params, &ntt, &merkle_prover, &msg).unwrap();
 
+	let hal = CpuLayer::<F>::default();
+
+	let mut dev_mem = vec![F::ZERO; 1 << 20];
+
+	let dev_alloc = BumpAllocator::<F, <CpuLayer<F> as ComputeLayer<F>>::DevMem>::new(&mut dev_mem);
+
 	// Run the prover to generate the proximity proof
 	let mut round_prover =
-		FRIFolder::new(&params, &ntt, &merkle_prover, &codeword, &codeword_committed).unwrap();
+		FRIFolderCL::new(&params, &ntt, &merkle_prover, &codeword, &codeword_committed, &hal)
+			.unwrap();
 
 	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	prover_challenger.message().write(&codeword_commitment);
 	let mut round_commitments = Vec::with_capacity(params.n_oracles());
 	for _i in 0..params.n_fold_rounds() {
 		let challenge = prover_challenger.sample();
-		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
+		let fold_round_output = round_prover
+			.execute_fold_round(&dev_alloc, challenge)
+			.unwrap();
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
@@ -271,7 +281,7 @@ fn test_commit_prove_verify_success_128b_interleaved_packed() {
 	let log_batch_size = 2;
 	let arities = [3, 2, 1];
 
-	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField32b, BinaryField16b>(
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
 		log_dimension,
 		log_inv_rate,
 		log_batch_size,
