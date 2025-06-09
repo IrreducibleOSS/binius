@@ -15,7 +15,7 @@ use anyhow::Result;
 use array_util::ArrayExt as _;
 use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
 use binius_field::{
-	Field, PackedDivisible, PackedExtension, PackedFieldIndexable, PackedSubfield, TowerField,
+	Field, PackedExtension, PackedFieldIndexable, PackedSubfield, TowerField,
 	linear_transformation::PackedTransformationFactory,
 };
 use trace::PermutationTrace;
@@ -462,7 +462,6 @@ impl LookedupRoundBatch {
 						a_theta[cell_pos] = brt[track].a_theta[(x, y)];
 						if let Some(ref mut b) = b {
 							b[cell_pos] = brt[track].b[(x, y)];
-						} else {
 						}
 					}
 				}
@@ -665,7 +664,7 @@ mod tests {
 		let trace = trace::keccakf_trace(StateMatrix::default());
 		rb.populate(&mut segment, &[trace]).unwrap();
 
-		let counts = tally(&cs, &mut witness, &vec![], lookup_chan, &BitAndIndexedLookup).unwrap();
+		let counts = tally(&cs, &mut witness, &[], lookup_chan, &BitAndIndexedLookup).unwrap();
 		// Fill the lookup table with the sorted counts
 		let sorted_counts = counts
 			.into_iter()
@@ -725,7 +724,7 @@ mod tests {
 			}
 		}
 
-		let counts = tally(&cs, &mut witness, &vec![], lookup_chan, &BitAndIndexedLookup).unwrap();
+		let counts = tally(&cs, &mut witness, &[], lookup_chan, &BitAndIndexedLookup).unwrap();
 		// Fill the lookup table with the sorted counts
 		let sorted_counts = counts
 			.into_iter()
