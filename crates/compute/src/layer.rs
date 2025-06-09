@@ -176,7 +176,7 @@ pub trait ComputeLayerExecutor<F: Field> {
 
 	/// Launch many kernels in parallel to process buffers without accumulating results.
 	///
-	/// Similar to [`accumulate_kernels`], this method provides low-level access to schedule
+	/// Similar to [`Self::accumulate_kernels`], this method provides low-level access to schedule
 	/// parallel kernel executions on the compute platform. The key difference is that this method
 	/// is focused on performing parallel operations on buffers without a reduction phase.
 	/// Each kernel operates on its assigned chunk of data and writes its results directly to
@@ -187,8 +187,9 @@ pub trait ComputeLayerExecutor<F: Field> {
 	///
 	/// ## Buffer chunking
 	///
-	/// The kernel local memory buffers follow the same chunking approach as [`accumulate_kernels`].
-	/// Each kernel operates on a chunk of the larger buffers as specified by the memory mappings.
+	/// The kernel local memory buffers follow the same chunking approach as
+	/// [`Self::accumulate_kernels`]. Each kernel operates on a chunk of the larger buffers as
+	/// specified by the memory mappings.
 	///
 	/// ## Kernel specification
 	///
@@ -199,9 +200,9 @@ pub trait ComputeLayerExecutor<F: Field> {
 	/// * `log_chunks` - the binary logarithm of the number of kernels that are launched.
 	/// * `buffers` - a vector of kernel-local buffers.
 	///
-	/// Unlike [`accumulate_kernels`], this method does not expect the kernel to return any values
-	/// for accumulation. Instead, the kernel should write its results directly to the mutable
-	/// buffers provided in the `buffers` parameter.
+	/// Unlike [`Self::accumulate_kernels`], this method does not expect the kernel to return any
+	/// values for accumulation. Instead, the kernel should write its results directly to the
+	/// mutable buffers provided in the `buffers` parameter.
 	///
 	/// The closure must respect certain assumptions:
 	///
