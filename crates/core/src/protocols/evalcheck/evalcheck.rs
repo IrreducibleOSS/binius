@@ -26,6 +26,16 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub eval: F,
 }
 
+impl<F: Field> EvalcheckMultilinearClaim<F> {
+	pub fn isomorphic<FTgt: Field + From<F>>(&self) -> EvalcheckMultilinearClaim<FTgt> {
+		EvalcheckMultilinearClaim {
+			id: self.id,
+			eval_point: self.eval_point.isomorphic(),
+			eval: FTgt::from(self.eval),
+		}
+	}
+}
+
 #[repr(u32)]
 #[derive(Debug)]
 enum EvalcheckNumerics {
@@ -205,6 +215,14 @@ impl<F: Field> EvalPoint<F> {
 			return Some(self.slice(0..self_len - suffix_len));
 		}
 		None
+	}
+
+	pub fn isomorphic<FTgt: Field + From<F>>(&self) -> EvalPoint<FTgt> {
+		self.to_vec()
+			.into_iter()
+			.map(FTgt::from)
+			.collect::<Vec<_>>()
+			.into()
 	}
 }
 
