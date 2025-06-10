@@ -2,3 +2,6 @@
 
 pub mod groestl;
 pub mod keccak;
+pub mod sha256;
+
+
