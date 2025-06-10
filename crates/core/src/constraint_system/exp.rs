@@ -21,7 +21,7 @@ use super::{
 	error::Error,
 };
 use crate::{
-	constraint_system::channel::OracleOrConst,
+	constraint_system::{channel::OracleOrConst, prove::convert_1b_witnesses_to_fast_ext},
 	oracle::{MultilinearOracleSet, OracleId},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
@@ -73,7 +73,7 @@ where
 		.iter()
 		.map(|exp| {
 			let fast_exponent_witnesses =
-				get_fast_exponent_witnesses::<U, Tower>(witness, &exp.bits_ids)?;
+				convert_1b_witnesses_to_fast_ext::<U, Tower>(witness, &exp.bits_ids)?;
 
 			let (exp_witness, tower_level) = match exp.base {
 				OracleOrConst::Const { base, tower_level } => {
@@ -282,38 +282,6 @@ where
 	MultilinearExtension::new(witness.n_vars(), fast_packed_evals)
 		.map(|mle| mle.specialize_arc_dyn())
 		.map_err(Error::from)
-}
-
-type FastExponentWitnesses<'a, U, Tower> =
-	Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>;
-
-/// Casts witness from 1B to FastB128.
-/// TODO: Update when we start using byteslicing.
-fn get_fast_exponent_witnesses<'a, U, Tower>(
-	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
-	ids: &[OracleId],
-) -> Result<FastExponentWitnesses<'a, U, Tower>, Error>
-where
-	U: ProverTowerUnderlier<Tower>,
-	Tower: ProverTowerFamily,
-	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>
-		+ RepackedExtension<PackedType<U, Tower::B1>>,
-{
-	ids.iter()
-		.map(|&id| {
-			let exp_witness = witness.get_multilin_poly(id)?;
-
-			let packed_evals = exp_witness
-				.packed_evals()
-				.expect("poly contain packed_evals");
-
-			let packed_evals = PackedType::<U, Tower::B128>::cast_bases(packed_evals);
-
-			MultilinearExtension::new(exp_witness.n_vars(), packed_evals.to_vec())
-				.map(|mle| mle.specialize_arc_dyn())
-				.map_err(Error::from)
-		})
-		.collect::<Result<Vec<_>, _>>()
 }
 
 pub fn reorder_exponents<F: TowerField>(
