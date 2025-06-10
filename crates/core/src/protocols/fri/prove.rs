@@ -1,11 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
-
+use binius_compute::{
+	ComputeLayerExecutor,
+	alloc::ComputeAllocator,
+	layer::ComputeLayer,
+	memory::{ComputeMemory, SizedSlice},
+};
 use binius_field::{
 	BinaryField, ExtensionField, PackedExtension, PackedField, TowerField,
 	packed::{iter_packed_slice_with_offset, len_packed_slice},
+	unpack_if_possible,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_ntt::{AdditiveNTT, fri::fold_interleaved};
+use binius_ntt::AdditiveNTT;
 use binius_utils::{SerializeBytes, bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
@@ -195,27 +201,44 @@ pub enum FoldRoundOutput<VCSCommitment> {
 	Commitment(VCSCommitment),
 }
 
-/// A stateful prover for the FRI fold phase.
-pub struct FRIFolder<'a, F, FA, P, NTT, MerkleProver, VCS>
+/// Represents the committed data for a single round in the FRI protocol when using a compute layer
+pub struct SingleRoundCommitted<'b, F, Hal, MerkleProver>
+where
+	F: BinaryField,
+	Hal: ComputeLayer<F>,
+	MerkleProver: MerkleTreeProver<F>,
+{
+	/// The folded codeword on the host
+	pub host_codeword: Vec<F>,
+	/// The folded codeword on the device
+	pub device_codeword: <Hal::DevMem as ComputeMemory<F>>::FSliceMut<'b>,
+	/// The Merkle tree commitment
+	pub committed: MerkleProver::Committed,
+}
+
+pub struct FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
 where
 	FA: BinaryField,
 	F: BinaryField,
 	P: PackedField<Scalar = F>,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
+	Hal: ComputeLayer<F>,
 {
 	params: &'a FRIParams<F, FA>,
 	ntt: &'a NTT,
 	merkle_prover: &'a MerkleProver,
 	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
-	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
+	round_committed: Vec<SingleRoundCommitted<'b, F, Hal, MerkleProver>>,
 	curr_round: usize,
 	next_commit_round: Option<usize>,
 	unprocessed_challenges: Vec<F>,
+	cl: &'b Hal,
 }
 
-impl<'a, F, FA, P, NTT, MerkleProver, VCS> FRIFolder<'a, F, FA, P, NTT, MerkleProver, VCS>
+impl<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
+	FRIFolder<'a, 'b, F, FA, P, NTT, MerkleProver, VCS, Hal>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
@@ -223,16 +246,18 @@ where
 	NTT: AdditiveNTT<FA> + Sync,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	Hal: ComputeLayer<F>,
 {
 	/// Constructs a new folder.
 	pub fn new(
+		hal: &'b Hal,
 		params: &'a FRIParams<F, FA>,
 		ntt: &'a NTT,
 		merkle_prover: &'a MerkleProver,
-		committed_codeword: &'a [P],
+		codeword: &'a [P],
 		committed: &'a MerkleProver::Committed,
 	) -> Result<Self, Error> {
-		if len_packed_slice(committed_codeword) < 1 << params.log_len() {
+		if len_packed_slice(codeword) < 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match interleaved codeword length".to_string(),
 			));
@@ -243,12 +268,13 @@ where
 			params,
 			ntt,
 			merkle_prover,
-			codeword: committed_codeword,
+			codeword,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(params.n_oracles()),
 			curr_round: 0,
 			next_commit_round,
 			unprocessed_challenges: Vec::with_capacity(params.rs_code().log_dim()),
+			cl: hal,
 		})
 	}
 
@@ -265,7 +291,7 @@ where
 	/// The length of the current codeword.
 	pub fn current_codeword_len(&self) -> usize {
 		match self.round_committed.last() {
-			Some((codeword, _)) => codeword.len(),
+			Some(round) => round.host_codeword.len(),
 			None => len_packed_slice(self.codeword),
 		}
 	}
@@ -282,6 +308,7 @@ where
 	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
+		allocator: &'b impl ComputeAllocator<F, Hal::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
@@ -292,8 +319,8 @@ where
 		}
 
 		let dimensions_data = match self.round_committed.last() {
-			Some((codeword, _)) => FRIFoldData::new::<F, FA>(
-				log2_strict_usize(codeword.len()),
+			Some(round) => FRIFoldData::new::<F, FA>(
+				log2_strict_usize(round.host_codeword.len()),
 				0,
 				self.unprocessed_challenges.len(),
 			),
@@ -313,32 +340,62 @@ where
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
 		let folded_codeword = match self.round_committed.last() {
-			Some((prev_codeword, _)) => {
+			Some(prev_round) => {
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
-				fold_interleaved(
-					self.ntt,
-					prev_codeword,
-					&self.unprocessed_challenges,
-					log2_strict_usize(prev_codeword.len()),
-					0,
-				)
+				let mut folded_codeword = allocator.alloc(
+					prev_round.device_codeword.len() / (1 << self.unprocessed_challenges.len()),
+				)?;
+
+				self.cl.execute(|exec| {
+					exec.fri_fold(
+						self.ntt,
+						log2_strict_usize(prev_round.device_codeword.len()),
+						0,
+						&self.unprocessed_challenges,
+						Hal::DevMem::as_const(&prev_round.device_codeword),
+						&mut folded_codeword,
+					)?;
+
+					Ok(vec![])
+				})?;
+
+				folded_codeword
 			}
 			None => {
-				// Fold the interleaved codeword that was originally committed into a single
-				// codeword with the same or reduced block length, depending on the sequence of
-				// fold rounds.
-				fold_interleaved(
-					self.ntt,
+				let codeword_len = len_packed_slice(self.codeword);
+				let mut original_codeword = allocator.alloc(codeword_len)?;
+				unpack_if_possible(
 					self.codeword,
-					&self.unprocessed_challenges,
-					self.params.rs_code().log_len(),
-					self.params.log_batch_size(),
-				)
+					|scalars| self.cl.copy_h2d(scalars, &mut original_codeword),
+					|_packed| unimplemented!("non-dense packed fields not supported"),
+				)?;
+				let mut folded_codeword = allocator.alloc(
+					1 << (self.params.rs_code().log_len()
+						- (self.unprocessed_challenges.len() - self.params.log_batch_size())),
+				)?;
+				self.cl.execute(|exec| {
+					exec.fri_fold(
+						self.ntt,
+						self.params.rs_code().log_len(),
+						self.params.log_batch_size(),
+						&self.unprocessed_challenges,
+						Hal::DevMem::as_const(&original_codeword),
+						&mut folded_codeword,
+					)?;
+
+					Ok(vec![])
+				})?;
+
+				folded_codeword
 			}
 		};
 		drop(fri_fold_span);
 		self.unprocessed_challenges.clear();
+
+		let mut folded_codeword_host = zeroed_vec(folded_codeword.len());
+		self.cl
+			.copy_d2h(Hal::DevMem::as_const(&folded_codeword), &mut folded_codeword_host)?;
 
 		// take the first arity as coset_log_len, or use inv_rate if arities are empty
 		let coset_size = self
@@ -358,11 +415,15 @@ where
 		.entered();
 		let (commitment, committed) = self
 			.merkle_prover
-			.commit(&folded_codeword, coset_size)
+			.commit(&folded_codeword_host, coset_size)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 		drop(merkle_tree_span);
 
-		self.round_committed.push((folded_codeword, committed));
+		self.round_committed.push(SingleRoundCommitted {
+			host_codeword: folded_codeword_host,
+			device_codeword: folded_codeword,
+			committed,
+		});
 
 		self.next_commit_round = self.next_commit_round.take().and_then(|next_commit_round| {
 			let arity = self.params.fold_arities().get(self.round_committed.len())?;
@@ -390,7 +451,7 @@ where
 		let terminate_codeword = self
 			.round_committed
 			.last()
-			.map(|(codeword, _)| codeword.clone())
+			.map(|round| round.host_codeword.clone())
 			.unwrap_or_else(|| PackedField::iter_slice(self.codeword).collect());
 
 		self.unprocessed_challenges.clear();
@@ -403,6 +464,11 @@ where
 			merkle_prover,
 			..
 		} = self;
+
+		let round_committed = round_committed
+			.into_iter()
+			.map(|round| (round.host_codeword, round.committed))
+			.collect();
 
 		let query_prover = FRIQueryProver {
 			params,

@@ -38,6 +38,10 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("transcript error: {0}")]
 	TranscriptError(#[from] transcript::Error),
+	#[error("failed to allocate memory: {0}")]
+	AllocationError(#[from] binius_compute::alloc::Error),
+	#[error("compute error: {0}")]
+	ComputeError(#[from] binius_compute::layer::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
