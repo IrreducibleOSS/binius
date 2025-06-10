@@ -31,7 +31,7 @@ name = "keccak"
 path = "keccak.rs"
 
 [[example]]
-name = "keccak_with_lookups"
+name = "keccak_lookups"
 path = "keccak_lookups.rs"
 
 [[example]]
