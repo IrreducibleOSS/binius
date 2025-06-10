@@ -497,7 +497,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::cpu::CpuLayer;
+	use binius_compute::cpu::{CpuLayer, alloc::CpuComputeAllocator};
 	use binius_compute_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
 	use binius_math::B128;
 	use bytemuck::zeroed_vec;
@@ -506,12 +506,14 @@ mod tests {
 	fn test_bivariate_mlecheck_prove_verify() {
 		let hal = <CpuLayer<B128>>::default();
 		let mut dev_mem = zeroed_vec(1 << 12);
+		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
 		generic_test_bivariate_mlecheck_prove_verify(
 			&hal,
 			&mut dev_mem,
+			&host_allocator.into_bump_allocator(),
 			n_vars,
 			n_multilins,
 			n_compositions,

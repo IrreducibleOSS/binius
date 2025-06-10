@@ -6,6 +6,7 @@
 //! for readability, used to validate the abstract interfaces and provide algorithmic references
 //! for optimized implementations.
 
+pub mod alloc;
 pub mod layer;
 pub mod memory;
 mod tower_macro;
