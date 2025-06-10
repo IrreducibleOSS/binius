@@ -8,6 +8,7 @@ use std::{
 	sync::Arc,
 };
 
+use binius_compute::alloc::{ComputeAllocator, HostBumpAllocator};
 use binius_core::{
 	transparent::step_down::StepDown,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
@@ -24,7 +25,6 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_log_2;
-use bumpalo::Bump;
 use bytemuck::{Pod, must_cast_slice, must_cast_slice_mut, zeroed_vec};
 use either::Either;
 use getset::CopyGetters;
@@ -47,21 +47,23 @@ use crate::builder::multi_iter::MultiIterator;
 /// gets converted into a multilinear extension index, which maintains references to the data
 /// allocated by the allocator, but does not need to maintain a reference to the constraint system,
 /// which can then be dropped.
-#[derive(Debug)]
 pub struct WitnessIndex<'cs, 'alloc, P = PackedType<OptimalUnderlier, B128>>
 where
 	P: PackedField,
 	P::Scalar: TowerField,
 {
 	cs: &'cs ConstraintSystem<P::Scalar>,
-	allocator: &'alloc Bump,
+	allocator: &'alloc HostBumpAllocator<'alloc, P>,
 	/// Each entry is Left if the index hasn't been initialized & filled, and Right if it has.
 	tables: Vec<Either<&'cs Table<P::Scalar>, TableWitnessIndex<'cs, 'alloc, P>>>,
 }
 
 impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, 'alloc, P> {
 	/// Creates and allocates the witness index for a constraint system.
-	pub fn new(cs: &'cs ConstraintSystem<F>, allocator: &'alloc Bump) -> Self {
+	pub fn new(
+		cs: &'cs ConstraintSystem<F>,
+		allocator: &'alloc HostBumpAllocator<'alloc, P>,
+	) -> Self {
 		Self {
 			cs,
 			allocator,
@@ -394,8 +396,12 @@ enum WitnessColumnInfo<T> {
 type WitnessDataMut<'a, P> = WitnessColumnInfo<&'a mut [P]>;
 
 impl<'a, P: PackedField> WitnessDataMut<'a, P> {
-	pub fn new_owned(allocator: &'a bumpalo::Bump, log_underlier_count: usize) -> Self {
-		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
+	pub fn new_owned(allocator: &'a HostBumpAllocator<'a, P>, log_underlier_count: usize) -> Self {
+		let slice = allocator
+			.alloc(1 << log_underlier_count)
+			.expect("failed to allocate witness data slice");
+
+		Self::Owned(slice)
 	}
 }
 
@@ -429,7 +435,7 @@ fn immutable_witness_index_columns<P: PackedField>(
 
 impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'cs, 'alloc, P> {
 	pub(crate) fn new(
-		allocator: &'alloc bumpalo::Bump,
+		allocator: &'alloc HostBumpAllocator<'alloc, P>,
 		table: &'cs Table<F>,
 		size: usize,
 	) -> Result<Self, Error> {
@@ -1304,6 +1310,7 @@ mod tests {
 	use std::{array, iter::repeat_with};
 
 	use assert_matches::assert_matches;
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_core::oracle::{MultilinearOracleSet, OracleId};
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
@@ -1327,7 +1334,8 @@ mod tests {
 		let col2 = table.add_committed::<B8, 1>("col2");
 		let col3 = table.add_committed::<B32, 1>("col3");
 
-		let allocator = bumpalo::Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let table_size = 64;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
 			&allocator,
@@ -1364,7 +1372,8 @@ mod tests {
 		let col2 = table.add_committed::<B8, 1>("col2");
 		let col3 = table.add_committed::<B32, 1>("col3");
 
-		let allocator = bumpalo::Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let table_size = 64;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
 			&allocator,
@@ -1399,7 +1408,8 @@ mod tests {
 		let col1 = table.add_committed::<B8, 2>("col1");
 		let col2 = table.add_committed::<B8, 2>("col2");
 
-		let allocator = bumpalo::Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let table_size = 1 << 6;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
 			&allocator,
@@ -1453,7 +1463,8 @@ mod tests {
 		let col2 = table.add_committed::<B16, 4>("col3");
 		let col3 = table.add_committed::<B8, 8>("col4");
 
-		let allocator = bumpalo::Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let table_size = 4;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(
 			&allocator,
@@ -1501,7 +1512,8 @@ mod tests {
 		let _col2 = table.add_committed::<B8, 1>("col2");
 		let _col3 = table.add_committed::<B32, 1>("col3");
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let table_size = 7;
 		let mut index = TableWitnessIndex::<PackedType<OptimalUnderlier256b, B128>>::new(
 			&allocator,
@@ -1574,7 +1586,8 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 11;
 		let mut index = WitnessIndex::new(&cs, &allocator);
@@ -1618,7 +1631,8 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 11;
 		let mut index = WitnessIndex::new(&cs, &allocator);
@@ -1662,7 +1676,8 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let test_table = TestTable::new(&mut cs);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 11;
 		let mut index = WitnessIndex::new(&cs, &allocator);
@@ -1682,7 +1697,8 @@ mod tests {
 		let test_col: Col<B32, 4> = test_table.add_committed("col");
 		let table_id = test_table.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 11;
 		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
@@ -1730,7 +1746,8 @@ mod tests {
 		let _ = test_table.add_constant("packed_col", pack_const_arr);
 		let table_id = test_table.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 123;
 		let statement = Statement {

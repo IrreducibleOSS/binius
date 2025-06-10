@@ -673,8 +673,8 @@ fn bytes_to_boundary(bytes: &[u8; 32]) -> [B128; 8] {
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
-	use bumpalo::Bump;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 	use trace::{MerklePath, MerkleTree};
 
@@ -722,7 +722,8 @@ mod tests {
 				nodes: path,
 			}],
 		);
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		witness
@@ -750,7 +751,8 @@ mod tests {
 				nodes: path,
 			}],
 		);
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		witness
@@ -779,7 +781,8 @@ mod tests {
 			}],
 		);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		merkle_tree_cs
@@ -821,7 +824,8 @@ mod tests {
 		let trace = MerkleTreeTrace::generate(roots, &paths);
 
 		// Allocate memory for the witness
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 14);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness = WitnessIndex::new(&cs, &allocator);
 
 		// Fill the tables with the trace

@@ -569,8 +569,8 @@ impl std::ops::Index<usize> for PerBatchLens<'_> {
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
-	use bumpalo::Bump;
 
 	use super::*;
 	use crate::{
@@ -598,7 +598,8 @@ mod tests {
 		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
 		let rb = RoundBatch::new(&mut table, state_in, 0);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 18);
+		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
 		let statement = Statement {
@@ -634,7 +635,8 @@ mod tests {
 
 		let keccakf = Keccakf::new(&mut table);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 16);
+		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
 		let statement = Statement {

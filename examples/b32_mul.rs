@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -11,8 +12,7 @@ use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Para
 use binius_m3::builder::{
 	B32, B128, ConstraintSystem, Statement, WitnessIndex, test_utils::ClosureFiller,
 };
-use binius_utils::rayon::adjust_thread_pool;
-use bumpalo::Bump;
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -22,7 +22,7 @@ use tracing_profile::init_tracing;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of operations to do.
-	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(512..))]
+	#[arg(short, long, default_value_t = 4096, value_parser = value_parser!(u32).range(512..))]
 	n_ops: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -63,7 +63,10 @@ fn main() -> Result<()> {
 	};
 
 	let trace_gen_scope = tracing::info_span!("Generating trace", n_ops = args.n_ops).entered();
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(
+		1 << (log2_ceil_usize(args.n_ops as _) - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+	);
+	let allocator = allocator.into_bump_allocator();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 	witness

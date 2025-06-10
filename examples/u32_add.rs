@@ -1,5 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 use anyhow::Result;
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -11,8 +12,7 @@ use binius_m3::{
 	builder::{B1, B128, Statement, WitnessIndex, test_utils::ClosureFiller},
 	gadgets::add::{U32Add, U32AddFlags},
 };
-use binius_utils::rayon::adjust_thread_pool;
-use bumpalo::Bump;
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -67,7 +67,11 @@ fn main() -> Result<()> {
 	};
 	let trace_gen_scope =
 		tracing::info_span!("Generating trace", n_adds = args.n_additions).entered();
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(
+		1 << (log2_ceil_usize(args.n_additions as _) + 1
+			- PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+	);
+	let allocator = allocator.into_bump_allocator();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 	witness
 		.fill_table_parallel(

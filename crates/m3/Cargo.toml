@@ -7,6 +7,7 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 array-util.workspace = true
+binius_compute = { path = "../compute", default-features = false }
 binius_core = { path = "../core", default-features = false }
 binius_field = { path = "../field", default-features = false }
 binius_fast_compute = { path = "../fast_compute", default-features = false }
@@ -15,7 +16,6 @@ binius_hash = { path = "../hash", default-features = false, optional = false }
 binius_math = { path = "../math", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
-bumpalo.workspace = true
 bytemuck.workspace = true
 derive_more.workspace = true
 either.workspace = true

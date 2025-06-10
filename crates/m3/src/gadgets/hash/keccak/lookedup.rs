@@ -614,8 +614,8 @@ impl std::ops::Index<usize> for PerBatchLens<'_> {
 mod tests {
 	use std::cmp::Reverse;
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
-	use bumpalo::Bump;
 	use itertools::Itertools;
 
 	use super::*;
@@ -653,7 +653,8 @@ mod tests {
 		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
 		let rb = LookedupRoundBatch::new(&mut table, state_in, lookup_chan, 0);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 16);
+		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
 		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
@@ -702,7 +703,8 @@ mod tests {
 		let mut table = cs.add_table("test");
 		let keccakf = KeccakfLookedup::new(&mut table, lookup_chan);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 17);
+		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
 		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);

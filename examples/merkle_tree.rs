@@ -1,6 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use anyhow::Result;
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -16,7 +17,6 @@ use binius_m3::{
 	},
 };
 use binius_utils::rayon::adjust_thread_pool;
-use bumpalo::Bump;
 use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -81,7 +81,9 @@ fn main() -> Result<()> {
 	let trace = MerkleTreeTrace::generate(vec![roots], &paths);
 
 	// Allocate memory for the witness
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (22 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 	// Fill the tables with the trace

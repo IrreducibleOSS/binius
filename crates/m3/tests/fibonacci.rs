@@ -63,6 +63,7 @@ mod model {
 }
 
 mod arithmetization {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_core::constraint_system::channel::ChannelId;
 	use binius_field::{
 		PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier128b,
@@ -76,7 +77,6 @@ mod arithmetization {
 		},
 		gadgets::add::{U32Add, U32AddFlags},
 	};
-	use bumpalo::Bump;
 
 	use crate::model::{self, FibonacciTrace};
 
@@ -166,7 +166,8 @@ mod arithmetization {
 		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
 		let fibonacci_table = FibonacciTable::new(&mut cs, fibonacci_pairs);
 		let trace = FibonacciTrace::generate((0, 1), 40);
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 14);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -197,7 +198,8 @@ mod arithmetization {
 		let fibonacci_pairs = cs.add_channel("fibonacci_pairs");
 		let fibonacci_table = FibonacciTable::new(&mut cs, fibonacci_pairs);
 		let trace = FibonacciTrace::generate((0, 1), 1);
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 14);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -232,7 +234,8 @@ mod arithmetization {
 			FibonacciTable::with_table_builder(&mut fib_table_builder, fibonacci_pairs);
 		let trace = FibonacciTrace::generate((0, 1), 31);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 14);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 

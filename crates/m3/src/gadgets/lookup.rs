@@ -90,8 +90,8 @@ impl LookupProducer {
 mod tests {
 	use std::{cmp::Reverse, iter, iter::repeat_with};
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
-	use bumpalo::Bump;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
@@ -157,7 +157,8 @@ mod tests {
 			.sorted_unstable_by_key(|&(_val, count)| Reverse(count))
 			.collect::<Vec<_>>();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -243,7 +244,8 @@ mod tests {
 		let counts = vec![9; lookup_table_size];
 		let values_and_counts = iter::zip(values, counts).collect::<Vec<_>>();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
