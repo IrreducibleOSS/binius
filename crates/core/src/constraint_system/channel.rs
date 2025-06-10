@@ -57,7 +57,7 @@ use binius_math::MultilinearPoly;
 use itertools::izip;
 
 use super::error::{Error, VerificationError};
-use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use crate::{constraint_system::TableId, oracle::OracleId, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
@@ -68,6 +68,7 @@ pub enum OracleOrConst<F: Field> {
 }
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Flush<F: TowerField> {
+	pub table_id: TableId,
 	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
@@ -125,7 +126,9 @@ where
 			direction,
 			ref selectors,
 			multiplicity,
+			table_id,
 		} = flush;
+		let _ = table_id;
 
 		if channel_id > max_channel_id {
 			return Err(Error::ChannelIdOutOfRange {
