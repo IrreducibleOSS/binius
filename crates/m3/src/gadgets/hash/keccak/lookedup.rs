@@ -614,7 +614,7 @@ impl std::ops::Index<usize> for PerBatchLens<'_> {
 mod tests {
 	use std::cmp::Reverse;
 
-	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
+	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
 	use bumpalo::Bump;
 	use itertools::Itertools;
 
@@ -656,8 +656,7 @@ mod tests {
 		let allocator = Bump::new();
 		let table_id = table.id();
 
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
@@ -700,8 +699,7 @@ mod tests {
 		let allocator = Bump::new();
 		let table_id = table.id();
 
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
