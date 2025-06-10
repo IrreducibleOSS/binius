@@ -681,7 +681,13 @@ mod tests {
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+		binius_core::constraint_system::validate::validate_witness(
+			&ccs,
+			&[],
+			&statement.table_sizes,
+			&witness,
+		)
+		.unwrap();
 	}
 
 	#[test]
@@ -742,6 +748,12 @@ mod tests {
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
-		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
+		binius_core::constraint_system::validate::validate_witness(
+			&ccs,
+			&[],
+			&statement.table_sizes,
+			&witness,
+		)
+		.unwrap();
 	}
 }
