@@ -1,5 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_compute_test_utils::layer::{
 	test_generic_fri_fold, test_generic_kernel_add, test_generic_single_inner_product,
 	test_generic_single_inner_product_using_kernel_accumulator, test_generic_single_left_fold,
@@ -17,9 +18,11 @@ fn test_exec_single_tensor_expand() {
 	let n_vars = 8;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << n_vars];
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
 	test_generic_single_tensor_expand(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -32,9 +35,11 @@ fn test_exec_single_left_fold() {
 	let n_vars = 8;
 	let mut device_memory = vec![P::zero(); 1 << (n_vars - P::LOG_WIDTH)];
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
-	test_generic_single_left_fold::<F, F2, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_single_left_fold::<F, F2, _, _>(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -48,9 +53,11 @@ fn test_exec_single_right_fold() {
 	let n_vars = 8;
 	let mut device_memory = vec![P::zero(); 1 << (n_vars - P::LOG_WIDTH)];
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
-	test_generic_single_right_fold::<F, F2, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_single_right_fold::<F, F2, _, _>(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -63,9 +70,11 @@ fn test_exec_single_inner_product() {
 	let n_vars = 8;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
-	test_generic_single_inner_product::<F2, _, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_single_inner_product::<F2, _, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -77,9 +86,11 @@ fn test_exec_single_inner_product_using_kernel_accumulator() {
 	let n_vars = 8;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
-	test_generic_single_inner_product_using_kernel_accumulator::<F, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_single_inner_product_using_kernel_accumulator::<F, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -94,9 +105,11 @@ fn test_exec_fri_fold_non_zero_log_batch() {
 	let log_fold_challenges = 2;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
-	test_generic_fri_fold::<F, FSub, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -113,9 +126,11 @@ fn test_exec_fri_fold_zero_log_batch() {
 	let log_fold_challenges = 2;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + log_batch_size + 1 - P::LOG_WIDTH)];
-	test_generic_fri_fold::<F, FSub, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -129,9 +144,11 @@ fn test_exec_kernel_add() {
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
-	test_generic_kernel_add::<F, _>(
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
+	test_generic_kernel_add::<F, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -142,9 +159,11 @@ fn test_extrapolate_line_128b() {
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -155,9 +174,11 @@ fn test_extrapolate_line_256b() {
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -168,9 +189,11 @@ fn test_extrapolate_line_512b() {
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -181,9 +204,11 @@ fn test_compute_composite() {
 	let log_len = 10;
 	let compute = <FastCpuLayer<CanonicalTowerFamily, P>>::default();
 	let mut device_memory = vec![P::zero(); 1 << (log_len + 3 - P::LOG_WIDTH)];
+	let mut host_allocator = CpuComputeAllocator::new(device_memory.len() * 2);
 	binius_compute_test_utils::layer::test_generic_compute_composite(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }

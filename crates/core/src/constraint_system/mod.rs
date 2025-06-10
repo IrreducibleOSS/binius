@@ -13,7 +13,9 @@ mod tests;
 
 use binius_field::{BinaryField128b, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
+use binius_utils::{SerializationMode, SerializeBytes};
 use channel::Flush;
+use digest::{Digest, Output};
 use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
@@ -38,7 +40,17 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub channel_count: usize,
 }
 
-impl<F: TowerField> ConstraintSystem<F> {}
+impl<F: TowerField> ConstraintSystem<F> {
+	/// Returns the hash digest of this constraint system.
+	///
+	/// This assumes that the constraint system should be serializable.
+	pub fn digest<Hash: Digest>(&self) -> Output<Hash> {
+		let mut buf = Vec::new();
+		self.serialize(&mut buf, SerializationMode::CanonicalTower)
+			.expect("the constraint system should be serializable");
+		Hash::digest(&buf)
+	}
+}
 
 /// Constraint system proof that has been serialized into bytes
 #[derive(Debug, Clone)]

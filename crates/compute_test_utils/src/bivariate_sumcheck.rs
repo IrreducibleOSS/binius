@@ -8,6 +8,7 @@ use std::{
 use binius_compute::{
 	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSliceMut,
 	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	cpu::CpuMemory,
 };
 use binius_core::{
 	composition::{BivariateProduct, IndexComposition},
@@ -40,18 +41,18 @@ use binius_math::{
 use bytemuck::{must_cast_slice, zeroed_vec};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
+pub fn generic_test_calculate_round_evals<
+	Hal: ComputeLayer<BinaryField128b>,
+	HostComputeAllocatorType: ComputeAllocator<BinaryField128b, CpuMemory>,
+>(
 	hal: &Hal,
 	dev_mem: FSliceMut<BinaryField128b, Hal>,
+	host_alloc: &HostComputeAllocatorType,
 	n_vars: usize,
 ) {
 	type F = BinaryField128b;
 
 	let mut rng = StdRng::seed_from_u64(0);
-
-	let mut host_mem = hal.host_alloc(3 * (1 << n_vars));
-	let host_alloc = HostBumpAllocator::<F>::new(host_mem.as_mut());
-
 	let evals_1 = host_alloc.alloc(1 << n_vars).unwrap();
 	let evals_2 = host_alloc.alloc(1 << n_vars).unwrap();
 	let evals_3 = host_alloc.alloc(1 << n_vars).unwrap();
@@ -137,15 +138,17 @@ pub fn generic_test_calculate_round_evals<Hal: ComputeLayer<BinaryField128b>>(
 	assert_eq!(coeffs, expected_coeffs.0);
 }
 
-pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
+pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal, HostComputeAllocatorType>(
 	hal: &Hal,
 	dev_mem: FSliceMut<F, Hal>,
+	host_allocator: &HostComputeAllocatorType,
 	n_vars: usize,
 	n_multilins: usize,
 	n_compositions: usize,
 ) where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	HostComputeAllocatorType: ComputeAllocator<F, CpuMemory>,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
@@ -189,8 +192,8 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	let claim_req_mem = <BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim);
 	let max_eval_len = evals.iter().map(|elem| elem.len()).max().unwrap();
 	let host_mem_size = usize::max(claim_req_mem, max_eval_len);
-	let mut host_mem = hal.host_alloc(host_mem_size);
-	let host_mem = &mut host_mem.as_mut()[..host_mem_size];
+	let host_mem = host_allocator.alloc(host_mem_size).unwrap();
+	let host_mem = &mut host_mem[..host_mem_size];
 
 	let dev_alloc = BumpAllocator::new(dev_mem);
 
@@ -292,9 +295,10 @@ where
 		.sum()
 }
 
-pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
+pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal, HostComputeAllocatorType>(
 	hal: &Hal,
 	dev_mem: FSliceMut<F, Hal>,
+	host_alloc: &HostComputeAllocatorType,
 	n_vars: usize,
 	n_multilins: usize,
 	n_compositions: usize,
@@ -304,6 +308,7 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 		+ ExtensionField<BinaryField8b>
 		+ PackedExtension<BinaryField8b>,
 	Hal: ComputeLayer<F>,
+	HostComputeAllocatorType: ComputeAllocator<F, CpuMemory>,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
@@ -366,10 +371,12 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<F, Hal>(
 	)
 	.unwrap();
 
-	let mut host_mem =
-		hal.host_alloc(<BivariateMLEcheckProver<F, Hal>>::required_host_memory(&claim));
+	let host_mem = host_alloc
+		.alloc(<BivariateMLEcheckProver<F, Hal>>::required_host_memory(&claim))
+		.unwrap();
 
-	let host_alloc = HostBumpAllocator::new(host_mem.as_mut());
+	let host_alloc = HostBumpAllocator::new(host_mem);
+
 	let dev_alloc: BumpAllocator<F, Hal::DevMem> = BumpAllocator::new(dev_mem);
 
 	let dev_multilins = evals

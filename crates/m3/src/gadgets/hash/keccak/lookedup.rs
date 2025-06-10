@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 //! The version of the Keccakf permutation taking the arithmetization approach that is based on
-//! stacked columns.
+//! stacked columns and lookups.
 
 // This implementation tries to be as close to the
 // [Keccak Specification Summary][keccak_spec_summary] and as such it is highly recommended to
@@ -13,7 +13,7 @@ use std::array;
 
 use anyhow::Result;
 use array_util::ArrayExt as _;
-use binius_core::oracle::ShiftVariant;
+use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, PackedSubfield, TowerField,
 	linear_transformation::PackedTransformationFactory,
@@ -25,13 +25,14 @@ use super::{
 	state::{StateMatrix, StateRow},
 	trace,
 };
-use crate::builder::{
-	B1, B8, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_expr,
+use crate::{
+	builder::{B1, B8, B32, B64, B128, Col, Expr, TableBuilder, TableWitnessSegment, upcast_expr},
+	gadgets::indexed_lookup::and::{merge_and_columns, merge_bitand_vals},
 };
 
 /// 8x 64-bit lanes packed[^packed] in the single column.
 ///
-/// For the motivation see [`Keccakf`] documentation.
+/// For the motivation see [`KeccakfLookedup`] documentation.
 ///
 /// [^packed]: here it means in the SIMD sense, not as in packed columns.
 pub type PackedLane8 = Col<B1, { 64 * 8 }>;
@@ -74,8 +75,8 @@ const STATE_OUT_TRACK: usize = 7;
 ///
 /// To feed the input to permutation, you need to initialize the `state_in` column of the 0th batch
 /// with the input state matrix. See [`Self::populate_state_in`] if you have values handy.
-pub struct Keccakf {
-	batches: [RoundBatch; BATCHES_PER_PERMUTATION],
+pub struct KeccakfLookedup {
+	batches: [LookedupRoundBatch; BATCHES_PER_PERMUTATION],
 	/// The lanes of the input and output state columns. These are exposed to make it convenient to
 	/// use the gadget along with flushing.
 	pub input: StateMatrix<Col<B64>>,
@@ -96,11 +97,11 @@ pub struct Keccakf {
 	link_sel: Col<B1, TRACKS_PER_BATCH>,
 }
 
-impl Keccakf {
+impl KeccakfLookedup {
 	/// Creates a new instance of the gadget.
 	///
 	/// See the struct documentation for more details.
-	pub fn new(table: &mut TableBuilder) -> Self {
+	pub fn new(table: &mut TableBuilder, lookup_chan: ChannelId) -> Self {
 		let state_in: StateMatrix<PackedLane8> =
 			StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_in[{x},{y}]")));
 
@@ -114,9 +115,10 @@ impl Keccakf {
 		// Constructing the batches of rounds. The final value of `state` will be the permutation
 		// output.
 		let batches = array::from_fn(|batch_no| {
-			let batch = RoundBatch::new(
+			let batch = LookedupRoundBatch::new(
 				&mut table.with_namespace(format!("batch[{batch_no}]")),
 				state.clone(),
+				lookup_chan,
 				batch_no,
 			);
 			state = batch.state_out.clone();
@@ -176,8 +178,10 @@ impl Keccakf {
 		P: PackedFieldIndexable<Scalar = B128>
 			+ PackedExtension<B1>
 			+ PackedExtension<B8>
+			+ PackedExtension<B32>
 			+ PackedExtension<B64>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
+		PackedSubfield<P, B32>: PackedFieldIndexable<Scalar = B32>,
 	{
 		// `state_in` for the first track of the first batch specifies the initial state for
 		// permutation. Read it out, gather trace and populate each batch.
@@ -273,7 +277,7 @@ impl Keccakf {
 ///
 /// This batch runs 8 rounds of keccak-f. Since SHA3-256 is defined to have 24 rounds, you would
 /// need to use 3 of these gadgets to implement a full permutation.
-struct RoundBatch {
+struct LookedupRoundBatch {
 	batch_no: usize,
 	state_in: StateMatrix<PackedLane8>,
 	state_out: StateMatrix<PackedLane8>,
@@ -282,15 +286,19 @@ struct RoundBatch {
 	d: StateRow<PackedLane8>,
 	a_theta: StateMatrix<PackedLane8>,
 	b: StateMatrix<PackedLane8>,
+	b1_and_b2: StateMatrix<PackedLane8>,
+	merged: StateMatrix<Col<B32, 64>>,
 	round_const: PackedLane8,
 }
 
-impl RoundBatch {
-	fn new(table: &mut TableBuilder, state_in: StateMatrix<PackedLane8>, batch_no: usize) -> Self {
+impl LookedupRoundBatch {
+	fn new(
+		table: &mut TableBuilder,
+		state_in: StateMatrix<PackedLane8>,
+		lookup_chan: ChannelId,
+		batch_no: usize,
+	) -> Self {
 		assert!(batch_no < BATCHES_PER_PERMUTATION);
-		let state_out =
-			StateMatrix::from_fn(|(x, y)| table.add_committed(format!("state_out[{x},{y}]")));
-
 		// # θ step
 		//
 		// for x in 0…4:
@@ -335,35 +343,46 @@ impl RoundBatch {
 			}
 		});
 
+		// The columns need to be packed to compute bitwise and using lookups.
+		let b_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
+			table.add_packed(format!("b_packed[{x},{y}]"), b[(x, y)])
+		});
+
+		let b1_and_b2: StateMatrix<Col<B1, { 64 * 8 }>> = StateMatrix::from_fn(|(x, y)| {
+			// B2[x,y] = B[x+2,y] and not B[x+1,y]
+			table.add_committed(format!("b1&b2[{x},{y}]"))
+		});
+
+		let b1_and_b2_packed: StateMatrix<Col<B8, 64>> = StateMatrix::from_fn(|(x, y)| {
+			// B2[x,y] = B[x+2,y] and not B[x+1,y]
+			table.add_packed(format!("b1&b2_packed[{x},{y}]"), b1_and_b2[(x, y)])
+		});
+
+		let merged = StateMatrix::from_fn(|(x, y)| {
+			let b2 = b_packed[(x + 2, y)];
+			let b1 = b_packed[(x + 1, y)];
+			let b1_and_b2 = b1_and_b2_packed[(x, y)];
+			let col = merge_and_columns(table, b1, b2, b1_and_b2);
+			table.read(lookup_chan, [col]);
+			col
+		});
+
 		let round_const = table
 			.add_constant(format!("round_const[{batch_no}]"), round_consts_for_batch(batch_no));
 
-		for x in 0..5 {
-			for y in 0..5 {
-				let output = state_out[(x, y)];
-				let b0 = b[(x, y)];
-				let b1 = b[(x + 1, y)];
-				let b2 = b[(x + 2, y)];
-				// Constraint output to have the result from the chi and optionally iota steps.
-				//
-				// # χ step
-				// A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
-				//
-				// # ι step
-				// A[0,0] = A[0,0] xor RC
-				if (x, y) == (0, 0) {
-					table.assert_zero(
-						format!("chi_iota[{x},{y}]"),
-						output - (round_const + b0 + (b1 - B1::from(1)) * b2),
-					);
-				} else {
-					table.assert_zero(
-						format!("chi[{x},{y}]"),
-						output - (b0 + (b1 - B1::from(1)) * b2),
-					);
-				}
+		let state_out = StateMatrix::from_fn(|(x, y)| {
+			if (x, y) == (0, 0) {
+				table.add_computed(
+					format!("chi_iota[{x},{y}]"),
+					round_const + b[(x, y)] + b[(x + 2, y)] + b1_and_b2[(x, y)],
+				)
+			} else {
+				table.add_computed(
+					format!("chi[{x},{y}]"),
+					b[(x, y)] + b[(x + 2, y)] + b1_and_b2[(x, y)],
+				)
 			}
-		}
+		});
 
 		Self {
 			batch_no,
@@ -374,6 +393,8 @@ impl RoundBatch {
 			d,
 			a_theta,
 			b,
+			b1_and_b2,
+			merged,
 			round_const,
 		}
 	}
@@ -384,8 +405,12 @@ impl RoundBatch {
 		permutation_traces: &[trace::PermutationTrace],
 	) -> Result<()>
 	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B8>,
+		P: PackedFieldIndexable<Scalar = B128>
+			+ PackedExtension<B1>
+			+ PackedExtension<B8>
+			+ PackedExtension<B32>,
 		PackedSubfield<P, B8>: PackedTransformationFactory<PackedSubfield<P, B8>>,
+		PackedSubfield<P, B32>: PackedFieldIndexable<Scalar = B32>,
 	{
 		for (k, trace) in permutation_traces.iter().enumerate() {
 			// Gather all batch round traces for the batch number.
@@ -404,7 +429,6 @@ impl RoundBatch {
 				let mut c_shift: std::cell::RefMut<'_, [u64]> =
 					index.get_mut_as(self.c_shift[x])?;
 				let mut d: std::cell::RefMut<'_, [u64]> = index.get_mut_as(self.d[x])?;
-
 				for track in 0..TRACKS_PER_BATCH {
 					let cell_pos = TRACKS_PER_BATCH * k + track;
 					c[cell_pos] = brt[track].c[x];
@@ -443,7 +467,26 @@ impl RoundBatch {
 				}
 			}
 		}
+		for xy in 0..25 {
+			let x = xy % 5;
+			let y = xy / 5;
+			let mut merged: std::cell::RefMut<'_, [B32]> =
+				index.get_scalars_mut(self.merged[(x, y)])?;
 
+			let b1: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 1, y)])?;
+
+			let b2: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 2, y)])?;
+			let mut b1_and_b2: std::cell::RefMut<'_, [B8]> =
+				index.get_mut_as(self.b1_and_b2[(x, y)])?;
+			for i in 0..b2.len() {
+				// B[x,y] xor ((not B[x+1,y]) and B[x+2,y])
+				let in_a = b1[i].val();
+				let in_b = b2[i].val();
+				let output = in_a & in_b;
+				b1_and_b2[i] = output.into();
+				merged[i] = merge_bitand_vals(in_a, in_b, output).into();
+			}
+		}
 		Ok(())
 	}
 
@@ -569,20 +612,27 @@ impl std::ops::Index<usize> for PerBatchLens<'_> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
+	use std::cmp::Reverse;
+
+	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
 	use bumpalo::Bump;
+	use itertools::Itertools;
 
 	use super::*;
 	use crate::{
-		builder::{ConstraintSystem, Statement, WitnessIndex},
-		gadgets::hash::keccak::test_vector::TEST_VECTOR,
+		builder::{ConstraintSystem, Statement, WitnessIndex, tally},
+		gadgets::{
+			hash::keccak::test_vector::TEST_VECTOR,
+			indexed_lookup::and::{BitAndIndexedLookup, BitAndLookup},
+		},
 	};
 
 	#[test]
 	fn ensure_committed_bits_per_row() {
 		let mut cs = ConstraintSystem::new();
+		let lookup_chan = cs.add_channel("lookup_channel");
 		let mut table = cs.add_table("stacked permutation");
-		let _ = Keccakf::new(&mut table);
+		let _ = KeccakfLookedup::new(&mut table, lookup_chan);
 		let id = table.id();
 		let stat = cs.tables[id].stat();
 		assert_eq!(stat.bits_per_row_committed(), 51200);
@@ -593,32 +643,47 @@ mod tests {
 		const N_ROWS: usize = 1;
 
 		let mut cs = ConstraintSystem::new();
+		let lookup_chan = cs.add_channel("lookup_channel");
+		let permutation = cs.add_channel("permutation_channel");
+
+		let mut lookup = cs.add_table("bitand_lookup");
+		let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation, 20);
 		let mut table = cs.add_table("test");
 
 		let state_in = StateMatrix::from_fn(|(x, y)| table.add_committed(format!("in[{x},{y}]")));
-		let rb = RoundBatch::new(&mut table, state_in, 0);
+		let rb = LookedupRoundBatch::new(&mut table, state_in, lookup_chan, 0);
 
 		let allocator = Bump::new();
 		let table_id = table.id();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
 		let trace = trace::keccakf_trace(StateMatrix::default());
 		rb.populate(&mut segment, &[trace]).unwrap();
 
+		let counts = tally(&cs, &mut witness, &[], lookup_chan, &BitAndIndexedLookup).unwrap();
+		// Fill the lookup table with the sorted counts
+		let sorted_counts = counts
+			.into_iter()
+			.enumerate()
+			.sorted_by_key(|(_, count)| Reverse(*count))
+			.collect::<Vec<_>>();
+
+		witness
+			.fill_table_parallel(&bitand_lookup, &sorted_counts)
+			.unwrap();
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: witness.table_sizes(),
+		};
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
-			&statement.boundaries,
+			&[],
 			&statement.table_sizes,
 			&witness,
 		)
@@ -630,19 +695,17 @@ mod tests {
 		const N_ROWS: usize = TEST_VECTOR.len();
 
 		let mut cs = ConstraintSystem::new();
+		let lookup_chan = cs.add_channel("lookup_channel");
+		let permutation = cs.add_channel("permutation_channel");
+		let mut lookup = cs.add_table("bitand_lookup");
+		let bitand_lookup = BitAndLookup::new(&mut lookup, lookup_chan, permutation, 20);
 		let mut table = cs.add_table("test");
-
-		let keccakf = Keccakf::new(&mut table);
+		let keccakf = KeccakfLookedup::new(&mut table, lookup_chan);
 
 		let allocator = Bump::new();
 		let table_id = table.id();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
@@ -653,6 +716,7 @@ mod tests {
 
 		keccakf.populate_state_in(&mut segment, &state_ins).unwrap();
 		keccakf.populate(&mut segment).unwrap();
+
 		let state_outs = keccakf
 			.read_state_outs(&segment)
 			.unwrap()
@@ -664,12 +728,29 @@ mod tests {
 			}
 		}
 
+		let counts = tally(&cs, &mut witness, &[], lookup_chan, &BitAndIndexedLookup).unwrap();
+		// Fill the lookup table with the sorted counts
+		let sorted_counts = counts
+			.into_iter()
+			.enumerate()
+			.sorted_by_key(|(_, count)| Reverse(*count))
+			.collect::<Vec<_>>();
+
+		witness
+			.fill_table_parallel(&bitand_lookup, &sorted_counts)
+			.unwrap();
+
+		let statement = Statement {
+			boundaries: vec![],
+			table_sizes: witness.table_sizes(),
+		};
+
 		let ccs = cs.compile(&statement).unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
-			&statement.boundaries,
+			&[],
 			&statement.table_sizes,
 			&witness,
 		)

@@ -68,7 +68,9 @@ pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
+	constraint_system_digest: &Output<Hash::Digest>,
 	boundaries: &[Boundary<FExt<Tower>>],
+	table_sizes: &[usize],
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
 ) -> Result<Proof, Error>
@@ -94,6 +96,7 @@ where
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
+	let _ = (constraint_system_digest, table_sizes);
 	tracing::debug!(
 		arch = env::consts::ARCH,
 		rayon_threads = binius_maybe_rayon::current_num_threads(),

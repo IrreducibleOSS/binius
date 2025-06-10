@@ -73,10 +73,6 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	type Exec<'b> = FastCpuExecutor<'b, T, P>;
 	type DevMem = PackedMemory<P>;
 
-	fn host_alloc(&self, n: usize) -> impl AsMut<[T::B128]> + '_ {
-		zeroed_vec(n)
-	}
-
 	fn copy_h2d(
 		&self,
 		src: &[T::B128],

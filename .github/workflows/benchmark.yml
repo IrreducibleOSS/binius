@@ -16,7 +16,7 @@ on:
                 options: [all, keccakf, groestl, b32_mul, u32_add, u32_mul_gkr, xor, and, or] # Example options; replace with actual benchmark names
                 default: all
             publish_results:
-                description: "Publish results to Bencher and GH Pages (Warning: run only if needed for main branch)"
+                description: "Publish results to Bencher (any branch) and GH Pages (main branch only)"
                 type: boolean
                 default: false
 jobs:
@@ -162,6 +162,7 @@ jobs:
                   build_dir: ./
               env:
                   GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
     #
     # Upload perfetto traces to s3
     #
@@ -173,6 +174,9 @@ jobs:
             id-token: write # Required to get AWS credentials with OIDC
         needs: [benchmark, prepare]
         runs-on: ubuntu-latest
+        outputs:
+            s3_prefix: ${{ steps.upload.outputs.s3_prefix }}
+            s3_path_filter: ${{ steps.upload.outputs.s3_path_filter }}
         steps:
             - name: Download Prefetto Traces
               uses: actions/download-artifact@v4
@@ -192,17 +196,19 @@ jobs:
                   aws-region: us-west-2
                   role-to-assume: ${{ secrets.AWS_UPLOAD_ROLE }}
             - name: Upload Perfetto Traces
+              id: upload
               run: |
                   python3 - <<'EOF'
                   import os, glob, subprocess, urllib.parse, datetime
 
-                  perfetto_host = "https://perfetto.irreducible.com"
-                  s3_bucket     = "${{ secrets.PERFETTO_BUCKET }}"
-                  repo          = "${{ github.repository }}".split("/",1)[1]
-                  branch        = "${{ github.ref_name }}".replace("/", "-")
-                  sha           = "${{ github.sha }}"[:7]
-                  run_dir       = f"{datetime.datetime.now(datetime.UTC):%Y-%m-%d_%H-%M-%S}-{sha}"
-                  summary_path  = os.environ["GITHUB_STEP_SUMMARY"]
+                  perfetto_host   = "https://perfetto.irreducible.com"
+                  s3_bucket       = "${{ secrets.PERFETTO_BUCKET }}"
+                  repo            = "${{ github.repository }}".split("/",1)[1]
+                  branch          = "${{ github.ref_name }}".replace("/", "-")
+                  sha             = "${{ github.sha }}"[:7]
+                  run_dir         = f"{datetime.datetime.now(datetime.UTC):%Y-%m-%d_%H-%M-%S}-{sha}"
+                  gh_summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+                  gh_output_path  = os.environ["GITHUB_OUTPUT"]
 
                   traces_by_benchmark = {}
 
@@ -225,7 +231,7 @@ jobs:
                       )
 
                   # Write Summary to GitHub
-                  with open(summary_path, "a") as summary:
+                  with open(gh_summary_path, "a") as summary:
                     summary.write("## 📊 Perfetto Traces\n")
                     for bm, traces_by_group in traces_by_benchmark.items():
                       summary.write(f"<details><summary>{bm}</summary>\n<ul>\n")
@@ -234,4 +240,38 @@ jobs:
                         summary.write(", ".join(traces))
                         summary.write("</li>\n")
                       summary.write("</ul>\n</details>\n")
+
+                  # Expose outputs for the next step
+                  with open(gh_output_path, "a") as f:
+                    f.write(f"s3_prefix=traces/{repo}/{branch}\n")
+                    f.write(f"s3_path_filter={run_dir}\n")
+
                   EOF
+
+    #
+    # Trigger Perfetto Trace Processor
+    #
+    trigger_perfetto_trace_processor:
+        name: Trigger Perfetto Trace Processor
+        needs: [upload_perfetto_traces]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Create GitHub App Token
+              uses: actions/create-github-app-token@v2
+              id: app-token
+              with:
+                app-id: ${{ vars.TRACE_PROCESSOR_APP_ID }}
+                private-key: ${{ secrets.TRACE_PROCESSOR_APP_PRIVATE_KEY }}
+                repositories: perfetto-trace-processor
+
+            - name: Trigger process-benchmark for newly uploaded traces
+              uses: peter-evans/repository-dispatch@v3
+              with:
+                token:       ${{ steps.app-token.outputs.token }}
+                repository:  IrreducibleOSS/perfetto-trace-processor
+                event-type:  process-benchmark
+                client-payload: |
+                  {
+                    "s3_prefix":      "${{ needs.upload_perfetto_traces.outputs.s3_prefix }}",
+                    "s3_path_filter": "${{ needs.upload_perfetto_traces.outputs.s3_path_filter }}"
+                  }
