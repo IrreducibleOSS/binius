@@ -335,7 +335,7 @@ where
 			"[task] FRI Fold",
 			phase = "piop_compiler",
 			perfetto_category = "task.main",
-			dimensions_data = ?dimensions_data
+			?dimensions_data
 		)
 		.entered();
 		// Fold the last codeword with the accumulated folding challenges.
