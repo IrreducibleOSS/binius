@@ -102,7 +102,7 @@ fn main() -> Result<()> {
 		.take(1 << log_n_muls)
 		.collect::<Vec<_>>();
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let trace_gen_scope = tracing::info_span!("Generating trace", n_muls = args.n_muls).entered();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 	witness.fill_table_parallel(&table, &events)?;
 
@@ -139,8 +139,7 @@ fn main() -> Result<()> {
 		&statement.table_sizes,
 		witness,
 		&make_portable_backend(),
-	)
-	.unwrap();
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 

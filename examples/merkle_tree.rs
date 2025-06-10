@@ -72,7 +72,12 @@ fn main() -> Result<()> {
 		})
 		.collect::<Vec<_>>();
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let trace_gen_scope = tracing::info_span!(
+		"Generating trace",
+		log_leaves = args.log_leaves,
+		log_paths = args.log_paths
+	)
+	.entered();
 	let trace = MerkleTreeTrace::generate(vec![roots], &paths);
 
 	// Allocate memory for the witness

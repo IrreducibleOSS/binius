@@ -62,7 +62,7 @@ fn main() -> Result<()> {
 		table_sizes: vec![test_vector.len()],
 	};
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let trace_gen_scope = tracing::info_span!("Generating trace", n_ops = args.n_ops).entered();
 	let allocator = Bump::new();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
@@ -121,8 +121,7 @@ fn main() -> Result<()> {
 		&statement.table_sizes,
 		witness,
 		&make_portable_backend(),
-	)
-	.unwrap();
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 

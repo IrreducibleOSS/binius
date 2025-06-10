@@ -106,7 +106,7 @@ fn main() -> Result<()> {
 		.take(n_permutations)
 		.collect::<Vec<_>>();
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let trace_gen_scope = tracing::info_span!("Generating trace", n_permutations).entered();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 	witness.fill_table_parallel(&table, &events)?;
 	drop(trace_gen_scope);
@@ -142,8 +142,7 @@ fn main() -> Result<()> {
 		&statement.table_sizes,
 		witness,
 		&make_portable_backend(),
-	)
-	.unwrap();
+	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
@@ -160,8 +159,7 @@ fn main() -> Result<()> {
 		&cs_digest,
 		&statement.boundaries,
 		proof,
-	)
-	.unwrap();
+	)?;
 
 	Ok(())
 }
