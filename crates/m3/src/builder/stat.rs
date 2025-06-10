@@ -32,6 +32,8 @@ pub struct TableStat {
 	per_tower_level: SparseIndex<PerTowerLevel>,
 	bits_per_row_committed: usize,
 	bits_per_row_virtual: usize,
+	/// Total number of flushed entries across all table partitions
+	total_flush_count: u64,
 }
 
 impl TableStat {
@@ -47,11 +49,20 @@ impl TableStat {
 			}
 		}
 
+		// Calculate total flush count across all partitions
+		let mut total_flush_count = 0u64;
+		for (_, partition) in table.partitions.iter() {
+			for flush in &partition.flushes {
+				total_flush_count += flush.multiplicity as u64;
+			}
+		}
+
 		let mut me = Self {
 			name: table.name.clone(),
 			per_tower_level: SparseIndex::new(),
 			bits_per_row_committed,
 			bits_per_row_virtual,
+			total_flush_count,
 		};
 
 		for (_, partition) in table.partitions.iter() {
@@ -156,6 +167,15 @@ impl TableStat {
 	pub fn bits_per_row_virtual(&self) -> usize {
 		self.bits_per_row_virtual
 	}
+
+	/// Returns the total number of flushed entries across all table partitions.
+	///
+	/// This represents the number of times column values are flushed to channels,
+	/// accounting for multiplicity. Higher flush counts generally indicate higher
+	/// proving costs as flushes are a significant factor in proof generation time.
+	pub fn total_flush_count(&self) -> u64 {
+		self.total_flush_count
+	}
 }
 
 impl fmt::Display for TableStat {
@@ -164,6 +184,7 @@ impl fmt::Display for TableStat {
 		writeln!(f, "* bits per row: {}", self.bits_per_row_committed + self.bits_per_row_virtual)?;
 		writeln!(f, "  committed: {}", self.bits_per_row_committed)?;
 		writeln!(f, "  virtual: {}", self.bits_per_row_virtual)?;
+		writeln!(f, "* total flush count: {}", self.total_flush_count)?;
 		writeln!(f, "* zero checks:")?;
 		for (tower_level, per_tower_level) in self.per_tower_level.iter() {
 			let bits = 1 << tower_level;
