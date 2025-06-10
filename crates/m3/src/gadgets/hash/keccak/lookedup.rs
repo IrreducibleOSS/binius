@@ -32,7 +32,7 @@ use crate::{
 
 /// 8x 64-bit lanes packed[^packed] in the single column.
 ///
-/// For the motivation see [`Keccakf`] documentation.
+/// For the motivation see [`KeccakfLookedup`] documentation.
 ///
 /// [^packed]: here it means in the SIMD sense, not as in packed columns.
 pub type PackedLane8 = Col<B1, { 64 * 8 }>;
