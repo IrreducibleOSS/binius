@@ -13,12 +13,10 @@ use binius_core::{
 		exp::Exp,
 	},
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
-	transparent::step_down::StepDown,
 };
 use binius_field::{PackedField, TowerField};
 use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
-use itertools::chain;
 
 use super::{
 	ColumnId, Table, TableBuilder, TableId, ZeroConstraint,
@@ -295,24 +293,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 					}
 				});
 
-				// In case the size of the table is not defined as a power-of-two we need to add
-				// a special selector which is equal to 1 for the first `count` rows and 0 after
-				// that.
-				//
-				// StepDown witness data is populated in
-				// WitnessIndex::into_multilinear_extension_index
-				let mut step_down: Option<OracleId> = None;
-				if !table.requires_any_po2_size() {
-					let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
-					let oracle_id = oracles.add_transparent(step_down_poly)?;
-					oracle_lookup.register_step_down(
-						table.id(),
-						log2_strict_usize(*values_per_row),
-						oracle_id,
-					);
-					step_down = Some(oracle_id);
-				}
-
 				// Translate flushes for the compiled constraint system.
 				for Flush {
 					columns: flush_columns,
@@ -326,16 +306,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|&column_id| OracleOrConst::Oracle(oracle_lookup[column_id]))
 						.collect::<Vec<_>>();
-					let selectors = chain!(
-						selectors
-							.iter()
-							.map(|column_idx| oracle_lookup[*column_idx]),
-						step_down
-					)
-					.collect::<Vec<_>>();
+					let selectors = selectors
+						.iter()
+						.map(|column_idx| oracle_lookup[*column_idx])
+						.collect::<Vec<_>>();
 
 					compiled_flushes.push(CompiledFlush {
 						table_id: table.id(),
+						log_values_per_row: log2_strict_usize(*values_per_row),
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
@@ -391,7 +369,6 @@ pub(crate) enum OracleMapping {
 #[derive(Debug, Default)]
 pub(crate) struct OracleLookup {
 	column_to_oracle: BTreeMap<ColumnId, OracleMapping>,
-	partition_to_oracle: BTreeMap<(TableId, usize), OracleId>,
 }
 
 impl OracleLookup {
@@ -399,7 +376,6 @@ impl OracleLookup {
 	pub(crate) fn new() -> Self {
 		Self {
 			column_to_oracle: BTreeMap::new(),
-			partition_to_oracle: BTreeMap::new(),
 		}
 	}
 
@@ -410,16 +386,6 @@ impl OracleLookup {
 	/// The column ID must exist in the registry, otherwise this function will panic.
 	pub fn lookup(&self, column_id: ColumnId) -> &OracleMapping {
 		&self.column_to_oracle[&column_id]
-	}
-
-	/// Returns the step-down oracle for a table partition if it exists.
-	///
-	/// Returns `None` if no step-down oracle has been registered for the
-	/// given (table, partition_id) pair.
-	pub(crate) fn lookup_step_down(&self, table: TableId, partition_id: usize) -> Option<OracleId> {
-		self.partition_to_oracle
-			.get(&(table, partition_id))
-			.cloned()
 	}
 
 	/// Adds a mapping from a column ID to an oracle mapping.
@@ -457,19 +423,6 @@ impl OracleLookup {
 				repeating,
 			},
 		);
-		assert!(prev.is_none());
-	}
-
-	/// Registers a step-down oracle for a table partition.
-	///
-	/// # Preconditions
-	///
-	/// The (table, partition_id) pair must not already be registered in the registry, otherwise
-	/// this function will panic.
-	fn register_step_down(&mut self, table: TableId, partition_id: usize, oracle: OracleId) {
-		let prev = self
-			.partition_to_oracle
-			.insert((table, partition_id), oracle);
 		assert!(prev.is_none());
 	}
 }

@@ -31,7 +31,6 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<BinaryField1b>,
 	F: TowerField,
 {
-	let _ = table_sizes;
 	// Check the constraint sets
 	for constraint_set in &constraint_system.table_constraints {
 		let multilinears = constraint_set
@@ -68,6 +67,7 @@ where
 		witness,
 		&constraint_system.flushes,
 		boundaries,
+		table_sizes,
 		constraint_system.channel_count,
 	)?;
 
