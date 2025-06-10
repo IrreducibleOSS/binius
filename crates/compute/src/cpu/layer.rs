@@ -24,10 +24,6 @@ impl<F: TowerTop> ComputeLayer<F> for CpuLayer<F> {
 	type Exec<'a> = CpuLayerExecutor<F>;
 	type DevMem = CpuMemory;
 
-	fn host_alloc(&self, n: usize) -> impl AsMut<[F]> + '_ {
-		vec![<F as Field>::ZERO; n]
-	}
-
 	fn copy_h2d(&self, src: &[F], dst: &mut FSliceMut<'_, F, Self>) -> Result<(), Error> {
 		assert_eq!(
 			src.len(),

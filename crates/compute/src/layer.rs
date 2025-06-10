@@ -22,21 +22,11 @@ pub trait ComputeLayer<F: Field>: 'static + Send + Sync {
 	/// The executor that can execute operations on the device.
 	type Exec<'a>: ComputeLayerExecutor<F, DevMem = Self::DevMem>;
 
-	/// Allocates a slice of memory on the host that is prepared for transfers to/from the device.
-	///
-	/// Depending on the compute layer, this may perform steps beyond just allocating memory. For
-	/// example, it may allocate huge pages or map the allocated memory to the IOMMU.
-	///
-	/// The returned buffer is lifetime bound to the compute layer, allowing return types to have
-	/// drop methods referencing data in the compute layer.
-	fn host_alloc(&self, n: usize) -> impl AsMut<[F]> + '_;
-
 	/// Copy data from the host to the device.
 	///
 	/// ## Preconditions
 	///
 	/// * `src` and `dst` must have the same length.
-	/// * `src` must be a slice of a buffer returned by [`Self::host_alloc`].
 	fn copy_h2d(&self, src: &[F], dst: &mut FSliceMut<'_, F, Self>) -> Result<(), Error>;
 
 	/// Copy data from the device to the host.
@@ -44,7 +34,6 @@ pub trait ComputeLayer<F: Field>: 'static + Send + Sync {
 	/// ## Preconditions
 	///
 	/// * `src` and `dst` must have the same length.
-	/// * `dst` must be a slice of a buffer returned by [`Self::host_alloc`].
 	fn copy_d2h(&self, src: FSlice<'_, F, Self>, dst: &mut [F]) -> Result<(), Error>;
 
 	/// Copy data between disjoint device buffers.
@@ -617,38 +606,29 @@ pub type KernelSliceMut<'a, 'b, F, HAL> =
 
 #[cfg(test)]
 mod tests {
-	use assert_matches::assert_matches;
 	use binius_field::{BinaryField128b, Field, TowerField};
 	use binius_math::B128;
 	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
 	use crate::{
-		alloc::{BumpAllocator, ComputeAllocator, Error as AllocError, HostBumpAllocator},
+		alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 		cpu::{CpuLayer, CpuMemory},
 	};
 
 	/// Test showing how to allocate host memory and create a sub-allocator over it.
-	fn test_host_alloc<F: TowerField, HAL: ComputeLayer<F>>(hal: HAL) {
-		let mut host_slice = hal.host_alloc(256);
-
-		let bump = HostBumpAllocator::new(host_slice.as_mut());
-		assert_eq!(bump.alloc(100).unwrap().len(), 100);
-		assert_eq!(bump.alloc(100).unwrap().len(), 100);
-		assert_matches!(bump.alloc(100), Err(AllocError::OutOfMemory));
-	}
-
-	/// Test showing how to allocate host memory and create a sub-allocator over it.
 	// TODO: This 'a lifetime bound on HAL is pretty annoying. I'd like to get rid of it.
-	fn test_copy_host_device<'a, F: TowerField, HAL: ComputeLayer<F> + 'a>(
+	fn test_copy_host_device<
+		'a,
+		F: TowerField,
+		HAL: ComputeLayer<F> + 'a,
+		HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	>(
 		hal: HAL,
+		host_alloc: &HostAllocatorType,
 		mut dev_mem: FSliceMut<'a, F, HAL>,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-
-		let mut host_slice = hal.host_alloc(256);
-
-		let host_alloc = HostBumpAllocator::new(host_slice.as_mut());
 		let dev_alloc = BumpAllocator::<F, HAL::DevMem>::from_ref(&mut dev_mem);
 
 		let host_buf_1 = host_alloc.alloc(128).unwrap();
@@ -670,14 +650,15 @@ mod tests {
 	}
 
 	#[test]
-	fn test_cpu_host_alloc() {
-		test_host_alloc(CpuLayer::<B128>::default());
-	}
-
-	#[test]
 	fn test_cpu_copy_host_device() {
 		let mut dev_mem = vec![B128::ZERO; 256];
-		test_copy_host_device(CpuLayer::<B128>::default(), dev_mem.as_mut_slice());
+		let mut host_mem = vec![BinaryField128b::ZERO; 512];
+		let host_bump_allocator = HostBumpAllocator::new(host_mem.as_mut_slice());
+		test_copy_host_device(
+			CpuLayer::<B128>::default(),
+			&host_bump_allocator,
+			dev_mem.as_mut_slice(),
+		);
 	}
 
 	#[test]

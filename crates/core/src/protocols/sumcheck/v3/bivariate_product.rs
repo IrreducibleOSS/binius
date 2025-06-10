@@ -403,7 +403,7 @@ pub enum PhaseState<F: Field> {
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::cpu::CpuLayer;
+	use binius_compute::cpu::{CpuLayer, alloc::CpuComputeAllocator};
 	use binius_compute_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
@@ -423,8 +423,9 @@ mod tests {
 
 		let hal = Hal::default();
 		let mut dev_mem = vec![B128::ZERO; 1 << 10];
+		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(&hal, &mut dev_mem, n_vars)
+		generic_test_calculate_round_evals(&hal, &mut dev_mem, &host_allocator.into_inner(), n_vars)
 	}
 
 	#[test]
@@ -439,7 +440,8 @@ mod tests {
 			&mut dev_mem,
 		);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(&hal, dev_mem, n_vars)
+		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
+		generic_test_calculate_round_evals(&hal, dev_mem, &host_allocator.into_inner(), n_vars)
 	}
 
 	#[test]
@@ -449,9 +451,11 @@ mod tests {
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
+		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			&mut dev_mem,
+			&host_allocator.into_inner(),
 			n_vars,
 			n_multilins,
 			n_compositions,
@@ -469,12 +473,14 @@ mod tests {
 		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
 			&mut dev_mem,
 		);
+		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			dev_mem,
+			&host_allocator.into_inner(),
 			n_vars,
 			n_multilins,
 			n_compositions,
