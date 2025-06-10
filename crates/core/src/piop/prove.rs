@@ -296,6 +296,8 @@ where
 	}
 
 	prove_interleaved_fri_sumcheck(
+		hal,
+		&dev_alloc,
 		commit_meta.total_vars(),
 		fri_params,
 		ntt,
@@ -310,7 +312,9 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prove_interleaved_fri_sumcheck<F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
+fn prove_interleaved_fri_sumcheck<Hal, F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
+	hal: &Hal,
+	dev_alloc: &impl ComputeAllocator<F, Hal::DevMem>,
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
@@ -321,6 +325,7 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, NTT, MTScheme, MTProver, Challe
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
+	Hal: ComputeLayer<F>,
 	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
@@ -329,7 +334,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {
-	let mut fri_prover = FRIFolder::new(fri_params, ntt, merkle_prover, codeword, committed)?;
+	let mut fri_prover = FRIFolder::new(hal, fri_params, ntt, merkle_prover, codeword, committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 
@@ -384,7 +389,7 @@ where
 			?dimensions_data,
 		)
 		.entered();
-		match fri_prover.execute_fold_round(challenge)? {
+		match fri_prover.execute_fold_round(dev_alloc, challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
 				transcript.message().write(&round_commitment);
