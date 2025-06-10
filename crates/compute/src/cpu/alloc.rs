@@ -14,7 +14,7 @@ impl<F> CpuComputeAllocator<F>
 where
 	F: Sync + Debug + Send + 'static,
 {
-	pub fn into_inner(&mut self) -> HostBumpAllocator<'_, F> {
+	pub fn into_bump_allocator(&mut self) -> HostBumpAllocator<'_, F> {
 		HostBumpAllocator::new(self.data.as_mut_slice())
 	}
 }

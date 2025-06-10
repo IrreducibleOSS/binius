@@ -22,7 +22,7 @@ fn test_exec_single_tensor_expand() {
 	test_generic_single_tensor_expand(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -39,7 +39,7 @@ fn test_exec_single_left_fold() {
 	test_generic_single_left_fold::<F, F2, _, _>(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -57,7 +57,7 @@ fn test_exec_single_right_fold() {
 	test_generic_single_right_fold::<F, F2, _, _>(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -74,7 +74,7 @@ fn test_exec_single_inner_product() {
 	test_generic_single_inner_product::<F2, _, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -90,7 +90,7 @@ fn test_exec_single_inner_product_using_kernel_accumulator() {
 	test_generic_single_inner_product_using_kernel_accumulator::<F, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -109,7 +109,7 @@ fn test_exec_fri_fold_non_zero_log_batch() {
 	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -130,7 +130,7 @@ fn test_exec_fri_fold_zero_log_batch() {
 	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -148,7 +148,7 @@ fn test_exec_kernel_add() {
 	test_generic_kernel_add::<F, _, _>(
 		compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -163,7 +163,7 @@ fn test_extrapolate_line_128b() {
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -178,7 +178,7 @@ fn test_extrapolate_line_256b() {
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -193,7 +193,7 @@ fn test_extrapolate_line_512b() {
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -208,7 +208,7 @@ fn test_compute_composite() {
 	binius_compute_test_utils::layer::test_generic_compute_composite(
 		&compute,
 		PackedMemorySliceMut::new_slice(&mut device_memory),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }

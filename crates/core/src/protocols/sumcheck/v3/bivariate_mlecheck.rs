@@ -513,7 +513,7 @@ mod tests {
 		generic_test_bivariate_mlecheck_prove_verify(
 			&hal,
 			&mut dev_mem,
-			&host_allocator.into_inner(),
+			&host_allocator.into_bump_allocator(),
 			n_vars,
 			n_multilins,
 			n_compositions,

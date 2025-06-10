@@ -425,7 +425,12 @@ mod tests {
 		let mut dev_mem = vec![B128::ZERO; 1 << 10];
 		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(&hal, &mut dev_mem, &host_allocator.into_inner(), n_vars)
+		generic_test_calculate_round_evals(
+			&hal,
+			&mut dev_mem,
+			&host_allocator.into_bump_allocator(),
+			n_vars,
+		)
 	}
 
 	#[test]
@@ -441,7 +446,12 @@ mod tests {
 		);
 		let n_vars = 8;
 		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
-		generic_test_calculate_round_evals(&hal, dev_mem, &host_allocator.into_inner(), n_vars)
+		generic_test_calculate_round_evals(
+			&hal,
+			dev_mem,
+			&host_allocator.into_bump_allocator(),
+			n_vars,
+		)
 	}
 
 	#[test]
@@ -455,7 +465,7 @@ mod tests {
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			&mut dev_mem,
-			&host_allocator.into_inner(),
+			&host_allocator.into_bump_allocator(),
 			n_vars,
 			n_multilins,
 			n_compositions,
@@ -480,7 +490,7 @@ mod tests {
 		generic_test_bivariate_sumcheck_prove_verify(
 			&hal,
 			dev_mem,
-			&host_allocator.into_inner(),
+			&host_allocator.into_bump_allocator(),
 			n_vars,
 			n_multilins,
 			n_compositions,

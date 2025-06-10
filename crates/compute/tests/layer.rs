@@ -19,7 +19,7 @@ fn test_exec_single_tensor_expand() {
 	test_generic_single_tensor_expand(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -35,7 +35,7 @@ fn test_exec_single_left_fold() {
 	test_generic_single_left_fold::<F, F2, _, _>(
 		&compute,
 		device_memory.as_mut_slice(),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -52,7 +52,7 @@ fn test_exec_single_right_fold() {
 	test_generic_single_right_fold::<F, F2, _, _>(
 		&compute,
 		device_memory.as_mut_slice(),
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars / 2,
 		n_vars / 8,
 	);
@@ -68,7 +68,7 @@ fn test_exec_single_inner_product() {
 	test_generic_single_inner_product::<F2, _, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -84,7 +84,7 @@ fn test_exec_multiple_multilinear_evaluations() {
 	test_generic_multiple_multilinear_evaluations::<F1, F2, _, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -98,7 +98,7 @@ fn test_exec_map_with_mle_evaluations() {
 	test_generic_map_with_multilinear_evaluations(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -112,7 +112,7 @@ fn test_exec_single_inner_product_using_kernel_accumulator() {
 	test_generic_single_inner_product_using_kernel_accumulator::<B128, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		n_vars,
 	);
 }
@@ -131,7 +131,7 @@ fn test_exec_fri_fold_non_zero_log_batch() {
 	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -152,7 +152,7 @@ fn test_exec_fri_fold_zero_log_batch() {
 	test_generic_fri_fold::<F, FSub, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 		log_batch_size,
 		log_fold_challenges,
@@ -168,7 +168,7 @@ fn test_exec_kernel_add() {
 	test_generic_kernel_add::<B128, _, _>(
 		compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
@@ -182,7 +182,7 @@ fn test_extrapolate_line() {
 	binius_compute_test_utils::layer::test_extrapolate_line(
 		&compute,
 		&mut device_memory,
-		&host_allocator.into_inner(),
+		&host_allocator.into_bump_allocator(),
 		log_len,
 	);
 }
