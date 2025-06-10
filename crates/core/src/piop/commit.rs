@@ -61,14 +61,14 @@ pub fn make_oracle_commit_meta<F: TowerField>(
 
 	// Second pass: use commit_meta counts to finalized indices with offsets
 	let mut index = SparseIndex::with_capacity(oracles.size());
-	for id in 0..oracles.size() {
+	for id in oracles.ids() {
 		if let Some(CommitIDFirstPass {
 			n_packed_vars,
 			idx_in_bucket,
-		}) = first_pass_index.get(id)
+		}) = first_pass_index.get(id.index())
 		{
 			let offset = commit_meta.range_by_vars(*n_packed_vars).start;
-			index.set(id, offset + *idx_in_bucket);
+			index.set(id.index(), offset + *idx_in_bucket);
 		}
 	}
 
