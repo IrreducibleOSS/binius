@@ -20,7 +20,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
@@ -175,15 +175,13 @@ where
 
 	let mut table_constraints = table_constraints
 		.into_iter()
-		.map(|u| {
-			// Pick the first oracle and get its n_vars.
-			//
-			// TODO(pep): I know that this invariant is not guaranteed to hold at this point, but
-			//            this is fine and is going away in a follow up where we read the sizes of
-			//            tables from the transcript or pass it in the prover.
-			let first_oracle_id = u.oracle_ids[0];
-			let n_vars = oracles.n_vars(first_oracle_id);
-			SizedConstraintSet::new(n_vars, u)
+		.filter_map(|u| {
+			if table_sizes[u.table_id] == 0 {
+				None
+			} else {
+				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
+				Some(SizedConstraintSet::new(n_vars, u))
+			}
 		})
 		.collect::<Vec<_>>();
 	// Stable sort constraint sets in ascending order by number of variables.

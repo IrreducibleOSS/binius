@@ -67,22 +67,6 @@ where
 		table_size_specs,
 	} = constraint_system.clone();
 
-	let mut table_constraints = table_constraints
-		.into_iter()
-		.map(|u| {
-			// Pick the first oracle and get its n_vars.
-			//
-			// TODO(pep): I know that this invariant is not guaranteed to hold at this point, but
-			//            this is fine and is going away in a follow up where we read the sizes of
-			//            tables from the transcript or pass it in the prover.
-			let first_oracle_id = u.oracle_ids[0];
-			let n_vars = oracles.n_vars(first_oracle_id);
-			SizedConstraintSet::new(n_vars, u)
-		})
-		.collect::<Vec<_>>();
-	// Stable sort constraint sets in ascending order by number of variables.
-	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
-
 	let Proof { transcript } = proof;
 
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
@@ -119,6 +103,20 @@ where
 			TableSizeSpec::Arbitrary => (),
 		}
 	}
+
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.filter_map(|u| {
+			if table_sizes[u.table_id] == 0 {
+				None
+			} else {
+				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
+				Some(SizedConstraintSet::new(n_vars, u))
+			}
+		})
+		.collect::<Vec<_>>();
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;

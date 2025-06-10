@@ -345,8 +345,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 				}
 
 				if !zero_constraints.is_empty() {
-					let constraint_set =
-						translate_constraint_set(n_vars, zero_constraints, partition_oracle_ids);
+					let constraint_set = translate_constraint_set(
+						table.id(),
+						log2_strict_usize(*values_per_row),
+						n_vars,
+						zero_constraints,
+						partition_oracle_ids,
+					);
 					table_constraints.push(constraint_set);
 				}
 			}
@@ -674,6 +679,8 @@ fn add_oracle_for_column<F: TowerField>(
 /// The resulting constraint set will only contain oracles that were actually referenced from any
 /// of the constraint expressions.
 fn translate_constraint_set<F: TowerField>(
+	table_id: TableId,
+	log_values_per_row: usize,
 	n_vars: usize,
 	zero_constraints: &[ZeroConstraint<F>],
 	partition_oracle_ids: Vec<OracleId>,
@@ -728,6 +735,8 @@ fn translate_constraint_set<F: TowerField>(
 		.collect::<Vec<_>>();
 
 	ConstraintSet {
+		table_id,
+		log_values_per_row,
 		n_vars,
 		oracle_ids: dense_oracle_ids,
 		constraints: compiled_constraints,

@@ -9,6 +9,7 @@ use binius_math::{ArithCircuit, CompositionPoly};
 use binius_utils::bail;
 
 use super::{Error, MultilinearOracleSet, OracleId};
+use crate::constraint_system::TableId;
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.
@@ -57,9 +58,11 @@ impl<F: Field> SizedConstraintSet<F> {
 }
 
 /// Constraint set is a group of constraints that operate over the same set of oracle-identified
-/// multilinears
+/// multilinears. The multilinears are expected to be of the same size.
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct ConstraintSet<F: Field> {
+	pub table_id: TableId,
+	pub log_values_per_row: usize,
 	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,
 	pub constraints: Vec<Constraint<F>>,
