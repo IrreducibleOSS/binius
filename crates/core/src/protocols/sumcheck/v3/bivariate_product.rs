@@ -10,6 +10,7 @@ use binius_compute::{
 use binius_field::{Field, TowerField, util::powers};
 use binius_math::{CompositionPoly, EvaluationOrder, evaluate_univariate};
 use binius_utils::bail;
+use itertools::Itertools;
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
@@ -100,7 +101,7 @@ where
 	}
 }
 
-impl<'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'_, 'alloc, F, Hal>
+impl<'a, 'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'a, 'alloc, F, Hal>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -149,6 +150,10 @@ where
 	}
 
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
+		use binius_compute::{FSlice, FSliceMut};
+
+		type PreparedExtrapolateLineArgs<'a, F, Hal> = (FSliceMut<'a, F, Hal>, FSlice<'a, F, Hal>);
+
 		if self.n_vars_remaining == 0 {
 			bail!(Error::ExpectedFinish);
 		}
@@ -164,36 +169,44 @@ where
 			}
 		}
 
+		let prepared_extrapolate_line_ops =
+			self.multilins
+				.drain(..)
+				.map(
+					|multilin| -> Result<
+						PreparedExtrapolateLineArgs<'a, F, Hal>,
+						binius_compute::Error,
+					> {
+						match multilin {
+							SumcheckMultilinear::PreFold(evals) => {
+								debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+								let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
+								// Allocate new buffer for the folded evaluations and copy in
+								// evals_0.
+								let mut folded_evals= self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
+								self.hal.copy_d2d(evals_0, &mut folded_evals)?;
+								Ok((folded_evals, evals_1))
+							}
+							SumcheckMultilinear::PostFold(evals) => {
+								debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
+								let (evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
+								Ok((evals_0, Hal::DevMem::to_const(evals_1)))
+							}
+						}
+					},
+				)
+				.collect_vec();
+
 		// Fold the multilinears
 		let _ = self.hal.execute(|exec| {
-			self.multilins = exec.map(self.multilins.drain(..), |exec, multilin| {
-				let folded_evals = match multilin {
-					SumcheckMultilinear::PreFold(evals) => {
-						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-
-						let (evals_0, evals_1) = Hal::DevMem::split_half(evals);
-						// Allocate new buffer for the folded evaluations and copy in evals_0.
-						let mut folded_evals =
-							self.dev_alloc.alloc(1 << (self.n_vars_remaining - 1))?;
-						// This is kind of sketchy to do a copy without an execution context.
-						self.hal.copy_d2d(evals_0, &mut folded_evals)?;
-
-						exec.extrapolate_line(&mut folded_evals, evals_1, challenge)?;
-						folded_evals
-					}
-					SumcheckMultilinear::PostFold(evals) => {
-						debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
-						let (mut evals_0, evals_1) = Hal::DevMem::split_half_mut(evals);
-						exec.extrapolate_line(
-							&mut evals_0,
-							Hal::DevMem::as_const(&evals_1),
-							challenge,
-						)?;
-						evals_0
-					}
-				};
-				Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(folded_evals))
-			})?;
+			self.multilins = exec.map(
+				prepared_extrapolate_line_ops.into_iter(),
+				|exec, extrapolate_line_args| {
+					let (mut evals_0, evals_1) = extrapolate_line_args?;
+					exec.extrapolate_line(&mut evals_0, evals_1, challenge)?;
+					Ok(SumcheckMultilinear::<F, Hal::DevMem>::PostFold(evals_0))
+				},
+			)?;
 
 			Ok(Vec::new())
 		})?;

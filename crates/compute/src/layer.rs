@@ -15,7 +15,7 @@ use super::{
 use crate::memory::{SizedSlice, SlicesBatch};
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static + Send + Sync {
+pub trait ComputeLayer<F: Field>: 'static {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
