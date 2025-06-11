@@ -2,7 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
-use binius_compute::{ComputeLayer, ComputeMemory, FSliceMut, cpu::CpuMemory};
+use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -62,9 +62,7 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
-	hal: &Hal,
-	host_mem: <CpuMemory as ComputeMemory<Tower::B128>>::FSliceMut<'_>,
-	dev_mem: FSliceMut<'_, Tower::B128, Hal>,
+	compute_data: &mut ComputeData<Tower::B128, Hal>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -487,9 +485,9 @@ where
 	)
 	.entered();
 	piop::prove(
-		hal,
-		host_mem,
-		dev_mem,
+		compute_data.hal,
+		compute_data.host_alloc.remaining(),
+		compute_data.dev_alloc.remaining(),
 		&fri_params,
 		&ntt,
 		&merkle_prover,
