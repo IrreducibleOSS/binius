@@ -68,12 +68,11 @@ where
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 {
-	let _ = constraint_system_digest;
 	let ConstraintSystem {
-		mut oracles,
+		oracles,
 		table_constraints,
 		mut flushes,
-		non_zero_oracle_ids,
+		mut non_zero_oracle_ids,
 		channel_count,
 		mut exponents,
 		table_size_specs,
@@ -115,6 +114,14 @@ where
 			TableSizeSpec::Arbitrary => (),
 		}
 	}
+
+	let mut oracles = oracles.instantiate(&table_sizes)?;
+
+	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
+	flushes.sort_by_key(|flush| flush.channel_id);
+
+	non_zero_oracle_ids.retain(|oracle| !oracles.is_zero_sized(*oracle));
+	exponents.retain(|exp| !oracles.is_zero_sized(exp.exp_result_id));
 
 	let mut table_constraints = table_constraints
 		.into_iter()

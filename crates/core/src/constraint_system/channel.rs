@@ -140,6 +140,9 @@ where
 		}
 
 		let table_size = table_sizes[table_id];
+		if table_size == 0 {
+			continue;
+		}
 
 		// We check the variables only of OracleOrConst::Oracle variant oracles being the same.
 		let non_const_polys = oracles

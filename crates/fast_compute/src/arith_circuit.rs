@@ -268,6 +268,11 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 			tower_level,
 		})
 	}
+
+	/// Returns an underlying circuit from which this polynomial was constructed.
+	pub fn expr(&self) -> &ArithCircuit<F> {
+		&self.expr
+	}
 }
 
 impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>

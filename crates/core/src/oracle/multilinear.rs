@@ -353,32 +353,42 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 #[derive(Default, Debug, Clone, SerializeBytes, DeserializeBytes)]
 #[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct MultilinearOracleSet<F: TowerField> {
-	oracles: Vec<MultilinearPolyOracle<F>>,
+	/// The vector of oracles.
+	///
+	/// During sizing, an oracle could be skipped. In which case, the entry corresponding to the
+	/// oracle will be `None`.
+	oracles: Vec<Option<MultilinearPolyOracle<F>>>,
+	/// The number of non-`None` entries in `oracles`.
+	size: usize,
 }
 
 impl<F: TowerField> MultilinearOracleSet<F> {
 	pub const fn new() -> Self {
 		Self {
 			oracles: Vec::new(),
+			size: 0,
 		}
 	}
 
 	pub fn size(&self) -> usize {
-		self.oracles.len()
+		self.size
 	}
 
 	pub fn polys(&self) -> impl Iterator<Item = &MultilinearPolyOracle<F>> + '_ {
-		(0..self.oracles.len()).map(|index| &self[OracleId::from_index(index)])
+		self.iter().map(|(_, poly)| poly)
 	}
 
 	pub fn ids(&self) -> impl Iterator<Item = OracleId> {
-		(0..self.oracles.len()).map(OracleId::from_index)
+		self.iter().map(|(id, _)| id)
 	}
 
 	pub fn iter(&self) -> impl Iterator<Item = (OracleId, &MultilinearPolyOracle<F>)> + '_ {
-		(0..self.oracles.len()).map(|index| {
-			let oracle_id = OracleId::from_index(index);
-			(oracle_id, &self[oracle_id])
+		(0..self.oracles.len()).filter_map(|index| match self.oracles[index] {
+			Some(ref oracle) => {
+				let oracle_id = OracleId::from_index(index);
+				Some((oracle_id, oracle))
+			}
+			None => None,
 		})
 	}
 
@@ -400,13 +410,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		id.index() < self.oracles.len()
 	}
 
-	fn add_to_set(
+	pub(crate) fn add_to_set(
 		&mut self,
 		oracle: impl FnOnce(OracleId) -> MultilinearPolyOracle<F>,
 	) -> OracleId {
 		let id = OracleId::from_index(self.oracles.len());
-		self.oracles.push(oracle(id));
+		self.oracles.push(Some(oracle(id)));
+		self.size += 1;
 		id
+	}
+
+	/// Instead of adding a concrete oracle adds a skip mark, essentially just reserving an
+	/// [`OracleId`]. Accessing such oracle, with some exceptions, is an error.
+	pub(crate) fn add_skip(&mut self) {
+		self.oracles.push(None);
+		// don't increment size
 	}
 
 	pub fn add_transparent(
@@ -515,13 +533,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn tower_level(&self, id: OracleId) -> usize {
 		self[id].binary_tower_level()
 	}
+
+	/// Returns `true` if the given [`OracleId`] refers to an oracle that was skipped during the
+	/// instantiation of the symbolic multilinear oracle set.
+	pub fn is_zero_sized(&self, id: OracleId) -> bool {
+		self.oracles[id.index()].is_none()
+	}
 }
 
 impl<F: TowerField> std::ops::Index<OracleId> for MultilinearOracleSet<F> {
 	type Output = MultilinearPolyOracle<F>;
 
 	fn index(&self, id: OracleId) -> &Self::Output {
-		&self.oracles[id.index()]
+		self.oracles[id.index()]
+			.as_ref()
+			.expect("tried to access skipped oracle")
 	}
 }
 
