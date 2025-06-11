@@ -20,7 +20,7 @@ use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
 
-use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
+use crate::oracle::{ConstraintSet, OracleId, SymbolicMultilinearOracleSet};
 
 /// Contains the 3 things that place constraints on witness data in Binius
 /// - virtual oracles
@@ -32,7 +32,7 @@ use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 #[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct ConstraintSystem<F: TowerField> {
-	pub oracles: MultilinearOracleSet<F>,
+	pub oracles: SymbolicMultilinearOracleSet<F>,
 	pub table_constraints: Vec<ConstraintSet<F>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush<F>>,

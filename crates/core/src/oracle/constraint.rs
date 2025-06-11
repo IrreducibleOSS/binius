@@ -63,7 +63,6 @@ impl<F: Field> SizedConstraintSet<F> {
 pub struct ConstraintSet<F: Field> {
 	pub table_id: TableId,
 	pub log_values_per_row: usize,
-	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,
 	pub constraints: Vec<Constraint<F>>,
 }

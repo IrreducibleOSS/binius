@@ -1286,7 +1286,7 @@ mod tests {
 
 	use assert_matches::assert_matches;
 	use binius_compute::cpu::alloc::CpuComputeAllocator;
-	use binius_core::oracle::{MultilinearOracleSet, OracleId};
+	use binius_core::oracle::{OracleId, SymbolicMultilinearOracleSet};
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier256b},
 		packed::{len_packed_slice, set_packed_slice},
@@ -1699,12 +1699,12 @@ mod tests {
 	}
 
 	fn find_oracle_id_with_name(
-		oracles: &MultilinearOracleSet<B128>,
+		oracles: &SymbolicMultilinearOracleSet<B128>,
 		name: &str,
 	) -> Option<OracleId> {
 		oracles
 			.iter()
-			.find(|(_, oracle)| oracle.name() == Some(name))
+			.find(|(_, oracle)| oracle.name.as_deref() == Some(name))
 			.map(|(id, _)| id)
 	}
 

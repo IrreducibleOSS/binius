@@ -12,6 +12,7 @@ use super::{
 	error::Error,
 };
 use crate::{
+	constraint_system::TableSizeSpec,
 	oracle::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ShiftVariant,
@@ -31,8 +32,58 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<BinaryField1b>,
 	F: TowerField,
 {
+	let ConstraintSystem {
+		oracles,
+		table_constraints,
+		non_zero_oracle_ids,
+		flushes,
+		channel_count,
+		table_size_specs,
+		exponents: _,
+	} = constraint_system;
+
+	if table_sizes.len() != table_size_specs.len() {
+		return Err(Error::TableSizesLenMismatch {
+			expected: table_size_specs.len(),
+			got: table_sizes.len(),
+		});
+	}
+	for (table_id, (&table_size, table_size_spec)) in
+		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
+	{
+		match table_size_spec {
+			TableSizeSpec::PowerOfTwo => {
+				if !table_size.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Fixed { log_size } => {
+				if table_size != 1 << log_size {
+					return Err(Error::TableSizeFixedRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Arbitrary => (),
+		}
+	}
+
+	let unsized_oracles = oracles;
+	let oracles = unsized_oracles.instantiate(table_sizes)?;
+
 	// Check the constraint sets
-	for constraint_set in &constraint_system.table_constraints {
+	for constraint_set in table_constraints {
+		if table_sizes[constraint_set.table_id] == 0 {
+			continue;
+		}
+		if constraint_set.oracle_ids.is_empty() {
+			continue;
+		}
+
 		let multilinears = constraint_set
 			.oracle_ids
 			.iter()
@@ -56,25 +107,15 @@ where
 	}
 
 	// Check that nonzero oracles are non-zero over the entire hypercube
-	nonzerocheck::validate_witness(
-		witness,
-		&constraint_system.oracles,
-		&constraint_system.non_zero_oracle_ids,
-	)?;
+	nonzerocheck::validate_witness(witness, &oracles, non_zero_oracle_ids)?;
 
 	// Check that the channels balance with flushes and boundaries
-	channel::validate_witness(
-		witness,
-		&constraint_system.flushes,
-		boundaries,
-		table_sizes,
-		constraint_system.channel_count,
-	)?;
+	channel::validate_witness(witness, flushes, boundaries, table_sizes, *channel_count)?;
 
 	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually
 	// shifts).
-	for oracle in constraint_system.oracles.polys() {
-		validate_virtual_oracle_witness(oracle, &constraint_system.oracles, witness)?;
+	for oracle in oracles.polys() {
+		validate_virtual_oracle_witness(oracle, &oracles, witness)?;
 	}
 
 	Ok(())
@@ -321,6 +362,9 @@ pub mod nonzerocheck {
 		F: TowerField,
 	{
 		oracle_ids.into_par_iter().try_for_each(|id| {
+			if oracles.is_zero_sized(*id) {
+				return Ok(());
+			}
 			let multilinear = witness.get_multilin_poly(*id)?;
 			(0..(1 << multilinear.n_vars()))
 				.into_par_iter()
