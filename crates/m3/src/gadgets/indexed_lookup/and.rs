@@ -284,9 +284,9 @@ mod tests {
 
 	use std::{cmp::Reverse, iter::repeat_with};
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
 	use binius_field::arch::OptimalUnderlier;
-	use bumpalo::Bump;
 	use itertools::Itertools;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -313,7 +313,8 @@ mod tests {
 		let looker_1_size = 5;
 		let looker_id = and_looker.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 16);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness = WitnessIndex::new(&cs, &allocator);
 
 		let mut rng = StdRng::seed_from_u64(0);

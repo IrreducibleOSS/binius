@@ -399,11 +399,11 @@ fn pack_b8<const V: usize>(bits: [Col<B1, V>; 8]) -> Expr<B8, V> {
 mod tests {
 	use std::iter::repeat_with;
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{
 		arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero, as_packed_field::PackedType,
 	};
 	use binius_hash::groestl::{GroestlShortImpl, GroestlShortInternal};
-	use bumpalo::Bump;
 	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
@@ -419,7 +419,8 @@ mod tests {
 
 		let table_id = table.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let statement = Statement {
 			boundaries: vec![],
@@ -461,7 +462,8 @@ mod tests {
 
 		let table_id = table.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 16);
+		let allocator = allocator.into_bump_allocator();
 
 		let statement = Statement {
 			boundaries: vec![],
@@ -521,7 +523,8 @@ mod tests {
 
 		let table_id = table.id();
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 16);
+		let allocator = allocator.into_bump_allocator();
 
 		let statement = Statement {
 			boundaries: vec![],

@@ -98,6 +98,7 @@ mod model {
 }
 
 mod arithmetization {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_core::{
 		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
 		oracle::ShiftVariant,
@@ -113,7 +114,6 @@ mod arithmetization {
 		},
 		gadgets::add::{U32Add, U32AddFlags},
 	};
-	use bumpalo::Bump;
 
 	use super::model;
 
@@ -295,7 +295,8 @@ mod arithmetization {
 
 		let trace = CollatzTrace::generate(3999);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		witness

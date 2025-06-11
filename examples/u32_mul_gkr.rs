@@ -3,6 +3,7 @@
 use std::iter::repeat_with;
 
 use anyhow::Result;
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -88,7 +89,10 @@ fn main() -> Result<()> {
 
 	let log_n_muls = log2_ceil_usize(args.n_muls as usize);
 
-	let allocator = bumpalo::Bump::new();
+	let mut allocator = CpuComputeAllocator::new(
+		1 << (2 + log_n_muls - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+	);
+	let allocator = allocator.into_bump_allocator();
 	let mut cs = ConstraintSystem::new();
 	let table = MulTable::new(&mut cs);
 

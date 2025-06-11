@@ -85,7 +85,6 @@ array-util = "1.0.2"
 assert_matches = "1.5.0"
 alloy-primitives = "0.8.14"
 auto_impl = "1.2.0"
-bumpalo = { version = "3.16.0", features = ["collections"] }
 bytemuck = { version = "1.18.0", features = [
     "derive",
     "min_const_generics",

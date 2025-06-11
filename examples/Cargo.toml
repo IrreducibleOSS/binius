@@ -10,19 +10,19 @@ alloy-primitives.workspace = true
 array-util.workspace = true
 bytemuck.workspace = true
 binius_core = { path = "../crates/core", default-features = false }
+binius_compute = { path = "../crates/compute", default-features = false }
 binius_fast_compute = { path = "../crates/fast_compute", default-features = false }
 binius_field = { path = "../crates/field", default-features = false }
 binius_hal = { path = "../crates/hal", default-features = false }
 binius_hash = { path = "../crates/hash", default-features = false }
-binius_m3 = { path = "../crates/m3", default-features = false }
+binius_m3 = { path = "../crates/m3", default-features = false, features = ["test_utils"] }
 binius_macros = { path = "../crates/macros", default-features = false }
 binius_math = { path = "../crates/math", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
-bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 itertools.workspace = true
-rand.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
 tracing-profile.workspace = true
 tracing.workspace = true
 

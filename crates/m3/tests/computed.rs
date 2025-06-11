@@ -1,5 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier128b,
 	as_packed_field::PackedType,
@@ -8,7 +9,6 @@ use binius_m3::builder::{
 	B128, Col, ConstraintSystem, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
 	test_utils::validate_system_witness,
 };
-use bumpalo::Bump;
 
 const VALUES_PER_ROW: usize = 32;
 const N_ROWS: usize = 8;
@@ -74,7 +74,8 @@ where
 
 #[test]
 fn test_m3_computed_col() {
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(1 << 12);
+	let allocator = allocator.into_bump_allocator();
 	let mut cs = ConstraintSystem::<B128>::new();
 	let table = MyTable::new(&mut cs);
 

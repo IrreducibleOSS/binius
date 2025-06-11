@@ -871,8 +871,8 @@ pub fn log_capacity(table_size: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
-	use bumpalo::Bump;
 
 	use super::{B128, Table, TableBuilder};
 	use crate::builder::{
@@ -914,7 +914,8 @@ mod tests {
 			},
 		);
 
-		let alloc = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let alloc = allocator.into_bump_allocator();
 		let mut witness: WitnessIndex<PackedType<OptimalUnderlier, B128>> =
 			WitnessIndex::new(&cs, &alloc);
 		witness.fill_constant_cols().unwrap();

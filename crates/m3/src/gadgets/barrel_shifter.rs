@@ -150,8 +150,8 @@ impl BarrelShifter {
 mod tests {
 	use std::iter::repeat_with;
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
-	use bumpalo::Bump;
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
@@ -161,7 +161,8 @@ mod tests {
 		let mut cs = ConstraintSystem::new();
 		let mut table = cs.add_table("BarrelShifterTable");
 		let table_id = table.id();
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 
 		let input = table.add_committed::<B1, 32>("input");
 		let shift_amount = table.add_committed::<B1, 16>("shift_amount");

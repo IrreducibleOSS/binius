@@ -2,6 +2,7 @@
 
 use std::{cell, collections::BTreeMap, ops::Index};
 
+use binius_compute::alloc::HostBumpAllocator;
 pub use binius_core::constraint_system::channel::{
 	Boundary, Flush as CompiledFlush, FlushDirection,
 };
@@ -17,7 +18,6 @@ use binius_core::{
 use binius_field::{PackedField, TowerField};
 use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
-use bumpalo::Bump;
 use itertools::chain;
 
 use super::{
@@ -159,7 +159,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	#[deprecated]
 	pub fn build_witness<'cs, 'alloc, P: PackedField<Scalar = F>>(
 		&'cs self,
-		allocator: &'alloc Bump,
+		allocator: &'alloc HostBumpAllocator<'alloc, P>,
 	) -> WitnessIndex<'cs, 'alloc, P> {
 		WitnessIndex::new(self, allocator)
 	}

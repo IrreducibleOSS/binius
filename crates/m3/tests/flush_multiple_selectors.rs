@@ -1,5 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_field::{
 	Field, arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::set_packed_slice,
 };
@@ -11,11 +12,11 @@ use binius_m3::{
 	},
 	gadgets::structured::fill_incrementing_b32,
 };
-use bumpalo::Bump;
 
 #[test]
 pub fn test_flush_multiple_selectors() {
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(1 << 12);
+	let allocator = allocator.into_bump_allocator();
 	let mut cs = ConstraintSystem::<B128>::new();
 
 	let channel = cs.add_channel("channel");

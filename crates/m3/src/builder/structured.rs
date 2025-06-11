@@ -84,11 +84,11 @@ pub fn incrementing_expr<F: TowerField>(max_log_size: usize) -> Result<ArithExpr
 mod tests {
 	use std::iter::{self};
 
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_core::polynomial::test_utils::decompose_index_to_hypercube_point;
 	use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 	use binius_field::{BinaryField32b, arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use binius_math::{ArithCircuit, CompositionPoly};
-	use bumpalo::Bump;
 	use itertools::izip;
 
 	use super::*;
@@ -123,7 +123,8 @@ mod tests {
 		);
 		table.assert_zero("reference = structured", expected_col - structured_col);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		{
@@ -181,7 +182,8 @@ mod tests {
 
 		table.assert_zero("reference = structured", expected_col - structured_col);
 
-		let allocator = Bump::new();
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		witness

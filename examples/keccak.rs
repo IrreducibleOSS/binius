@@ -3,6 +3,7 @@
 use std::iter::repeat_with;
 
 use anyhow::Result;
+use binius_compute::cpu::alloc::CpuComputeAllocator;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
@@ -19,7 +20,7 @@ use binius_m3::{
 	},
 	gadgets::hash::keccak::{StateMatrix, stacked::Keccakf},
 };
-use binius_utils::rayon::adjust_thread_pool;
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -93,7 +94,11 @@ fn main() -> Result<()> {
 	let n_permutations = args.n_permutations as usize;
 	println!("Verifying {n_permutations} Keccakf permutations");
 
-	let allocator = bumpalo::Bump::new();
+	let mut allocator = CpuComputeAllocator::new(
+		1 << (11 + log2_ceil_usize(n_permutations)
+			- PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+	);
+	let allocator = allocator.into_bump_allocator();
 	let mut cs = ConstraintSystem::new();
 	let table = PermutationTable::new(&mut cs);
 

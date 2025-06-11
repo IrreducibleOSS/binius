@@ -2,6 +2,7 @@
 
 use std::iter::repeat_with;
 
+use binius_compute::{alloc::HostBumpAllocator, cpu::alloc::CpuComputeAllocator};
 use binius_field::{
 	arch::{OptimalUnderlier, OptimalUnderlier128b},
 	as_packed_field::PackedType,
@@ -18,7 +19,6 @@ use binius_m3::{
 		mul::{MulSS32, MulSU32, MulUU32, MulUU64},
 	},
 };
-use bumpalo::Bump;
 use bytemuck::Contiguous;
 use itertools::chain;
 use rand::{Rng, SeedableRng, prelude::StdRng};
@@ -36,10 +36,10 @@ where
 struct MulDivTestSuite;
 
 impl MulDivTestSuite {
-	fn execute<Test>(
+	fn execute<'a, Test>(
 		&self,
 		cs: ConstraintSystem,
-		allocator: Bump,
+		allocator: &'a HostBumpAllocator<'a, PackedType<OptimalUnderlier, B128>>,
 		statement: Statement,
 		test_table: Test,
 	) -> anyhow::Result<()>
@@ -48,7 +48,7 @@ impl MulDivTestSuite {
 	{
 		let inputs = test_table.generate_inputs(*statement.table_sizes.first().unwrap());
 
-		let mut witness = WitnessIndex::new(&cs, &allocator);
+		let mut witness = WitnessIndex::new(&cs, allocator);
 
 		witness.fill_table_sequential(&test_table, &inputs)?;
 		let table_index = witness.get_table(test_table.id()).unwrap();
@@ -116,14 +116,15 @@ impl MulDivTestSuiteHelper for MulUU64TestTable {
 #[test]
 fn test_muluu64() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(1 << 12);
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let muluu = MulUU64TestTable::new(&mut cs);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, muluu)
+		.execute(cs, &allocator, statement, muluu)
 		.unwrap();
 }
 
@@ -307,70 +308,80 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 #[test]
 fn test_muluu32() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulUU32);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, mul_div_32)
+		.execute(cs, &allocator, statement, mul_div_32)
 		.unwrap();
 }
 
 #[test]
 fn test_mulsu32() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSU32);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, mul_div_32)
+		.execute(cs, &allocator, statement, mul_div_32)
 		.unwrap();
 }
 
 #[test]
 fn test_mulss32() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSS32);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, mul_div_32)
+		.execute(cs, &allocator, statement, mul_div_32)
 		.unwrap();
 }
 
 #[test]
 fn test_divuu32() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivUU32);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, mul_div_32)
+		.execute(cs, &allocator, statement, mul_div_32)
 		.unwrap();
 }
 
 #[test]
 fn test_divss32() {
 	let mut cs = ConstraintSystem::new();
-	let allocator = Bump::new();
+	let mut allocator =
+		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
+	let allocator = allocator.into_bump_allocator();
 	let statement = Statement {
 		boundaries: vec![],
 		table_sizes: vec![1 << 9],
 	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivSS32);
 	MulDivTestSuite
-		.execute(cs, allocator, statement, mul_div_32)
+		.execute(cs, &allocator, statement, mul_div_32)
 		.unwrap();
 }
 
@@ -394,7 +405,8 @@ fn test_mul_next_to_stacked_col() {
 	.take(17)
 	.collect::<Vec<_>>();
 
-	let allocator = Bump::new();
+	let mut allocator = CpuComputeAllocator::new(1 << 12);
+	let allocator = allocator.into_bump_allocator();
 	let mut witness = WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 	witness
 		.fill_table_sequential(

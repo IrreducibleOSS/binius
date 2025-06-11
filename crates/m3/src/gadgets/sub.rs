@@ -278,10 +278,10 @@ pub type WideU32Sub = WideSub<u32, 32>;
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
 	};
-	use bumpalo::Bump;
 	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
@@ -389,7 +389,8 @@ mod tests {
 				boundaries: vec![],
 				table_sizes: vec![self.test_vector.len()],
 			};
-			let allocator = Bump::new();
+			let mut allocator = CpuComputeAllocator::new(1 << 16);
+			let allocator = allocator.into_bump_allocator();
 			let mut witness =
 				WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
