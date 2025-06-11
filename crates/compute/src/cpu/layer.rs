@@ -11,7 +11,7 @@ use itertools::izip;
 
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
-	ComputeLayerExecutor, KernelExecutor,
+	ComputeData, ComputeHolder, ComputeLayerExecutor, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
@@ -589,4 +589,32 @@ fn compute_right_fold<EvalType: TowerField, F: TowerTop + ExtensionField<EvalTyp
 	}
 
 	Ok(())
+}
+
+pub struct CpuLayerHolder<F> {
+	layer: CpuLayer<F>,
+	host_mem: Vec<F>,
+	dev_mem: Vec<F>,
+}
+
+impl<F: Field> CpuLayerHolder<F> {
+	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+		let cpu_mem = zeroed_vec(host_mem_size);
+		let dev_mem = zeroed_vec(dev_mem_size);
+		Self {
+			layer: CpuLayer::default(),
+			host_mem: cpu_mem,
+			dev_mem,
+		}
+	}
+}
+
+impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
+	fn to_data(&mut self) -> ComputeData<'_, F, CpuLayer<F>> {
+		ComputeData {
+			hal: &self.layer,
+			host_alloc: BumpAllocator::new(self.host_mem.as_mut_slice()),
+			dev_alloc: BumpAllocator::new(self.dev_mem.as_mut_slice()),
+		}
+	}
 }
