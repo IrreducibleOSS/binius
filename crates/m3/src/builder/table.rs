@@ -889,11 +889,13 @@ mod tests {
 		assert_eq!(tb_ns_2.namespaced_name("column"), "ns1::ns2::column");
 	}
 
+	// Test that the `read` method works correctly.
 	#[test]
 	fn test_read_method() {
 		let mut cs = ConstraintSystem::<B128>::new();
 		let lookup_chan = cs.add_channel("lookup");
 		let mut read_table = cs.add_table("stacked_reads");
+		let read_table_id = read_table.id();
 		const LOG_STACKING_FACTOR: usize = 3;
 		const LOG_READ_TABLE_SIZE: usize = 3;
 		let read_col =
@@ -903,6 +905,7 @@ mod tests {
 		read_table.read(lookup_chan, [read_col]);
 		drop(read_table);
 		let mut write_table = cs.add_table("packed_write");
+		let write_table_id = write_table.id();
 		write_table.require_fixed_size(LOG_READ_TABLE_SIZE);
 		let write_col = write_table.add_constant("constant_writes", [B8::new(3)]);
 		write_table.push_with_opts(
@@ -917,9 +920,17 @@ mod tests {
 		let alloc = Bump::new();
 		let mut witness: WitnessIndex<PackedType<OptimalUnderlier, B128>> =
 			WitnessIndex::new(&cs, &alloc);
+		witness
+			.init_table(read_table_id, 1 << LOG_READ_TABLE_SIZE)
+			.unwrap();
+		witness
+			.init_table(write_table_id, 1 << LOG_READ_TABLE_SIZE)
+			.unwrap();
 		witness.fill_constant_cols().unwrap();
+
 		let boundaries = vec![];
 
+		// We only want to validate the channel balancing
 		validate_system_witness_with_prove_verify::<OptimalUnderlier>(
 			&cs, witness, boundaries, false,
 		);
