@@ -8,13 +8,10 @@
 use std::array;
 
 use anyhow::Result;
+use binius_core::oracle::ShiftVariant;
+use binius_field::Field;
 
 use crate::builder::{B1, B32, Col, TableBuilder, TableWitnessSegment};
-
-/// SHA-256 state: 8 32-bit words
-pub type State = [Col<B32>; 8];
-/// SHA-256 message schedule: 64 32-bit words
-pub type Schedule = [Col<B32>; 64];
 
 // SHA-256 round constants, K
 pub const ROUND_CONSTS_K: [u32; 64] = [
@@ -28,112 +25,173 @@ pub const ROUND_CONSTS_K: [u32; 64] = [
 	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+pub const ROUND_CONSTS_B1: [B1; 2048] = [B1::ZERO; 2048];
+
 pub const INIT: [u32; 8] = [
 	0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
-pub struct Sha256Gadget {
-	pub state_in: State,
-	pub state_out: State,
-	pub schedule: Schedule,
+pub struct Sha256 {
+	/// SHA-256 state in: 8 32-bit words
+	pub state_in: Col<B1, { 32 * 16 }>,
+	/// SHA-256 state out: 8 32-bit words
+	pub state_out: [Col<B32>; 8],
+	/// SHA-256 message schedule: 64 32-bit words
+	pub w: Col<B1, { 32 * 64 }>,
+
+	/// Working variables
+	a: Col<B32>,
+	b: Col<B32>,
+	c: Col<B32>,
+	d: Col<B32>,
+	e: Col<B32>,
+	f: Col<B32>,
+	g: Col<B32>,
+	h: Col<B32>,
+
+	/// Round constants: 64 32-bit words
+	k: Col<B32, 64>,
+
+	/// Temporary variables for the SHA-256 compression function
+	t1: Col<B32>,
+	t2: Col<B32>,
 }
 
-impl Sha256Gadget {
-	pub fn new(table: &mut TableBuilder) -> Self {
-		// Input state
-		let state_in: State = table.add_committed_multiple::<B32, 8>("state_in");
-		// Message schedule
-		let schedule: Schedule = table.add_committed_multiple::<B32, 64>("w");
-		// Output state
-		let state_out: State =
-			array::from_fn(|i| table.add_computed(format!("state_out[{i}]"), state_in[i]));
+impl Sha256 {
+	pub fn new(table: &mut TableBuilder) {
+		// Initialize the message schedule w in batches of 16, the first batch is the state_in
+		let w: Col<B1, { 32 * 64 }> = table.add_committed("w");
 
-		// Working variables
-		let mut a = state_in[0];
-		let mut b = state_in[1];
-		let mut c = state_in[2];
-		let mut d = state_in[3];
-		let mut e = state_in[4];
-		let mut f = state_in[5];
-		let mut g = state_in[6];
-		let mut h = state_in[7];
+		let w_minus_16 =
+			table.add_shifted("w_minus_16", w, 11, 32 * 16, ShiftVariant::LogicalRight);
 
-		// Round constants as columns
-		let round_consts: [Col<B32>; 64] =
-			table.add_constant_multiple::<B32, 64>("k", &ROUND_CONSTS_K.map(B32::from));
+		let w_minus_7 =
+			table.add_shifted("w_minus_7", w, 11, 32 * (16 - 7), ShiftVariant::LogicalRight);
 
-		for i in 0..64 {
-			let k = round_consts[i];
-			let w = schedule[i];
-			// SHA-256 round function
-			let s1 = table.add_computed(
-				format!("s1[{i}]"),
-				e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25),
-			);
-			let ch = table.add_computed(format!("ch[{i}]"), (e & f) ^ ((!e) & g));
-			let temp1 = table.add_computed(format!("temp1[{i}]"), h + s1 + ch + k + w);
-			let s0 = table.add_computed(
-				format!("s0[{i}]"),
-				a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22),
-			);
-			let maj = table.add_computed(format!("maj[{i}]"), (a & b) ^ (a & c) ^ (b & c));
-			let temp2 = table.add_computed(format!("temp2[{i}]"), s0 + maj);
+		let sigma0 = Sigma0::new(table, w);
 
-			h = g;
-			g = f;
-			f = e;
-			e = d + temp1;
-			d = c;
-			c = b;
-			b = a;
-			a = temp1 + temp2;
+		let sigma1 = Sigma1::new(table, w);
+
+		let sigma0_minus_15 =
+			table.add_shifted("sigma0_minus_15", sigma0.out, 11, 32, ShiftVariant::LogicalRight);
+		let sigma1_minus_2 = table.add_shifted(
+			"sigma1_minus_2",
+			sigma0.out,
+			11,
+			32 * 14,
+			ShiftVariant::LogicalRight,
+		);
+
+		table.assert_zero("message_schedule", w_minus_16 + w_minus_7 + sigma0.out + sigma1.out + w);
+
+		let a: Col<B1, { 32 * 64 }> = table.add_committed("a");
+		let b: Col<B1, { 32 * 64 }> = table.add_committed("b");
+		let c: Col<B1, { 32 * 64 }> = table.add_committed("c");
+		let d: Col<B1, { 32 * 64 }> = table.add_committed("d");
+		let e: Col<B1, { 32 * 64 }> = table.add_committed("e");
+		let f: Col<B1, { 32 * 64 }> = table.add_committed("f");
+		let g: Col<B1, { 32 * 64 }> = table.add_committed("g");
+		let h: Col<B1, { 32 * 64 }> = table.add_committed("h");
+		let k: Col<B1, { 32 * 64 }> = table.add_constant("k", ROUND_CONSTS_B1);
+		let ch: Col<B1, { 32 * 64 }> = table.add_committed("ch");
+		let maj: Col<B1, { 32 * 64 }> = table.add_committed("maj");
+        
+
+	}
+}
+
+pub struct Sigma0 {
+	rotr_7: Col<B1, { 32 * 64 }>,
+	rotr_18: Col<B1, { 32 * 64 }>,
+	shr_3: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, { 32 * 64 }>,
+}
+
+impl Sigma0 {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+		let rotr_7 = table.add_shifted("rotr_7", state_in, 5, 32 - 7, ShiftVariant::CircularLeft);
+		let rotr_18 =
+			table.add_shifted("rotr_18", state_in, 5, 32 - 18, ShiftVariant::CircularLeft);
+		let shr_3 = table.add_shifted("shr_3", state_in, 5, 3, ShiftVariant::LogicalRight);
+		let out = table.add_computed("sigma_0", rotr_7 + rotr_18 + shr_3);
+		Self {
+			rotr_7,
+			rotr_18,
+			shr_3,
+			out,
 		}
+	}
+}
+pub struct Sigma1 {
+	rotr_17: Col<B1, { 32 * 64 }>,
+	rotr_19: Col<B1, { 32 * 64 }>,
+	shr_10: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, { 32 * 64 }>,
+}
 
-		// Output state = input state + working variables
-		let state_out = array::from_fn(|i| {
-			table.add_computed(
-				format!("state_out[{i}]"),
-				state_in[i]
-					+ match i {
-						0 => a,
-						1 => b,
-						2 => c,
-						3 => d,
-						4 => e,
-						5 => f,
-						6 => g,
-						7 => h,
-						_ => unreachable!(),
-					},
-			)
-		});
+impl Sigma1 {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+		let rotr_17 =
+			table.add_shifted("rotr_17", state_in, 5, 32 - 17, ShiftVariant::CircularLeft);
+		let rotr_19 =
+			table.add_shifted("rotr_19", state_in, 5, 32 - 19, ShiftVariant::CircularLeft);
+		let shr_10 = table.add_shifted("shr_10", state_in, 5, 10, ShiftVariant::LogicalRight);
+		let out = table.add_computed("sigma_1", rotr_17 + rotr_19 + shr_10);
 
 		Self {
-			state_in,
-			state_out,
-			schedule,
+			rotr_17,
+			rotr_19,
+			shr_10,
+			out,
 		}
-	}
-
-	pub fn populate<P>(&self, _index: &mut TableWitnessSegment<P>) -> Result<()> {
-		// TODO: Implement witness population for SHA-256
-		Ok(())
 	}
 }
 
+pub struct BigSigma0 {
+	rotr_2: Col<B1, { 32 * 64 }>,
+	rotr_13: Col<B1, { 32 * 64 }>,
+	rotr_22: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, { 32 * 64 }>,
+}
 
+impl BigSigma0 {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+		let rotr_2 = table.add_shifted("rotr_2", state_in, 5, 32 - 2, ShiftVariant::CircularLeft);
+		let rotr_13 =
+			table.add_shifted("rotr_13", state_in, 5, 32 - 13, ShiftVariant::CircularLeft);
+		let rotr_22 =
+			table.add_shifted("rotr_22", state_in, 5, 32 - 22, ShiftVariant::CircularLeft);
+		let out = table.add_computed("big_sigma_0", rotr_2 + rotr_13 + rotr_22);
 
-#[cfg(test)]
-mod tests {
-	use bumpalo::Bump;
+		Self {
+			rotr_2,
+			rotr_13,
+			rotr_22,
+			out,
+		}
+	}
+}
+pub struct BigSigma1 {
+	rotr_6: Col<B1, { 32 * 64 }>,
+	rotr_11: Col<B1, { 32 * 64 }>,
+	rotr_25: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, { 32 * 64 }>,
+}
 
-	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
+impl BigSigma1 {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+		let rotr_6 = table.add_shifted("rotr_6", state_in, 5, 32 - 6, ShiftVariant::CircularLeft);
+		let rotr_11 =
+			table.add_shifted("rotr_11", state_in, 5, 32 - 11, ShiftVariant::CircularLeft);
+		let rotr_25 =
+			table.add_shifted("rotr_25", state_in, 5, 32 - 25, ShiftVariant::CircularLeft);
+		let out = table.add_computed("big_sigma_1", rotr_6 + rotr_11 + rotr_25);
 
-	#[test]
-	fn test_sha256_gadget_structure() {
-		let mut cs = ConstraintSystem::new();
-		let mut table = cs.add_table("sha256");
-		let _gadget = Sha256Gadget::new(&mut table);
+		Self {
+			rotr_6,
+			rotr_11,
+			rotr_25,
+			out,
+		}
 	}
 }
