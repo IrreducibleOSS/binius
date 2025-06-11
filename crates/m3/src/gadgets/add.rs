@@ -373,9 +373,7 @@ mod tests {
 	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
-	use crate::builder::{
-		ConstraintSystem, Statement, WitnessIndex, test_utils::validate_system_witness,
-	};
+	use crate::builder::{ConstraintSystem, WitnessIndex, test_utils::validate_system_witness};
 
 	#[test]
 	fn prop_test_no_carry() {
@@ -474,10 +472,6 @@ mod tests {
 			assert!(adder.final_carry.is_some() == self.expose_final_carry);
 
 			let table_id = table.id();
-			let statement = Statement {
-				boundaries: vec![],
-				table_sizes: vec![self.test_vector.len()],
-			};
 			let mut allocator = CpuComputeAllocator::new(1 << 16);
 			let allocator = allocator.into_bump_allocator();
 			let mut witness =
@@ -521,7 +515,7 @@ mod tests {
 			}
 
 			// Validate constraint system
-			let ccs = cs.compile(&statement).unwrap();
+			let ccs = cs.compile().unwrap();
 			let table_sizes = witness.table_sizes();
 			let witness = witness.into_multilinear_extension_index();
 

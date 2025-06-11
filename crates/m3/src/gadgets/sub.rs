@@ -285,7 +285,7 @@ mod tests {
 	use rand::{Rng as _, SeedableRng, prelude::StdRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
+	use crate::builder::{ConstraintSystem, WitnessIndex};
 
 	#[test]
 	fn prop_test_no_borrow() {
@@ -385,10 +385,6 @@ mod tests {
 			assert!(subber.final_borrow.is_some() == self.expose_final_borrow);
 
 			let table_id = table.id();
-			let statement = Statement {
-				boundaries: vec![],
-				table_sizes: vec![self.test_vector.len()],
-			};
 			let mut allocator = CpuComputeAllocator::new(1 << 16);
 			let allocator = allocator.into_bump_allocator();
 			let mut witness =
@@ -432,7 +428,7 @@ mod tests {
 			}
 
 			// Validate constraint system
-			let ccs = cs.compile(&statement).unwrap();
+			let ccs = cs.compile().unwrap();
 			let table_sizes = witness.table_sizes();
 			let witness = witness.into_multilinear_extension_index();
 

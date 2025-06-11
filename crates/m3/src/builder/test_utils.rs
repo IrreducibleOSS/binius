@@ -21,7 +21,7 @@ use super::{
 	table::TableId,
 	witness::{TableFiller, TableWitnessSegment},
 };
-use crate::builder::{B128, Statement, WitnessIndex};
+use crate::builder::{B128, WitnessIndex};
 
 /// An easy-to-use implementation of [`TableFiller`] that is constructed with a closure.
 ///
@@ -114,17 +114,14 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, BinaryField128bPolyval>>,
 	PackedType<U, BinaryField128bPolyval>: PackedTransformationFactory<PackedType<U, B128>>,
 {
-	let statement = Statement {
-		boundaries,
-		table_sizes: witness.table_sizes(),
-	};
-	let ccs = cs.compile(&statement).unwrap();
+	let table_sizes = witness.table_sizes();
+	let ccs = cs.compile().unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
 	binius_core::constraint_system::validate::validate_witness(
 		&ccs,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		&witness,
 	)
 	.unwrap();
@@ -153,8 +150,8 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			LOG_INV_RATE,
 			SECURITY_BITS,
 			&ccs_digest,
-			&statement.boundaries,
-			&statement.table_sizes,
+			&boundaries,
+			&table_sizes,
 			witness,
 			&binius_hal::make_portable_backend(),
 		)
@@ -166,7 +163,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &statement.boundaries, proof)
+		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &boundaries, proof)
 		.unwrap();
 	}
 }

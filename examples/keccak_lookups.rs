@@ -18,8 +18,8 @@ use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
-		B1, B8, B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId,
-		TableWitnessSegment, WitnessIndex, tally,
+		B1, B8, B32, B64, B128, ConstraintSystem, TableFiller, TableId, TableWitnessSegment,
+		WitnessIndex, tally,
 	},
 	gadgets::{
 		hash::keccak::{StateMatrix, lookedup::KeccakfLookedup},
@@ -137,12 +137,10 @@ fn main() -> Result<()> {
 		.fill_table_parallel(&bitand_lookup, &sorted_counts)
 		.unwrap();
 
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: witness.table_sizes(),
-	};
+	let boundaries = vec![];
+	let table_sizes = witness.table_sizes();
 
-	let ccs = cs.compile(&statement).unwrap();
+	let ccs = cs.compile().unwrap();
 	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
@@ -171,8 +169,8 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&cs_digest,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		witness,
 		&make_portable_backend(),
 	)?;
@@ -185,14 +183,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&ccs,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&cs_digest,
-		&statement.boundaries,
-		proof,
-	)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &cs_digest, &boundaries, proof)?;
 
 	Ok(())
 }
