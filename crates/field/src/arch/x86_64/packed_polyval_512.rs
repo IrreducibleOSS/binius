@@ -47,7 +47,7 @@ cfg_if! {
 
 		impl_transformation_with_gfni_nxn!(PackedBinaryPolyval4x128b, 16);
 	} else {
-		use create::arch::SimdStrategy;
+		use crate::arch::SimdStrategy;
 		use crate::arithmetic_traits::impl_transformation_with_strategy;
 
 		impl_transformation_with_strategy!(PackedBinaryPolyval4x128b, SimdStrategy);
