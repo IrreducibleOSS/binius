@@ -4,24 +4,25 @@ use std::{collections::HashSet, env, iter, marker::PhantomData};
 
 use binius_compute::{ComputeLayer, ComputeMemory, FSliceMut, cpu::CpuMemory};
 use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
-	as_packed_field::PackedType,
+	AESTowerField8b, AESTowerField128b, BinaryField, ByteSlicedUnderlier, ExtensionField, Field,
+	PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
-	underlier::WithUnderlier,
+	underlier::{NumCast, UnderlierWithBitOps, WithUnderlier},
 	util::powers,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
-	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
-	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	B1, B8, CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::bail;
-use bytemuck::zeroed_vec;
+use bytemuck::{Pod, zeroed_vec};
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
@@ -83,10 +84,14 @@ pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
 ) -> Result<Proof, Error>
 where
 	Hal: ComputeLayer<Tower::B128> + Default,
-	U: ProverTowerUnderlier<Tower>,
+	U: ProverTowerUnderlier<Tower> + UnderlierWithBitOps + From<u8> + Pod,
 	Tower: ProverTowerFamily,
-	Tower::B128:
-		binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower> + From<FFastExt<Tower>>,
+	Tower::B128: binius_math::TowerTop
+		+ binius_math::PackedTop
+		+ PackedTop<Tower>
+		+ From<FFastExt<Tower>>
+		+ From<AESTowerField128b>
+		+ ExtensionField<B8>,
 	Hash: ParallelDigest,
 	Hash::Digest: BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
@@ -105,6 +110,12 @@ where
 		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
+		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField128b, Packed: Pod>,
+	u8: NumCast<U>,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	AESTowerField128b: From<Tower::B128>,
 {
 	let _ = (constraint_system_digest, table_sizes);
 	tracing::debug!(
@@ -115,6 +126,7 @@ where
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain<Tower>>::default();
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
+	let aes_domain_factory = IsomorphicEvaluationDomainFactory::<AESTowerField8b>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
 	transcript.observe().write_slice(boundaries);
@@ -232,7 +244,7 @@ where
 		EvaluationOrder::HighToLow,
 		exp_witnesses,
 		&exp_claims,
-		fast_domain_factory.clone(),
+		fast_domain_factory,
 		&mut transcript,
 		backend,
 	)?
@@ -257,7 +269,7 @@ where
 	)
 	.entered();
 	let non_zero_fast_witnesses =
-		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+		convert_witnesses_to_bytesliced::<U, _>(&witness, &non_zero_oracle_ids)?;
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -306,7 +318,9 @@ where
 	)
 	.entered();
 
-	let mut fast_witness = MultilinearExtensionIndex::<PackedType<U, FFastExt<Tower>>>::new();
+	let mut fast_witness = MultilinearExtensionIndex::<
+		PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>,
+	>::new();
 
 	make_masked_flush_witnesses::<U, _>(
 		&oracles,
@@ -319,8 +333,7 @@ where
 	)?;
 
 	// there are no oracle ids associated with these flush_witnesses
-	let flush_witnesses =
-		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+	let flush_witnesses = convert_witnesses_to_bytesliced::<U, _>(&witness, &flush_oracle_ids)?;
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -350,11 +363,11 @@ where
 		.collect::<Vec<_>>();
 
 	let GrandProductBatchProveOutput { final_layer_claims } =
-		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+		gkr_gpa::batch_prove::<AESTowerField128b, _, AESTowerField8b, _, _>(
 			EvaluationOrder::HighToLow,
 			all_gpa_witnesses,
 			&all_gpa_claims,
-			&fast_domain_factory,
+			&aes_domain_factory,
 			&mut transcript,
 			backend,
 		)?;
@@ -379,7 +392,7 @@ where
 		flush_prodcheck_eval_claims,
 		&oracles,
 		fast_witness,
-		fast_domain_factory.clone(),
+		aes_domain_factory,
 		&mut transcript,
 		backend,
 	)?;
@@ -596,23 +609,29 @@ where
 pub fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
-	fast_witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FFastExt<Tower>>>,
+	fast_witness_index: &mut MultilinearExtensionIndex<
+		'a,
+		PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>,
+	>,
 	flush_oracle_ids: &[OracleId],
 	flushes: &[Flush<FExt<Tower>>],
 	mixing_challenge: FExt<Tower>,
 	permutation_challenges: &[FExt<Tower>],
 ) -> Result<(), Error>
 where
-	U: ProverTowerUnderlier<Tower>,
+	U: ProverTowerUnderlier<Tower> + UnderlierWithBitOps + From<u8> + Pod,
 	Tower: ProverTowerFamily,
-	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>
-		+ RepackedExtension<PackedType<U, Tower::B1>>,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B1>>,
+	ByteSlicedUnderlier<U, 16>:
+		PackScalar<B1, Packed: Pod> + PackScalar<AESTowerField128b, Packed: Pod>,
+	u8: NumCast<U>,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
 {
 	// TODO: Move me out into a separate function & deduplicate.
 	// Count the suffix zeros on all selectors.
 	for flush in flushes {
 		let fast_selectors =
-			convert_1b_witnesses_to_fast_ext::<U, Tower>(witness_index, &flush.selectors)?;
+			convert_1b_witnesses_to_byte_sliced::<U, Tower>(witness_index, &flush.selectors)?;
 
 		for (&selector_id, fast_selector) in flush.selectors.iter().zip(fast_selectors) {
 			let selector = witness_index.get_multilin_poly(selector_id)?;
@@ -649,7 +668,7 @@ where
 	let inner_oracles_id = inner_oracles_id.into_iter().collect::<Vec<_>>();
 
 	let fast_inner_oracles =
-		convert_witnesses_to_fast_ext::<U, Tower>(oracles, witness_index, &inner_oracles_id)?;
+		convert_witnesses_to_bytesliced::<U, Tower>(witness_index, &inner_oracles_id)?;
 
 	for ((n_vars, witness_data), id) in fast_inner_oracles.into_iter().zip(inner_oracles_id) {
 		let fast_witness = MLEDirectAdapter::from(
@@ -912,15 +931,48 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-pub fn convert_1b_witnesses_to_fast_ext<'a, U, Tower>(
+fn convert_witnesses_to_bytesliced<'a, U, Tower>(
+	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	oracle_ids: &[OracleId],
+) -> Result<Vec<(usize, Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>)>, Error>
+where
+	U: ProverTowerUnderlier<Tower> + UnderlierWithBitOps + From<u8> + Pod,
+	Tower: ProverTowerFamily,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	u8: NumCast<U>,
+{
+	oracle_ids
+		.iter()
+		.map(|&flush_oracle_id| {
+			let poly = witness.get_multilin_poly(flush_oracle_id)?;
+
+			let log_width = PackedType::<U, FExt<Tower>>::LOG_WIDTH;
+
+			let mut evals = zeroed_vec((1 << poly.n_vars().saturating_sub(log_width)).max(16));
+
+			poly.subcube_evals(
+				poly.n_vars(),
+				0,
+				0,
+				&mut evals[0..(1 << poly.n_vars().saturating_sub(log_width))],
+			)?;
+
+			Ok((poly.n_vars(), Tower::transform_128b_to_bytesliced(evals.clone())))
+		})
+		.collect::<Result<Vec<_>, _>>()
+}
+
+#[allow(clippy::type_complexity)]
+pub fn convert_1b_witnesses_to_fast_ext<'a, U, Tower, FTrg>(
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	ids: &[OracleId],
-) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
+) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FTrg>>>, Error>
 where
-	U: ProverTowerUnderlier<Tower>,
+	U: ProverTowerUnderlier<Tower> + PackScalar<FTrg>,
+	FTrg: TowerField + ExtensionField<Tower::B1>,
 	Tower: ProverTowerFamily,
-	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>
-		+ RepackedExtension<PackedType<U, Tower::B1>>,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B1>>,
 {
 	ids.iter()
 		.map(|&id| {
@@ -939,6 +991,41 @@ where
 		.collect::<Result<Vec<_>, _>>()
 }
 
+#[allow(clippy::type_complexity)]
+pub fn convert_1b_witnesses_to_byte_sliced<'a, U, Tower>(
+	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	ids: &[OracleId],
+) -> Result<
+	Vec<MultilinearWitness<'a, PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>>,
+	Error,
+>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B1>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod> + PackScalar<AESTowerField128b>,
+	u8: NumCast<U>,
+{
+	ids.iter()
+		.map(|&id| {
+			let exp_witness = witness.get_multilin_poly(id)?;
+
+			let packed_evals = exp_witness
+				.packed_evals()
+				.expect("poly contain packed_evals");
+
+			let packed_evals: Vec<PackedType<U, Tower::B1>> =
+				PackedType::<U, Tower::B128>::cast_bases(packed_evals).to_vec();
+
+			let byte_sliced = Tower::transform_1b_to_bytesliced(packed_evals);
+
+			MultilinearExtension::new(exp_witness.n_vars(), byte_sliced)
+				.map(|mle| mle.specialize_arc_dyn())
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, _>>()
+}
+
 #[instrument(skip_all, name = "flush::reduce_flush_evalcheck_cliams")]
 fn reduce_flush_evalcheck_cliams<
 	U,
@@ -948,14 +1035,18 @@ fn reduce_flush_evalcheck_cliams<
 >(
 	claims: Vec<EvalcheckMultilinearClaim<FExt<Tower>>>,
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness_index: MultilinearExtensionIndex<PackedType<U, FFastExt<Tower>>>,
-	domain_factory: IsomorphicEvaluationDomainFactory<FFastExt<Tower>>,
+	witness_index: MultilinearExtensionIndex<
+		PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>,
+	>,
+	domain_factory: IsomorphicEvaluationDomainFactory<AESTowerField8b>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<Vec<EvalcheckMultilinearClaim<FExt<Tower>>>, Error>
 where
-	FExt<Tower>: From<FFastExt<Tower>>,
-	FFastExt<Tower>: From<FExt<Tower>>,
+	FExt<Tower>: From<AESTowerField128b>,
+	AESTowerField128b: From<FExt<Tower>>,
+	ByteSlicedUnderlier<U, 16>:
+		PackScalar<AESTowerField128b, Packed: Pod> + PackScalar<AESTowerField8b>,
 	U: ProverTowerUnderlier<Tower>,
 	Challenger_: Challenger + Default,
 {
@@ -963,8 +1054,8 @@ where
 
 	#[allow(clippy::type_complexity)]
 	let mut new_mlechecks_constraints: Vec<(
-		EvalPoint<FFastExt<Tower>>,
-		ConstraintSetBuilder<FFastExt<Tower>>,
+		EvalPoint<AESTowerField128b>,
+		ConstraintSetBuilder<AESTowerField128b>,
 	)> = Vec::new();
 
 	for claim in &claims {
@@ -983,7 +1074,7 @@ where
 				let oracle_ids = composite.inner().clone();
 
 				let exp = <_ as CompositionPoly<FExt<Tower>>>::expression(composite.c());
-				let fast_exp = exp.convert_field::<FFastExt<Tower>>();
+				let fast_exp = exp.convert_field::<AESTowerField128b>();
 
 				if let Some((_, constraint_builder)) = new_mlechecks_constraints.get_mut(position) {
 					constraint_builder.add_sumcheck(oracle_ids, fast_exp, eval);
@@ -1019,7 +1110,7 @@ where
 		constraint_set,
 	} in new_mlechecks
 	{
-		let evalcheck_claims = prove_mlecheck_with_switchover::<_, _, FFastExt<Tower>, _, _>(
+		let evalcheck_claims = prove_mlecheck_with_switchover::<_, _, AESTowerField8b, _, _>(
 			&witness_index,
 			constraint_set,
 			eq_ind_challenges,

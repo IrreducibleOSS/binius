@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-#[cfg(feature = "bail_panic")]
+// #[cfg(feature = "bail_panic")]
 #[macro_export]
 macro_rules! bail {
 	($err:expr) => {
@@ -8,13 +8,13 @@ macro_rules! bail {
 	};
 }
 
-#[cfg(not(feature = "bail_panic"))]
-#[macro_export]
-macro_rules! bail {
-	($err:expr) => {
-		return Err($err.into());
-	};
-}
+// #[cfg(not(feature = "bail_panic"))]
+// #[macro_export]
+// macro_rules! bail {
+// 	($err:expr) => {
+// 		return Err($err.into());
+// 	};
+// }
 
 #[macro_export]
 macro_rules! ensure {
