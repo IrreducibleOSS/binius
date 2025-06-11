@@ -62,7 +62,7 @@ pub trait ProverTowerFamily: TowerFamily {
 		Top: PackedField<Scalar = Self::B128>;
 
 	fn transform_1b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B1>>,
+		evals: &[PackedType<U, Self::B1>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
 	where
 		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -70,7 +70,7 @@ pub trait ProverTowerFamily: TowerFamily {
 		u8: NumCast<U>;
 
 	fn transform_32b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B32>>,
+		evals: &[PackedType<U, Self::B32>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
 	where
 		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -79,7 +79,7 @@ pub trait ProverTowerFamily: TowerFamily {
 		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>;
 
 	fn transform_128b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B128>>,
+		evals: &[PackedType<U, Self::B128>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
 	where
 		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -121,7 +121,7 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 	}
 
 	fn transform_1b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B1>>,
+		evals: &[PackedType<U, Self::B1>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
 	where
 		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -130,11 +130,15 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 	{
 		const BYTES_COUNT: usize = 16;
 		evals
-			.par_chunks(BYTES_COUNT)
+			.par_chunks(BYTES_COUNT.min(evals.len()))
 			.map(|values| {
 				let mut aes = [MaybeUninit::<PackedType<U, BinaryField1b>>::uninit(); BYTES_COUNT];
-				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
-					_ = *x0_aes.write(*x0);
+				for (i, x0_aes) in aes.iter_mut().enumerate() {
+					_ = *x0_aes.write(
+						*values
+							.get(i)
+							.unwrap_or(&PackedType::<U, BinaryField1b>::zero()),
+					);
 				}
 
 				let aes = unsafe {
@@ -156,7 +160,7 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 	}
 
 	fn transform_128b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B128>>,
+		evals: &[PackedType<U, Self::B128>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
 	where
 		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -172,12 +176,21 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 		>();
 
 		evals
-			.par_chunks_exact(BYTES_COUNT)
+			.par_chunks_exact(BYTES_COUNT.min(evals.len()))
 			.map(|values| {
 				let mut aes =
 					[MaybeUninit::<PackedType<U, AESTowerField128b>>::uninit(); BYTES_COUNT];
 				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
 					_ = *x0_aes.write(fwd_transform.transform(x0));
+				}
+
+				for (i, x0_aes) in aes.iter_mut().enumerate() {
+					_ = *x0_aes.write(
+						values
+							.get(i)
+							.map(|x0| fwd_transform.transform(x0))
+							.unwrap_or_else(PackedType::<U, AESTowerField128b>::zero),
+					);
 				}
 
 				let aes = unsafe {
@@ -199,7 +212,7 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 	}
 
 	fn transform_32b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B32>>,
+		evals: &[PackedType<U, Self::B32>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
 	where
 		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -215,12 +228,18 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 		>();
 
 		evals
-			.par_chunks_exact(BYTES_COUNT)
+			.par_chunks_exact(BYTES_COUNT.min(evals.len()))
 			.map(|values| {
 				let mut aes =
 					[MaybeUninit::<PackedType<U, AESTowerField32b>>::uninit(); BYTES_COUNT];
-				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
-					_ = *x0_aes.write(fwd_transform.transform(x0));
+
+				for (i, x0_aes) in aes.iter_mut().enumerate() {
+					_ = *x0_aes.write(
+						values
+							.get(i)
+							.map(|x0| fwd_transform.transform(x0))
+							.unwrap_or_else(PackedType::<U, AESTowerField32b>::zero),
+					);
 				}
 
 				let aes = unsafe {
@@ -275,7 +294,7 @@ impl ProverTowerFamily for AESTowerFamily {
 	}
 
 	fn transform_1b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B1>>,
+		evals: &[PackedType<U, Self::B1>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
 	where
 		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -310,7 +329,7 @@ impl ProverTowerFamily for AESTowerFamily {
 	}
 
 	fn transform_128b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B128>>,
+		evals: &[PackedType<U, Self::B128>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
 	where
 		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
@@ -347,7 +366,7 @@ impl ProverTowerFamily for AESTowerFamily {
 	}
 
 	fn transform_32b_to_bytesliced<U>(
-		evals: Vec<PackedType<U, Self::B32>>,
+		_evals: &[PackedType<U, Self::B32>],
 	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
 	where
 		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,

@@ -5,12 +5,12 @@ use anyhow::Result;
 use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
 use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
 use binius_field::{
-	AESTowerField8b, AESTowerField128b, BinaryField128bPolyval, ByteSlicedUnderlier, PackedField,
-	PackedFieldIndexable, TowerField,
+	AESTowerField8b, AESTowerField32b, AESTowerField128b, BinaryField128bPolyval,
+	ByteSlicedUnderlier, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::PackedTransformationFactory,
 	tower::{CanonicalTowerFamily, ProverTowerUnderlier},
-	underlier::{NumCast, UnderlierType},
+	underlier::NumCast,
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
@@ -95,6 +95,7 @@ pub fn validate_system_witness<U>(
 	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, B8>>,
 	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
 		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField32b, Packed: Pod>
 		+ PackScalar<AESTowerField128b, Packed: Pod>,
 {
 	const TEST_PROVE_VERIFY_ENV_NAME: &str = "BINIUS_M3_TEST_PROVE_VERIFY";
@@ -130,6 +131,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, B8>>,
 	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
 		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField32b, Packed: Pod>
 		+ PackScalar<AESTowerField128b, Packed: Pod>,
 {
 	let statement = Statement {

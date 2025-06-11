@@ -4,8 +4,9 @@ use std::{collections::HashSet, env, iter, marker::PhantomData};
 
 use binius_compute::{ComputeLayer, ComputeMemory, FSliceMut, cpu::CpuMemory};
 use binius_field::{
-	AESTowerField8b, AESTowerField128b, BinaryField, ByteSlicedUnderlier, ExtensionField, Field,
-	PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
+	AESTowerField8b, AESTowerField32b, AESTowerField128b, BinaryField, ByteSlicedUnderlier,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
@@ -112,7 +113,8 @@ where
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
 		+ PackScalar<AESTowerField8b>
-		+ PackScalar<AESTowerField128b, Packed: Pod>,
+		+ PackScalar<AESTowerField128b, Packed: Pod>
+		+ PackScalar<AESTowerField32b, Packed: Pod>,
 	u8: NumCast<U>,
 	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
 	AESTowerField128b: From<Tower::B128>,
@@ -280,7 +282,17 @@ where
 	.entered();
 	let non_zero_prodcheck_witnesses = non_zero_fast_witnesses
 		.into_par_iter()
-		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+		.map(|(n_vars, poly)| {
+			let mut evals = zeroed_vec(
+				1 << n_vars.saturating_sub(
+					PackedType::<ByteSlicedUnderlier<U, 16>, AESTowerField128b>::LOG_WIDTH,
+				),
+			);
+
+			poly.subcube_evals(poly.n_vars(), 0, 0, &mut evals)?;
+
+			GrandProductWitness::new(n_vars, evals)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 	drop(nonzero_prodcheck_compute_layer_span);
 
@@ -344,7 +356,17 @@ where
 	.entered();
 	let flush_prodcheck_witnesses = flush_witnesses
 		.into_par_iter()
-		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
+		.map(|(n_vars, poly)| {
+			let mut evals = zeroed_vec(
+				1 << n_vars.saturating_sub(
+					PackedType::<ByteSlicedUnderlier<U, 16>, AESTowerField128b>::LOG_WIDTH,
+				),
+			);
+
+			poly.subcube_evals(poly.n_vars(), 0, 0, &mut evals)?;
+
+			GrandProductWitness::new(n_vars, evals)
+		})
 		.collect::<Result<Vec<_>, _>>()?;
 	drop(flush_prodcheck_compute_layer_span);
 
@@ -622,8 +644,9 @@ where
 	U: ProverTowerUnderlier<Tower> + UnderlierWithBitOps + From<u8> + Pod,
 	Tower: ProverTowerFamily,
 	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B1>>,
-	ByteSlicedUnderlier<U, 16>:
-		PackScalar<B1, Packed: Pod> + PackScalar<AESTowerField128b, Packed: Pod>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
+		+ PackScalar<AESTowerField128b, Packed: Pod>
+		+ PackScalar<AESTowerField32b, Packed: Pod>,
 	u8: NumCast<U>,
 	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
 {
@@ -667,20 +690,19 @@ where
 
 	let inner_oracles_id = inner_oracles_id.into_iter().collect::<Vec<_>>();
 
+	println!("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
+
 	let fast_inner_oracles =
 		convert_witnesses_to_bytesliced::<U, Tower>(witness_index, &inner_oracles_id)?;
 
-	for ((n_vars, witness_data), id) in fast_inner_oracles.into_iter().zip(inner_oracles_id) {
-		let fast_witness = MLEDirectAdapter::from(
-			MultilinearExtension::new(n_vars, witness_data)
-				.expect("witness_data created with correct n_vars"),
-		);
+	println!("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
 
+	for ((_, poly), id) in fast_inner_oracles.into_iter().zip(inner_oracles_id) {
 		let nonzero_scalars_prefix = witness_index.get_index_entry(id)?.nonzero_scalars_prefix;
 
 		fast_witness_index.update_multilin_poly_with_nonzero_scalars_prefixes([(
 			id,
-			fast_witness.upcast_arc_dyn(),
+			poly,
 			nonzero_scalars_prefix,
 		)])?;
 	}
@@ -934,31 +956,52 @@ where
 fn convert_witnesses_to_bytesliced<'a, U, Tower>(
 	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
 	oracle_ids: &[OracleId],
-) -> Result<Vec<(usize, Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>)>, Error>
+) -> Result<
+	Vec<(usize, MultilinearWitness<'a, PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>)>,
+	Error,
+>
 where
 	U: ProverTowerUnderlier<Tower> + UnderlierWithBitOps + From<u8> + Pod,
 	Tower: ProverTowerFamily,
 	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
-	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	ByteSlicedUnderlier<U, 16>:
+		PackScalar<AESTowerField128b, Packed: Pod> + PackScalar<AESTowerField32b, Packed: Pod>,
 	u8: NumCast<U>,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B32>>,
 {
 	oracle_ids
 		.iter()
 		.map(|&flush_oracle_id| {
 			let poly = witness.get_multilin_poly(flush_oracle_id)?;
 
-			let log_width = PackedType::<U, FExt<Tower>>::LOG_WIDTH;
+			let packed_evals = poly.packed_evals().unwrap();
 
-			let mut evals = zeroed_vec((1 << poly.n_vars().saturating_sub(log_width)).max(16));
+			let witness = match 7 - poly.log_extension_degree() {
+				7 => {
+					let byte_sliced = Tower::transform_128b_to_bytesliced(packed_evals);
 
-			poly.subcube_evals(
-				poly.n_vars(),
-				0,
-				0,
-				&mut evals[0..(1 << poly.n_vars().saturating_sub(log_width))],
-			)?;
+					Ok(MLEDirectAdapter::from(
+						MultilinearExtension::new(poly.n_vars(), byte_sliced)
+							.expect("witness_data created with correct n_vars"),
+					)
+					.upcast_arc_dyn())
+				}
 
-			Ok((poly.n_vars(), Tower::transform_128b_to_bytesliced(evals.clone())))
+				5 => {
+					let packed_evals: &[PackedType<U, Tower::B32>] =
+						PackedType::<U, Tower::B128>::cast_bases(packed_evals);
+
+					let byte_sliced = Tower::transform_32b_to_bytesliced(packed_evals);
+
+					MultilinearExtension::new(poly.n_vars(), byte_sliced)
+						.map(|mle| mle.specialize_arc_dyn())
+						.map_err(Error::from)
+				}
+
+				_ => unreachable!(),
+			};
+
+			witness.map(|witness| (poly.n_vars(), witness))
 		})
 		.collect::<Result<Vec<_>, _>>()
 }
@@ -1014,8 +1057,8 @@ where
 				.packed_evals()
 				.expect("poly contain packed_evals");
 
-			let packed_evals: Vec<PackedType<U, Tower::B1>> =
-				PackedType::<U, Tower::B128>::cast_bases(packed_evals).to_vec();
+			let packed_evals: &[PackedType<U, Tower::B1>] =
+				PackedType::<U, Tower::B128>::cast_bases(packed_evals);
 
 			let byte_sliced = Tower::transform_1b_to_bytesliced(packed_evals);
 
