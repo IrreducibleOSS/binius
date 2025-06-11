@@ -42,7 +42,8 @@ use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
 	oracle::{
-		Constraint, ConstraintSetBuilder, MultilinearOracleSet, OracleId, SizedConstraintSet,
+		Constraint, ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyVariant, OracleId,
+		SizedConstraintSet,
 	},
 	piop,
 	protocols::{
@@ -998,17 +999,9 @@ where
 
 	for claim in &claims {
 		match &oracles[claim.id].variant {
-			crate::oracle::MultilinearPolyVariant::LinearCombination(_) => {
-				linear_claims.push(claim.clone())
-			}
-			crate::oracle::MultilinearPolyVariant::Composite(composite) => {
-				let eval_point = claim
-					.eval_point
-					.to_vec()
-					.into_iter()
-					.map(FFastExt::<Tower>::from)
-					.collect::<Vec<_>>()
-					.into();
+			MultilinearPolyVariant::LinearCombination(_) => linear_claims.push(claim.clone()),
+			MultilinearPolyVariant::Composite(composite) => {
+				let eval_point = claim.eval_point.isomorphic();
 
 				let eval = claim.eval.into();
 
