@@ -110,11 +110,11 @@ LABEL_TO_METRIC = {
     "generating trace":          "trace-gen-time",
     "constraint_system::prove":  "prove-time",
     "constraint_system::verify": "verify-time",
-    "[phase] Commit":            "phase-commit-time",
-    "[phase] Zerocheck":         "phase-zerocheck-time",
-    "[phase] Evalcheck":         "phase-evalcheck-time",
-    "[phase] Ring Switch":       "phase-ring-switch-time",
-    "[phase] PIOP Compiler":     "phase-piop-compiler-time",
+    "[phase] commit":            "phase-commit-time",
+    "[phase] zerocheck":         "phase-zerocheck-time",
+    "[phase] evalcheck":         "phase-evalcheck-time",
+    "[phase] ring switch":       "phase-ring-switch-time",
+    "[phase] piop compiler":     "phase-piop-compiler-time",
 }
 
 
@@ -122,7 +122,7 @@ def parse_csv_metrics(csv_path: Path, key_suffix: str) -> Dict[str, float]:
     metrics: Dict[str, float] = {}
     with csv_path.open() as f:
         for row in csv.reader(f):
-            label = row[0]
+            label = row[0].lower()
             if label in LABEL_TO_METRIC:
                 key = LABEL_TO_METRIC[label]
                 metrics[key] = nano_to_milli(int(row[2]))
