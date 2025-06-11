@@ -90,12 +90,16 @@ fn main() -> Result<()> {
 	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
+	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
+
 	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::default();
 
 	let mut host_mem = zeroed_vec(1 << 20);
 	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 
 	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+
+	drop(hal_span);
 
 	let proof = constraint_system::prove::<
 		_,

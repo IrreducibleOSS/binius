@@ -221,6 +221,12 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
+	let copy_span = tracing::debug_span!(
+		"[task] Copy polynomials to device memory",
+		phase = "piop_compiler",
+		perfetto_category = "phase.sub",
+	)
+	.entered();
 	let packed_committed_fslices_mut = packed_committed_multilins
 		.iter()
 		.map(|packed_committed_multilin| {
@@ -262,6 +268,8 @@ where
 		.iter()
 		.map(|fslice_mut| Hal::DevMem::as_const(fslice_mut))
 		.collect::<Vec<_>>();
+
+	drop(copy_span);
 
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
