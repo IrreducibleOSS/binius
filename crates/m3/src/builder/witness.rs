@@ -1295,7 +1295,7 @@ mod tests {
 
 	use super::*;
 	use crate::builder::{
-		ConstraintSystem, Statement, TableBuilder,
+		ConstraintSystem, TableBuilder,
 		types::{B1, B8, B16, B32},
 	};
 
@@ -1725,11 +1725,7 @@ mod tests {
 		let allocator = allocator.into_bump_allocator();
 
 		let table_size = 123;
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![table_size],
-		};
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let mut index = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 
 		{

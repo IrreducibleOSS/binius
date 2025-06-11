@@ -407,7 +407,7 @@ mod tests {
 	use rand::{SeedableRng, prelude::StdRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
+	use crate::builder::{ConstraintSystem, WitnessIndex};
 
 	#[test]
 	fn test_sbox() {
@@ -422,10 +422,6 @@ mod tests {
 		let mut allocator = CpuComputeAllocator::new(1 << 12);
 		let allocator = allocator.into_bump_allocator();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![1 << 8],
-		};
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -439,7 +435,7 @@ mod tests {
 
 		sbox.populate(&mut segment).unwrap();
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 
@@ -465,10 +461,6 @@ mod tests {
 		let mut allocator = CpuComputeAllocator::new(1 << 16);
 		let allocator = allocator.into_bump_allocator();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![1 << 8],
-		};
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -500,7 +492,7 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 
@@ -526,10 +518,6 @@ mod tests {
 		let mut allocator = CpuComputeAllocator::new(1 << 16);
 		let allocator = allocator.into_bump_allocator();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![1 << 8],
-		};
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 
@@ -561,7 +549,7 @@ mod tests {
 			assert_eq!(generated_out, expected_out);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 

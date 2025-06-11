@@ -155,7 +155,7 @@ mod tests {
 	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
+	use crate::builder::{ConstraintSystem, WitnessIndex};
 
 	fn test_barrel_shifter(variant: ShiftVariant) {
 		let mut cs = ConstraintSystem::new();
@@ -169,10 +169,6 @@ mod tests {
 
 		let shifter = BarrelShifter::new(&mut table, input, shift_amount, variant);
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![1 << 8],
-		};
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, 1 << 8).unwrap();
@@ -208,7 +204,7 @@ mod tests {
 			assert_eq!(output, expected_output);
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 
