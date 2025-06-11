@@ -72,8 +72,11 @@ where
 	exponents
 		.iter()
 		.map(|exp| {
-			let fast_exponent_witnesses =
-				convert_1b_witnesses_to_fast_ext::<U, Tower>(witness, &exp.bits_ids)?;
+			let fast_exponent_witnesses = convert_1b_witnesses_to_fast_ext::<
+				U,
+				Tower,
+				FFastExt<Tower>,
+			>(witness, &exp.bits_ids)?;
 
 			let (exp_witness, tower_level) = match exp.base {
 				OracleOrConst::Const { base, tower_level } => {

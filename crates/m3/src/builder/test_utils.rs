@@ -6,11 +6,12 @@ use binius_compute::ComputeHolder;
 use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
 use binius_fast_compute::layer::FastCpuLayerHolder;
 use binius_field::{
-	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
+	AESTowerField8b, AESTowerField128b, BinaryField128bPolyval, ByteSlicedUnderlier, PackedField,
+	PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::PackedTransformationFactory,
-	tower::CanonicalTowerFamily,
-	underlier::UnderlierType,
+	tower::{CanonicalTowerFamily, ProverTowerUnderlier},
+	underlier::{NumCast, UnderlierType},
 };
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_utils::env::boolean_env_flag_set;
@@ -75,17 +76,26 @@ pub fn validate_system_witness<U>(
 	witness: WitnessIndex<PackedType<U, B128>>,
 	boundaries: Vec<Boundary<B128>>,
 ) where
-	U: UnderlierType
+	U: ProverTowerUnderlier<CanonicalTowerFamily>
 		+ PackScalar<B1>
 		+ PackScalar<B8>
 		+ PackScalar<B16>
 		+ PackScalar<B32>
 		+ PackScalar<B64>
 		+ PackScalar<B128>
-		+ PackScalar<BinaryField128bPolyval>,
+		+ PackScalar<BinaryField128bPolyval>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<AESTowerField8b>,
 	PackedType<U, B128>:
 		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, BinaryField128bPolyval>>,
 	PackedType<U, BinaryField128bPolyval>: PackedTransformationFactory<PackedType<U, B128>>,
+	u8: NumCast<U>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, B8>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
+		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField128b, Packed: Pod>,
 {
 	const TEST_PROVE_VERIFY_ENV_NAME: &str = "BINIUS_M3_TEST_PROVE_VERIFY";
 	validate_system_witness_with_prove_verify::<U>(
@@ -102,17 +112,25 @@ pub fn validate_system_witness_with_prove_verify<U>(
 	boundaries: Vec<Boundary<B128>>,
 	prove_verify: bool,
 ) where
-	U: UnderlierType
+	U: ProverTowerUnderlier<CanonicalTowerFamily>
 		+ PackScalar<B1>
 		+ PackScalar<B8>
 		+ PackScalar<B16>
 		+ PackScalar<B32>
 		+ PackScalar<B64>
 		+ PackScalar<B128>
-		+ PackScalar<BinaryField128bPolyval>,
+		+ PackScalar<BinaryField128bPolyval>
+		+ PackScalar<AESTowerField128b>
+		+ PackScalar<AESTowerField8b>,
 	PackedType<U, B128>:
 		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, BinaryField128bPolyval>>,
 	PackedType<U, BinaryField128bPolyval>: PackedTransformationFactory<PackedType<U, B128>>,
+	u8: NumCast<U>,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, B8>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
+		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField128b, Packed: Pod>,
 {
 	let statement = Statement {
 		boundaries,

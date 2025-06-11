@@ -2,19 +2,26 @@
 
 //! Traits for working with field towers.
 
+use std::mem::{MaybeUninit, transmute};
+
+use binius_maybe_rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use bytemuck::Pod;
 use trait_set::trait_set;
 
 use crate::{
 	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
 	BinaryField1b, BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
-	BinaryField128bPolyval, ExtensionField, PackedExtension, PackedField, TowerField,
-	as_packed_field::PackScalar,
+	BinaryField128bPolyval, ByteSlicedUnderlier, ExtensionField, PackedExtension, PackedField,
+	TowerField,
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
+	make_binary_to_aes_packed_transformer,
 	polyval::{
 		AES_TO_POLYVAL_TRANSFORMATION, BINARY_TO_POLYVAL_TRANSFORMATION,
 		POLYVAL_TO_AES_TRANSFORMARION, POLYVAL_TO_BINARY_TRANSFORMATION,
 	},
-	underlier::UnderlierType,
+	tower_levels::TowerLevel16,
+	underlier::{NumCast, UnderlierType, UnderlierWithBitOps},
 };
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
@@ -53,6 +60,32 @@ pub trait ProverTowerFamily: TowerFamily {
 	where
 		FastTop: PackedTransformationFactory<Top>,
 		Top: PackedField<Scalar = Self::B128>;
+
+	fn transform_1b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B1>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
+	where
+		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<BinaryField1b, Packed: Pod>,
+		u8: NumCast<U>;
+
+	fn transform_32b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B32>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
+	where
+		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField32b, Packed: Pod>,
+		u8: NumCast<U>,
+		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>;
+
+	fn transform_128b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B128>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
+	where
+		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+		u8: NumCast<U>,
+		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>;
 }
 
 /// The canonical Fan-Paar tower family.
@@ -85,6 +118,127 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 		Top: PackedField<Scalar = Self::B128>,
 	{
 		FastTop::make_packed_transformation(POLYVAL_TO_BINARY_TRANSFORMATION)
+	}
+
+	fn transform_1b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B1>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
+	where
+		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<BinaryField1b, Packed: Pod>,
+		u8: NumCast<U>,
+	{
+		const BYTES_COUNT: usize = 16;
+		evals
+			.par_chunks(BYTES_COUNT)
+			.map(|values| {
+				let mut aes = [MaybeUninit::<PackedType<U, BinaryField1b>>::uninit(); BYTES_COUNT];
+				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
+					_ = *x0_aes.write(*x0);
+				}
+
+				let aes = unsafe {
+					transmute::<
+						&mut [MaybeUninit<PackedType<U, BinaryField1b>>; BYTES_COUNT],
+						&mut [U; BYTES_COUNT],
+					>(&mut aes)
+				};
+
+				U::transpose_bytes_to_byte_sliced::<TowerLevel16>(aes);
+
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>,
+				>(aes);
+				x0_bytes_sliced.to_owned()
+			})
+			.collect::<Vec<_>>()
+	}
+
+	fn transform_128b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B128>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
+	where
+		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+		u8: NumCast<U>,
+		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	{
+		const BYTES_COUNT: usize = 16;
+
+		let fwd_transform = make_binary_to_aes_packed_transformer::<
+			PackedType<U, BinaryField128b>,
+			PackedType<U, AESTowerField128b>,
+		>();
+
+		evals
+			.par_chunks_exact(BYTES_COUNT)
+			.map(|values| {
+				let mut aes =
+					[MaybeUninit::<PackedType<U, AESTowerField128b>>::uninit(); BYTES_COUNT];
+				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
+					_ = *x0_aes.write(fwd_transform.transform(x0));
+				}
+
+				let aes = unsafe {
+					transmute::<
+						&mut [MaybeUninit<PackedType<U, AESTowerField128b>>; BYTES_COUNT],
+						&mut [U; BYTES_COUNT],
+					>(&mut aes)
+				};
+
+				U::transpose_bytes_to_byte_sliced::<TowerLevel16>(aes);
+
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>,
+				>(aes);
+				x0_bytes_sliced.to_owned()
+			})
+			.collect::<Vec<_>>()
+	}
+
+	fn transform_32b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B32>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
+	where
+		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField32b, Packed: Pod>,
+		u8: NumCast<U>,
+		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	{
+		const BYTES_COUNT: usize = 16;
+
+		let fwd_transform = make_binary_to_aes_packed_transformer::<
+			PackedType<U, BinaryField32b>,
+			PackedType<U, AESTowerField32b>,
+		>();
+
+		evals
+			.par_chunks_exact(BYTES_COUNT)
+			.map(|values| {
+				let mut aes =
+					[MaybeUninit::<PackedType<U, AESTowerField32b>>::uninit(); BYTES_COUNT];
+				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
+					_ = *x0_aes.write(fwd_transform.transform(x0));
+				}
+
+				let aes = unsafe {
+					transmute::<
+						&mut [MaybeUninit<PackedType<U, AESTowerField32b>>; BYTES_COUNT],
+						&mut [U; BYTES_COUNT],
+					>(&mut aes)
+				};
+
+				U::transpose_bytes_to_byte_sliced::<TowerLevel16>(aes);
+
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>,
+				>(aes);
+				x0_bytes_sliced.to_owned()
+			})
+			.collect::<Vec<_>>()
 	}
 }
 
@@ -119,6 +273,90 @@ impl ProverTowerFamily for AESTowerFamily {
 	{
 		FastTop::make_packed_transformation(POLYVAL_TO_AES_TRANSFORMARION)
 	}
+
+	fn transform_1b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B1>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>>
+	where
+		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<BinaryField1b, Packed: Pod>,
+		u8: NumCast<U>,
+	{
+		const BYTES_COUNT: usize = 16;
+		evals
+			.par_chunks_exact(BYTES_COUNT)
+			.map(|values| {
+				let mut aes = [MaybeUninit::<PackedType<U, BinaryField1b>>::uninit(); BYTES_COUNT];
+				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
+					_ = *x0_aes.write(*x0);
+				}
+
+				let aes = unsafe {
+					transmute::<
+						&mut [MaybeUninit<PackedType<U, BinaryField1b>>; BYTES_COUNT],
+						&mut [U; BYTES_COUNT],
+					>(&mut aes)
+				};
+
+				U::transpose_bytes_to_byte_sliced::<TowerLevel16>(aes);
+
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<U, 16>, BinaryField1b>,
+				>(aes);
+				x0_bytes_sliced.to_owned()
+			})
+			.collect::<Vec<_>>()
+	}
+
+	fn transform_128b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B128>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>
+	where
+		U: TowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField128b, Packed: Pod>,
+		u8: NumCast<U>,
+	{
+		const BYTES_COUNT: usize = 16;
+
+		evals
+			.par_chunks_exact(BYTES_COUNT)
+			.map(|values| {
+				let mut aes =
+					[MaybeUninit::<PackedType<U, AESTowerField128b>>::uninit(); BYTES_COUNT];
+				for (x0_aes, x0) in aes.iter_mut().zip(values.iter()) {
+					_ = *x0_aes.write(*x0);
+				}
+
+				let aes = unsafe {
+					transmute::<
+						&mut [MaybeUninit<PackedType<U, AESTowerField128b>>; BYTES_COUNT],
+						&mut [U; BYTES_COUNT],
+					>(&mut aes)
+				};
+
+				U::transpose_bytes_to_byte_sliced::<TowerLevel16>(aes);
+
+				let x0_bytes_sliced = bytemuck::must_cast_mut::<
+					_,
+					PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>,
+				>(aes);
+				x0_bytes_sliced.to_owned()
+			})
+			.collect::<Vec<_>>()
+	}
+
+	fn transform_32b_to_bytesliced<U>(
+		evals: Vec<PackedType<U, Self::B32>>,
+	) -> Vec<PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField32b>>
+	where
+		U: ProverTowerUnderlier<Self> + UnderlierWithBitOps + From<u8> + Pod,
+		ByteSlicedUnderlier<U, 16>: PackScalar<AESTowerField32b, Packed: Pod>,
+		u8: NumCast<U>,
+		PackedType<U, BinaryField8b>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	{
+		todo!()
+	}
 }
 
 trait_set! {
@@ -130,10 +368,10 @@ trait_set! {
 		+ PackScalar<Tower::B16>
 		+ PackScalar<Tower::B32>
 		+ PackScalar<Tower::B64>
-		+ PackScalar<Tower::B128>;
+		+ PackScalar<Tower::B128> ;
 
 	pub trait ProverTowerUnderlier<Tower: ProverTowerFamily> =
-		TowerUnderlier<Tower> + PackScalar<Tower::FastB128>;
+		TowerUnderlier<Tower> + PackScalar<Tower::FastB128> + PackScalar<AESTowerField128b> +PackScalar<AESTowerField32b> + PackScalar<AESTowerField8b> + PackScalar<BinaryField8b>+ UnderlierWithBitOps + From<u8> + Pod;
 
 	/// A packed field type that is the top packed field in a tower.
 	pub trait PackedTop<Tower: TowerFamily> =
