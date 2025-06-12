@@ -3,9 +3,9 @@
 use std::iter::repeat_with;
 
 use anyhow::Result;
-use binius_compute::cpu::alloc::CpuComputeAllocator;
+use binius_compute::{ComputeHolder, cpu::alloc::CpuComputeAllocator};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger};
-use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
+use binius_fast_compute::layer::FastCpuLayerHolder;
 use binius_field::{
 	Field, PackedExtension, PackedFieldIndexable, arch::OptimalUnderlier,
 	as_packed_field::PackedType, tower::CanonicalTowerFamily,
@@ -20,7 +20,6 @@ use binius_m3::{
 	gadgets::mul::MulUU32,
 };
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
-use bytemuck::zeroed_vec;
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
 use rand::thread_rng;
@@ -118,12 +117,11 @@ fn main() -> Result<()> {
 
 	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
 
-	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::default();
-
-	let mut host_mem = zeroed_vec(1 << 20);
-	let mut dev_mem_owned = zeroed_vec(1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
-
-	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+	let mut compute_holder =
+		FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::new(
+			1 << 20,
+			1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+		);
 
 	drop(hal_span);
 
@@ -136,9 +134,7 @@ fn main() -> Result<()> {
 		HasherChallenger<Groestl256>,
 		_,
 	>(
-		&hal,
-		&mut host_mem,
-		dev_mem,
+		&mut compute_holder.to_data(),
 		&ccs,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
