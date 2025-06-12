@@ -219,11 +219,10 @@ pub trait ComputeMemory<F> {
 			return Self::to_owned_mut(input);
 		}
 
-		// Get a slice of the first n elements, aligning to the memory alignment requirement
-		let mut result = Self::slice_mut(input, ..n.max(Self::ALIGNMENT));
+		let mut result = Self::to_owned_mut(input);
 
-		// If n is smaller than the alignment, narrow down the slice further
-		for _ in checked_log_2(n)..checked_log_2(Self::ALIGNMENT) {
+		// If n is smaller than the input len, narrow down the slice further
+		for _ in checked_log_2(n)..checked_log_2(result.len()) {
 			(result, _) = Self::split_half_mut(result);
 		}
 		result

@@ -104,8 +104,6 @@ fn main() -> Result<()> {
 			1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
 		);
 
-	drop(hal_span);
-
 	let host_alloc = HostBumpAllocator::new(&mut host_mem);
 	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
 

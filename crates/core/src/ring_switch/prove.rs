@@ -3,7 +3,7 @@
 use std::{iter, sync::Arc};
 
 use binius_compute::{
-	ComputeLayer, ComputeLayerExecutor, FSlice,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice,
 	alloc::{BumpAllocator, HostBumpAllocator},
 	layer,
 };
@@ -28,7 +28,9 @@ use crate::{
 	piop::PIOPSumcheckClaim,
 	protocols::evalcheck::subclaims::MemoizedData,
 	ring_switch::{
-		common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd, logging::CalculateRingSwitchEqIndData,
+		common::EvalClaimSuffixDesc,
+		eq_ind::{RingSwitchEqInd, RingSwitchEqIndPrecompute},
+		logging::CalculateRingSwitchEqIndData,
 	},
 	transcript::ProverTranscript,
 };
@@ -274,22 +276,41 @@ where
 	Hal: ComputeLayer<F>,
 {
 	let mut eq_inds = Vec::with_capacity(sumcheck_claim_descs.len());
+
+	let precompute = sumcheck_claim_descs
+		.iter()
+		.zip(mixing_coeffs)
+		.map(|(claim_desc, mixing_coeffs)| {
+			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
+			RingSwitchEqInd::<F, F>::precompute_values(
+				suffix_desc.suffix.clone(),
+				row_batch_coeffs.clone(),
+				*mixing_coeffs,
+				suffix_desc.kappa,
+				hal,
+				dev_alloc,
+				host_alloc,
+			)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
 	let _ = hal.execute(|exec| {
 		let res = exec
-			.map(izip!(sumcheck_claim_descs, mixing_coeffs), |exec, (claim_desc, &mixing_coeff)| {
-				let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
+			.map(
+				izip!(sumcheck_claim_descs, mixing_coeffs, precompute),
+				|exec, (claim_desc, &mixing_coeff, precompute)| {
+					let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
 
-				make_ring_switch_eq_ind(
-					suffix_desc,
-					row_batch_coeffs.clone(),
-					mixing_coeff,
-					hal,
-					exec,
-					dev_alloc,
-					host_alloc,
-				)
-				.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
-			})
+					make_ring_switch_eq_ind(
+						suffix_desc,
+						row_batch_coeffs.clone(),
+						mixing_coeff,
+						exec,
+						precompute,
+					)
+					.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
+				},
+			)
 			.map_err(|e| layer::Error::CoreLibError(Box::new(e)))?;
 
 		eq_inds.extend(res);
@@ -299,18 +320,17 @@ where
 	Ok(eq_inds)
 }
 
-fn make_ring_switch_eq_ind<'a, 'alloc, F, Hal>(
+fn make_ring_switch_eq_ind<'a, F, Mem, Exec>(
 	suffix_desc: &EvalClaimSuffixDesc<F>,
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeff: F,
-	hal: &'a Hal,
-	exec: &mut Hal::Exec<'a>,
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'a, F>,
-) -> Result<FSlice<'a, F, Hal>, Error>
+	exec: &mut Exec,
+	precompute: RingSwitchEqIndPrecompute<'a, F, Mem>,
+) -> Result<Mem::FSlice<'a>, Error>
 where
 	F: TowerTop,
-	Hal: ComputeLayer<F>,
+	Mem: ComputeMemory<F>,
+	Exec: ComputeLayerExecutor<F, DevMem = Mem>,
 {
 	let eq_ind = match F::TOWER_LEVEL - suffix_desc.kappa {
 		0 => RingSwitchEqInd::<B1, _>::new(
@@ -318,37 +338,37 @@ where
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 0),
+		.multilinear_extension(precompute, exec, 0),
 		3 => RingSwitchEqInd::<B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 3),
+		.multilinear_extension(precompute, exec, 3),
 		4 => RingSwitchEqInd::<B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 4),
+		.multilinear_extension(precompute, exec, 4),
 		5 => RingSwitchEqInd::<B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 5),
+		.multilinear_extension(precompute, exec, 5),
 		6 => RingSwitchEqInd::<B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 6),
+		.multilinear_extension(precompute, exec, 6),
 		7 => RingSwitchEqInd::<B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(hal, exec, dev_alloc, host_alloc, 7),
+		.multilinear_extension(precompute, exec, 7),
 		_ => Err(Error::PackingDegreeNotSupported {
 			kappa: suffix_desc.kappa,
 		}),

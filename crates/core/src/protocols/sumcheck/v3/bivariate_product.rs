@@ -188,7 +188,7 @@ where
 				.drain(..)
 				.map(
 					|multilin| -> Result<
-						PreparedExtrapolateLineArgs<'a, F, Hal>,
+						PreparedExtrapolateLineArgs<'b, F, Hal>,
 						binius_compute::Error,
 					> {
 						match multilin {

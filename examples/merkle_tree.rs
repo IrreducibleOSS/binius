@@ -111,6 +111,9 @@ fn main() -> Result<()> {
 			1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
 		);
 
+	let host_alloc = HostBumpAllocator::new(&mut host_mem);
+	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+
 	drop(hal_span);
 
 	let proof = constraint_system::prove::<

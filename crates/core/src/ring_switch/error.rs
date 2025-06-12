@@ -22,8 +22,6 @@ pub enum Error {
 	OracleToCommitIndexMissingEntry { id: OracleId },
 	#[error("binius_math error: {0}")]
 	Math(#[from] binius_math::Error),
-	#[error("binius_fast_compute_math error: {0}")]
-	FastMath(#[from] crate::compute_math::Error),
 	#[error("transcript error: {0}")]
 	Transcript(#[from] transcript::Error),
 	#[error("Polynomial error: {0}")]

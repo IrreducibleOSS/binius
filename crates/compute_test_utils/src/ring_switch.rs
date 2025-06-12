@@ -19,6 +19,7 @@ use binius_core::{
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
+	tower::{CanonicalTowerFamily, TowerFamily},
 	underlier::UnderlierType,
 };
 use binius_hash::groestl::Groestl256;
@@ -211,7 +212,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<U, F>>::default();
 
 	let mut host_mem = zeroed_vec(1 << 7);
-	let mut dev_mem_owned = zeroed_vec(1 << 12);
+	let mut dev_mem_owned = zeroed_vec(1 << 15);
 
 	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
 
