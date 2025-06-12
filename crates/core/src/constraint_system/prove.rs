@@ -318,6 +318,7 @@ where
 	let mixing_challenge = transcript.sample();
 	let permutation_challenges = transcript.sample_vec(channel_count);
 
+	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;

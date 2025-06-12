@@ -335,6 +335,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 					.collect::<Vec<_>>();
 
 					compiled_flushes.push(CompiledFlush {
+						table_id: table.id(),
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,

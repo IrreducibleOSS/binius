@@ -39,6 +39,7 @@ fn test_make_masked_flush_witnesses_handles_small_n_vars() {
 		.unwrap();
 
 	let flush = Flush {
+		table_id: 0,
 		oracles: vec![OracleOrConst::<F>::Oracle(poly_id)],
 		channel_id: 0,
 		direction: FlushDirection::Push,
