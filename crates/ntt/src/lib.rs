@@ -14,7 +14,6 @@ pub mod fri;
 mod multithreaded;
 mod odd_interpolate;
 mod single_threaded;
-mod strided_array;
 #[cfg(test)]
 mod tests;
 pub mod twiddle;
