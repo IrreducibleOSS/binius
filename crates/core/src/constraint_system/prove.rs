@@ -34,7 +34,7 @@ use super::{
 };
 use crate::{
 	constraint_system::{
-		Flush,
+		Flush, TableSizeSpec,
 		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
@@ -96,7 +96,7 @@ where
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
-	let _ = (constraint_system_digest, table_sizes);
+	let _ = constraint_system_digest;
 	tracing::debug!(
 		arch = env::consts::ARCH,
 		rayon_threads = binius_maybe_rayon::current_num_threads(),
@@ -116,7 +116,38 @@ where
 		mut exponents,
 		non_zero_oracle_ids,
 		channel_count,
+		table_size_specs,
 	} = constraint_system.clone();
+
+	if table_sizes.len() != table_size_specs.len() {
+		return Err(Error::TableSizesLenMismatch {
+			expected: table_size_specs.len(),
+			got: table_sizes.len(),
+		});
+	}
+	for (table_id, (&table_size, table_size_spec)) in
+		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
+	{
+		match table_size_spec {
+			TableSizeSpec::PowerOfTwo => {
+				if !table_size.is_power_of_two() {
+					return Err(Error::TableSizePowerOfTwoRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Fixed { log_size } => {
+				if table_size != 1 << log_size {
+					return Err(Error::TableSizeFixedRequired {
+						table_id,
+						size: table_size,
+					});
+				}
+			}
+			TableSizeSpec::Arbitrary => (),
+		}
+	}
 
 	reorder_exponents(&mut exponents, &oracles);
 

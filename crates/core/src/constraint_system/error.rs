@@ -2,10 +2,10 @@
 
 use super::channel::ChannelId;
 use crate::{
-	oracle,
-	oracle::OracleId,
-	piop, polynomial, protocols,
-	protocols::{gkr_gpa, greedy_evalcheck},
+	constraint_system::TableId,
+	oracle::{self, OracleId},
+	piop, polynomial,
+	protocols::{self, gkr_gpa, greedy_evalcheck},
 	ring_switch, witness,
 };
 
@@ -49,6 +49,13 @@ pub enum Error {
 		oracle_num_vars: usize,
 		witness_num_vars: usize,
 	},
+
+	#[error("table {table_id} is required to have a power-of-two size, instead got {size}")]
+	TableSizePowerOfTwoRequired { table_id: TableId, size: usize },
+	#[error("table {table_id} is required to have a fixed power-of-two size, instead got {size}")]
+	TableSizeFixedRequired { table_id: TableId, size: usize },
+	#[error("table sizes vector should have length {expected}, instead got {got}")]
+	TableSizesLenMismatch { expected: usize, got: usize },
 
 	#[error("flush selector oracle {selector} incompatible with oracle {id}")]
 	IncompatibleFlushSelector { id: OracleId, selector: OracleId },

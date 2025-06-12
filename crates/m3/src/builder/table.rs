@@ -4,7 +4,10 @@ use std::{ops::Index, sync::Arc};
 
 pub use binius_core::constraint_system::TableId;
 use binius_core::{
-	constraint_system::channel::{ChannelId, FlushDirection},
+	constraint_system::{
+		TableSizeSpec,
+		channel::{ChannelId, FlushDirection},
+	},
 	oracle::ShiftVariant,
 	transparent::MultilinearExtensionTransparent,
 };
@@ -843,20 +846,6 @@ impl<F: TowerField> Index<ColumnId> for Table<F> {
 
 const fn partition_id<const V: usize>() -> usize {
 	checked_log_2(V)
-}
-
-/// A category of the size specification of a table.
-///
-/// M3 tables can have size restrictions, where certain columns, specifically structured columns,
-/// are only allowed for certain size specifications.
-#[derive(Debug, Copy, Clone)]
-pub(crate) enum TableSizeSpec {
-	/// The table size may be arbitrary.
-	Arbitrary,
-	/// The table size may be any power of two.
-	PowerOfTwo,
-	/// The table size must be a fixed power of two.
-	Fixed { log_size: usize },
 }
 
 /// Returns the binary logarithm of the table capacity required to accommodate the given number

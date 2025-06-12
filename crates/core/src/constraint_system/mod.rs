@@ -38,6 +38,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub flushes: Vec<Flush<F>>,
 	pub exponents: Vec<Exp<F>>,
 	pub channel_count: usize,
+	pub table_size_specs: Vec<TableSizeSpec>,
 }
 
 impl<F: TowerField> ConstraintSystem<F> {
@@ -65,3 +66,17 @@ impl Proof {
 }
 
 pub type TableId = usize;
+
+/// A category of the size specification of a table.
+///
+/// Tables can have size restrictions, where certain columns, specifically structured columns,
+/// are only allowed for certain size specifications.
+#[derive(Debug, Copy, Clone, SerializeBytes, DeserializeBytes)]
+pub enum TableSizeSpec {
+	/// The table size may be arbitrary.
+	Arbitrary,
+	/// The table size may be any power of two.
+	PowerOfTwo,
+	/// The table size must be a fixed power of two.
+	Fixed { log_size: usize },
+}

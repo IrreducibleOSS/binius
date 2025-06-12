@@ -8,7 +8,7 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{
-		ConstraintSystem as CompiledConstraintSystem,
+		ConstraintSystem as CompiledConstraintSystem, TableSizeSpec,
 		channel::{ChannelId, OracleOrConst},
 		exp::Exp,
 	},
@@ -21,7 +21,7 @@ use binius_utils::checked_arithmetics::log2_strict_usize;
 use itertools::chain;
 
 use super::{
-	ColumnId, Table, TableBuilder, TableId, TableSizeSpec, ZeroConstraint,
+	ColumnId, Table, TableBuilder, TableId, ZeroConstraint,
 	channel::{Channel, Flush},
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
@@ -193,10 +193,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut compiled_flushes = Vec::new();
 		let mut non_zero_oracle_ids = Vec::new();
 		let mut exponents = Vec::new();
+		let mut table_size_specs = Vec::new();
 
 		let mut oracle_lookup = OracleLookup::new();
 
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
+			table_size_specs.push(table.size_spec());
+
 			if count == 0 {
 				continue;
 			}
@@ -357,6 +360,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			non_zero_oracle_ids,
 			channel_count: self.channels.len(),
 			exponents,
+			table_size_specs,
 		})
 	}
 }
