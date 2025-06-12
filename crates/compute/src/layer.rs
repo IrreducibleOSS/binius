@@ -12,7 +12,11 @@ use super::{
 	alloc::Error as AllocError,
 	memory::{ComputeMemory, SubfieldSlice},
 };
-use crate::memory::{SizedSlice, SlicesBatch};
+use crate::{
+	alloc::BumpAllocator,
+	cpu::CpuMemory,
+	memory::{SizedSlice, SlicesBatch},
+};
 
 /// A hardware abstraction layer (HAL) for compute operations.
 pub trait ComputeLayer<F: Field>: 'static {
@@ -604,6 +608,20 @@ pub type KernelSlice<'a, 'b, F, HAL> = <KernelMem<'b, F, HAL> as ComputeMemory<F
 pub type KernelSliceMut<'a, 'b, F, HAL> =
 	<KernelMem<'b, F, HAL> as ComputeMemory<F>>::FSliceMut<'a>;
 
+/// This is a trait for a holder type for the popular triple:
+/// * a compute layer (HAL),
+/// * a host memory allocator,
+/// * a device memory allocator.
+pub trait ComputeHolder<F: Field, HAL: ComputeLayer<F>> {
+	fn to_data(&mut self) -> ComputeData<'_, F, HAL>;
+}
+
+pub struct ComputeData<'a, F: Field, HAL: ComputeLayer<F>> {
+	pub hal: &'a HAL,
+	pub host_alloc: BumpAllocator<'a, F, CpuMemory>,
+	pub dev_alloc: BumpAllocator<'a, F, HAL::DevMem>,
+}
+
 #[cfg(test)]
 mod tests {
 	use binius_field::{BinaryField128b, Field, TowerField};
@@ -612,31 +630,29 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
-		cpu::{CpuLayer, CpuMemory},
+		alloc::ComputeAllocator,
+		cpu::{CpuMemory, layer::CpuLayerHolder},
 	};
 
 	/// Test showing how to allocate host memory and create a sub-allocator over it.
 	// TODO: This 'a lifetime bound on HAL is pretty annoying. I'd like to get rid of it.
-	fn test_copy_host_device<
-		'a,
-		F: TowerField,
-		HAL: ComputeLayer<F> + 'a,
-		HostAllocatorType: ComputeAllocator<F, CpuMemory>,
-	>(
-		hal: HAL,
-		host_alloc: &HostAllocatorType,
-		mut dev_mem: FSliceMut<'a, F, HAL>,
+	fn test_copy_host_device<'a, F: TowerField, HAL: ComputeLayer<F> + 'a>(
+		mut compute_holder: impl ComputeHolder<F, HAL>,
 	) {
+		let ComputeData {
+			hal,
+			host_alloc,
+			dev_alloc,
+		} = compute_holder.to_data();
+
 		let mut rng = StdRng::seed_from_u64(0);
-		let dev_alloc = BumpAllocator::<F, HAL::DevMem>::from_ref(&mut dev_mem);
 
 		let host_buf_1 = host_alloc.alloc(128).unwrap();
 		let host_buf_2 = host_alloc.alloc(128).unwrap();
 		let mut dev_buf_1 = dev_alloc.alloc(128).unwrap();
 		let mut dev_buf_2 = dev_alloc.alloc(128).unwrap();
 
-		for elem in &mut *host_buf_1 {
+		for elem in host_buf_1.iter_mut() {
 			*elem = F::random(&mut rng);
 		}
 
@@ -651,14 +667,7 @@ mod tests {
 
 	#[test]
 	fn test_cpu_copy_host_device() {
-		let mut dev_mem = vec![B128::ZERO; 256];
-		let mut host_mem = vec![BinaryField128b::ZERO; 512];
-		let host_bump_allocator = HostBumpAllocator::new(host_mem.as_mut_slice());
-		test_copy_host_device(
-			CpuLayer::<B128>::default(),
-			&host_bump_allocator,
-			dev_mem.as_mut_slice(),
-		);
+		test_copy_host_device(CpuLayerHolder::<B128>::new(512, 256));
 	}
 
 	#[test]

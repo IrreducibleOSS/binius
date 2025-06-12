@@ -3,9 +3,8 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	ComputeLayerExecutor, FSliceMut, KernelExecutor, KernelMem,
-	alloc::{BumpAllocator, ComputeAllocator},
-	cpu::CpuMemory,
+	ComputeData, ComputeLayerExecutor, KernelExecutor, KernelMem,
+	alloc::ComputeAllocator,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
@@ -19,23 +18,22 @@ use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
 use rand::{SeedableRng, prelude::StdRng};
 
-pub fn test_generic_single_tensor_expand<
-	F: Field,
-	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
->(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-	host_alloc: &HostAllocatorType,
+pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
+	compute_data: &ComputeData<F, C>,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let coordinates = repeat_with(|| F::random(&mut rng))
 		.take(n_vars)
 		.collect::<Vec<_>>();
 
-	// Allocate buffer to be device mapped
 	let buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for (i, x_i) in buffer.iter_mut().enumerate() {
 		if i >= 4 {
@@ -47,7 +45,7 @@ pub fn test_generic_single_tensor_expand<
 	let mut buffer_clone = buffer.to_vec();
 
 	// Copy the buffer to device slice
-	let (mut buffer_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, buffer.len());
+	let mut buffer_slice = dev_alloc.alloc(buffer.len()).unwrap();
 	compute.copy_h2d(buffer, &mut buffer_slice).unwrap();
 
 	// Run the HAL operation
@@ -71,34 +69,36 @@ pub fn test_generic_single_inner_product<
 	F2: TowerField,
 	F: Field + PackedExtension<F2> + ExtensionField<F2>,
 	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 >(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-	host_allocator: &HostAllocatorType,
+	compute_data: &ComputeData<F, C>,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	// Allocate buffers a and b to be device mapped
-	let a_buffer = host_allocator.alloc(1 << (n_vars - F::LOG_DEGREE)).unwrap();
+	let a_buffer = host_alloc.alloc(1 << (n_vars - F::LOG_DEGREE)).unwrap();
 	for x_i in a_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let a = a_buffer.to_vec();
 
-	let b_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let b_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in b_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let b = b_buffer.to_vec();
 
 	// Copy a and b to device (creating F-slices)
-	let (mut a_slice, device_memory) = C::DevMem::split_at_mut(device_memory, a_buffer.len());
+	let mut a_slice = dev_alloc.alloc(a_buffer.len()).unwrap();
 	compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
 	let a_slice = C::DevMem::as_const(&a_slice);
 
-	let (mut b_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, b_buffer.len());
+	let mut b_slice = dev_alloc.alloc(b_buffer.len()).unwrap();
 	compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
 	let b_slice = C::DevMem::as_const(&b_slice);
 
@@ -126,17 +126,19 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		+ PackedExtension<F2>
 		+ ExtensionField<F2>,
 	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 >(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-	host_allocator: &HostAllocatorType,
+	compute_data: &ComputeData<F, C>,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	// Allocate buffers to be device mapped
-	let mle1_buffer = host_allocator
+	let mle1_buffer = host_alloc
 		.alloc(1 << (n_vars - <F as ExtensionField<F1>>::LOG_DEGREE))
 		.unwrap();
 	for x_i in mle1_buffer.iter_mut() {
@@ -144,7 +146,7 @@ pub fn test_generic_multiple_multilinear_evaluations<
 	}
 	let mle1 = mle1_buffer.to_vec();
 
-	let mle2_buffer = host_allocator
+	let mle2_buffer = host_alloc
 		.alloc(1 << (n_vars - <F as ExtensionField<F2>>::LOG_DEGREE))
 		.unwrap();
 	for x_i in mle2_buffer.iter_mut() {
@@ -152,22 +154,21 @@ pub fn test_generic_multiple_multilinear_evaluations<
 	}
 	let mle2 = mle2_buffer.to_vec();
 
-	let eq_ind_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let eq_ind_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in eq_ind_buffer.iter_mut() {
 		*x_i = F::ZERO;
 	}
 
 	// Copy data to device (creating F-slices)
-	let (mut mle1_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle1_buffer.len());
+	let mut mle1_slice = dev_alloc.alloc(mle1_buffer.len()).unwrap();
 	compute.copy_h2d(mle1_buffer, &mut mle1_slice).unwrap();
 	let mle1_slice = C::DevMem::as_const(&mle1_slice);
 
-	let (mut mle2_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle2_buffer.len());
+	let mut mle2_slice = dev_alloc.alloc(mle2_buffer.len()).unwrap();
 	compute.copy_h2d(mle2_buffer, &mut mle2_slice).unwrap();
 	let mle2_slice = C::DevMem::as_const(&mle2_slice);
 
-	let (mut eq_ind_slice, _device_memory) =
-		C::DevMem::split_at_mut(device_memory, eq_ind_buffer.len());
+	let mut eq_ind_slice = dev_alloc.alloc(eq_ind_buffer.len()).unwrap();
 	compute.copy_h2d(eq_ind_buffer, &mut eq_ind_slice).unwrap();
 
 	let coordinates = repeat_with(|| <F as Field>::random(&mut rng))
@@ -224,44 +225,45 @@ pub fn test_generic_multiple_multilinear_evaluations<
 pub fn test_generic_map_with_multilinear_evaluations<
 	F: Field + TowerField + PackedField<Scalar = F>,
 	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 >(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-	host_allocator: &HostAllocatorType,
+	compute_data: &ComputeData<F, C>,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	// Allocate buffers to be device mapped
-	let mle1_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let mle1_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in mle1_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let mle1 = mle1_buffer.to_vec();
 
-	let mle2_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let mle2_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in mle2_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let mle2 = mle2_buffer.to_vec();
 
-	let eq_ind_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let eq_ind_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in eq_ind_buffer.iter_mut() {
 		*x_i = F::ZERO;
 	}
 
 	// Copy data to device (creating F-slices)
-	let (mut mle1_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle1_buffer.len());
+	let mut mle1_slice = dev_alloc.alloc(mle1_buffer.len()).unwrap();
 	compute.copy_h2d(mle1_buffer, &mut mle1_slice).unwrap();
 	let mle1_slice = C::DevMem::as_const(&mle1_slice);
 
-	let (mut mle2_slice, device_memory) = C::DevMem::split_at_mut(device_memory, mle2_buffer.len());
+	let mut mle2_slice = dev_alloc.alloc(mle2_buffer.len()).unwrap();
 	compute.copy_h2d(mle2_buffer, &mut mle2_slice).unwrap();
 	let mle2_slice = C::DevMem::as_const(&mle2_slice);
 
-	let (mut eq_ind_slice, _device_memory) =
-		C::DevMem::split_at_mut(device_memory, eq_ind_buffer.len());
+	let mut eq_ind_slice = dev_alloc.alloc(eq_ind_buffer.len()).unwrap();
 	compute.copy_h2d(eq_ind_buffer, &mut eq_ind_slice).unwrap();
 
 	let coordinates = repeat_with(|| <F as Field>::random(&mut rng))
@@ -312,38 +314,38 @@ pub fn test_generic_map_with_multilinear_evaluations<
 	assert_eq!(eval2, expected_eval2);
 }
 
-pub fn test_generic_single_inner_product_using_kernel_accumulator<
-	F: Field,
-	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
->(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
-	host_allocator: &HostAllocatorType,
+pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
+	compute_data: &ComputeData<F, C>,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
 	let log_min_chunk_size = 3;
 
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
+
 	// Allocate buffers a and b to be device mapped
-	let a_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let a_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in a_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let a = a_buffer.to_vec();
 
-	let b_buffer = host_allocator.alloc(1 << n_vars).unwrap();
+	let b_buffer = host_alloc.alloc(1 << n_vars).unwrap();
 	for x_i in b_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let b = b_buffer.to_vec();
 
 	// Copy a and b to device (creating F-slices)
-	let (mut a_slice, device_memory) = C::DevMem::split_at_mut(device_memory, a_buffer.len());
+	let mut a_slice = dev_alloc.alloc(a_buffer.len()).unwrap();
 	compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
 	let a_slice = C::DevMem::as_const(&a_slice);
 
-	let (mut b_slice, _device_memory) = C::DevMem::split_at_mut(device_memory, b_buffer.len());
+	let mut b_slice = dev_alloc.alloc(b_buffer.len()).unwrap();
 	compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
 	let b_slice = C::DevMem::as_const(&b_slice);
 
@@ -390,44 +392,38 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<
 	assert_eq!(actual, expected);
 }
 
-pub fn test_generic_kernel_add<
-	'a,
-	F: Field,
-	C: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
->(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
-	host_allocator: &HostAllocatorType,
+pub fn test_generic_kernel_add<F: Field, C: ComputeLayer<F>>(
+	compute_data: &ComputeData<F, C>,
 	log_len: usize,
-) where
-	C::DevMem: 'a,
-{
+) {
 	let mut rng = StdRng::seed_from_u64(0);
 	let log_min_chunk_size = 3;
 
-	let device_allocator =
-		BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	// Allocate buffers a and b to be device mapped
-	let a_buffer = host_allocator.alloc(1 << log_len).unwrap();
+	let a_buffer = host_alloc.alloc(1 << log_len).unwrap();
 	for x_i in a_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let a = a_buffer.to_vec();
 
-	let b_buffer = host_allocator.alloc(1 << log_len).unwrap();
+	let b_buffer = host_alloc.alloc(1 << log_len).unwrap();
 	for x_i in b_buffer.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 	let b = b_buffer.to_vec();
 
 	// Copy a and b to device (creating F-slices)
-	let mut a_slice = device_allocator.alloc(1 << log_len).unwrap();
+	let mut a_slice = dev_alloc.alloc(a_buffer.len()).unwrap();
 	compute.copy_h2d(a_buffer, &mut a_slice).unwrap();
 	let a_slice = C::DevMem::as_const(&a_slice);
 
-	let mut b_slice = device_allocator.alloc(1 << log_len).unwrap();
+	let mut b_slice = dev_alloc.alloc(b_buffer.len()).unwrap();
 	compute.copy_h2d(b_buffer, &mut b_slice).unwrap();
 	let b_slice = C::DevMem::as_const(&b_slice);
 
@@ -482,10 +478,8 @@ pub fn test_generic_kernel_add<
 	assert_eq!(actual, expected);
 }
 
-pub fn test_generic_fri_fold<'a, F, FSub, C, HostAllocatorType: ComputeAllocator<F, CpuMemory>>(
-	compute: C,
-	device_memory: <C::DevMem as ComputeMemory<F>>::FSliceMut<'a>,
-	host_allocator: &HostAllocatorType,
+pub fn test_generic_fri_fold<F, FSub, C>(
+	compute_data: &ComputeData<F, C>,
 	log_len: usize,
 	log_batch_size: usize,
 	log_fold_challenges: usize,
@@ -493,37 +487,36 @@ pub fn test_generic_fri_fold<'a, F, FSub, C, HostAllocatorType: ComputeAllocator
 	F: TowerField + ExtensionField<FSub>,
 	FSub: BinaryField,
 	C: ComputeLayer<F>,
-	C::DevMem: 'a,
 {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let ntt = binius_ntt::SingleThreadedNTT::<FSub>::new(log_len).unwrap();
 
 	// Allocate buffers to be device mapped
-	let data_in = host_allocator
-		.alloc(1 << (log_len + log_batch_size))
-		.unwrap();
+	let data_in = host_alloc.alloc(1 << (log_len + log_batch_size)).unwrap();
 	for x_i in data_in.iter_mut() {
 		*x_i = <F as Field>::random(&mut rng);
 	}
 
 	// Copy the buffer to device slice
-	let device_allocator =
-		BumpAllocator::<'a, F, <C as ComputeLayer<F>>::DevMem>::new(device_memory);
-	let mut data_in_slice = device_allocator.alloc(data_in.len()).unwrap();
+	let mut data_in_slice = dev_alloc.alloc(data_in.len()).unwrap();
 	compute.copy_h2d(data_in, &mut data_in_slice).unwrap();
 	let data_in_slice = C::DevMem::as_const(&data_in_slice);
 
-	let data_out = host_allocator
+	let data_out = host_alloc
 		.alloc(1 << (log_len - log_fold_challenges))
 		.unwrap();
 	for x_i in data_out.iter_mut() {
 		*x_i = <F as Field>::ZERO;
 	}
-	let mut data_out_slice = device_allocator.alloc(data_out.len()).unwrap();
+	let mut data_out_slice = dev_alloc.alloc(data_out.len()).unwrap();
 	compute.copy_h2d(data_out, &mut data_out_slice).unwrap();
-
-	// Create out slice
 
 	let challenges = repeat_with(|| <F as Field>::random(&mut rng))
 		.take(log_batch_size + log_fold_challenges)
@@ -554,57 +547,49 @@ pub fn test_generic_fri_fold<'a, F, FSub, C, HostAllocatorType: ComputeAllocator
 }
 
 pub fn test_generic_single_left_fold<
-	'a,
-	'b,
 	F: Field + TowerField,
 	F2: ExtensionField<F> + TowerField,
-	C,
-	HostAllocatorType: ComputeAllocator<F2, CpuMemory>,
+	C: ComputeLayer<F2>,
 >(
-	compute: &'b C,
-	device_memory: <C::DevMem as ComputeMemory<F2>>::FSliceMut<'a>,
-	host_allocator: &HostAllocatorType,
+	compute_data: &ComputeData<F2, C>,
 	log_evals_size: usize,
 	log_query_size: usize,
-) where
-	C: ComputeLayer<F2>,
-	'a: 'b,
-	<C as ComputeLayer<F2>>::DevMem: 'a,
-{
+) {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
-	let evals = host_allocator.alloc(1 << log_evals_size_f2).unwrap();
+	let evals = host_alloc.alloc(1 << log_evals_size_f2).unwrap();
 	for eval in evals.iter_mut() {
 		*eval = F2::random(&mut rng);
 	}
-	let query = host_allocator.alloc(1 << log_query_size).unwrap();
+	let query = host_alloc.alloc(1 << log_query_size).unwrap();
 	for query_elem in query.iter_mut() {
 		*query_elem = F2::random(&mut rng);
 	}
-	let out = host_allocator
+	let out = host_alloc
 		.alloc(1 << (log_evals_size - log_query_size))
 		.unwrap();
 	for x_i in out.iter_mut() {
 		*x_i = F2::random(&mut rng);
 	}
 
-	let device_allocator =
-		BumpAllocator::<'a, F2, <C as ComputeLayer<F2>>::DevMem>::new(device_memory);
-	let mut out_slice = device_allocator.alloc(out.len()).unwrap();
-	let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
-	let mut query_slice = device_allocator.alloc(query.len()).unwrap();
+	let mut out_slice = dev_alloc.alloc(out.len()).unwrap();
+	let mut evals_slice = dev_alloc.alloc(evals.len()).unwrap();
+	let mut query_slice = dev_alloc.alloc(query.len()).unwrap();
 	compute.copy_h2d(out, &mut out_slice).unwrap();
 	compute.copy_h2d(evals, &mut evals_slice).unwrap();
 	compute.copy_h2d(query, &mut query_slice).unwrap();
-	let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
-	let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
+	let const_evals_slice = C::DevMem::as_const(&evals_slice);
+	let const_query_slice = C::DevMem::as_const(&query_slice);
 	let evals_slice_with_tower_level =
-		SubfieldSlice::<'_, F2, <C as ComputeLayer<F2>>::DevMem>::new(
-			const_evals_slice,
-			F::TOWER_LEVEL,
-		);
+		SubfieldSlice::<'_, F2, C::DevMem>::new(const_evals_slice, F::TOWER_LEVEL);
 	compute
 		.execute(|exec| {
 			exec.fold_left(evals_slice_with_tower_level, const_query_slice, &mut out_slice)
@@ -613,7 +598,7 @@ pub fn test_generic_single_left_fold<
 		})
 		.unwrap();
 	compute
-		.copy_d2h(<C as ComputeLayer<F2>>::DevMem::as_const(&out_slice), out)
+		.copy_d2h(C::DevMem::as_const(&out_slice), out)
 		.unwrap();
 
 	let mut expected_out = out.iter().map(|x| MaybeUninit::new(*x)).collect::<Vec<_>>();
@@ -638,24 +623,21 @@ pub fn test_generic_single_left_fold<
 }
 
 pub fn test_generic_single_right_fold<
-	'a,
-	'b,
 	F: Field + TowerField,
 	F2: ExtensionField<F> + TowerField,
-	C,
-	HostAllocatorType: ComputeAllocator<F2, CpuMemory>,
+	C: ComputeLayer<F2>,
 >(
-	compute: &'b C,
-	device_memory: <C::DevMem as ComputeMemory<F2>>::FSliceMut<'a>,
-	host_allocator: &HostAllocatorType,
+	compute_data: &ComputeData<F2, C>,
 	log_evals_size: usize,
 	log_query_size: usize,
-) where
-	C: ComputeLayer<F2>,
-	'a: 'b,
-	<C as ComputeLayer<F2>>::DevMem: 'a,
-{
+) {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal: compute,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
@@ -665,18 +647,16 @@ pub fn test_generic_single_right_fold<
 	let query = repeat_with(|| F2::random(&mut rng))
 		.take(1 << log_query_size)
 		.collect::<Vec<_>>();
-	let out = host_allocator
+	let out = host_alloc
 		.alloc(1 << (log_evals_size - log_query_size))
 		.unwrap();
 	for x_i in out.iter_mut() {
 		*x_i = F2::random(&mut rng);
 	}
 
-	let device_allocator =
-		BumpAllocator::<'a, F2, <C as ComputeLayer<F2>>::DevMem>::new(device_memory);
-	let mut out_slice = device_allocator.alloc(out.len()).unwrap();
-	let mut evals_slice = device_allocator.alloc(evals.len()).unwrap();
-	let mut query_slice = device_allocator.alloc(query.len()).unwrap();
+	let mut out_slice = dev_alloc.alloc(out.len()).unwrap();
+	let mut evals_slice = dev_alloc.alloc(evals.len()).unwrap();
+	let mut query_slice = dev_alloc.alloc(query.len()).unwrap();
 	compute.copy_h2d(out, &mut out_slice).unwrap();
 	compute
 		.copy_h2d(evals.as_slice(), &mut evals_slice)
@@ -684,13 +664,10 @@ pub fn test_generic_single_right_fold<
 	compute
 		.copy_h2d(query.as_slice(), &mut query_slice)
 		.unwrap();
-	let const_evals_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&evals_slice);
-	let const_query_slice = <C as ComputeLayer<F2>>::DevMem::as_const(&query_slice);
+	let const_evals_slice = C::DevMem::as_const(&evals_slice);
+	let const_query_slice = C::DevMem::as_const(&query_slice);
 	let evals_slice_with_tower_level =
-		SubfieldSlice::<'_, F2, <C as ComputeLayer<F2>>::DevMem>::new(
-			const_evals_slice,
-			F::TOWER_LEVEL,
-		);
+		SubfieldSlice::<'_, F2, C::DevMem>::new(const_evals_slice, F::TOWER_LEVEL);
 	compute
 		.execute(|exec| {
 			exec.fold_right(evals_slice_with_tower_level, const_query_slice, &mut out_slice)
@@ -699,7 +676,7 @@ pub fn test_generic_single_right_fold<
 		})
 		.unwrap();
 	compute
-		.copy_d2h(<C as ComputeLayer<F2>>::DevMem::as_const(&out_slice), out)
+		.copy_d2h(C::DevMem::as_const(&out_slice), out)
 		.unwrap();
 
 	let mut expected_out = out.iter().map(|_| F2::ZERO).collect::<Vec<_>>();
@@ -719,18 +696,17 @@ pub fn test_generic_single_right_fold<
 	assert_eq!(out, expected_out);
 }
 
-pub fn test_extrapolate_line<
-	'a,
-	F: Field,
-	Hal: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
->(
-	hal: &Hal,
-	dev_mem: FSliceMut<'a, F, Hal>,
-	host_alloc: &HostAllocatorType,
+pub fn test_extrapolate_line<F: Field, Hal: ComputeLayer<F>>(
+	compute_data: &ComputeData<F, Hal>,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let evals_0_host = host_alloc.alloc(1 << log_len).unwrap();
 	let evals_1_host = host_alloc.alloc(1 << log_len).unwrap();
@@ -739,7 +715,6 @@ pub fn test_extrapolate_line<
 	evals_0_host.fill_with(|| F::random(&mut rng));
 	evals_1_host.fill_with(|| F::random(&mut rng));
 
-	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
 	let mut evals_0_dev = dev_alloc.alloc(1 << log_len).unwrap();
 	let mut evals_1_dev = dev_alloc.alloc(1 << log_len).unwrap();
 	hal.copy_h2d(evals_0_host, &mut evals_0_dev).unwrap();
@@ -763,18 +738,17 @@ pub fn test_extrapolate_line<
 	assert_eq!(result_host, &expected_result);
 }
 
-pub fn test_generic_compute_composite<
-	'a,
-	F: Field,
-	Hal: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
->(
-	hal: &Hal,
-	dev_mem: FSliceMut<'a, F, Hal>,
-	host_alloc: &HostAllocatorType,
+pub fn test_generic_compute_composite<F: Field, Hal: ComputeLayer<F>>(
+	compute_data: &ComputeData<F, Hal>,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal,
+		host_alloc,
+		dev_alloc,
+	} = compute_data;
 
 	let input_0_host = host_alloc.alloc(1 << log_len).unwrap();
 	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();
@@ -782,8 +756,6 @@ pub fn test_generic_compute_composite<
 
 	input_0_host.fill_with(|| F::random(&mut rng));
 	input_1_host.fill_with(|| F::random(&mut rng));
-
-	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
 
 	let mut input_0_dev = dev_alloc.alloc(1 << log_len).unwrap();
 	let mut input_1_dev = dev_alloc.alloc(1 << log_len).unwrap();

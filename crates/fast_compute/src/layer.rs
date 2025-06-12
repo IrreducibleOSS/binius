@@ -10,7 +10,7 @@ use std::{
 };
 
 use binius_compute::{
-	ComputeLayerExecutor, KernelExecutor,
+	ComputeData, ComputeHolder, ComputeLayerExecutor, KernelExecutor,
 	alloc::{BumpAllocator, ComputeAllocator},
 	cpu::layer::count_total_local_buffer_sizes,
 	each_generic_tower_subfield as each_tower_subfield,
@@ -824,5 +824,37 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelExec
 		}
 
 		Ok(())
+	}
+}
+
+pub struct FastCpuLayerHolder<T: TowerFamily, P: PackedTop<T>> {
+	layer: FastCpuLayer<T, P>,
+	host_mem: Vec<T::B128>,
+	dev_mem: Vec<P>,
+}
+
+impl<T: TowerFamily, P: PackedTop<T>> FastCpuLayerHolder<T, P> {
+	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+		let layer = FastCpuLayer::default();
+		let host_mem = vec![T::B128::zero(); host_mem_size];
+		let dev_mem = vec![P::zero(); (dev_mem_size >> P::LOG_WIDTH).max(1)];
+
+		Self {
+			layer,
+			host_mem,
+			dev_mem,
+		}
+	}
+}
+
+impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
+	for FastCpuLayerHolder<T, P>
+{
+	fn to_data(&mut self) -> ComputeData<'_, T::B128, FastCpuLayer<T, P>> {
+		ComputeData {
+			hal: &self.layer,
+			host_alloc: BumpAllocator::new(self.host_mem.as_mut_slice()),
+			dev_alloc: BumpAllocator::new(PackedMemorySliceMut::new_slice(&mut self.dev_mem)),
+		}
 	}
 }
