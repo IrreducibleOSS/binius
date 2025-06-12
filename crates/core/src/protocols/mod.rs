@@ -34,6 +34,7 @@ pub mod fri;
 pub mod gkr_exp;
 pub mod gkr_gpa;
 pub mod greedy_evalcheck;
+pub mod prodcheck;
 pub mod sumcheck;
 
 #[allow(dead_code)]
