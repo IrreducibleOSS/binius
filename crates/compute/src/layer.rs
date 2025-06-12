@@ -613,6 +613,8 @@ pub type KernelSliceMut<'a, 'b, F, HAL> =
 /// * a host memory allocator,
 /// * a device memory allocator.
 pub trait ComputeHolder<F: Field, HAL: ComputeLayer<F>> {
+	fn new(host_size: usize, dev_size: usize) -> Self;
+
 	fn to_data(&mut self) -> ComputeData<'_, F, HAL>;
 }
 

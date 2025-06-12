@@ -833,8 +833,10 @@ pub struct FastCpuLayerHolder<T: TowerFamily, P: PackedTop<T>> {
 	dev_mem: Vec<P>,
 }
 
-impl<T: TowerFamily, P: PackedTop<T>> FastCpuLayerHolder<T, P> {
-	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
+	for FastCpuLayerHolder<T, P>
+{
+	fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
 		let layer = FastCpuLayer::default();
 		let host_mem = vec![T::B128::zero(); host_mem_size];
 		let dev_mem = vec![P::zero(); (dev_mem_size >> P::LOG_WIDTH).max(1)];
@@ -845,11 +847,7 @@ impl<T: TowerFamily, P: PackedTop<T>> FastCpuLayerHolder<T, P> {
 			dev_mem,
 		}
 	}
-}
 
-impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
-	for FastCpuLayerHolder<T, P>
-{
 	fn to_data(&mut self) -> ComputeData<'_, T::B128, FastCpuLayer<T, P>> {
 		ComputeData {
 			hal: &self.layer,

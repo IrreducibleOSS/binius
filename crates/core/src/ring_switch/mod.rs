@@ -29,8 +29,6 @@ mod eq_ind;
 mod error;
 mod logging;
 mod prove;
-#[cfg(test)]
-mod tests;
 mod tower_tensor_algebra;
 mod verify;
 
