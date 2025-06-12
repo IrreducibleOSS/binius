@@ -14,7 +14,7 @@ use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::AdditiveNTT;
 use binius_utils::{
 	SerializeBytes, bail,
-	checked_arithmetics::{checked_log_2, strict_log_2},
+	checked_arithmetics::checked_log_2,
 	random_access_sequence::{RandomAccessSequenceMut, SequenceSubrangeMut},
 	sorting::is_sorted_ascending,
 };

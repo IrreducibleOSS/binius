@@ -219,7 +219,11 @@ pub trait ComputeMemory<F> {
 			return Self::to_owned_mut(input);
 		}
 
-		let mut result = Self::to_owned_mut(input);
+		let mut result = if n > Self::ALIGNMENT {
+			Self::slice_mut(input, ..n)
+		} else {
+			Self::to_owned_mut(input)
+		};
 
 		// If n is smaller than the input len, narrow down the slice further
 		for _ in checked_log_2(n)..checked_log_2(result.len()) {
