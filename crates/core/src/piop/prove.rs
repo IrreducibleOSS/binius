@@ -190,7 +190,7 @@ where
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
-	Hal: ComputeLayer<F> + Default,
+	Hal: ComputeLayer<F>,
 {
 	let host_alloc = compute_data.host_alloc.subscope_allocator();
 	let dev_alloc = compute_data.dev_alloc.subscope_allocator();

@@ -2,3 +2,4 @@
 
 pub mod bivariate_sumcheck;
 pub mod layer;
+pub mod piop;
