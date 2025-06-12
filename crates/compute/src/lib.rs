@@ -10,6 +10,7 @@ pub mod alloc;
 pub mod cpu;
 pub mod layer;
 pub mod memory;
+pub mod ops;
 
 pub use layer::*;
 pub use memory::*;
