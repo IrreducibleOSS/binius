@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
-use binius_compute::cpu::CpuLayer;
+use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	arch::OptimalUnderlier128b,
@@ -315,7 +315,6 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		sumcheck_claims,
 	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
 
-	let hal = CpuLayer::<F>::default();
 	let host_mem_size_committed = committed_multilins.len();
 	let dev_mem_size_committed = committed_multilins
 		.iter()
@@ -327,13 +326,14 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		.iter()
 		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
-	let mut host_mem = vec![F::ZERO; host_mem_size_committed + host_mem_size_transparent];
-	let mut dev_mem = vec![F::ZERO; dev_mem_size_committed + dev_mem_size_transparent];
+
+	let mut compute_holder = CpuLayerHolder::<F>::new(
+		host_mem_size_committed + host_mem_size_transparent,
+		dev_mem_size_committed + dev_mem_size_transparent,
+	);
 
 	piop::prove(
-		&hal,
-		&mut host_mem,
-		&mut dev_mem,
+		&mut compute_holder.to_data(),
 		&fri_params,
 		&ntt,
 		merkle_prover,
