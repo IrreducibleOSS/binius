@@ -2,7 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
-use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator};
+use binius_compute::{ComputeData, ComputeLayer};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -519,9 +519,7 @@ where
 	)
 	.entered();
 	piop::prove(
-		compute_data.hal,
-		compute_data.host_alloc.remaining(),
-		compute_data.dev_alloc.remaining(),
+		compute_data,
 		&fri_params,
 		&ntt,
 		&merkle_prover,

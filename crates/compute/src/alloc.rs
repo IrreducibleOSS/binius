@@ -52,6 +52,11 @@ where
 			buffer: Mutex::new(Some(buffer)),
 		}
 	}
+
+	/// Returns the remaining unallocated capacity as a new allocator with a limited scope.
+	pub fn subscope_allocator<'b>(&'b mut self) -> BumpAllocator<'b, F, Mem> {
+		BumpAllocator::new(self.remaining())
+	}
 }
 
 impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
