@@ -96,7 +96,6 @@ where
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 {
-	let _ = constraint_system_digest;
 	tracing::debug!(
 		arch = env::consts::ARCH,
 		rayon_threads = binius_maybe_rayon::current_num_threads(),
@@ -105,9 +104,6 @@ where
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain<Tower>>::default();
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
-
-	let mut transcript = ProverTranscript::<Challenger_>::new();
-	transcript.observe().write_slice(boundaries);
 
 	let ConstraintSystem {
 		mut oracles,
@@ -148,6 +144,14 @@ where
 			TableSizeSpec::Arbitrary => (),
 		}
 	}
+
+	let mut transcript = ProverTranscript::<Challenger_>::new();
+	transcript
+		.observe()
+		.write_slice(constraint_system_digest.as_ref());
+	transcript.observe().write_slice(boundaries);
+	let mut writer = transcript.message();
+	writer.write_slice(table_sizes);
 
 	reorder_exponents(&mut exponents, &oracles);
 
