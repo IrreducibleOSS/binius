@@ -289,32 +289,26 @@ impl Sha256 {
 		let f: Col<B1, { 32 * 64 }> = table.add_committed("f");
 		let g: Col<B1, { 32 * 64 }> = table.add_committed("g");
 		let h: Col<B1, { 32 * 64 }> = table.add_committed("h");
-		let k: Col<B1, { 32 * 64 }> = table.add_constant("k", ROUND_CONSTS_B1);
+		
+        let k: [Col<B1, 32>; 64] =
+			array::from_fn(|i| table.add_constant("k", u32_to_b1_bits_le(ROUND_CONSTS_K[i])));
 
-		// Shifted columns for linking consecutive rounds.
-		// These provide access to the working variables from the previous round
-		// to enforce the round-to-round evolution constraints.
-		let a_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("a_shifted", a, 11, 32, ShiftVariant::LogicalRight);
-		let b_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("b_shifted", b, 11, 32, ShiftVariant::LogicalRight);
-		let c_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("c_shifted", c, 11, 32, ShiftVariant::LogicalRight);
-		let d_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("d_shifted", d, 11, 32, ShiftVariant::LogicalRight);
-		let e_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("e_shifted", e, 11, 32, ShiftVariant::LogicalRight);
-		let f_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("f_shifted", f, 11, 32, ShiftVariant::LogicalRight);
-		let g_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("g_shifted", g, 11, 32, ShiftVariant::LogicalRight);
-		let h_shifted: Col<B1, { 32 * 64 }> =
-			table.add_shifted("h_shifted", h, 11, 32, ShiftVariant::LogicalRight);
+		let a_blocks = array::from_fn(|i| table.add_selected_block(format!("a[{i}]"), a, i));
+		let b_blocks = array::from_fn(|i| table.add_selected_block(format!("b[{i}]"), b, i));
+		let c_blocks = array::from_fn(|i| table.add_selected_block(format!("c[{i}]"), c, i));
+		let d_blocks = array::from_fn(|i| table.add_selected_block(format!("d[{i}]"), d, i));
+		let e_blocks = array::from_fn(|i| table.add_selected_block(format!("e[{i}]"), e, i));
+		let f_blocks = array::from_fn(|i| table.add_selected_block(format!("f[{i}]"), f, i));
+		let g_blocks = array::from_fn(|i| table.add_selected_block(format!("g[{i}]"), g, i));
+		let h_blocks = array::from_fn(|i| table.add_selected_block(format!("h[{i}]"), h, i));
 
 		// Σ₀ and Σ₁ functions for the compression rounds
 		let big_sigma_1 = BigSigma1::new(table, e);
 		let big_sigma_0 = BigSigma0::new(table, a);
 
+        let big_sigma_1_blocks = array::from_fn(|i| table.add_selected_block(format!("big_sigma_1[{i}]"), big_sigma_1.out, i));
+        let big_sigma_0_blocks = array::from_fn(|i| table.add_selected_block(format!("big_sigma_0[{i}]"), big_sigma_0.out, i));
+        
 		// Choice and majority functions for compression rounds
 		let ch: Col<B1, { 32 * 64 }> = table.add_committed("ch");
 		let maj: Col<B1, { 32 * 64 }> = table.add_committed("maj");
@@ -327,22 +321,10 @@ impl Sha256 {
 		// TODO: Integer addition
 		let t2 = table.add_computed("t2", big_sigma_0.out + maj);
 
-		table.assert_zero("h_assignment", h_shifted + g);
-		table.assert_zero("g_assignment", g_shifted + f);
-		table.assert_zero("f_assignment", f_shifted + e);
+		for i in 0..64 {
 
-		// TODO: Integer addition
-		table.assert_zero("e_assignment", e_shifted + t1 + d);
-
-		table.assert_zero("d_assignment", d_shifted + c);
-		table.assert_zero("c_assignment", c_shifted + b);
-		table.assert_zero("b_assignment", b_shifted + a);
-
-		// TODO: Integer addition
-		table.assert_zero("a_assignment", a_shifted + t1 + t2);
-
+        }
 		// Final output state computation
-
 		let a_final: Col<B1, 32> = table.add_selected_block("a_final", a, 63);
 		let b_final: Col<B1, 32> = table.add_selected_block("b_final", b, 63);
 		let c_final: Col<B1, 32> = table.add_selected_block("c_final", c, 63);
