@@ -9,10 +9,7 @@ use std::{
 };
 
 use binius_compute::alloc::{ComputeAllocator, HostBumpAllocator};
-use binius_core::{
-	transparent::step_down::StepDown,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
-};
+use binius_core::witness::{MultilinearExtensionIndex, MultilinearWitness};
 use binius_fast_compute::arith_circuit::ArithCircuitPoly;
 use binius_field::{
 	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
@@ -205,7 +202,6 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			let Either::Right(table_witness) = table_witness else {
 				continue;
 			};
-			let table = table_witness.table();
 			let cols = immutable_witness_index_columns(table_witness.cols);
 
 			// Here our objective is to add a witness for every oracle the table has created.
@@ -221,9 +217,6 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 			//    witnesses, we fill the original constant oracle with the truncated version of the
 			//    repeating column.
 			//
-			// 3. Another complication raises from the fact that a non-power-of-two sized table must
-			//    insert a special oracle that is 1 for every row until it's actual capacity and 0
-			//    for the rest of the table to the nearest power-of-two.
 
 			for col in cols.into_iter() {
 				let oracle_mapping = *oracle_lookup.lookup(col.column_id);
@@ -257,24 +250,6 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> WitnessIndex<'cs, '
 							])
 							.unwrap();
 					}
-				}
-			}
-
-			if !table.requires_any_po2_size() {
-				// Every table partition has a step_down appended to the end of the table to support
-				// non-power of two height tables.
-				for log_values_per_row in table.partitions.keys() {
-					let oracle_id = oracle_lookup
-						.lookup_step_down(table.id, log_values_per_row)
-						.unwrap();
-					let size = table_witness.size << log_values_per_row;
-					let log_size = table_witness.log_capacity + log_values_per_row;
-					let witness = StepDown::new(log_size, size)
-						.unwrap()
-						.multilinear_extension::<PackedSubfield<P, B1>>()
-						.unwrap()
-						.specialize_arc_dyn();
-					index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				}
 			}
 		}
