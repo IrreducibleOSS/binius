@@ -207,6 +207,16 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
+	let mut compute_holder = create_hal_holder(1 << 7, 1 << 15);
+	let mut compute_data = compute_holder.to_data();
+
+	let compute_data_ref = &mut compute_data;
+
+	let hal = compute_data_ref.hal;
+
+	let dev_alloc = &compute_data_ref.dev_alloc;
+	let host_alloc = &compute_data_ref.host_alloc;
+
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, B32, _>(
@@ -246,27 +256,19 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
-
-	let host_mem_size_committed = committed_multilins.len();
-	let dev_mem_size_committed = committed_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let host_mem_size_transparent = transparent_multilins.len();
-	let dev_mem_size_transparent = transparent_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let mut compute_holder = create_hal_holder(
-		host_mem_size_committed + host_mem_size_transparent,
-		dev_mem_size_committed + dev_mem_size_transparent,
-	);
+	} = prove(
+		&system,
+		&committed_multilins,
+		&mut proof,
+		MemoizedData::new(),
+		hal,
+		dev_alloc,
+		host_alloc,
+	)
+	.unwrap();
 
 	piop::prove(
-		&mut compute_holder.to_data(),
+		compute_data_ref,
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -274,7 +276,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
 	)

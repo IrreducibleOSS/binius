@@ -517,10 +517,24 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
+	let hal = compute_data.hal;
+
+	let dev_alloc = &compute_data.dev_alloc;
+	let host_alloc = &compute_data.host_alloc;
+
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove(&system, &committed_multilins, &mut transcript, memoized_data)?;
+	} = ring_switch::prove(
+		&system,
+		&committed_multilins,
+		&mut transcript,
+		memoized_data,
+		hal,
+		dev_alloc,
+		host_alloc,
+	)?;
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
@@ -530,6 +544,7 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
 	piop::prove(
 		compute_data,
 		&fri_params,
@@ -539,7 +554,7 @@ where
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
 	)?;

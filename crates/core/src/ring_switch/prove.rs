@@ -2,13 +2,17 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{PackedField, PackedFieldIndexable};
+use binius_compute::{
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, alloc::ComputeAllocator,
+	cpu::CpuMemory, layer,
+};
+use binius_field::{Field, PackedField, PackedFieldIndexable};
 use binius_math::{
-	B1, B8, B16, B32, B64, B128, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, PackedTop,
-	TowerTop,
+	B1, B8, B16, B32, B64, B128, MultilinearPoly, MultilinearQuery, PackedTop, TowerTop,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
+use itertools::izip;
 use tracing::instrument;
 
 use super::{
@@ -23,29 +27,35 @@ use crate::{
 	piop::PIOPSumcheckClaim,
 	protocols::evalcheck::subclaims::MemoizedData,
 	ring_switch::{
-		common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd, logging::CalculateRingSwitchEqIndData,
+		common::EvalClaimSuffixDesc,
+		eq_ind::{RingSwitchEqInd, RingSwitchEqIndPrecompute},
+		logging::CalculateRingSwitchEqIndData,
 	},
 	transcript::ProverTranscript,
-	witness::MultilinearWitness,
 };
 
-#[derive(Debug)]
-pub struct ReducedWitness<P: PackedField> {
-	pub transparents: Vec<MultilinearWitness<'static, P>>,
-	pub sumcheck_claims: Vec<PIOPSumcheckClaim<P::Scalar>>,
+pub struct ReducedWitness<'a, F: Field, Hal: ComputeLayer<F>> {
+	pub transparents: Vec<FSlice<'a, F, Hal>>,
+	pub sumcheck_claims: Vec<PIOPSumcheckClaim<F>>,
 }
 
-pub fn prove<F, P, M, Challenger_>(
+pub fn prove<'a, F, P, M, Challenger_, Hal, HostAllocatorType, DeviceAllocatorType>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
 	memoized_data: MemoizedData<P>,
-) -> Result<ReducedWitness<P>, Error>
+	hal: &Hal,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &HostAllocatorType,
+) -> Result<ReducedWitness<'a, F, Hal>, Error>
 where
 	F: TowerTop + PackedTop<Scalar = F>,
 	P: PackedFieldIndexable<Scalar = F> + PackedTop,
 	M: MultilinearPoly<P> + Sync,
 	Challenger_: Challenger,
+	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
 		return Err(Error::InvalidWitness(
@@ -103,11 +113,14 @@ where
 	)
 	.entered();
 
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
 		&mixing_coeffs,
+		hal,
+		dev_alloc,
+		host_alloc,
 	)?;
 	drop(calculate_ring_switch_eq_ind_span);
 
@@ -250,34 +263,77 @@ where
 		.collect()
 }
 
-fn make_ring_switch_eq_inds<F, P>(
+fn make_ring_switch_eq_inds<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
-) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
+	hal: &Hal,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &HostAllocatorType,
+) -> Result<Vec<FSlice<'a, F, Hal>>, Error>
 where
 	F: TowerTop,
-	P: PackedFieldIndexable<Scalar = F> + PackedTop,
+	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
-	sumcheck_claim_descs
-		.par_iter()
+	let mut eq_inds = Vec::with_capacity(sumcheck_claim_descs.len());
+
+	let precompute = sumcheck_claim_descs
+		.iter()
 		.zip(mixing_coeffs)
-		.map(|(claim_desc, &mixing_coeff)| {
+		.map(|(claim_desc, mixing_coeffs)| {
 			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
-			make_ring_switch_eq_ind(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
+			RingSwitchEqInd::<F, F>::precompute_values(
+				suffix_desc.suffix.clone(),
+				row_batch_coeffs.clone(),
+				*mixing_coeffs,
+				suffix_desc.kappa,
+				hal,
+				dev_alloc,
+				host_alloc,
+			)
 		})
-		.collect()
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	let _ = hal.execute(|exec| {
+		let res = exec
+			.map(
+				izip!(sumcheck_claim_descs, mixing_coeffs, precompute),
+				|exec, (claim_desc, &mixing_coeff, precompute)| {
+					let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
+
+					make_ring_switch_eq_ind(
+						suffix_desc,
+						row_batch_coeffs.clone(),
+						mixing_coeff,
+						exec,
+						precompute,
+					)
+					.map_err(|e| layer::Error::CoreLibError(Box::new(e)))
+				},
+			)
+			.map_err(|e| layer::Error::CoreLibError(Box::new(e)))?;
+
+		eq_inds.extend(res);
+		Ok(vec![])
+	})?;
+
+	Ok(eq_inds)
 }
 
-fn make_ring_switch_eq_ind<F, P>(
+fn make_ring_switch_eq_ind<'a, F, Mem, Exec>(
 	suffix_desc: &EvalClaimSuffixDesc<F>,
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeff: F,
-) -> Result<MultilinearWitness<'static, P>, Error>
+	exec: &mut Exec,
+	precompute: RingSwitchEqIndPrecompute<'a, F, Mem>,
+) -> Result<Mem::FSlice<'a>, Error>
 where
 	F: TowerTop,
-	P: PackedFieldIndexable<Scalar = F> + PackedTop,
+	Mem: ComputeMemory<F>,
+	Exec: ComputeLayerExecutor<F, DevMem = Mem>,
 {
 	let eq_ind = match F::TOWER_LEVEL - suffix_desc.kappa {
 		0 => RingSwitchEqInd::<B1, _>::new(
@@ -285,40 +341,40 @@ where
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension::<P>(),
+		.multilinear_extension(precompute, exec, 0),
 		3 => RingSwitchEqInd::<B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(precompute, exec, 3),
 		4 => RingSwitchEqInd::<B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(precompute, exec, 4),
 		5 => RingSwitchEqInd::<B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(precompute, exec, 5),
 		6 => RingSwitchEqInd::<B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(precompute, exec, 6),
 		7 => RingSwitchEqInd::<B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(),
+		.multilinear_extension(precompute, exec, 7),
 		_ => Err(Error::PackingDegreeNotSupported {
 			kappa: suffix_desc.kappa,
 		}),
 	}?;
-	Ok(MLEDirectAdapter::from(eq_ind).upcast_arc_dyn())
+	Ok(eq_ind)
 }
