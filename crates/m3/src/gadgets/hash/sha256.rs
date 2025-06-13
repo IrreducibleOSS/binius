@@ -68,11 +68,10 @@ use std::array;
 
 use anyhow::Result;
 use binius_core::oracle::ShiftVariant;
-use binius_field::Field;
-use digest::generic_array::arr;
+use binius_field::{Field, PackedExtension, PackedFieldIndexable, packed::set_packed_slice};
 
 use crate::{
-	builder::{B1, B32, Col, TableBuilder, TableWitnessSegment},
+	builder::{B1, B32, B128, Col, TableBuilder, TableWitnessSegment},
 	gadgets::add::{self, U32Add, U32AddFlags, U32AddStacked},
 };
 
@@ -314,6 +313,210 @@ impl Sha256 {
 			k: round_constants,
 		}
 	}
+
+	/// Populates the witness columns for the SHA-256 compression function.
+	///
+	/// # Arguments
+	///
+	/// * `index` - The witness segment to populate
+	/// * `message` - The 512-bit input message block as 16 32-bit words
+	/// * `state_in` - The 256-bit input state as 8 32-bit words
+	///
+	/// # Returns
+	///
+	/// Ok(()) on success, Error otherwise
+	pub fn populate<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		message: &[u32; 16],
+		state_in: &[u32; 8],
+	) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		// Compute the message schedule W[0..63]
+		let mut w = [0u32; 64];
+		for t in 0..16 {
+			w[t] = message[t];
+		}
+		for t in 16..64 {
+			// σ₁(W[t-2]) + W[t-7] + σ₀(W[t-15]) + W[t-16]
+			let sigma1 =
+				(w[t - 2].rotate_right(17)) ^ (w[t - 2].rotate_right(19)) ^ (w[t - 2] >> 10);
+			let sigma0 =
+				(w[t - 15].rotate_right(7)) ^ (w[t - 15].rotate_right(18)) ^ (w[t - 15] >> 3);
+			w[t] = w[t - 16]
+				.wrapping_add(sigma0)
+				.wrapping_add(w[t - 7])
+				.wrapping_add(sigma1);
+		}
+
+		// Populate message schedule column
+		let mut w_packed = index.get_mut(self.w)?;
+		for t in 0..64 {
+			for j in 0..32 {
+				set_packed_slice(&mut w_packed, t * 32 + j, B1::from(((w[t] >> j) & 1) == 1));
+			}
+		}
+
+		// Populate w_blocks for easier access
+		for t in 0..64 {
+			let mut w_block = index.get_mut(self.w_blocks[t])?;
+			for j in 0..32 {
+				set_packed_slice(&mut w_block, j, B1::from(((w[t] >> j) & 1) == 1));
+			}
+		}
+
+		// Populate initial state
+		for i in 0..8 {
+			let mut state_col = index.get_mut(self.initial_state[i])?;
+			for j in 0..32 {
+				set_packed_slice(&mut state_col, j, B1::from(((state_in[i] >> j) & 1) == 1));
+			}
+		}
+
+		// Compute and populate round variables
+		let mut a = state_in[0];
+		let mut b = state_in[1];
+		let mut c = state_in[2];
+		let mut d = state_in[3];
+		let mut e = state_in[4];
+		let mut f = state_in[5];
+		let mut g = state_in[6];
+		let mut h = state_in[7];
+
+		for t in 0..64 {
+			// Populate individual round
+			// self.populate_round(index, t, a, b, c, d, e, f, g, h, w[t])?;
+
+			// Compute next round variables
+			let big_sigma1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+			let ch = (e & f) ^ (!e & g);
+			let temp1 = h
+				.wrapping_add(big_sigma1)
+				.wrapping_add(ch)
+				.wrapping_add(ROUND_CONSTS_K[t])
+				.wrapping_add(w[t]);
+
+			let big_sigma0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+			let maj = (a & b) ^ (a & c) ^ (b & c);
+			let temp2 = big_sigma0.wrapping_add(maj);
+
+			h = g;
+			g = f;
+			f = e;
+			e = d.wrapping_add(temp1);
+			d = c;
+			c = b;
+			b = a;
+			a = temp1.wrapping_add(temp2);
+		}
+
+		// Populate state_out
+		let final_state = [
+			state_in[0].wrapping_add(a),
+			state_in[1].wrapping_add(b),
+			state_in[2].wrapping_add(c),
+			state_in[3].wrapping_add(d),
+			state_in[4].wrapping_add(e),
+			state_in[5].wrapping_add(f),
+			state_in[6].wrapping_add(g),
+			state_in[7].wrapping_add(h),
+		];
+
+		for i in 0..8 {
+			let mut state_out_col = index.get_mut(self.state_out[i])?;
+			for j in 0..32 {
+				set_packed_slice(&mut state_out_col, j, B1::from(((final_state[i] >> j) & 1) == 1));
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Helper method to populate a single round's witness values
+	fn populate_round<P>(
+		&self,
+		index: &mut TableWitnessSegment<P>,
+		round: usize,
+		a: u32,
+		b: u32,
+		c: u32,
+		d: u32,
+		e: u32,
+		f: u32,
+		g: u32,
+		h: u32,
+		wt: u32,
+	) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		let round_data = &self.rounds[round];
+
+		// Populate working variables for this round
+		let vars = [
+			(round_data.a, a),
+			(round_data.b, b),
+			(round_data.c, c),
+			(round_data.d, d),
+			(round_data.e, e),
+			(round_data.f, f),
+			(round_data.g, g),
+			(round_data.h, h),
+		];
+
+		for (col, val) in vars {
+			let mut col_data = index.get_mut(col)?;
+			for j in 0..32 {
+				set_packed_slice(&mut col_data, j, B1::from(((val >> j) & 1) == 1));
+			}
+		}
+
+		// Populate intermediate values
+		// Ch(e,f,g)
+		let ch = (e & f) ^ (!e & g);
+		let mut ch_col = index.get_mut(if round == 0 {
+			round_data.temp_sum_0.xin
+		} else {
+			round_data.temp_sum_0.yin
+		})?;
+		for j in 0..32 {
+			set_packed_slice(&mut ch_col, j, B1::from(((ch >> j) & 1) == 1));
+		}
+
+		// Maj(a,b,c)
+		let maj = (a & b) ^ (a & c) ^ (b & c);
+		let mut maj_col = index.get_mut(if round == 0 {
+			round_data.temp_sum_4.yin
+		} else {
+			round_data.temp_sum_4.yin
+		})?;
+		for j in 0..32 {
+			set_packed_slice(&mut maj_col, j, B1::from(((maj >> j) & 1) == 1));
+		}
+
+		// T1 and T2
+		let big_sigma1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+		let big_sigma0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+		let temp1 = h
+			.wrapping_add(big_sigma1)
+			.wrapping_add(ch)
+			.wrapping_add(ROUND_CONSTS_K[round])
+			.wrapping_add(wt);
+		let temp2 = big_sigma0.wrapping_add(maj);
+
+		// // Populate adder gadgets
+		// round_data.temp_sum_0.populate(index)?;
+		// round_data.temp_sum_1.populate(index)?;
+		// round_data.temp_sum_2.populate(index)?;
+		// round_data.temp_sum_3.populate(index)?;
+		// round_data.temp_sum_4.populate(index)?;
+		// round_data.temp_sum_5.populate(index)?;
+		// round_data.temp_sum_6.populate(index)?;
+
+		Ok(())
+	}
 }
 
 #[derive(Debug)]
@@ -532,6 +735,39 @@ impl Sigma0 {
 			out,
 		}
 	}
+
+	/// Populates the witness for the σ₀ function.
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+	{
+		// Populate the rotations and shifts manually
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_7)?;
+			let mut rotr_7 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_7)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_7.iter_mut()) {
+				*rotr_val = input_val.rotate_right(7);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_18)?;
+			let mut rotr_18 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_18)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_18.iter_mut()) {
+				*rotr_val = input_val.rotate_right(18);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.shr_3)?;
+			let mut shr_3 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.shr_3)?;
+			for (input_val, shr_val) in input.iter().zip(shr_3.iter_mut()) {
+				*shr_val = input_val >> 3;
+			}
+		}
+
+		Ok(())
+	}
 }
 
 /// The σ₁ function used in SHA-256 message schedule extension.
@@ -583,6 +819,39 @@ impl Sigma1 {
 			out,
 		}
 	}
+
+	/// Populates the witness for the σ₁ function.
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+	{
+		// Populate the rotations and shifts manually
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_17)?;
+			let mut rotr_17 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_17)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_17.iter_mut()) {
+				*rotr_val = input_val.rotate_right(17);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_19)?;
+			let mut rotr_19 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_19)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_19.iter_mut()) {
+				*rotr_val = input_val.rotate_right(19);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, { 32 * 64 }>(self.shr_10)?;
+			let mut shr_10 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.shr_10)?;
+			for (input_val, shr_val) in input.iter().zip(shr_10.iter_mut()) {
+				*shr_val = input_val >> 10;
+			}
+		}
+
+		Ok(())
+	}
 }
 
 /// The Σ₀ function used in SHA-256 compression rounds.
@@ -632,6 +901,39 @@ impl BigSigma0 {
 			out,
 		}
 	}
+
+	/// Populates the witness for the Σ₀ function.
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+	{
+		// Populate the rotations manually
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_2)?;
+			let mut rotr_2 = index.get_mut_as::<u32, _, 32>(self.rotr_2)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_2.iter_mut()) {
+				*rotr_val = input_val.rotate_right(2);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_13)?;
+			let mut rotr_13 = index.get_mut_as::<u32, _, 32>(self.rotr_13)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_13.iter_mut()) {
+				*rotr_val = input_val.rotate_right(13);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_22)?;
+			let mut rotr_22 = index.get_mut_as::<u32, _, 32>(self.rotr_22)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_22.iter_mut()) {
+				*rotr_val = input_val.rotate_right(22);
+			}
+		}
+
+		Ok(())
+	}
 }
 
 /// The Σ₁ function used in SHA-256 compression rounds.
@@ -680,6 +982,39 @@ impl BigSigma1 {
 			rotr_25,
 			out,
 		}
+	}
+
+	/// Populates the witness for the Σ₁ function.
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+	{
+		// Populate the rotations manually
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_6)?;
+			let mut rotr_6 = index.get_mut_as::<u32, _, 32>(self.rotr_6)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_6.iter_mut()) {
+				*rotr_val = input_val.rotate_right(6);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_11)?;
+			let mut rotr_11 = index.get_mut_as::<u32, _, 32>(self.rotr_11)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_11.iter_mut()) {
+				*rotr_val = input_val.rotate_right(11);
+			}
+		}
+
+		{
+			let input = index.get_as::<u32, _, 32>(self.rotr_25)?;
+			let mut rotr_25 = index.get_mut_as::<u32, _, 32>(self.rotr_25)?;
+			for (input_val, rotr_val) in input.iter().zip(rotr_25.iter_mut()) {
+				*rotr_val = input_val.rotate_right(25);
+			}
+		}
+
+		Ok(())
 	}
 }
 
