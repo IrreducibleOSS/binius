@@ -69,6 +69,7 @@ use std::array;
 use anyhow::Result;
 use binius_core::oracle::ShiftVariant;
 use binius_field::Field;
+use digest::generic_array::arr;
 
 use crate::{
 	builder::{B1, B32, Col, TableBuilder, TableWitnessSegment},
@@ -168,34 +169,19 @@ pub struct Sha256 {
 	/// - W₀ through W₁₅ are the original 16 words of the message block
 	/// - W₁₆ through W₆₃ are computed using the message schedule extension
 	pub w: Col<B1, { 32 * 64 }>,
-
+	pub w_blocks: [Col<B1, 32>; 64],
 	/// Working variables for all 64 rounds.
 	///
 	/// These represent the 8 working variables (a, b, c, d, e, f, g, h) as they
 	/// evolve through each of the 64 compression rounds. Each variable is stored
 	/// as a bit-packed column spanning all rounds.
-	a: Col<B1, { 32 * 64 }>,
-	b: Col<B1, { 32 * 64 }>,
-	c: Col<B1, { 32 * 64 }>,
-	d: Col<B1, { 32 * 64 }>,
-	e: Col<B1, { 32 * 64 }>,
-	f: Col<B1, { 32 * 64 }>,
-	g: Col<B1, { 32 * 64 }>,
-	h: Col<B1, { 32 * 64 }>,
-
+	initial_state: [Col<B1, 32>; 8],
+	rounds: [Round; 64],
 	/// Round constants: 64 32-bit words.
 	///
 	/// The cryptographic constants K₀, K₁, ..., K₆₃ used in each round of the
 	/// compression function.
-	k: Col<B32, 64>,
-
-	/// Temporary computation variables.
-	///
-	/// These store intermediate results during the compression rounds:
-	/// - T₁ = h + Σ₁(e) + Ch(e,f,g) + Kₜ + Wₜ
-	/// - T₂ = Σ₀(a) + Maj(a,b,c)
-	t1: Col<B32>,
-	t2: Col<B32>,
+	k: [Col<B1, 32>; 64],
 }
 
 impl Sha256 {
@@ -217,7 +203,7 @@ impl Sha256 {
 	/// 3. Enforces round function constraints using Σ₀, Σ₁, Ch, and Maj
 	/// 4. Links rounds together through shifted column relationships
 	/// 5. Computes final output state from working variables
-	pub fn new(table: &mut TableBuilder) {
+	pub fn new(table: &mut TableBuilder) -> Self {
 		// Initialize the message schedule w.
 		let w: Col<B1, { 32 * 64 }> = table.add_committed("w");
 
@@ -253,44 +239,252 @@ impl Sha256 {
 		let s0 = U32AddStacked::new(table, w, w_minus_7, false, None);
 		let s1 = U32AddStacked::new(table, sigma0_minus_2, sigma1_minus_15, false, None);
 		let s3 = U32AddStacked::new(table, s0.zout, s1.zout, false, None);
-
 		table.assert_zero("message schedule expansion", selector * (s3.zout - w_minus_16));
 
-		// Working variables for the 64 compression rounds
-		let a: Col<B1, { 32 * 64 }> = table.add_committed("a");
-		let b: Col<B1, { 32 * 64 }> = table.add_committed("b");
-		let c: Col<B1, { 32 * 64 }> = table.add_committed("c");
-		let d: Col<B1, { 32 * 64 }> = table.add_committed("d");
-		let e: Col<B1, { 32 * 64 }> = table.add_committed("e");
-		let f: Col<B1, { 32 * 64 }> = table.add_committed("f");
-		let g: Col<B1, { 32 * 64 }> = table.add_committed("g");
-		let h: Col<B1, { 32 * 64 }> = table.add_committed("h");
+		let w_blocks: [Col<B1, 32>; 64] =
+			array::from_fn(|i| table.add_selected_block(format!("w[{i}]"), w, i));
+		let initial_state: [Col<B1, 32>; 8] = array::from_fn(|i| {
+			table.add_constant(format!("initial_state[{i}]"), u32_to_b1_bits_le(INIT[i]))
+		});
+		let round_constants: [Col<B1, 32>; 64] = array::from_fn(|i| {
+			table.add_constant(format!("round_constant[{i}]"), u32_to_b1_bits_le(ROUND_CONSTS_K[i]))
+		});
 
-		let bigsigma0 = BigSigma0::new(table, a);
-		let bigsigma1 = BigSigma1::new(table, e);
+		let mut rounds = Vec::with_capacity(64);
+		for i in 0..64 {
+			let round = if i == 0 {
+				// First round uses initial state and first message schedule word
+				Round::first_round(
+					table,
+					initial_state,
+					round_constants[i].clone(),
+					w_blocks[i].clone(),
+				)
+			} else {
+				// Subsequent rounds use previous round's state and message schedule word
+				Round::next_round(
+					table,
+					&rounds[i - 1],
+					round_constants[i].clone(),
+					w_blocks[i].clone(),
+				)
+			};
+			rounds.push(round);
+		}
 
-		let a_blocks: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_selected_block(format!("a[{i}]"), a, i));
-		let e_blocks: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_selected_block(format!("e[{i}]"), e, i));
-		let round_consts = table.add_constant("round constants", ROUND_CONSTS_B1);
-		let ch: Col<B1, { 32 * 64 }> = table.add_committed("ch");
-		let maj: Col<B1, { 32 * 64 }> = table.add_committed("maj");
+		// Extract the final state from the last round's working variables
+		let &Round {
+			a,
+			b,
+			c,
+			d,
+			e,
+			f,
+			g,
+			h,
+			..
+		} = &rounds[63];
 
-		table.assert_zero("ch", g + e * (f + g));
-		table.assert_zero("maj", a * (b + c) + b * c);
+		let final_sum_0 = U32Add::new(table, a, initial_state[0], ADD_FLAGS);
+		let final_sum_1 = U32Add::new(table, b, initial_state[1], ADD_FLAGS);
+		let final_sum_2 = U32Add::new(table, c, initial_state[2], ADD_FLAGS);
+		let final_sum_3 = U32Add::new(table, d, initial_state[3], ADD_FLAGS);
+		let final_sum_4 = U32Add::new(table, e, initial_state[4], ADD_FLAGS);
+		let final_sum_5 = U32Add::new(table, f, initial_state[5], ADD_FLAGS);
+		let final_sum_6 = U32Add::new(table, g, initial_state[6], ADD_FLAGS);
+		let final_sum_7 = U32Add::new(table, h, initial_state[7], ADD_FLAGS);
+		let state_out: [Col<B1, 32>; 8] = [
+			final_sum_0.zout,
+			final_sum_1.zout,
+			final_sum_2.zout,
+			final_sum_3.zout,
+			final_sum_4.zout,
+			final_sum_5.zout,
+			final_sum_6.zout,
+			final_sum_7.zout,
+		];
 
-		let temp0 = U32AddStacked::new(table, round_consts, w, false, None);
-		let temp1 = U32AddStacked::new(table, bigsigma1.out, ch, false, None);
-		let temp2 = U32AddStacked::new(table, temp0.zout, temp1.zout, false, None);
-		let temp3 = U32AddStacked::new(table, temp2.zout, h, false, None);
-		let temp4 = U32AddStacked::new(table, bigsigma0.out, maj, false, None);
-		let t1 = temp3.zout;
-		let t2 = temp4.zout;
-        
+		Self {
+			state_in,
+			state_out,
+			initial_state,
+			rounds: rounds.try_into().expect("64 rounds expected"),
+			w_blocks,
+			w,
+			k: round_constants,
+		}
 	}
 }
 
+#[derive(Debug)]
+pub struct Round {
+	/// The round number (0-63) for this compression round.
+	pub round: usize,
+
+	/// The working variables a-h for this round.
+	pub a: Col<B1, 32>,
+	pub b: Col<B1, 32>,
+	pub c: Col<B1, 32>,
+	pub d: Col<B1, 32>,
+	pub e: Col<B1, 32>,
+	pub f: Col<B1, 32>,
+	pub g: Col<B1, 32>,
+	pub h: Col<B1, 32>,
+
+	temp_sum_0: U32Add,
+	temp_sum_1: U32Add,
+	temp_sum_2: U32Add,
+	temp_sum_3: U32Add,
+	temp_sum_4: U32Add,
+	temp_sum_5: U32Add,
+	temp_sum_6: U32Add,
+
+	/// The temporary values T₁ and T₂ computed in this round.
+	pub t1: Col<B1, 32>,
+	pub t2: Col<B1, 32>,
+
+	/// The round constant Kₜ for this round.
+	pub k: Col<B1, 32>,
+}
+
+const ADD_FLAGS: U32AddFlags = U32AddFlags {
+	carry_in_bit: None,
+	commit_zout: false,
+	expose_final_carry: false,
+};
+impl Round {
+	fn next_round(
+		table: &mut TableBuilder,
+		previous: &Round,
+		round_constant: Col<B1, 32>,
+		message_schedule: Col<B1, 32>,
+	) -> Self {
+		assert!(previous.round < 63, "Cannot compute next round for round 63");
+		let &Round {
+			round,
+			a,
+			b,
+			c,
+			d,
+			e,
+			f,
+			g,
+			h,
+			..
+		} = previous;
+		let bigsigma0 = BigSigma0::new(table, a);
+		let bigsigma1 = BigSigma1::new(table, e);
+
+		let ch = table.add_committed(format!("ch[{}]", round + 1));
+		let maj = table.add_committed(format!("maj[{}]", round + 1));
+
+		table.assert_zero(format!("ch[{}]", round + 1), g + e * (f + g));
+
+		let temp_sum_0 = U32Add::new(table, bigsigma1.out, ch, ADD_FLAGS);
+		let temp_sum_1 = U32Add::new(table, round_constant, message_schedule, ADD_FLAGS);
+		let temp_sum_2 = U32Add::new(table, temp_sum_0.zout, temp_sum_1.zout, ADD_FLAGS);
+		let temp_sum_3 = U32Add::new(table, h, temp_sum_2.zout, ADD_FLAGS);
+		let t1 = temp_sum_3.zout;
+
+		let temp_sum_4 = U32Add::new(table, bigsigma0.out, maj, ADD_FLAGS);
+
+		let t2 = temp_sum_4.zout;
+		let temp_sum_5 = U32Add::new(table, t1, t2, ADD_FLAGS);
+		let temp_sum_6 = U32Add::new(table, d, t1, ADD_FLAGS);
+
+		let round = previous.round + 1;
+		let h = g;
+		let g = f;
+		let f = e;
+		let e = temp_sum_6.zout;
+		let d = c;
+		let c = b;
+		let b = a;
+		let a = temp_sum_5.zout;
+
+		Round {
+			round,
+			a,
+			b,
+			c,
+			d,
+			e,
+			f,
+			g,
+			h,
+			temp_sum_0,
+			temp_sum_1,
+			temp_sum_2,
+			temp_sum_3,
+			temp_sum_4,
+			temp_sum_5,
+			temp_sum_6,
+			t1,
+			t2,
+			k: round_constant.clone(),
+		}
+	}
+
+	pub fn first_round(
+		table: &mut TableBuilder,
+		initial_state: [Col<B1, 32>; 8],
+		round_constant: Col<B1, 32>,
+		message_schedule: Col<B1, 32>,
+	) -> Self {
+		let [a, b, c, d, e, f, g, h] = initial_state;
+		let bigsigma0 = BigSigma0::new(table, a);
+		let bigsigma1 = BigSigma1::new(table, e);
+
+		let ch = table.add_committed("ch[0]");
+		let maj = table.add_committed("maj[0]");
+
+		table.assert_zero("ch[0]", g + e * (f + g));
+
+		let temp_sum_0 = U32Add::new(table, bigsigma1.out, ch, ADD_FLAGS);
+		let temp_sum_1 = U32Add::new(table, round_constant, message_schedule, ADD_FLAGS);
+		let temp_sum_2 = U32Add::new(table, temp_sum_0.zout, temp_sum_1.zout, ADD_FLAGS);
+		let temp_sum_3 = U32Add::new(table, h, temp_sum_2.zout, ADD_FLAGS);
+		let t1 = temp_sum_3.zout;
+
+		let temp_sum_4 = U32Add::new(table, bigsigma0.out, maj, ADD_FLAGS);
+
+		let t2 = temp_sum_4.zout;
+		let temp_sum_5 = U32Add::new(table, t1, t2, ADD_FLAGS);
+		let temp_sum_6 = U32Add::new(table, d, t1, ADD_FLAGS);
+
+		let round = 0;
+		let h = g;
+		let g = f;
+		let f = e;
+		let e = temp_sum_6.zout;
+		let d = c;
+		let c = b;
+		let b = a;
+		let a = temp_sum_5.zout;
+
+		Round {
+			round,
+			a,
+			b,
+			c,
+			d,
+			e,
+			f,
+			g,
+			h,
+			temp_sum_0,
+			temp_sum_1,
+			temp_sum_2,
+			temp_sum_3,
+			temp_sum_4,
+			temp_sum_5,
+			temp_sum_6,
+			t1,
+			t2,
+			k: round_constant.clone(),
+		}
+	}
+}
 /// The σ₀ function used in SHA-256 message schedule extension.
 ///
 /// This function implements σ₀(x) = ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x) where:
@@ -401,13 +595,13 @@ impl Sigma1 {
 /// to the T₂ temporary value in the round function.
 pub struct BigSigma0 {
 	/// Right rotation by 2 positions: ROTR²(x)
-	rotr_2: Col<B1, { 32 * 64 }>,
+	rotr_2: Col<B1, 32>,
 	/// Right rotation by 13 positions: ROTR¹³(x)
-	rotr_13: Col<B1, { 32 * 64 }>,
+	rotr_13: Col<B1, 32>,
 	/// Right rotation by 22 positions: ROTR²²(x)
-	rotr_22: Col<B1, { 32 * 64 }>,
+	rotr_22: Col<B1, 32>,
 	/// The computed Σ₀ output: ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x)
-	pub out: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, 32>,
 }
 
 impl BigSigma0 {
@@ -421,7 +615,7 @@ impl BigSigma0 {
 	/// # Returns
 	///
 	/// A new `BigSigma0` instance with all necessary columns and constraints
-	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, 32>) -> Self {
 		// Implement rotations using circular left shifts (equivalent to right rotations)
 		let rotr_2 = table.add_shifted("rotr_2", state_in, 5, 32 - 2, ShiftVariant::CircularLeft);
 		let rotr_13 =
@@ -450,13 +644,13 @@ impl BigSigma0 {
 /// to the T₁ temporary value in the round function.
 pub struct BigSigma1 {
 	/// Right rotation by 6 positions: ROTR⁶(x)
-	rotr_6: Col<B1, { 32 * 64 }>,
+	rotr_6: Col<B1, 32>,
 	/// Right rotation by 11 positions: ROTR¹¹(x)
-	rotr_11: Col<B1, { 32 * 64 }>,
+	rotr_11: Col<B1, 32>,
 	/// Right rotation by 25 positions: ROTR²⁵(x)
-	rotr_25: Col<B1, { 32 * 64 }>,
+	rotr_25: Col<B1, 32>,
 	/// The computed Σ₁ output: ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x)
-	pub out: Col<B1, { 32 * 64 }>,
+	pub out: Col<B1, 32>,
 }
 
 impl BigSigma1 {
@@ -470,7 +664,7 @@ impl BigSigma1 {
 	/// # Returns
 	///
 	/// A new `BigSigma1` instance with all necessary columns and constraints
-	pub fn new(table: &mut TableBuilder, state_in: Col<B1, { 32 * 64 }>) -> Self {
+	pub fn new(table: &mut TableBuilder, state_in: Col<B1, 32>) -> Self {
 		// Implement rotations using circular left shifts (equivalent to right rotations)
 		let rotr_6 = table.add_shifted("rotr_6", state_in, 5, 32 - 6, ShiftVariant::CircularLeft);
 		let rotr_11 =
