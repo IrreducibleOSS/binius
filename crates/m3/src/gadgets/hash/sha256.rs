@@ -72,7 +72,7 @@ use binius_field::Field;
 
 use crate::{
 	builder::{B1, B32, Col, TableBuilder, TableWitnessSegment},
-	gadgets::add::{self, U32Add, U32AddFlags},
+	gadgets::add::{self, U32Add, U32AddFlags, U32AddStacked},
 };
 
 /// SHA-256 round constants (K).
@@ -225,61 +225,37 @@ impl Sha256 {
 		let sigma0 = Sigma0::new(table, w);
 		let sigma1 = Sigma1::new(table, w);
 
-		let w_t: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_selected_block(format!("w[{i}]"), w, i));
+		let state_in: [Col<B1, 32>; 16] =
+			array::from_fn(|i| table.add_selected_block(format!("state_in[{i}]"), w, i));
 
-		let state_in: [Col<B1, 32>; 16] = array::from_fn(|i| w_t[i]);
+		let selector = table.add_constant("message_schedule_selector", SCHEDULE_EXPAND_SELECTOR);
 
-		let sigma0_t: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_selected_block(format!("sigma0(w[{i}])"), sigma0.out, i));
-		let sigma1_t: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_selected_block(format!("sigma1(w[{i}])"), sigma1.out, i));
+		// Contains the values of the message schedule for t past 16 rounds.
+		let w_minus_16: Col<B1, { 32 * 64 }> =
+			table.add_shifted("w_minus_16", w, 11, 32 * 16, ShiftVariant::LogicalRight);
+		let w_minus_7: Col<B1, { 32 * 64 }> =
+			table.add_shifted("w_minus_7", w, 11, 32 * (16 - 7), ShiftVariant::LogicalRight);
+		let sigma0_minus_2 = table.add_shifted(
+			"sigma0_minus_2",
+			sigma0.out,
+			11,
+			32 * (16 - 2),
+			ShiftVariant::LogicalRight,
+		);
+		let sigma1_minus_15 = table.add_shifted(
+			"sigma1_minus_15",
+			sigma1.out,
+			11,
+			32 * (16 - 15),
+			ShiftVariant::LogicalRight,
+		);
 
-		let mut s0s = Vec::new();
-		let mut s1s = Vec::new();
-		let mut s2s = Vec::new();
-		// Enforce the message schedule extension constraint
-		// TODO: Integer addition
-		for t in 16..64 {
-			let s0 = U32Add::new(
-				table,
-				sigma1_t[t - 2],
-				w_t[t - 7],
-				U32AddFlags {
-					carry_in_bit: None,
-					commit_zout: false,
-					expose_final_carry: false,
-				},
-			);
+		let s0 = U32AddStacked::new(table, w, w_minus_7, false, None);
+		let s1 = U32AddStacked::new(table, sigma0_minus_2, sigma1_minus_15, false, None);
+		let s3 = U32AddStacked::new(table, s0.zout, s1.zout, false, None);
 
-			let s1 = U32Add::new(
-				table,
-				sigma0_t[t - 15],
-				w_t[t - 16],
-				U32AddFlags {
-					carry_in_bit: None,
-					commit_zout: false,
-					expose_final_carry: false,
-				},
-			);
+		table.assert_zero("message schedule expansion", selector * (s3.zout - w_minus_16));
 
-			let s2 = U32Add::new(
-				table,
-				s0.zout,
-				s1.zout,
-				U32AddFlags {
-					carry_in_bit: None,
-					commit_zout: false,
-					expose_final_carry: false,
-				},
-			);
-
-			table.assert_zero(format!("schedule expansion[{t}]"), w_t[t] + s2.zout);
-
-			s0s.push(s0);
-			s1s.push(s1);
-			s2s.push(s2);
-		}
 		// Working variables for the 64 compression rounds
 		let a: Col<B1, { 32 * 64 }> = table.add_committed("a");
 		let b: Col<B1, { 32 * 64 }> = table.add_committed("b");
@@ -289,50 +265,29 @@ impl Sha256 {
 		let f: Col<B1, { 32 * 64 }> = table.add_committed("f");
 		let g: Col<B1, { 32 * 64 }> = table.add_committed("g");
 		let h: Col<B1, { 32 * 64 }> = table.add_committed("h");
-		
-        let k: [Col<B1, 32>; 64] =
-			array::from_fn(|i| table.add_constant("k", u32_to_b1_bits_le(ROUND_CONSTS_K[i])));
 
-		let a_blocks = array::from_fn(|i| table.add_selected_block(format!("a[{i}]"), a, i));
-		let b_blocks = array::from_fn(|i| table.add_selected_block(format!("b[{i}]"), b, i));
-		let c_blocks = array::from_fn(|i| table.add_selected_block(format!("c[{i}]"), c, i));
-		let d_blocks = array::from_fn(|i| table.add_selected_block(format!("d[{i}]"), d, i));
-		let e_blocks = array::from_fn(|i| table.add_selected_block(format!("e[{i}]"), e, i));
-		let f_blocks = array::from_fn(|i| table.add_selected_block(format!("f[{i}]"), f, i));
-		let g_blocks = array::from_fn(|i| table.add_selected_block(format!("g[{i}]"), g, i));
-		let h_blocks = array::from_fn(|i| table.add_selected_block(format!("h[{i}]"), h, i));
+		let bigsigma0 = BigSigma0::new(table, a);
+		let bigsigma1 = BigSigma1::new(table, e);
 
-		// Σ₀ and Σ₁ functions for the compression rounds
-		let big_sigma_1 = BigSigma1::new(table, e);
-		let big_sigma_0 = BigSigma0::new(table, a);
-
-        let big_sigma_1_blocks = array::from_fn(|i| table.add_selected_block(format!("big_sigma_1[{i}]"), big_sigma_1.out, i));
-        let big_sigma_0_blocks = array::from_fn(|i| table.add_selected_block(format!("big_sigma_0[{i}]"), big_sigma_0.out, i));
-        
-		// Choice and majority functions for compression rounds
+		let a_blocks: [Col<B1, 32>; 64] =
+			array::from_fn(|i| table.add_selected_block(format!("a[{i}]"), a, i));
+		let e_blocks: [Col<B1, 32>; 64] =
+			array::from_fn(|i| table.add_selected_block(format!("e[{i}]"), e, i));
+		let round_consts = table.add_constant("round constants", ROUND_CONSTS_B1);
 		let ch: Col<B1, { 32 * 64 }> = table.add_committed("ch");
 		let maj: Col<B1, { 32 * 64 }> = table.add_committed("maj");
 
-		table.assert_zero("ch", g + e * (f + g) - ch);
-		table.assert_zero("maj", a * (b + c) + b * c - maj);
+		table.assert_zero("ch", g + e * (f + g));
+		table.assert_zero("maj", a * (b + c) + b * c);
 
-		// TODO: Integer addition
-		let t1 = table.add_computed("t1", h + big_sigma_1.out + ch + k + w);
-		// TODO: Integer addition
-		let t2 = table.add_computed("t2", big_sigma_0.out + maj);
-
-		for i in 0..64 {
-
-        }
-		// Final output state computation
-		let a_final: Col<B1, 32> = table.add_selected_block("a_final", a, 63);
-		let b_final: Col<B1, 32> = table.add_selected_block("b_final", b, 63);
-		let c_final: Col<B1, 32> = table.add_selected_block("c_final", c, 63);
-		let d_final: Col<B1, 32> = table.add_selected_block("d_final", d, 63);
-		let e_final: Col<B1, 32> = table.add_selected_block("e_final", e, 63);
-		let f_final: Col<B1, 32> = table.add_selected_block("f_final", f, 63);
-		let g_final: Col<B1, 32> = table.add_selected_block("g_final", g, 63);
-		let h_final: Col<B1, 32> = table.add_selected_block("h_final", h, 63);
+		let temp0 = U32AddStacked::new(table, round_consts, w, false, None);
+		let temp1 = U32AddStacked::new(table, bigsigma1.out, ch, false, None);
+		let temp2 = U32AddStacked::new(table, temp0.zout, temp1.zout, false, None);
+		let temp3 = U32AddStacked::new(table, temp2.zout, h, false, None);
+		let temp4 = U32AddStacked::new(table, bigsigma0.out, maj, false, None);
+		let t1 = temp3.zout;
+		let t2 = temp4.zout;
+        
 	}
 }
 
@@ -533,3 +488,21 @@ impl BigSigma1 {
 		}
 	}
 }
+
+/// Selector for message schedule expansion.
+///
+/// This constant array is used to select the first 48 words of the message schedule
+/// for the SHA-256 compression function. It is used to constrain the message schedule
+/// extension operations in the gadget.
+///
+/// The selector is an array of B1s where the first 32*48 bits are set to B1::ONE
+/// and the remaining bits are set to B1::ZERO.
+pub const SCHEDULE_EXPAND_SELECTOR: [B1; 32 * 64] = {
+	let mut arr = [B1::ZERO; 32 * 64];
+	let mut i = 0;
+	while i < 32 * 48 {
+		arr[i] = B1::ONE;
+		i += 1;
+	}
+	arr
+};
