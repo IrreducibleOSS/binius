@@ -1,12 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
 use std::{
+	alloc,
 	any::TypeId,
 	cell::RefCell,
 	iter::{repeat_with, zip},
 	marker::PhantomData,
 	mem::{MaybeUninit, transmute},
-	slice,
+	ptr, slice,
 };
 
 use binius_compute::{
@@ -44,7 +45,7 @@ use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
 	rayon::get_log_max_threads,
 };
-use bytemuck::{Pod, zeroed_vec};
+use bytemuck::{Pod, Zeroable, zeroed_vec};
 use itertools::izip;
 use thread_local::ThreadLocal;
 
@@ -829,15 +830,16 @@ impl<T: TowerFamily, P: PackedTop<T>> KernelExecutor<T::B128> for FastKernelExec
 
 pub struct FastCpuLayerHolder<T: TowerFamily, P: PackedTop<T>> {
 	layer: FastCpuLayer<T, P>,
-	host_mem: Vec<T::B128>,
-	dev_mem: Vec<P>,
+	host_mem: MmapRegion<T::B128>,
+	dev_mem: MmapRegion<P>,
 }
 
 impl<T: TowerFamily, P: PackedTop<T>> FastCpuLayerHolder<T, P> {
 	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
 		let layer = FastCpuLayer::default();
-		let host_mem = vec![T::B128::zero(); host_mem_size];
-		let dev_mem = vec![P::zero(); (dev_mem_size >> P::LOG_WIDTH).max(1)];
+
+		let host_mem = MmapRegion::<T::B128>::new(host_mem_size);
+		let dev_mem = MmapRegion::<P>::new(dev_mem_size);
 
 		Self {
 			layer,
@@ -868,8 +870,99 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
 	{
 		ComputeData::new(
 			&self.layer,
-			BumpAllocator::new(self.host_mem.as_mut_slice()),
-			BumpAllocator::new(PackedMemorySliceMut::new_slice(&mut self.dev_mem)),
+			BumpAllocator::new(self.host_mem.as_slice_mut()),
+			BumpAllocator::new(PackedMemorySliceMut::new_slice(self.dev_mem.as_slice_mut())),
 		)
+	}
+}
+
+struct MmapRegion<T> {
+	// - owned
+	// - single allocation
+	// - len * size_of::<T>
+	// - non-null
+	// - aligned for T.
+	ptr: *mut T,
+	// - fits into the isize.
+	size: usize,
+	len: usize,
+	_pd: PhantomData<T>,
+}
+
+impl<T: Zeroable> MmapRegion<T> {
+	fn new(len: usize) -> Self {
+		assert!(!std::mem::needs_drop::<T>());
+		assert_ne!(std::mem::size_of::<T>(), 0, "ZSTs not supported");
+
+		if len == 0 {
+			// SAFETY: guarantee the alignment of self.ptr.
+			let ptr = std::ptr::dangling_mut();
+			return Self {
+				ptr,
+				len: 0,
+				size: 0,
+				_pd: PhantomData,
+			};
+		}
+
+		let Ok(layout) = alloc::Layout::array::<T>(len) else {
+			panic!("allocation size would overflow isize::MAX")
+		};
+		let size = layout.size();
+
+		unsafe {
+			let ptr = libc::mmap(
+				ptr::null_mut(),
+				size,
+				libc::PROT_READ | libc::PROT_WRITE,
+				libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+				-1,
+				0,
+			);
+
+			assert!(!std::ptr::eq(ptr, libc::MAP_FAILED), "mmap failed");
+
+			// SAFETY: guarantee the alignment of self.ptr.
+			//
+			// mmap returns a pointer aligned to the size of page, and typically is 4096 bytes or
+			// more. This should satisfy pretty much any alignment requirement. But we still don't
+			// want any UB so we check the alignment here explicitly.
+			assert!(ptr as usize % std::mem::align_of::<T>() == 0);
+
+			Self {
+				ptr: ptr as *mut T,
+				size,
+				len,
+				_pd: PhantomData,
+			}
+		}
+	}
+
+	fn as_slice_mut(&mut self) -> &mut [T] {
+		// SAFETY:
+		// - This method accepts the exclusive reference to self and self.ptr is owned by this
+		//   struct.
+		// - self.ptr is guarnteed to be non-null and a single allocated object.
+		// - it is aligned to T.
+		// - has length of len * size_of::<T> bytes.
+		// - self.ptr points at an initially zeroed memory region.
+		// - T is zeroable and thus zero-bit pattern is legal.
+		// - the memory has RW access.
+		unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+	}
+}
+
+impl<T> Drop for MmapRegion<T> {
+	fn drop(&mut self) {
+		if self.len == 0 {
+			return;
+		}
+		unsafe {
+			// SAFETY:
+			// - self.ptr was allocated by mmap before
+			// - self.size matches the size used in the original mmap call
+			// - this is only called once when the object is dropped
+			libc::munmap(self.ptr as *mut libc::c_void, self.size);
+		}
 	}
 }
