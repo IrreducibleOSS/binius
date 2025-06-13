@@ -19,7 +19,6 @@ use binius_core::{
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 	as_packed_field::{PackScalar, PackedType},
-	tower::{CanonicalTowerFamily, TowerFamily},
 	underlier::UnderlierType,
 };
 use binius_hash::groestl::Groestl256;
@@ -29,7 +28,6 @@ use binius_math::{
 };
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
-use bytemuck::zeroed_vec;
 use rand::prelude::*;
 
 const SECURITY_BITS: usize = 32;
@@ -209,15 +207,15 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
-	let hal = FastCpuLayer::<CanonicalTowerFamily, PackedType<U, F>>::default();
+	let mut compute_holder = create_hal_holder(1 << 7, 1 << 15);
+	let mut compute_data = compute_holder.to_data();
 
-	let mut host_mem = zeroed_vec(1 << 7);
-	let mut dev_mem_owned = zeroed_vec(1 << 15);
+	let compute_data_ref = &mut compute_data;
 
-	let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem_owned);
+	let hal = compute_data_ref.hal;
 
-	let host_alloc = HostBumpAllocator::new(&mut host_mem);
-	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+	let dev_alloc = &compute_data_ref.dev_alloc;
+	let host_alloc = &compute_data_ref.host_alloc;
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
@@ -258,27 +256,19 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove(&system, &committed_multilins, &mut proof, MemoizedData::new()).unwrap();
-
-	let host_mem_size_committed = committed_multilins.len();
-	let dev_mem_size_committed = committed_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let host_mem_size_transparent = transparent_multilins.len();
-	let dev_mem_size_transparent = transparent_multilins
-		.iter()
-		.map(|multilin| 1 << (multilin.n_vars() + 1))
-		.sum::<usize>();
-
-	let mut compute_holder = create_hal_holder(
-		host_mem_size_committed + host_mem_size_transparent,
-		dev_mem_size_committed + dev_mem_size_transparent,
-	);
+	} = prove(
+		&system,
+		&committed_multilins,
+		&mut proof,
+		MemoizedData::new(),
+		hal,
+		dev_alloc,
+		host_alloc,
+	)
+	.unwrap();
 
 	piop::prove(
-		&mut compute_holder.to_data(),
+		compute_data_ref,
 		&fri_params,
 		&ntt,
 		merkle_prover,

@@ -3,9 +3,8 @@
 use std::{iter, sync::Arc};
 
 use binius_compute::{
-	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice,
-	alloc::{BumpAllocator, HostBumpAllocator},
-	layer,
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, alloc::ComputeAllocator,
+	cpu::CpuMemory, layer,
 };
 use binius_field::{Field, PackedField, PackedFieldIndexable};
 use binius_math::{
@@ -40,14 +39,14 @@ pub struct ReducedWitness<'a, F: Field, Hal: ComputeLayer<F>> {
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<F>>,
 }
 
-pub fn prove<'a, 'alloc, F, P, M, Challenger_, Hal>(
+pub fn prove<'a, F, P, M, Challenger_, Hal, HostAllocatorType, DeviceAllocatorType>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
 	transcript: &mut ProverTranscript<Challenger_>,
 	memoized_data: MemoizedData<P>,
-	hal: &'a Hal,
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'a, F>,
+	hal: &Hal,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &HostAllocatorType,
 ) -> Result<ReducedWitness<'a, F, Hal>, Error>
 where
 	F: TowerTop + PackedTop<Scalar = F>,
@@ -55,6 +54,8 @@ where
 	M: MultilinearPoly<P> + Sync,
 	Challenger_: Challenger,
 	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
 		return Err(Error::InvalidWitness(
@@ -112,7 +113,7 @@ where
 	)
 	.entered();
 
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, _>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
@@ -262,18 +263,20 @@ where
 		.collect()
 }
 
-fn make_ring_switch_eq_inds<'a, 'alloc, F, Hal>(
+fn make_ring_switch_eq_inds<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
-	hal: &'a Hal,
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'a, F>,
+	hal: &Hal,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &HostAllocatorType,
 ) -> Result<Vec<FSlice<'a, F, Hal>>, Error>
 where
 	F: TowerTop,
 	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	let mut eq_inds = Vec::with_capacity(sumcheck_claim_descs.len());
 

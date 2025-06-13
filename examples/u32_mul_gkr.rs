@@ -117,14 +117,10 @@ fn main() -> Result<()> {
 
 	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
 
-	let mut compute_holder =
-		FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::new(
-			1 << 20,
-			1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
-		);
-
-	let host_alloc = HostBumpAllocator::new(&mut host_mem);
-	let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+	let mut compute_holder = FastCpuLayerHolder::<
+		CanonicalTowerFamily,
+		PackedType<OptimalUnderlier, B128>,
+	>::new(1 << 20, 1 << 28);
 
 	drop(hal_span);
 	let proof = constraint_system::prove::<

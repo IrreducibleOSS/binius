@@ -26,6 +26,7 @@ use crate::{
 /// slices.
 pub struct BivariateSumcheckProver<
 	'a,
+	'b,
 	F: Field,
 	Hal: ComputeLayer<F>,
 	DeviceAllocatorType,
@@ -33,6 +34,7 @@ pub struct BivariateSumcheckProver<
 > where
 	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	'a: 'b,
 {
 	hal: &'a Hal,
 	dev_alloc: &'a DeviceAllocatorType,
@@ -44,8 +46,8 @@ pub struct BivariateSumcheckProver<
 	last_coeffs_or_sums: PhaseState<F>,
 }
 
-impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
-	BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
+impl<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
+	BivariateSumcheckProver<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -112,8 +114,8 @@ where
 	}
 }
 
-impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType> SumcheckProver<F>
-	for BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
+impl<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType> SumcheckProver<F>
+	for BivariateSumcheckProver<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,

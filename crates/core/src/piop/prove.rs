@@ -3,7 +3,8 @@
 use std::{borrow::Cow, ops::Deref};
 
 use binius_compute::{
-	ComputeData, ComputeLayer, ComputeMemory, alloc::ComputeAllocator, cpu::CpuMemory,
+	ComputeData, ComputeLayer, ComputeMemory, FSlice, SizedSlice, alloc::ComputeAllocator,
+	cpu::CpuMemory,
 };
 use binius_field::{
 	BinaryField, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
@@ -181,7 +182,7 @@ pub fn prove<
 	HostComputeAllocatorType,
 	DeviceComputeAllocatorType,
 >(
-	compute_data: &mut ComputeData<F, Hal, HostComputeAllocatorType, DeviceComputeAllocatorType>,
+	compute_data: &ComputeData<F, Hal, HostComputeAllocatorType, DeviceComputeAllocatorType>,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
 	merkle_prover: &MTProver,
@@ -189,7 +190,7 @@ pub fn prove<
 	committed: MTProver::Committed,
 	codeword: &[P],
 	committed_multilins: &[M],
-	transparent_multilins: Vec<FSlice<'a, F, Hal>>,
+	transparent_multilins: Vec<FSlice<'_, F, Hal>>,
 	claims: &[PIOPSumcheckClaim<F>],
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
@@ -209,14 +210,16 @@ where
 	HostComputeAllocatorType: ComputeAllocator<F, CpuMemory>,
 	DeviceComputeAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
-	let host_alloc = compute_data.host_alloc.subscope_allocator();
-	let dev_alloc = compute_data.dev_alloc.subscope_allocator();
+	let host_alloc = &compute_data.host_alloc;
+	let dev_alloc = &compute_data.dev_alloc;
 	let hal = compute_data.hal;
 
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
 		commit_meta,
 		transparent_multilins
 			.iter()
+			.map(|poly| checked_log_2(poly.len())),
+		claims,
 	)?;
 
 	// The committed multilinears provided by argument are committed *small field* multilinears.

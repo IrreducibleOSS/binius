@@ -4,7 +4,7 @@ use std::{iter, marker::PhantomData, sync::Arc};
 
 use binius_compute::{
 	ComputeLayer, ComputeLayerExecutor, ComputeMemory, SizedSlice, SubfieldSlice,
-	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	alloc::ComputeAllocator, cpu::CpuMemory,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_utils::bail;
@@ -78,15 +78,19 @@ where
 		})
 	}
 
-	pub fn precompute_values<'a, 'alloc, Hal: ComputeLayer<F>>(
+	pub fn precompute_values<'a, Hal: ComputeLayer<F>, HostAllocatorType, DeviceAllocatorType>(
 		z_vals: Arc<[F]>,
 		row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 		mixing_coeff: F,
 		kappa: usize,
-		hal: &'a Hal,
-		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-		host_alloc: &'a HostBumpAllocator<'a, F>,
-	) -> Result<RingSwitchEqIndPrecompute<'a, F, Hal::DevMem>, Error> {
+		hal: &Hal,
+		dev_alloc: &'a DeviceAllocatorType,
+		host_alloc: &HostAllocatorType,
+	) -> Result<RingSwitchEqIndPrecompute<'a, F, Hal::DevMem>, Error>
+	where
+		HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+		DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+	{
 		let extension_degree = 1 << (kappa);
 
 		let mut row_batching_query_expansion = dev_alloc.alloc(extension_degree)?;
@@ -186,11 +190,9 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::ops::eq_ind_partial_eval;
-	use binius_fast_compute::{layer::FastCpuLayer, memory::PackedMemorySliceMut};
-	use binius_field::{BinaryField8b, BinaryField128b, tower::CanonicalTowerFamily};
-	use binius_math::MultilinearQuery;
-	use bytemuck::zeroed_vec;
+	use binius_compute::{ComputeData, ComputeHolder, cpu::layer::CpuLayerHolder};
+	use binius_field::{BinaryField8b, BinaryField128b};
+	use binius_math::{MultilinearQuery, eq_ind_partial_eval};
 	use iter::repeat_with;
 	use rand::{SeedableRng, prelude::StdRng};
 
@@ -223,22 +225,23 @@ mod tests {
 
 		let mixing_coeff = <F as Field>::random(&mut rng);
 
-		let hal = FastCpuLayer::<CanonicalTowerFamily, BinaryField128b>::default();
+		let mut compute_holder = CpuLayerHolder::new(1 << 10, 1 << 10);
 
-		let mut dev_mem = zeroed_vec(1 << 10);
-		let mut host_mem = zeroed_vec(1 << 10);
+		let compute_data = compute_holder.to_data();
 
-		let dev_mem = PackedMemorySliceMut::new_slice(&mut dev_mem);
-
-		let host_alloc = HostBumpAllocator::new(&mut host_mem);
-		let dev_alloc = BumpAllocator::<_, _>::new(dev_mem);
+		let ComputeData {
+			hal,
+			dev_alloc,
+			host_alloc,
+			..
+		} = compute_data;
 
 		let precompute = RingSwitchEqInd::<FS, _>::precompute_values(
 			z_vals.clone(),
 			row_batch_coeffs.clone(),
 			mixing_coeff,
 			kappa,
-			&hal,
+			hal,
 			&dev_alloc,
 			&host_alloc,
 		)
@@ -255,16 +258,9 @@ mod tests {
 
 			let mle = SubfieldSlice::new(mle, BinaryField128b::TOWER_LEVEL);
 
-			let query = eq_ind_partial_eval(&hal, &dev_alloc, &host_alloc, &eval_point).unwrap();
+			let query = eq_ind_partial_eval(&eval_point);
 
-			let val2 = exec
-				.inner_product(
-					mle,
-					<FastCpuLayer<CanonicalTowerFamily, BinaryField128b> as ComputeLayer<
-						BinaryField128b,
-					>>::DevMem::as_const(&query),
-				)
-				.unwrap();
+			let val2 = exec.inner_product(mle, &query).unwrap();
 
 			assert_eq!(val1, val2);
 			Ok(vec![])

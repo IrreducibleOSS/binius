@@ -517,6 +517,12 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
+	let hal = compute_data.hal;
+
+	let dev_alloc = &compute_data.dev_alloc;
+	let host_alloc = &compute_data.host_alloc;
+
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
