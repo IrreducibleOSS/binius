@@ -12,7 +12,7 @@ use itertools::izip;
 use super::{memory::CpuMemory, tower_macro::each_tower_subfield};
 use crate::{
 	ComputeData, ComputeHolder, ComputeLayerExecutor, KernelExecutor,
-	alloc::{BumpAllocator, ComputeAllocator},
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
 };
@@ -591,14 +591,15 @@ fn compute_right_fold<EvalType: TowerField, F: TowerTop + ExtensionField<EvalTyp
 	Ok(())
 }
 
+#[derive(Default)]
 pub struct CpuLayerHolder<F> {
 	layer: CpuLayer<F>,
 	host_mem: Vec<F>,
 	dev_mem: Vec<F>,
 }
 
-impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
-	fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+impl<F: TowerTop> CpuLayerHolder<F> {
+	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
 		let cpu_mem = zeroed_vec(host_mem_size);
 		let dev_mem = zeroed_vec(dev_mem_size);
 		Self {
@@ -607,12 +608,29 @@ impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
 			dev_mem,
 		}
 	}
+}
 
-	fn to_data(&mut self) -> ComputeData<'_, F, CpuLayer<F>> {
-		ComputeData {
-			hal: &self.layer,
-			host_alloc: BumpAllocator::new(self.host_mem.as_mut_slice()),
-			dev_alloc: BumpAllocator::new(self.dev_mem.as_mut_slice()),
-		}
+impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
+	type HostComputeAllocator<'a> = HostBumpAllocator<'a, F>;
+	type DeviceComputeAllocator<'a> =
+		BumpAllocator<'a, F, <CpuLayer<F> as ComputeLayer<F>>::DevMem>;
+
+	fn to_data<'a, 'b>(
+		&'a mut self,
+	) -> ComputeData<
+		'a,
+		F,
+		CpuLayer<F>,
+		Self::HostComputeAllocator<'b>,
+		Self::DeviceComputeAllocator<'b>,
+	>
+	where
+		'a: 'b,
+	{
+		ComputeData::new(
+			&self.layer,
+			BumpAllocator::new(self.host_mem.as_mut_slice()),
+			BumpAllocator::new(self.dev_mem.as_mut_slice()),
+		)
 	}
 }

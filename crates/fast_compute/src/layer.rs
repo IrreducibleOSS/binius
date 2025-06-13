@@ -11,7 +11,7 @@ use std::{
 
 use binius_compute::{
 	ComputeData, ComputeHolder, ComputeLayerExecutor, KernelExecutor,
-	alloc::{BumpAllocator, ComputeAllocator},
+	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
 	cpu::layer::count_total_local_buffer_sizes,
 	each_generic_tower_subfield as each_tower_subfield,
 	layer::{ComputeLayer, Error, FSlice, FSliceMut, KernelBuffer, KernelMemMap},
@@ -833,10 +833,8 @@ pub struct FastCpuLayerHolder<T: TowerFamily, P: PackedTop<T>> {
 	dev_mem: Vec<P>,
 }
 
-impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
-	for FastCpuLayerHolder<T, P>
-{
-	fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+impl<T: TowerFamily, P: PackedTop<T>> FastCpuLayerHolder<T, P> {
+	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
 		let layer = FastCpuLayer::default();
 		let host_mem = vec![T::B128::zero(); host_mem_size];
 		let dev_mem = vec![P::zero(); (dev_mem_size >> P::LOG_WIDTH).max(1)];
@@ -847,12 +845,31 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
 			dev_mem,
 		}
 	}
+}
 
-	fn to_data(&mut self) -> ComputeData<'_, T::B128, FastCpuLayer<T, P>> {
-		ComputeData {
-			hal: &self.layer,
-			host_alloc: BumpAllocator::new(self.host_mem.as_mut_slice()),
-			dev_alloc: BumpAllocator::new(PackedMemorySliceMut::new_slice(&mut self.dev_mem)),
-		}
+impl<T: TowerFamily, P: PackedTop<T>> ComputeHolder<T::B128, FastCpuLayer<T, P>>
+	for FastCpuLayerHolder<T, P>
+{
+	type HostComputeAllocator<'a> = HostBumpAllocator<'a, T::B128>;
+	type DeviceComputeAllocator<'a> =
+		BumpAllocator<'a, T::B128, <FastCpuLayer<T, P> as ComputeLayer<T::B128>>::DevMem>;
+
+	fn to_data<'a, 'b>(
+		&'a mut self,
+	) -> ComputeData<
+		'a,
+		T::B128,
+		FastCpuLayer<T, P>,
+		Self::HostComputeAllocator<'b>,
+		Self::DeviceComputeAllocator<'b>,
+	>
+	where
+		'a: 'b,
+	{
+		ComputeData::new(
+			&self.layer,
+			BumpAllocator::new(self.host_mem.as_mut_slice()),
+			BumpAllocator::new(PackedMemorySliceMut::new_slice(&mut self.dev_mem)),
+		)
 	}
 }

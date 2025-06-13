@@ -2,7 +2,9 @@
 
 use std::{borrow::Cow, ops::Deref};
 
-use binius_compute::{ComputeData, ComputeLayer, ComputeMemory, alloc::ComputeAllocator};
+use binius_compute::{
+	ComputeData, ComputeLayer, ComputeMemory, alloc::ComputeAllocator, cpu::CpuMemory,
+};
 use binius_field::{
 	BinaryField, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	packed::PackedSliceMut,
@@ -165,8 +167,20 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove<Hal, F, FEncode, P, M, NTT, MTScheme, MTProver, Challenger_>(
-	compute_data: &mut ComputeData<F, Hal>,
+pub fn prove<
+	Hal,
+	F,
+	FEncode,
+	P,
+	M,
+	NTT,
+	MTScheme,
+	MTProver,
+	Challenger_,
+	HostComputeAllocatorType,
+	DeviceComputeAllocatorType,
+>(
+	compute_data: &mut ComputeData<F, Hal, HostComputeAllocatorType, DeviceComputeAllocatorType>,
 	fri_params: &FRIParams<F, FEncode>,
 	ntt: &NTT,
 	merkle_prover: &MTProver,
@@ -191,6 +205,8 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 	Hal: ComputeLayer<F>,
+	HostComputeAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceComputeAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	let host_alloc = compute_data.host_alloc.subscope_allocator();
 	let dev_alloc = compute_data.dev_alloc.subscope_allocator();

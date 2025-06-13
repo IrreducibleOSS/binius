@@ -161,6 +161,7 @@ fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
 			hal,
 			dev_alloc,
 			host_alloc,
+			..
 		} = compute_holder.to_data();
 
 		// Move dev_alloc and host_alloc outside the closure so their lifetimes are sufficient

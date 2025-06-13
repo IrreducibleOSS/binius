@@ -114,6 +114,8 @@ fn main() -> Result<()> {
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
+		_,
+		_,
 	>(
 		&mut compute_holder.to_data(),
 		&ccs,

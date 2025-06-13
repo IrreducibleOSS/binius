@@ -147,6 +147,8 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
+			_,
+			_,
 		>(
 			&mut compute_holder.to_data(),
 			&ccs,

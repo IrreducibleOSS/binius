@@ -4,8 +4,7 @@ use std::{iter, mem, slice};
 
 use binius_compute::{
 	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, KernelBuffer, KernelExecutor,
-	KernelMemMap, SizedSlice, SlicesBatch,
-	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	KernelMemMap, SizedSlice, SlicesBatch, alloc::ComputeAllocator, cpu::CpuMemory,
 };
 use binius_field::{
 	Field, TowerField,
@@ -29,10 +28,19 @@ use crate::{
 /// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
 /// instance for expensive operations and the input multilinears are provided as device memory
 /// slices.
-pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
+pub struct BivariateMLEcheckProver<
+	'a,
+	F: Field,
+	Hal: ComputeLayer<F>,
+	HostAllocatorType,
+	DeviceAllocatorType,
+> where
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+{
 	hal: &'a Hal,
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'a, F>,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &'a HostAllocatorType,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
@@ -44,16 +52,19 @@ pub struct BivariateMLEcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	eq_ind_challenges: Vec<F>,
 }
 
-impl<'a, 'alloc, F, Hal> BivariateMLEcheckProver<'a, 'alloc, F, Hal>
+impl<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>
+	BivariateMLEcheckProver<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		hal: &'a Hal,
-		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-		host_alloc: &'a HostBumpAllocator<'a, F>,
+		dev_alloc: &'a DeviceAllocatorType,
+		host_alloc: &'a HostAllocatorType,
 		claim: &EqIndSumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 		// Specify an existing tensor expansion for `eq_ind_challenges`. Avoids
@@ -247,10 +258,13 @@ where
 	}
 }
 
-impl<'alloc, F, Hal> SumcheckProver<F> for BivariateMLEcheckProver<'_, 'alloc, F, Hal>
+impl<F, Hal, HostAllocatorType, DeviceAllocatorType> SumcheckProver<F>
+	for BivariateMLEcheckProver<'_, F, Hal, HostAllocatorType, DeviceAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars_initial
@@ -510,18 +524,18 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
+	use binius_compute::cpu::layer::CpuLayerHolder;
 	use binius_compute_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
 	use binius_math::B128;
 
 	#[test]
 	fn test_bivariate_mlecheck_prove_verify() {
-		let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
+		let compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
 		generic_test_bivariate_mlecheck_prove_verify(
-			&mut compute_holder.to_data(),
+			compute_holder,
 			n_vars,
 			n_multilins,
 			n_compositions,

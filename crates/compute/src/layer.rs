@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::Range;
+use std::{marker::PhantomData, ops::Range};
 
 use binius_field::{BinaryField, ExtensionField, Field};
 use binius_math::ArithCircuit;
@@ -13,7 +13,7 @@ use super::{
 	memory::{ComputeMemory, SubfieldSlice},
 };
 use crate::{
-	alloc::BumpAllocator,
+	alloc::ComputeAllocator,
 	cpu::CpuMemory,
 	memory::{SizedSlice, SlicesBatch},
 };
@@ -613,15 +613,49 @@ pub type KernelSliceMut<'a, 'b, F, HAL> =
 /// * a host memory allocator,
 /// * a device memory allocator.
 pub trait ComputeHolder<F: Field, HAL: ComputeLayer<F>> {
-	fn new(host_size: usize, dev_size: usize) -> Self;
+	type HostComputeAllocator<'a>: ComputeAllocator<F, CpuMemory>
+	where
+		Self: 'a;
+	type DeviceComputeAllocator<'a>: ComputeAllocator<F, HAL::DevMem>
+	where
+		Self: 'a;
 
-	fn to_data(&mut self) -> ComputeData<'_, F, HAL>;
+	fn to_data<'a, 'b>(
+		&'a mut self,
+	) -> ComputeData<'a, F, HAL, Self::HostComputeAllocator<'b>, Self::DeviceComputeAllocator<'b>>
+	where
+		'a: 'b;
 }
 
-pub struct ComputeData<'a, F: Field, HAL: ComputeLayer<F>> {
+pub struct ComputeData<'a, F: Field, HAL: ComputeLayer<F>, HostAllocatorType, DeviceAllocatorType>
+where
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, HAL::DevMem>,
+{
 	pub hal: &'a HAL,
-	pub host_alloc: BumpAllocator<'a, F, CpuMemory>,
-	pub dev_alloc: BumpAllocator<'a, F, HAL::DevMem>,
+	pub host_alloc: HostAllocatorType,
+	pub dev_alloc: DeviceAllocatorType,
+	_phantom_data: PhantomData<F>,
+}
+
+impl<'a, F: Field, HAL: ComputeLayer<F>, HostAllocatorType, DeviceAllocatorType>
+	ComputeData<'a, F, HAL, HostAllocatorType, DeviceAllocatorType>
+where
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, HAL::DevMem>,
+{
+	pub fn new(
+		hal: &'a HAL,
+		host_alloc: HostAllocatorType,
+		dev_alloc: DeviceAllocatorType,
+	) -> Self {
+		Self {
+			hal,
+			host_alloc,
+			dev_alloc,
+			_phantom_data: PhantomData::<F>,
+		}
+	}
 }
 
 #[cfg(test)]
@@ -645,6 +679,7 @@ mod tests {
 			hal,
 			host_alloc,
 			dev_alloc,
+			_phantom_data,
 		} = compute_holder.to_data();
 
 		let mut rng = StdRng::seed_from_u64(0);

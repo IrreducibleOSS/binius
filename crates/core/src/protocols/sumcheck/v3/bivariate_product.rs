@@ -4,8 +4,7 @@ use std::{iter, slice};
 
 use binius_compute::{
 	ComputeLayer, ComputeLayerExecutor, ComputeMemory, FSlice, KernelBuffer, KernelExecutor,
-	KernelMemMap, SizedSlice, SlicesBatch,
-	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	KernelMemMap, SizedSlice, SlicesBatch, alloc::ComputeAllocator, cpu::CpuMemory,
 };
 use binius_field::{Field, TowerField, util::powers};
 use binius_math::{CompositionPoly, EvaluationOrder, evaluate_univariate};
@@ -25,10 +24,19 @@ use crate::{
 /// This implements the [`SumcheckProver`] interface. The implementation uses a [`ComputeLayer`]
 /// instance for expensive operations and the input multilinears are provided as device memory
 /// slices.
-pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
+pub struct BivariateSumcheckProver<
+	'a,
+	F: Field,
+	Hal: ComputeLayer<F>,
+	DeviceAllocatorType,
+	HostAllocatorType,
+> where
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+{
 	hal: &'a Hal,
-	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'alloc, F>,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &'a HostAllocatorType,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
@@ -36,15 +44,18 @@ pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	last_coeffs_or_sums: PhaseState<F>,
 }
 
-impl<'a, 'alloc, F, Hal> BivariateSumcheckProver<'a, 'alloc, F, Hal>
+impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
+	BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 {
 	pub fn new(
 		hal: &'a Hal,
-		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-		host_alloc: &'a HostBumpAllocator<'alloc, F>,
+		dev_alloc: &'a DeviceAllocatorType,
+		host_alloc: &'a HostAllocatorType,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {
@@ -101,10 +112,13 @@ where
 	}
 }
 
-impl<'a, 'alloc, F, Hal> SumcheckProver<F> for BivariateSumcheckProver<'a, 'alloc, F, Hal>
+impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType> SumcheckProver<F>
+	for BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars_initial
@@ -416,7 +430,7 @@ pub enum PhaseState<F: Field> {
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
+	use binius_compute::cpu::layer::CpuLayerHolder;
 	use binius_compute_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
@@ -429,9 +443,9 @@ mod tests {
 
 	#[test]
 	fn test_calculate_round_evals() {
-		let mut compute_holder = CpuLayerHolder::new(1 << 11, 1 << 10);
+		let compute_holder = CpuLayerHolder::new(1 << 11, 1 << 10);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(&mut compute_holder.to_data(), n_vars)
+		generic_test_calculate_round_evals(compute_holder, n_vars)
 	}
 
 	#[test]
@@ -439,10 +453,10 @@ mod tests {
 		type F = BinaryField128b;
 		type Packed = PackedType<OptimalUnderlier, F>;
 
-		let mut compute_holder =
+		let compute_holder =
 			FastCpuLayerHolder::<CanonicalTowerFamily, Packed>::new(1 << 11, 1 << 10);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(&mut compute_holder.to_data(), n_vars)
+		generic_test_calculate_round_evals(compute_holder, n_vars)
 	}
 
 	#[test]
@@ -451,9 +465,9 @@ mod tests {
 		let n_multilins = 8;
 		let n_compositions = 8;
 
-		let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
+		let compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
 		generic_test_bivariate_sumcheck_prove_verify(
-			&mut compute_holder.to_data(),
+			compute_holder,
 			n_vars,
 			n_multilins,
 			n_compositions,
@@ -468,11 +482,11 @@ mod tests {
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
-		let mut compute_holder =
+		let compute_holder =
 			FastCpuLayerHolder::<CanonicalTowerFamily, Packed>::new(1 << 13, 1 << 12);
 
 		generic_test_bivariate_sumcheck_prove_verify(
-			&mut compute_holder.to_data(),
+			compute_holder,
 			n_vars,
 			n_multilins,
 			n_compositions,

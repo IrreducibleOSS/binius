@@ -194,6 +194,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	merkle_prover: &MTProver,
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
+	create_hal_holder: impl FnOnce(usize, usize) -> HalHolder,
 ) where
 	U: TowerUnderlier + PackScalar<F>,
 	PackedType<U, F>: PackedFieldIndexable + PackedTop,
@@ -259,7 +260,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
 
-	let mut compute_holder = HalHolder::new(
+	let mut compute_holder = create_hal_holder(
 		host_mem_size_committed + host_mem_size_transparent,
 		dev_mem_size_committed + dev_mem_size_transparent,
 	);

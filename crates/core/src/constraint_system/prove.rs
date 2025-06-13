@@ -2,7 +2,7 @@
 
 use std::{env, iter, marker::PhantomData};
 
-use binius_compute::{ComputeData, ComputeLayer};
+use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator, cpu::CpuMemory};
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
@@ -61,8 +61,18 @@ use crate::{
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[allow(clippy::too_many_arguments)]
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<Hal, U, Tower, Hash, Compress, Challenger_, Backend>(
-	compute_data: &mut ComputeData<Tower::B128, Hal>,
+pub fn prove<
+	Hal,
+	U,
+	Tower,
+	Hash,
+	Compress,
+	Challenger_,
+	Backend,
+	HostAllocatorType,
+	DeviceAllocatorType,
+>(
+	compute_data: &mut ComputeData<Tower::B128, Hal, HostAllocatorType, DeviceAllocatorType>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -93,6 +103,8 @@ where
 		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>
 		+ binius_math::PackedTop,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+	HostAllocatorType: ComputeAllocator<Tower::B128, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<Tower::B128, Hal::DevMem>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
