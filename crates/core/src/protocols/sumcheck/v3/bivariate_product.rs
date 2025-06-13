@@ -28,7 +28,7 @@ use crate::{
 pub struct BivariateSumcheckProver<'a, 'alloc, F: Field, Hal: ComputeLayer<F>> {
 	hal: &'a Hal,
 	dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-	host_alloc: &'a HostBumpAllocator<'a, F>,
+	host_alloc: &'a HostBumpAllocator<'alloc, F>,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
 	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
@@ -44,7 +44,7 @@ where
 	pub fn new(
 		hal: &'a Hal,
 		dev_alloc: &'a BumpAllocator<'alloc, F, Hal::DevMem>,
-		host_alloc: &'a HostBumpAllocator<'a, F>,
+		host_alloc: &'a HostBumpAllocator<'alloc, F>,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
 		multilins: Vec<FSlice<'a, F, Hal>>,
 	) -> Result<Self, Error> {

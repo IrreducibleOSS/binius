@@ -192,6 +192,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 		host_alloc,
 	} = compute_data;
 	let host_alloc = host_alloc.subscope_allocator();
+	let dev_alloc = dev_alloc.subscope_allocator();
 
 	let claim_req_mem = <BivariateSumcheckProver<F, Hal>>::required_host_memory(&claim);
 	let max_eval_len = evals.iter().map(|elem| elem.len()).max().unwrap();
@@ -220,7 +221,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal>(
 	);
 
 	let prover =
-		BivariateSumcheckProver::new(*hal, dev_alloc, &host_alloc, &claim, dev_multilins).unwrap();
+		BivariateSumcheckProver::new(*hal, &dev_alloc, &host_alloc, &claim, dev_multilins).unwrap();
 
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 

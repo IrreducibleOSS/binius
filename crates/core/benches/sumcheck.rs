@@ -2,7 +2,7 @@
 
 use std::iter::repeat_with;
 
-use binius_compute::alloc::{BumpAllocator, HostBumpAllocator};
+use binius_compute::{ComputeData, ComputeHolder};
 use binius_core::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::HasherChallenger,
@@ -13,13 +13,10 @@ use binius_core::{
 	},
 	transcript::ProverTranscript,
 };
-use binius_fast_compute::{
-	layer::FastCpuLayer,
-	memory::{PackedMemorySlice, PackedMemorySliceMut},
-};
+use binius_fast_compute::{layer::FastCpuLayerHolder, memory::PackedMemorySlice};
 use binius_field::{
 	AESTowerField8b, BinaryField, BinaryField8b, BinaryField128b, BinaryField128bPolyval,
-	ByteSlicedAES32x128b, ExtensionField, Field, PackedExtension, PackedField, TowerField,
+	ByteSlicedAES32x128b, ExtensionField, PackedExtension, PackedField, TowerField,
 	arch::OptimalUnderlier,
 	as_packed_field::PackedType,
 	tower::{AESTowerFamily, CanonicalTowerFamily, PackedTop, TowerFamily},
@@ -156,20 +153,22 @@ fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
 	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 	let mut group = c.benchmark_group(format!("SumcheckV3/{field}"));
-	let mut cpu_memory = vec![T::B128::ZERO; 1 << n_vars];
-	let mut device_memory = vec![P::zero(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
-	let hal = FastCpuLayer::default();
+
+	let mut compute_holder = FastCpuLayerHolder::new(1 << n_vars, 1 << (n_vars + 1 - P::LOG_WIDTH));
 
 	group.bench_function(format!("n_vars={n_vars}"), |b| {
-		b.iter(|| {
-			let cpu_allocator = HostBumpAllocator::new(&mut cpu_memory);
-			let device_memory = PackedMemorySliceMut::new_slice(&mut device_memory);
-			let device_allocator = BumpAllocator::new(device_memory);
+		let ComputeData {
+			hal,
+			dev_alloc,
+			host_alloc,
+		} = compute_holder.to_data();
 
+		// Move dev_alloc and host_alloc outside the closure so their lifetimes are sufficient
+		b.iter(|| {
 			let prover = BivariateSumcheckProver::new(
-				&hal,
-				&device_allocator,
-				&cpu_allocator,
+				hal,
+				&dev_alloc,
+				&host_alloc,
 				&claim,
 				multilins.clone(),
 			)
