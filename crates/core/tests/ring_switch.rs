@@ -99,6 +99,6 @@ fn test_prove_verify_piop_integration() {
 		&merkle_prover,
 		&oracles,
 		log_inv_rate,
-		|host_mem_size, device_mem_size| CpuLayerHolder::new(host_mem_size, device_mem_size),
+		CpuLayerHolder::new,
 	);
 }
