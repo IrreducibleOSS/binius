@@ -25,7 +25,6 @@ use super::{
 	channel::{Channel, Flush},
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
-	statement::Statement,
 	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
@@ -180,10 +179,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// oracles for all columns. The main difference between column definitions and oracle
 	/// definitions is that multilinear oracle definitions have a number of variables, whereas the
 	/// column definitions contained in a [`ConstraintSystem`] do not have size information.
-	pub fn compile(&self, statement: &Statement<F>) -> Result<CompiledConstraintSystem<F>, Error> {
-		// TODO: This is not used anymore and should be removed from `compile` in the follow up PRs.
-		let _ = statement;
-
+	pub fn compile(&self) -> Result<CompiledConstraintSystem<F>, Error> {
 		let mut oracles = SymbolicMultilinearOracleSet::new();
 		let mut table_constraints = Vec::new();
 		let mut compiled_flushes = Vec::new();

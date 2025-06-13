@@ -10,8 +10,7 @@ use binius_field::{
 };
 use binius_m3::{
 	builder::{
-		B32, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
-		WitnessIndex,
+		B32, B64, B128, ConstraintSystem, TableFiller, TableId, TableWitnessSegment, WitnessIndex,
 		test_utils::{ClosureFiller, validate_system_witness},
 	},
 	gadgets::{
@@ -40,13 +39,13 @@ impl MulDivTestSuite {
 		&self,
 		cs: ConstraintSystem,
 		allocator: &'a HostBumpAllocator<'a, PackedType<OptimalUnderlier, B128>>,
-		statement: Statement,
 		test_table: Test,
+		test_size: usize,
 	) -> anyhow::Result<()>
 	where
 		Test: MulDivTestSuiteHelper + TableFiller,
 	{
-		let inputs = test_table.generate_inputs(*statement.table_sizes.first().unwrap());
+		let inputs = test_table.generate_inputs(test_size);
 
 		let mut witness = WitnessIndex::new(&cs, allocator);
 
@@ -54,7 +53,8 @@ impl MulDivTestSuite {
 		let table_index = witness.get_table(test_table.id()).unwrap();
 		test_table.check_outputs(&inputs, &table_index.full_segment());
 
-		validate_system_witness::<OptimalUnderlier>(&cs, witness, statement.boundaries);
+		let boundaries = vec![];
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, boundaries);
 		Ok(())
 	}
 }
@@ -118,13 +118,9 @@ fn test_muluu64() {
 	let mut cs = ConstraintSystem::new();
 	let mut allocator = CpuComputeAllocator::new(1 << 12);
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let muluu = MulUU64TestTable::new(&mut cs);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, muluu)
+		.execute(cs, &allocator, muluu, 1 << 9)
 		.unwrap();
 }
 
@@ -311,13 +307,9 @@ fn test_muluu32() {
 	let mut allocator =
 		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulUU32);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, mul_div_32)
+		.execute(cs, &allocator, mul_div_32, 1 << 9)
 		.unwrap();
 }
 
@@ -327,13 +319,9 @@ fn test_mulsu32() {
 	let mut allocator =
 		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSU32);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, mul_div_32)
+		.execute(cs, &allocator, mul_div_32, 1 << 9)
 		.unwrap();
 }
 
@@ -343,13 +331,9 @@ fn test_mulss32() {
 	let mut allocator =
 		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::MulSS32);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, mul_div_32)
+		.execute(cs, &allocator, mul_div_32, 1 << 9)
 		.unwrap();
 }
 
@@ -359,13 +343,9 @@ fn test_divuu32() {
 	let mut allocator =
 		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivUU32);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, mul_div_32)
+		.execute(cs, &allocator, mul_div_32, 1 << 9)
 		.unwrap();
 }
 
@@ -375,13 +355,9 @@ fn test_divss32() {
 	let mut allocator =
 		CpuComputeAllocator::new(1 << (13 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH));
 	let allocator = allocator.into_bump_allocator();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![1 << 9],
-	};
 	let mul_div_32 = MulDiv32TestTable::new(&mut cs, MulDivType::DivSS32);
 	MulDivTestSuite
-		.execute(cs, &allocator, statement, mul_div_32)
+		.execute(cs, &allocator, mul_div_32, 1 << 9)
 		.unwrap();
 }
 

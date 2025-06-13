@@ -9,10 +9,6 @@ use super::{column::ColumnId, structured::Error as StructuredError, table::Table
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error(
-		"statement table sizes does not match the number of tables; expected {expected}, got {actual}"
-	)]
-	StatementMissingTableSize { expected: usize, actual: usize },
 	#[error("missing table with ID: {table_id}")]
 	MissingTable { table_id: TableId },
 	#[error("missing column with ID: {0:?}")]
