@@ -146,7 +146,18 @@ impl U32Add {
 ///
 /// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
 /// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
+
+/// A gadget for performing SIMD 32-bit integer addition on vertically-packed bit columns.
+///
+/// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
+/// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
 /// supports unchecked addition, so it does not handle overflow.
+///
+/// The generic parameter `V` represents the number of vertically-packed bits (the height of the
+/// bit columns). The default value is 32, which corresponds to the standard 32-bit integer size.
+/// When using a different value for `V`, ensure it's sufficient for your application's needs
+/// while considering the trade-off between circuit size and performance.
+
 #[derive(Debug)]
 pub struct U32AddStacked<const V: usize = 32> {
 	// Inputs
