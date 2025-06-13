@@ -153,11 +153,9 @@ impl U32Add {
 /// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
 /// supports unchecked addition, so it does not handle overflow.
 ///
-/// The generic parameter `V` represents the number of vertically-packed bits (the height of the
-/// bit columns). The default value is 32, which corresponds to the standard 32-bit integer size.
-/// When using a different value for `V`, ensure it's sufficient for your application's needs
-/// while considering the trade-off between circuit size and performance.
-
+/// The generic parameter `V` represents the number of vertically-packed bits (the vertical stacking
+/// factor of the bit columns). The default value is 32, which corresponds to the standard 32-bit
+/// integer size. When using a different value for `V`, ensure it is a power of two and at least 32.
 #[derive(Debug)]
 pub struct U32AddStacked<const V: usize = 32> {
 	// Inputs
