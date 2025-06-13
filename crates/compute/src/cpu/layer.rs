@@ -597,8 +597,8 @@ pub struct CpuLayerHolder<F> {
 	dev_mem: Vec<F>,
 }
 
-impl<F: Field> CpuLayerHolder<F> {
-	pub fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
+impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
+	fn new(host_mem_size: usize, dev_mem_size: usize) -> Self {
 		let cpu_mem = zeroed_vec(host_mem_size);
 		let dev_mem = zeroed_vec(dev_mem_size);
 		Self {
@@ -607,9 +607,7 @@ impl<F: Field> CpuLayerHolder<F> {
 			dev_mem,
 		}
 	}
-}
 
-impl<F: TowerTop> ComputeHolder<F, CpuLayer<F>> for CpuLayerHolder<F> {
 	fn to_data(&mut self) -> ComputeData<'_, F, CpuLayer<F>> {
 		ComputeData {
 			hal: &self.layer,

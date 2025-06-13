@@ -2,14 +2,26 @@
 
 use std::{cmp::Ordering, iter::repeat_with};
 
-use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
+use binius_compute::{ComputeHolder, ComputeLayer};
+use binius_core::{
+	fiat_shamir::HasherChallenger,
+	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
+	oracle::{MultilinearOracleSet, OracleId},
+	piop,
+	protocols::{
+		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
+		fri::CommitOutput,
+	},
+	ring_switch::{EvalClaimSystem, ReducedClaim, ReducedWitness, prove, verify},
+	transcript::ProverTranscript,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
+};
 use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
-	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 };
-use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+use binius_hash::groestl::Groestl256;
 use binius_math::{
 	B1, B8, B16, B32, B64, B128, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery, PackedTop, TowerTop, TowerUnderlier,
@@ -17,25 +29,6 @@ use binius_math::{
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::prelude::*;
-
-use super::{
-	common::EvalClaimSystem,
-	prove,
-	verify::{ReducedClaim, verify},
-};
-use crate::{
-	fiat_shamir::HasherChallenger,
-	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
-	oracle::{MultilinearOracleSet, OracleId},
-	piop,
-	protocols::{
-		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
-		fri::CommitOutput,
-	},
-	ring_switch::prove::ReducedWitness,
-	transcript::ProverTranscript,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
-};
 
 const SECURITY_BITS: usize = 32;
 
@@ -55,7 +48,7 @@ where
 	MLEEmbeddingAdapter::from(mle).upcast_arc_dyn()
 }
 
-fn generate_multilinears<U, F>(
+pub fn generate_multilinears<U, F>(
 	mut rng: impl Rng,
 	oracles: &MultilinearOracleSet<F>,
 ) -> MultilinearExtensionIndex<PackedType<U, F>>
@@ -109,7 +102,7 @@ where
 	}
 }
 
-fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
+pub fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
 	for (i, claim_desc) in system.sumcheck_claim_descs.iter().enumerate() {
 		let prefix_desc_idx = system.eval_claim_to_prefix_desc_index[i];
 		let prefix_desc = &system.prefix_descs[prefix_desc_idx];
@@ -128,7 +121,7 @@ fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
 	}
 }
 
-fn setup_test_eval_claims<U, F>(
+pub fn setup_test_eval_claims<U, F>(
 	mut rng: impl Rng,
 	oracles: &MultilinearOracleSet<F>,
 	witness_index: &MultilinearExtensionIndex<PackedType<U, F>>,
@@ -183,37 +176,7 @@ where
 	eval_claims
 }
 
-fn with_test_instance_from_oracles<U, F, R>(
-	mut rng: R,
-	oracles: &MultilinearOracleSet<F>,
-	func: impl FnOnce(R, EvalClaimSystem<F>, Vec<MultilinearWitness<PackedType<U, F>>>),
-) where
-	U: TowerUnderlier + PackScalar<F>,
-	F: TowerTop,
-	R: Rng,
-{
-	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
-
-	let witness_index = generate_multilinears::<U, F>(&mut rng, oracles);
-	let witnesses = piop::collect_committed_witnesses::<U, _>(
-		&commit_meta,
-		&oracle_to_commit_index,
-		oracles,
-		&witness_index,
-	)
-	.unwrap();
-
-	let eval_claims = setup_test_eval_claims::<U, _>(&mut rng, oracles, &witness_index);
-
-	// Finish setting up the test case
-	let system =
-		EvalClaimSystem::new(oracles, &commit_meta, &oracle_to_commit_index, &eval_claims).unwrap();
-	check_eval_point_consistency(&system);
-
-	func(rng, system, witnesses)
-}
-
-fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
+pub fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
 	let mut oracles = MultilinearOracleSet::new();
 
 	// This first one ensures that not all oracles are added in ascending order by number of packed
@@ -227,40 +190,7 @@ fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
 	oracles
 }
 
-#[test]
-fn test_prove_verify_claim_reduction_with_naive_validation() {
-	type U = OptimalUnderlier128b;
-	type F = B128;
-
-	let rng = StdRng::seed_from_u64(0);
-	let oracles = make_test_oracle_set();
-
-	with_test_instance_from_oracles::<U, F, _>(rng, &oracles, |_rng, system, witnesses| {
-		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
-
-		let ReducedWitness {
-			transparents: transparent_witnesses,
-			sumcheck_claims: prover_sumcheck_claims,
-		} = prove(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
-
-		let mut proof = proof.into_verifier();
-		let ReducedClaim {
-			transparents: _,
-			sumcheck_claims: verifier_sumcheck_claims,
-		} = verify(&system, &mut proof).unwrap();
-
-		assert_eq!(prover_sumcheck_claims, verifier_sumcheck_claims);
-
-		piop::validate_sumcheck_witness(
-			&witnesses,
-			&transparent_witnesses,
-			&prover_sumcheck_claims,
-		)
-		.unwrap();
-	});
-}
-
-fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
+pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	merkle_prover: &MTProver,
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
@@ -270,6 +200,8 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 	F: TowerTop + PackedTop<Scalar = F>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Hal: ComputeLayer<F>,
+	HalHolder: ComputeHolder<F, Hal>,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -327,7 +259,7 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		.map(|multilin| 1 << (multilin.n_vars() + 1))
 		.sum::<usize>();
 
-	let mut compute_holder = CpuLayerHolder::<F>::new(
+	let mut compute_holder = HalHolder::new(
 		host_mem_size_committed + host_mem_size_transparent,
 		dev_mem_size_committed + dev_mem_size_transparent,
 	);
@@ -365,16 +297,4 @@ fn commit_prove_verify_piop<U, F, MTScheme, MTProver>(
 		&mut proof,
 	)
 	.unwrap();
-}
-
-#[test]
-fn test_prove_verify_piop_integration() {
-	type U = OptimalUnderlier128b;
-	type F = B128;
-
-	let oracles = make_test_oracle_set();
-	let log_inv_rate = 2;
-	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
-
-	commit_prove_verify_piop::<U, F, _, _>(&merkle_prover, &oracles, log_inv_rate);
 }
