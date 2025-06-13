@@ -328,193 +328,11 @@ impl Sha256 {
 	pub fn populate<P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		message: &[u32; 16],
-		state_in: &[u32; 8],
+		message_blocks: impl IntoIterator<Item = [u32; 16]>,
 	) -> Result<(), anyhow::Error>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
-		// Compute the message schedule W[0..63]
-		let mut w = [0u32; 64];
-		for t in 0..16 {
-			w[t] = message[t];
-		}
-		for t in 16..64 {
-			// σ₁(W[t-2]) + W[t-7] + σ₀(W[t-15]) + W[t-16]
-			let sigma1 =
-				(w[t - 2].rotate_right(17)) ^ (w[t - 2].rotate_right(19)) ^ (w[t - 2] >> 10);
-			let sigma0 =
-				(w[t - 15].rotate_right(7)) ^ (w[t - 15].rotate_right(18)) ^ (w[t - 15] >> 3);
-			w[t] = w[t - 16]
-				.wrapping_add(sigma0)
-				.wrapping_add(w[t - 7])
-				.wrapping_add(sigma1);
-		}
-
-		// Populate message schedule column
-		let mut w_packed = index.get_mut(self.w)?;
-		for t in 0..64 {
-			for j in 0..32 {
-				set_packed_slice(&mut w_packed, t * 32 + j, B1::from(((w[t] >> j) & 1) == 1));
-			}
-		}
-
-		// Populate w_blocks for easier access
-		for t in 0..64 {
-			let mut w_block = index.get_mut(self.w_blocks[t])?;
-			for j in 0..32 {
-				set_packed_slice(&mut w_block, j, B1::from(((w[t] >> j) & 1) == 1));
-			}
-		}
-
-		// Populate initial state
-		for i in 0..8 {
-			let mut state_col = index.get_mut(self.initial_state[i])?;
-			for j in 0..32 {
-				set_packed_slice(&mut state_col, j, B1::from(((state_in[i] >> j) & 1) == 1));
-			}
-		}
-
-		// Compute and populate round variables
-		let mut a = state_in[0];
-		let mut b = state_in[1];
-		let mut c = state_in[2];
-		let mut d = state_in[3];
-		let mut e = state_in[4];
-		let mut f = state_in[5];
-		let mut g = state_in[6];
-		let mut h = state_in[7];
-
-		for t in 0..64 {
-			// Populate individual round
-			// self.populate_round(index, t, a, b, c, d, e, f, g, h, w[t])?;
-
-			// Compute next round variables
-			let big_sigma1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-			let ch = (e & f) ^ (!e & g);
-			let temp1 = h
-				.wrapping_add(big_sigma1)
-				.wrapping_add(ch)
-				.wrapping_add(ROUND_CONSTS_K[t])
-				.wrapping_add(w[t]);
-
-			let big_sigma0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-			let maj = (a & b) ^ (a & c) ^ (b & c);
-			let temp2 = big_sigma0.wrapping_add(maj);
-
-			h = g;
-			g = f;
-			f = e;
-			e = d.wrapping_add(temp1);
-			d = c;
-			c = b;
-			b = a;
-			a = temp1.wrapping_add(temp2);
-		}
-
-		// Populate state_out
-		let final_state = [
-			state_in[0].wrapping_add(a),
-			state_in[1].wrapping_add(b),
-			state_in[2].wrapping_add(c),
-			state_in[3].wrapping_add(d),
-			state_in[4].wrapping_add(e),
-			state_in[5].wrapping_add(f),
-			state_in[6].wrapping_add(g),
-			state_in[7].wrapping_add(h),
-		];
-
-		for i in 0..8 {
-			let mut state_out_col = index.get_mut(self.state_out[i])?;
-			for j in 0..32 {
-				set_packed_slice(&mut state_out_col, j, B1::from(((final_state[i] >> j) & 1) == 1));
-			}
-		}
-
-		Ok(())
-	}
-
-	/// Helper method to populate a single round's witness values
-	fn populate_round<P>(
-		&self,
-		index: &mut TableWitnessSegment<P>,
-		round: usize,
-		a: u32,
-		b: u32,
-		c: u32,
-		d: u32,
-		e: u32,
-		f: u32,
-		g: u32,
-		h: u32,
-		wt: u32,
-	) -> Result<(), anyhow::Error>
-	where
-		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
-	{
-		let round_data = &self.rounds[round];
-
-		// Populate working variables for this round
-		let vars = [
-			(round_data.a, a),
-			(round_data.b, b),
-			(round_data.c, c),
-			(round_data.d, d),
-			(round_data.e, e),
-			(round_data.f, f),
-			(round_data.g, g),
-			(round_data.h, h),
-		];
-
-		for (col, val) in vars {
-			let mut col_data = index.get_mut(col)?;
-			for j in 0..32 {
-				set_packed_slice(&mut col_data, j, B1::from(((val >> j) & 1) == 1));
-			}
-		}
-
-		// Populate intermediate values
-		// Ch(e,f,g)
-		let ch = (e & f) ^ (!e & g);
-		let mut ch_col = index.get_mut(if round == 0 {
-			round_data.temp_sum_0.xin
-		} else {
-			round_data.temp_sum_0.yin
-		})?;
-		for j in 0..32 {
-			set_packed_slice(&mut ch_col, j, B1::from(((ch >> j) & 1) == 1));
-		}
-
-		// Maj(a,b,c)
-		let maj = (a & b) ^ (a & c) ^ (b & c);
-		let mut maj_col = index.get_mut(if round == 0 {
-			round_data.temp_sum_4.yin
-		} else {
-			round_data.temp_sum_4.yin
-		})?;
-		for j in 0..32 {
-			set_packed_slice(&mut maj_col, j, B1::from(((maj >> j) & 1) == 1));
-		}
-
-		// T1 and T2
-		let big_sigma1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-		let big_sigma0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-		let temp1 = h
-			.wrapping_add(big_sigma1)
-			.wrapping_add(ch)
-			.wrapping_add(ROUND_CONSTS_K[round])
-			.wrapping_add(wt);
-		let temp2 = big_sigma0.wrapping_add(maj);
-
-		// // Populate adder gadgets
-		// round_data.temp_sum_0.populate(index)?;
-		// round_data.temp_sum_1.populate(index)?;
-		// round_data.temp_sum_2.populate(index)?;
-		// round_data.temp_sum_3.populate(index)?;
-		// round_data.temp_sum_4.populate(index)?;
-		// round_data.temp_sum_5.populate(index)?;
-		// round_data.temp_sum_6.populate(index)?;
-
 		Ok(())
 	}
 }
@@ -534,6 +352,9 @@ pub struct Round {
 	pub g: Col<B1, 32>,
 	pub h: Col<B1, 32>,
 
+	ch: Col<B1, 32>,
+	maj: Col<B1, 32>,
+
 	temp_sum_0: U32Add,
 	temp_sum_1: U32Add,
 	temp_sum_2: U32Add,
@@ -546,6 +367,8 @@ pub struct Round {
 	pub t1: Col<B1, 32>,
 	pub t2: Col<B1, 32>,
 
+	bigsigma0: BigSigma0,
+	bigsigma1: BigSigma1,
 	/// The round constant Kₜ for this round.
 	pub k: Col<B1, 32>,
 }
@@ -615,6 +438,8 @@ impl Round {
 			f,
 			g,
 			h,
+			bigsigma0,
+			bigsigma1,
 			temp_sum_0,
 			temp_sum_1,
 			temp_sum_2,
@@ -624,6 +449,8 @@ impl Round {
 			temp_sum_6,
 			t1,
 			t2,
+			ch,
+			maj,
 			k: round_constant.clone(),
 		}
 	}
@@ -675,6 +502,10 @@ impl Round {
 			f,
 			g,
 			h,
+			ch,
+			maj,
+			bigsigma0,
+			bigsigma1,
 			temp_sum_0,
 			temp_sum_1,
 			temp_sum_2,
@@ -687,6 +518,42 @@ impl Round {
 			k: round_constant.clone(),
 		}
 	}
+
+	/// Helper method to populate a single round's witness values
+	fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
+	{
+		{
+			let a: std::cell::Ref<'_, [u32]> = index.get_as(self.a)?;
+			let b: std::cell::Ref<'_, [u32]> = index.get_as(self.b)?;
+			let c: std::cell::Ref<'_, [u32]> = index.get_as(self.c)?;
+			let e: std::cell::Ref<'_, [u32]> = index.get_as(self.e)?;
+			let f: std::cell::Ref<'_, [u32]> = index.get_as(self.f)?;
+			let g: std::cell::Ref<'_, [u32]> = index.get_as(self.g)?;
+
+			let mut ch: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.ch)?;
+			let mut maj: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.maj)?;
+
+			for i in 0..index.size() {
+				ch[i] = (e[i] & f[i]) ^ (!e[i] & g[i]);
+				maj[i] = (a[i] & b[i]) ^ (a[i] & c[i]) ^ (b[i] & c[i]);
+			}
+		}
+
+		self.bigsigma0.populate(index)?;
+		self.bigsigma1.populate(index)?;
+
+		self.temp_sum_0.populate(index)?;
+		self.temp_sum_1.populate(index)?;
+		self.temp_sum_2.populate(index)?;
+		self.temp_sum_3.populate(index)?;
+		self.temp_sum_4.populate(index)?;
+		self.temp_sum_5.populate(index)?;
+		self.temp_sum_6.populate(index)?;
+
+		Ok(())
+	}
 }
 /// The σ₀ function used in SHA-256 message schedule extension.
 ///
@@ -698,6 +565,7 @@ impl Round {
 /// The function is used to extend the 16-word message block to the full 64-word
 /// message schedule required for SHA-256 compression.
 pub struct Sigma0 {
+	pub input: Col<B1, { 32 * 64 }>,
 	/// Right rotation by 7 positions: ROTR⁷(x)
 	rotr_7: Col<B1, { 32 * 64 }>,
 	/// Right rotation by 18 positions: ROTR¹⁸(x)  
@@ -729,6 +597,7 @@ impl Sigma0 {
 		// Compute σ₀ as XOR of the three components
 		let out = table.add_computed("sigma_0", rotr_7 + rotr_18 + shr_3);
 		Self {
+			input: state_in,
 			rotr_7,
 			rotr_18,
 			shr_3,
@@ -741,29 +610,17 @@ impl Sigma0 {
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
-		// Populate the rotations and shifts manually
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_7)?;
-			let mut rotr_7 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_7)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_7.iter_mut()) {
-				*rotr_val = input_val.rotate_right(7);
-			}
-		}
+		let input = index.get_as::<u32, _, { 32 * 64 }>(self.input)?;
+		let mut rotr_7 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_7)?;
+		let mut rotr_18 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_18)?;
+		let mut shr_3 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.shr_3)?;
+		let mut out = index.get_mut_as::<u32, _, { 32 * 64 }>(self.out)?;
 
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_18)?;
-			let mut rotr_18 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_18)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_18.iter_mut()) {
-				*rotr_val = input_val.rotate_right(18);
-			}
-		}
-
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.shr_3)?;
-			let mut shr_3 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.shr_3)?;
-			for (input_val, shr_val) in input.iter().zip(shr_3.iter_mut()) {
-				*shr_val = input_val >> 3;
-			}
+		for i in 0..input.len() {
+			rotr_7[i] = input[i].rotate_right(7);
+			rotr_18[i] = input[i].rotate_right(18);
+			shr_3[i] = input[i] >> 3;
+			out[i] = rotr_7[i] ^ rotr_18[i] ^ shr_3[i];
 		}
 
 		Ok(())
@@ -780,6 +637,7 @@ impl Sigma0 {
 /// Like σ₀, this function is used in message schedule extension to provide
 /// cryptographic mixing of the message words.
 pub struct Sigma1 {
+	pub input: Col<B1, { 32 * 64 }>,
 	/// Right rotation by 17 positions: ROTR¹⁷(x)
 	rotr_17: Col<B1, { 32 * 64 }>,
 	/// Right rotation by 19 positions: ROTR¹⁹(x)
@@ -813,6 +671,7 @@ impl Sigma1 {
 		let out = table.add_computed("sigma_1", rotr_17 + rotr_19 + shr_10);
 
 		Self {
+			input: state_in,
 			rotr_17,
 			rotr_19,
 			shr_10,
@@ -825,29 +684,17 @@ impl Sigma1 {
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
-		// Populate the rotations and shifts manually
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_17)?;
-			let mut rotr_17 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_17)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_17.iter_mut()) {
-				*rotr_val = input_val.rotate_right(17);
-			}
-		}
+		let input: std::cell::Ref<'_, [u32]> = index.get_as(self.input)?;
+		let mut rotr_17 = index.get_mut_as(self.rotr_17)?;
+		let mut rotr_19 = index.get_mut_as(self.rotr_19)?;
+		let mut shr_10 = index.get_mut_as(self.shr_10)?;
+		let mut out = index.get_mut_as(self.out)?;
 
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.rotr_19)?;
-			let mut rotr_19 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.rotr_19)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_19.iter_mut()) {
-				*rotr_val = input_val.rotate_right(19);
-			}
-		}
-
-		{
-			let input = index.get_as::<u32, _, { 32 * 64 }>(self.shr_10)?;
-			let mut shr_10 = index.get_mut_as::<u32, _, { 32 * 64 }>(self.shr_10)?;
-			for (input_val, shr_val) in input.iter().zip(shr_10.iter_mut()) {
-				*shr_val = input_val >> 10;
-			}
+		for i in 0..input.len() {
+			rotr_17[i] = input[i].rotate_right(17);
+			rotr_19[i] = input[i].rotate_right(19);
+			shr_10[i] = input[i] >> 10;
+			out[i] = rotr_17[i] ^ rotr_19[i] ^ shr_10[i];
 		}
 
 		Ok(())
@@ -862,7 +709,9 @@ impl Sigma1 {
 ///
 /// Σ₀ is applied to working variable 'a' in each compression round and contributes
 /// to the T₂ temporary value in the round function.
+#[derive(Debug)]
 pub struct BigSigma0 {
+	pub input: Col<B1, 32>,
 	/// Right rotation by 2 positions: ROTR²(x)
 	rotr_2: Col<B1, 32>,
 	/// Right rotation by 13 positions: ROTR¹³(x)
@@ -895,6 +744,7 @@ impl BigSigma0 {
 		let out = table.add_computed("big_sigma_0", rotr_2 + rotr_13 + rotr_22);
 
 		Self {
+			input: state_in,
 			rotr_2,
 			rotr_13,
 			rotr_22,
@@ -907,29 +757,17 @@ impl BigSigma0 {
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
-		// Populate the rotations manually
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_2)?;
-			let mut rotr_2 = index.get_mut_as::<u32, _, 32>(self.rotr_2)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_2.iter_mut()) {
-				*rotr_val = input_val.rotate_right(2);
-			}
-		}
+		let input: std::cell::Ref<'_, [u32]> = index.get_as(self.input)?;
+		let mut rotr_2 = index.get_mut_as(self.rotr_2)?;
+		let mut rotr_13 = index.get_mut_as(self.rotr_13)?;
+		let mut rotr_22 = index.get_mut_as(self.rotr_22)?;
+		let mut out = index.get_mut_as(self.out)?;
 
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_13)?;
-			let mut rotr_13 = index.get_mut_as::<u32, _, 32>(self.rotr_13)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_13.iter_mut()) {
-				*rotr_val = input_val.rotate_right(13);
-			}
-		}
-
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_22)?;
-			let mut rotr_22 = index.get_mut_as::<u32, _, 32>(self.rotr_22)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_22.iter_mut()) {
-				*rotr_val = input_val.rotate_right(22);
-			}
+		for i in 0..input.len() {
+			rotr_2[i] = input[i].rotate_right(2);
+			rotr_13[i] = input[i].rotate_right(13);
+			rotr_22[i] = input[i].rotate_right(22);
+			out[i] = rotr_2[i] ^ rotr_13[i] ^ rotr_22[i];
 		}
 
 		Ok(())
@@ -944,7 +782,9 @@ impl BigSigma0 {
 ///
 /// Σ₁ is applied to working variable 'e' in each compression round and contributes
 /// to the T₁ temporary value in the round function.
+#[derive(Debug)]
 pub struct BigSigma1 {
+	pub input: Col<B1, 32>,
 	/// Right rotation by 6 positions: ROTR⁶(x)
 	rotr_6: Col<B1, 32>,
 	/// Right rotation by 11 positions: ROTR¹¹(x)
@@ -977,6 +817,7 @@ impl BigSigma1 {
 		let out = table.add_computed("big_sigma_1", rotr_6 + rotr_11 + rotr_25);
 
 		Self {
+			input: state_in,
 			rotr_6,
 			rotr_11,
 			rotr_25,
@@ -989,29 +830,17 @@ impl BigSigma1 {
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
 	{
-		// Populate the rotations manually
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_6)?;
-			let mut rotr_6 = index.get_mut_as::<u32, _, 32>(self.rotr_6)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_6.iter_mut()) {
-				*rotr_val = input_val.rotate_right(6);
-			}
-		}
+		let input: std::cell::Ref<'_, [u32]> = index.get_as(self.input)?;
+		let mut rotr_6 = index.get_mut_as(self.rotr_6)?;
+		let mut rotr_11 = index.get_mut_as(self.rotr_11)?;
+		let mut rotr_25 = index.get_mut_as(self.rotr_25)?;
+		let mut out = index.get_mut_as(self.out)?;
 
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_11)?;
-			let mut rotr_11 = index.get_mut_as::<u32, _, 32>(self.rotr_11)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_11.iter_mut()) {
-				*rotr_val = input_val.rotate_right(11);
-			}
-		}
-
-		{
-			let input = index.get_as::<u32, _, 32>(self.rotr_25)?;
-			let mut rotr_25 = index.get_mut_as::<u32, _, 32>(self.rotr_25)?;
-			for (input_val, rotr_val) in input.iter().zip(rotr_25.iter_mut()) {
-				*rotr_val = input_val.rotate_right(25);
-			}
+		for i in 0..input.len() {
+			rotr_6[i] = input[i].rotate_right(6);
+			rotr_11[i] = input[i].rotate_right(11);
+			rotr_25[i] = input[i].rotate_right(25);
+			out[i] = rotr_6[i] ^ rotr_11[i] ^ rotr_25[i];
 		}
 
 		Ok(())
