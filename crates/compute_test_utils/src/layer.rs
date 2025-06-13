@@ -3,7 +3,7 @@
 use std::{iter, iter::repeat_with, mem::MaybeUninit};
 
 use binius_compute::{
-	ComputeData, ComputeLayerExecutor, KernelExecutor, KernelMem,
+	ComputeData, ComputeHolder, ComputeLayerExecutor, KernelExecutor, KernelMem,
 	alloc::ComputeAllocator,
 	layer::{ComputeLayer, KernelBuffer, KernelMemMap},
 	memory::{ComputeMemory, SizedSlice, SlicesBatch, SubfieldSlice},
@@ -18,8 +18,12 @@ use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
 use rand::{SeedableRng, prelude::StdRng};
 
-pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
-	compute_data: &ComputeData<F, C>,
+pub fn test_generic_single_tensor_expand<
+	F: Field,
+	C: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, C>,
+>(
+	mut compute_data: ComputeHolderType,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -28,7 +32,8 @@ pub fn test_generic_single_tensor_expand<F: Field, C: ComputeLayer<F>>(
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	let coordinates = repeat_with(|| F::random(&mut rng))
 		.take(n_vars)
@@ -69,8 +74,9 @@ pub fn test_generic_single_inner_product<
 	F2: TowerField,
 	F: Field + PackedExtension<F2> + ExtensionField<F2>,
 	C: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, C>,
 >(
-	compute_data: &ComputeData<F, C>,
+	mut compute_holder: ComputeHolderType,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -78,7 +84,8 @@ pub fn test_generic_single_inner_product<
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_holder.to_data();
 
 	// Allocate buffers a and b to be device mapped
 	let a_buffer = host_alloc.alloc(1 << (n_vars - F::LOG_DEGREE)).unwrap();
@@ -126,8 +133,9 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		+ PackedExtension<F2>
 		+ ExtensionField<F2>,
 	C: ComputeLayer<F>,
+	ComputeDataHolderType: ComputeHolder<F, C>,
 >(
-	compute_data: &ComputeData<F, C>,
+	mut compute_data: ComputeDataHolderType,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -135,7 +143,8 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	// Allocate buffers to be device mapped
 	let mle1_buffer = host_alloc
@@ -225,8 +234,9 @@ pub fn test_generic_multiple_multilinear_evaluations<
 pub fn test_generic_map_with_multilinear_evaluations<
 	F: Field + TowerField + PackedField<Scalar = F>,
 	C: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, C>,
 >(
-	compute_data: &ComputeData<F, C>,
+	mut compute_data: ComputeHolderType,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -234,7 +244,8 @@ pub fn test_generic_map_with_multilinear_evaluations<
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	// Allocate buffers to be device mapped
 	let mle1_buffer = host_alloc.alloc(1 << n_vars).unwrap();
@@ -314,8 +325,12 @@ pub fn test_generic_map_with_multilinear_evaluations<
 	assert_eq!(eval2, expected_eval2);
 }
 
-pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: ComputeLayer<F>>(
-	compute_data: &ComputeData<F, C>,
+pub fn test_generic_single_inner_product_using_kernel_accumulator<
+	F: Field,
+	C: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, C>,
+>(
+	mut compute_data: ComputeHolderType,
 	n_vars: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -325,7 +340,8 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	// Allocate buffers a and b to be device mapped
 	let a_buffer = host_alloc.alloc(1 << n_vars).unwrap();
@@ -392,8 +408,12 @@ pub fn test_generic_single_inner_product_using_kernel_accumulator<F: Field, C: C
 	assert_eq!(actual, expected);
 }
 
-pub fn test_generic_kernel_add<F: Field, C: ComputeLayer<F>>(
-	compute_data: &ComputeData<F, C>,
+pub fn test_generic_kernel_add<
+	F: Field,
+	C: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, C>,
+>(
+	mut compute_data: ComputeHolderType,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -403,7 +423,8 @@ pub fn test_generic_kernel_add<F: Field, C: ComputeLayer<F>>(
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	// Allocate buffers a and b to be device mapped
 	let a_buffer = host_alloc.alloc(1 << log_len).unwrap();
@@ -478,8 +499,8 @@ pub fn test_generic_kernel_add<F: Field, C: ComputeLayer<F>>(
 	assert_eq!(actual, expected);
 }
 
-pub fn test_generic_fri_fold<F, FSub, C>(
-	compute_data: &ComputeData<F, C>,
+pub fn test_generic_fri_fold<F, FSub, C, ComputeHolderType: ComputeHolder<F, C>>(
+	mut compute_data: ComputeHolderType,
 	log_len: usize,
 	log_batch_size: usize,
 	log_fold_challenges: usize,
@@ -494,7 +515,8 @@ pub fn test_generic_fri_fold<F, FSub, C>(
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	let ntt = binius_ntt::SingleThreadedNTT::<FSub>::new(log_len).unwrap();
 
@@ -550,8 +572,9 @@ pub fn test_generic_single_left_fold<
 	F: Field + TowerField,
 	F2: ExtensionField<F> + TowerField,
 	C: ComputeLayer<F2>,
+	ComputeHolderType: ComputeHolder<F2, C>,
 >(
-	compute_data: &ComputeData<F2, C>,
+	mut compute_holder: ComputeHolderType,
 	log_evals_size: usize,
 	log_query_size: usize,
 ) {
@@ -561,7 +584,8 @@ pub fn test_generic_single_left_fold<
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_holder.to_data();
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
@@ -626,8 +650,9 @@ pub fn test_generic_single_right_fold<
 	F: Field + TowerField,
 	F2: ExtensionField<F> + TowerField,
 	C: ComputeLayer<F2>,
+	ComputeHolderType: ComputeHolder<F2, C>,
 >(
-	compute_data: &ComputeData<F2, C>,
+	mut compute_data: ComputeHolderType,
 	log_evals_size: usize,
 	log_query_size: usize,
 ) {
@@ -637,7 +662,8 @@ pub fn test_generic_single_right_fold<
 		hal: compute,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	let num_f_per_f2 = size_of::<F2>() / size_of::<F>();
 	let log_evals_size_f2 = log_evals_size - num_f_per_f2.ilog2() as usize;
@@ -696,8 +722,12 @@ pub fn test_generic_single_right_fold<
 	assert_eq!(out, expected_out);
 }
 
-pub fn test_extrapolate_line<F: Field, Hal: ComputeLayer<F>>(
-	compute_data: &ComputeData<F, Hal>,
+pub fn test_extrapolate_line<
+	F: Field,
+	Hal: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, Hal>,
+>(
+	mut compute_holder: ComputeHolderType,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -706,7 +736,8 @@ pub fn test_extrapolate_line<F: Field, Hal: ComputeLayer<F>>(
 		hal,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_holder.to_data();
 
 	let evals_0_host = host_alloc.alloc(1 << log_len).unwrap();
 	let evals_1_host = host_alloc.alloc(1 << log_len).unwrap();
@@ -738,8 +769,12 @@ pub fn test_extrapolate_line<F: Field, Hal: ComputeLayer<F>>(
 	assert_eq!(result_host, &expected_result);
 }
 
-pub fn test_generic_compute_composite<F: Field, Hal: ComputeLayer<F>>(
-	compute_data: &ComputeData<F, Hal>,
+pub fn test_generic_compute_composite<
+	F: Field,
+	Hal: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, Hal>,
+>(
+	mut compute_data: ComputeHolderType,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -748,7 +783,8 @@ pub fn test_generic_compute_composite<F: Field, Hal: ComputeLayer<F>>(
 		hal,
 		host_alloc,
 		dev_alloc,
-	} = compute_data;
+		..
+	} = compute_data.to_data();
 
 	let input_0_host = host_alloc.alloc(1 << log_len).unwrap();
 	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();

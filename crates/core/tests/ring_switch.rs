@@ -99,5 +99,6 @@ fn test_prove_verify_piop_integration() {
 		&merkle_prover,
 		&oracles,
 		log_inv_rate,
+		CpuLayerHolder::new,
 	);
 }

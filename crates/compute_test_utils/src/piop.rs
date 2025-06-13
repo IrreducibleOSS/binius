@@ -2,7 +2,7 @@
 
 use std::iter::repeat_with;
 
-use binius_compute::{ComputeData, ComputeLayer};
+use binius_compute::{ComputeHolder, ComputeLayer};
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
@@ -88,8 +88,8 @@ where
 	sumcheck_claims
 }
 
-pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL>(
-	compute_data: &mut ComputeData<F, HAL>,
+pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderType>(
+	mut compute_holder: ComputeHolderType,
 	commit_meta: &CommitMeta,
 	n_transparents: usize,
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
@@ -104,6 +104,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL>(
 		+ PackedExtension<F, PackedSubfield = P>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 	HAL: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, HAL>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -149,7 +150,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL>(
 	// If this unwraps on an out-of-memory error, allocate more above (tests are assumed to not
 	// require so much memory)
 	prove(
-		compute_data,
+		&mut compute_holder.to_data(),
 		&fri_params,
 		&ntt,
 		merkle_prover,

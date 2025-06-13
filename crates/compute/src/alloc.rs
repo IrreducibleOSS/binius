@@ -27,6 +27,9 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 
 	/// Returns the remaining number of elements that can be allocated.
 	fn capacity(&self) -> usize;
+
+	/// Returns the remaining unallocated capacity as a new allocator with a limited scope.
+	fn subscope_allocator(&mut self) -> impl ComputeAllocator<F, Mem>;
 }
 
 /// Basic bump allocator that allocates slices from an underlying memory buffer provided at
@@ -52,14 +55,12 @@ where
 			buffer: Mutex::new(Some(buffer)),
 		}
 	}
-
-	/// Returns the remaining unallocated capacity as a new allocator with a limited scope.
-	pub fn subscope_allocator<'b>(&'b mut self) -> BumpAllocator<'b, F, Mem> {
-		BumpAllocator::new(self.remaining())
-	}
 }
 
-impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem> {
+impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a, F, Mem>
+where
+	F: 'static,
+{
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error> {
 		let mut buffer_lock = self.buffer.lock().expect("mutex is always available");
 
@@ -102,6 +103,10 @@ impl<'a, F, Mem: ComputeMemory<F>> ComputeAllocator<F, Mem> for BumpAllocator<'a
 			.as_ref()
 			.expect("buffer is always Some by invariant")
 			.len()
+	}
+
+	fn subscope_allocator(&mut self) -> impl ComputeAllocator<F, Mem> {
+		BumpAllocator::new(self.remaining())
 	}
 }
 

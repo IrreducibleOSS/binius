@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
+use binius_compute::cpu::layer::CpuLayerHolder;
 use binius_compute_test_utils::piop::commit_prove_verify;
 use binius_core::{merkle_tree::BinaryMerkleTreeProver, piop::CommitMeta};
 use binius_field::PackedBinaryField2x128b;
@@ -13,10 +13,10 @@ fn test_with_one_poly() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 1;
 	let log_inv_rate = 1;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -30,10 +30,10 @@ fn test_without_opening_claims() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 0;
 	let log_inv_rate = 1;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -47,10 +47,10 @@ fn test_with_one_n_vars() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 1;
 	let log_inv_rate = 1;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -64,10 +64,10 @@ fn test_commit_prove_verify_extreme_rate() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 8;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -81,10 +81,10 @@ fn test_commit_prove_verify_small() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 1;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -98,10 +98,10 @@ fn test_commit_prove_verify() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 1;
-	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
 
-	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _>(
-		&mut compute_holder.to_data(),
+	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+		compute_holder,
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,

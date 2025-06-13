@@ -4,9 +4,10 @@ use binius_field::TowerField;
 
 use super::{
 	ComputeLayerExecutor, ComputeMemory,
-	alloc::{BumpAllocator, ComputeAllocator, HostBumpAllocator},
+	alloc::ComputeAllocator,
 	layer::{ComputeLayer, Error, FSliceMut},
 };
+use crate::cpu::CpuMemory;
 
 /// Computes the partial evaluation of the equality indicator polynomial.
 ///
@@ -23,15 +24,17 @@ use super::{
 /// See [DP23], Section 2.1 for more information about the equality indicator polynomial.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-pub fn eq_ind_partial_eval<'a, F, Hal>(
+pub fn eq_ind_partial_eval<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>(
 	hal: &Hal,
-	dev_alloc: &'a BumpAllocator<F, Hal::DevMem>,
-	host_alloc: &HostBumpAllocator<F>,
+	dev_alloc: &'a DeviceAllocatorType,
+	host_alloc: &HostAllocatorType,
 	point: &[F],
 ) -> Result<FSliceMut<'a, F, Hal>, Error>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	let n_vars = point.len();
 	let mut out = dev_alloc.alloc(1 << n_vars)?;
