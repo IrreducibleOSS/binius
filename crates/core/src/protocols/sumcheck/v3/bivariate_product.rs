@@ -416,69 +416,44 @@ pub enum PhaseState<F: Field> {
 
 #[cfg(test)]
 mod tests {
-	use binius_compute::cpu::{CpuLayer, alloc::CpuComputeAllocator};
+	use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
 	use binius_compute_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
-	use binius_fast_compute::layer::FastCpuLayer;
+	use binius_fast_compute::layer::FastCpuLayerHolder;
 	use binius_field::{
-		BinaryField128b, PackedField, arch::OptimalUnderlier, as_packed_field::PackedType,
+		BinaryField128b, arch::OptimalUnderlier, as_packed_field::PackedType,
 		tower::CanonicalTowerFamily,
 	};
 	use binius_math::B128;
-	use bytemuck::zeroed_vec;
-
-	use super::*;
 
 	#[test]
 	fn test_calculate_round_evals() {
-		type Hal = CpuLayer<B128>;
-
-		let hal = Hal::default();
-		let mut dev_mem = vec![B128::ZERO; 1 << 10];
-		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
+		let mut compute_holder = CpuLayerHolder::new(1 << 11, 1 << 10);
 		let n_vars = 8;
-		generic_test_calculate_round_evals(
-			&hal,
-			&mut dev_mem,
-			&host_allocator.into_bump_allocator(),
-			n_vars,
-		)
+		generic_test_calculate_round_evals(&mut compute_holder.to_data(), n_vars)
 	}
 
 	#[test]
 	fn test_calculate_round_evals_fast_cpu() {
 		type F = BinaryField128b;
 		type Packed = PackedType<OptimalUnderlier, F>;
-		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
 
-		let hal = Hal::default();
-		let mut dev_mem = vec![Packed::zero(); 1 << (10 - Packed::LOG_WIDTH)];
-		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
-			&mut dev_mem,
-		);
+		let mut compute_holder =
+			FastCpuLayerHolder::<CanonicalTowerFamily, Packed>::new(1 << 11, 1 << 10);
 		let n_vars = 8;
-		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
-		generic_test_calculate_round_evals(
-			&hal,
-			dev_mem,
-			&host_allocator.into_bump_allocator(),
-			n_vars,
-		)
+		generic_test_calculate_round_evals(&mut compute_holder.to_data(), n_vars)
 	}
 
 	#[test]
 	fn test_bivariate_sumcheck_prove_verify() {
-		let hal = <CpuLayer<B128>>::default();
-		let mut dev_mem = zeroed_vec(1 << 12);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
-		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
+
+		let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
 		generic_test_bivariate_sumcheck_prove_verify(
-			&hal,
-			&mut dev_mem,
-			&host_allocator.into_bump_allocator(),
+			&mut compute_holder.to_data(),
 			n_vars,
 			n_multilins,
 			n_compositions,
@@ -489,21 +464,15 @@ mod tests {
 	fn test_bivariate_sumcheck_prove_verify_fast() {
 		type F = BinaryField128b;
 		type Packed = PackedType<OptimalUnderlier, F>;
-		type Hal = FastCpuLayer<CanonicalTowerFamily, Packed>;
 
-		let hal = Hal::default();
-		let mut dev_mem = zeroed_vec(1 << (12 - Packed::LOG_WIDTH));
-		let dev_mem = <<Hal as ComputeLayer<F>>::DevMem as ComputeMemory<F>>::FSliceMut::new_slice(
-			&mut dev_mem,
-		);
-		let mut host_allocator = CpuComputeAllocator::new(dev_mem.len() * 2);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;
+		let mut compute_holder =
+			FastCpuLayerHolder::<CanonicalTowerFamily, Packed>::new(1 << 13, 1 << 12);
+
 		generic_test_bivariate_sumcheck_prove_verify(
-			&hal,
-			dev_mem,
-			&host_allocator.into_bump_allocator(),
+			&mut compute_holder.to_data(),
 			n_vars,
 			n_multilins,
 			n_compositions,

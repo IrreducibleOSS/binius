@@ -2,7 +2,7 @@
 
 use std::{iter::repeat_with, vec};
 
-use binius_compute::{ComputeLayer, alloc::BumpAllocator, cpu::CpuLayer};
+use binius_compute::{ComputeData, ComputeHolder, cpu::layer::CpuLayerHolder};
 use binius_field::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField128b, ExtensionField,
 	PackedBinaryField16x16b, PackedField, TowerField,
@@ -136,16 +136,12 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		codeword,
 	} = fri::commit_interleaved(&committed_rs_code, &params, &ntt, &merkle_prover, &msg).unwrap();
 
-	let hal = CpuLayer::<F>::default();
-
-	let mut dev_mem = vec![F::ZERO; 1 << 20];
-
-	let dev_alloc = BumpAllocator::<F, <CpuLayer<F> as ComputeLayer<F>>::DevMem>::new(&mut dev_mem);
+	let mut compute_holder = CpuLayerHolder::<F>::new(1 << 10, 1 << 20);
+	let ComputeData { hal, dev_alloc, .. } = compute_holder.to_data();
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =
-		FRIFolder::new(&hal, &params, &ntt, &merkle_prover, &codeword, &codeword_committed)
-			.unwrap();
+		FRIFolder::new(hal, &params, &ntt, &merkle_prover, &codeword, &codeword_committed).unwrap();
 
 	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	prover_challenger.message().write(&codeword_commitment);
