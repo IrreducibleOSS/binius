@@ -146,7 +146,6 @@ impl U32Add {
 ///
 /// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
 /// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
-
 /// A gadget for performing SIMD 32-bit integer addition on vertically-packed bit columns.
 ///
 /// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
