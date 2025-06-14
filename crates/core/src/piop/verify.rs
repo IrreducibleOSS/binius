@@ -135,6 +135,26 @@ where
 	Ok(params)
 }
 
+/// Helper function to create commit parameters with constant arity using FRIConfigParams.
+fn make_commit_params_with_constant_arity_from_config<F, FEncode>(
+	ntt: &impl AdditiveNTT<FEncode>,
+	commit_meta: &CommitMeta,
+	config: &super::super::protocols::fri::FRIConfigParams,
+	arity: usize,
+) -> Result<FRIParams<F, FEncode>, Error>
+where
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
+{
+	let params = FRIParams::choose_with_constant_fold_arity_from_config(
+		ntt,
+		commit_meta.total_vars(),
+		config,
+		arity,
+	)?;
+	Ok(params)
+}
+
 /// Choose commit parameters based on protocol parameters.
 ///
 /// ## Arguments
@@ -165,6 +185,36 @@ where
 		size_of::<F>(),
 	);
 	make_commit_params_with_constant_arity(&ntt, commit_meta, security_bits, log_inv_rate, arity)
+}
+
+/// Choose commit parameters based on FRIConfigParams with optimal arity.
+///
+/// ## Arguments
+///
+/// * `commit_meta` - the metadata about the committed batch of multilinears.
+/// * `merkle_scheme` - the Merkle tree commitment scheme used in FRI.
+/// * `config` - the FRI configuration parameters including security settings and conjecture flag.
+pub fn make_commit_params_with_optimal_arity_from_config<F, FEncode, MTScheme>(
+	commit_meta: &CommitMeta,
+	_merkle_scheme: &MTScheme,
+	config: &super::super::protocols::fri::FRIConfigParams,
+) -> Result<FRIParams<F, FEncode>, Error>
+where
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
+	MTScheme: MerkleTreeScheme<F>,
+{
+	// Choose the NTT with the maximum domain size, to be independent of the commit parameters. We
+	// then choose FRI parameters based on a compatible subspace of the NTT, and then create
+	// another NTT object for encoding, using the appropriate subspace.
+	let ntt = SingleThreadedNTT::<FEncode>::new(FEncode::N_BITS)?;
+
+	let arity = estimate_optimal_arity(
+		commit_meta.total_vars + config.log_inv_rate,
+		size_of::<MTScheme::Digest>(),
+		size_of::<F>(),
+	);
+	make_commit_params_with_constant_arity_from_config(&ntt, commit_meta, config, arity)
 }
 
 /// A description of a sumcheck claim arising from a FRI PCS sumcheck.
