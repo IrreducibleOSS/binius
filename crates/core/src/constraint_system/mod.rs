@@ -17,10 +17,13 @@ use binius_utils::{SerializationMode, SerializeBytes};
 use channel::Flush;
 use digest::{Digest, Output};
 use exp::Exp;
-pub use prove::prove;
-pub use verify::verify;
+pub use prove::{prove, prove_with_params};
+pub use verify::{verify, verify_with_params};
 
-use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
+use crate::{
+	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
+	protocols::fri::FRIConfigParams,
+};
 
 /// Contains the 3 things that place constraints on witness data in Binius
 /// - virtual oracles
