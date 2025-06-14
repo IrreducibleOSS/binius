@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField};
+use binius_macros::IterOracles;
 use binius_ntt::AdditiveNTT;
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use getset::{CopyGetters, Getters};
@@ -11,6 +12,47 @@ use crate::{
 	merkle_tree::MerkleTreeScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
+
+/// FRI configuration parameters for security and performance settings.
+///
+/// This struct groups together the parameters needed for FRI configuration, making it easier
+/// to pass them around and modify them consistently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FRIConfigParams {
+	/// Binary logarithm of the inverse Reed-Solomon code rate.
+	pub log_inv_rate: usize,
+	/// Target security level in bits.
+	pub security_bits: usize,
+	/// Whether to use the FRI conjecture for calculating test queries.
+	/// 
+	/// When enabled, this allows for more aggressive optimization of the number of FRI opening
+	/// queries based on the FRI conjecture. See [2022/1216](https://eprint.iacr.org/2022/1216), 
+	/// section 3.6 for details.
+	/// 
+	/// **Warning**: The conjecture is not proven and should be used with caution in production
+	/// systems. It is disabled by default.
+	pub fri_conjecture: bool,
+}
+
+impl FRIConfigParams {
+	/// Creates new FRI configuration parameters.
+	pub fn new(log_inv_rate: usize, security_bits: usize) -> Self {
+		Self {
+			log_inv_rate,
+			security_bits,
+			fri_conjecture: false, // Default to false as per requirement
+		}
+	}
+
+	/// Creates new FRI configuration parameters with FRI conjecture enabled.
+	pub fn with_fri_conjecture(log_inv_rate: usize, security_bits: usize) -> Self {
+		Self {
+			log_inv_rate,
+			security_bits,
+			fri_conjecture: true,
+		}
+	}
+}
 
 /// Parameters for an FRI interleaved code proximity protocol.
 #[derive(Debug, Getters, CopyGetters)]
@@ -72,12 +114,31 @@ where
 		log_inv_rate: usize,
 		arity: usize,
 	) -> Result<Self, Error> {
+		Self::choose_with_constant_fold_arity_and_conjecture(
+			ntt,
+			log_msg_len,
+			security_bits,
+			log_inv_rate,
+			arity,
+			false, // Default to false for backward compatibility
+		)
+	}
+
+	/// Choose FRI parameters with a constant arity and configurable FRI conjecture.
+	pub fn choose_with_constant_fold_arity_and_conjecture(
+		ntt: &impl AdditiveNTT<FA>,
+		log_msg_len: usize,
+		security_bits: usize,
+		log_inv_rate: usize,
+		arity: usize,
+		fri_conjecture: bool,
+	) -> Result<Self, Error> {
 		assert!(arity > 0);
 
 		let log_dim = log_msg_len.saturating_sub(arity);
 		let log_batch_size = log_msg_len.min(arity);
 		let rs_code = ReedSolomonCode::with_ntt_subspace(ntt, log_dim, log_inv_rate)?;
-		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code, fri_conjecture)?;
 
 		let cap_height = log2_ceil_usize(n_test_queries);
 		let fold_arities = std::iter::repeat_n(
@@ -134,6 +195,23 @@ where
 		// this is that the prover has to do a nontrivial (though small!) interleaved encoding, as
 		// opposed to a trivial one.
 		Self::new(rs_code, log_batch_size, fold_arities, n_test_queries)
+	}
+
+	/// Choose FRI parameters using FRIConfigParams.
+	pub fn choose_with_constant_fold_arity_from_config(
+		ntt: &impl AdditiveNTT<FA>,
+		log_msg_len: usize,
+		config: &FRIConfigParams,
+		arity: usize,
+	) -> Result<Self, Error> {
+		Self::choose_with_constant_fold_arity_and_conjecture(
+			ntt,
+			log_msg_len,
+			config.security_bits,
+			config.log_inv_rate,
+			arity,
+			config.fri_conjecture,
+		)
 	}
 
 	pub const fn n_fold_rounds(&self) -> usize {
@@ -194,11 +272,18 @@ pub type TerminateCodeword<F> = Vec<F>;
 
 /// Calculates the number of test queries required to achieve a target security level.
 ///
+/// When `fri_conjecture` is enabled, the calculation assumes the FRI conjecture holds,
+/// which may allow for fewer test queries. See [2022/1216](https://eprint.iacr.org/2022/1216), 
+/// section 3.6 for details on the FRI conjecture.
+///
+/// **Warning**: The FRI conjecture is not proven. Using it may reduce security guarantees.
+///
 /// Throws [`Error::ParameterError`] if the security level is unattainable given the code
 /// parameters.
 pub fn calculate_n_test_queries<F, FEncode>(
 	security_bits: usize,
 	code: &ReedSolomonCode<FEncode>,
+	fri_conjecture: bool,
 ) -> Result<usize, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
@@ -209,13 +294,37 @@ where
 	// 2 ⋅ ℓ' / |T_{τ}|
 	let folding_err = code.len() as f64 / field_size;
 	// 2^{ℓ' + R} / |T_{τ}|
-	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
+	
+	// When FRI conjecture is enabled, we can use a more aggressive per-query error estimate
+	let per_query_err = if fri_conjecture {
+		// Under the FRI conjecture, the soundness error can be estimated more aggressively
+		// This is based on the conjecture that certain FRI attacks are not possible
+		0.5 * 2.0f64.powi(-(code.log_inv_rate() as i32))
+	} else {
+		// Conservative estimate without assuming the conjecture
+		0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)))
+	};
+	
 	let allowed_query_err = 2.0_f64.powi(-(security_bits as i32)) - sumcheck_err - folding_err;
 	if allowed_query_err <= 0.0 {
 		return Err(Error::ParameterError);
 	}
 	let n_queries = allowed_query_err.log(per_query_err).ceil() as usize;
 	Ok(n_queries)
+}
+
+/// Convenience function to calculate test queries using FRIConfigParams.
+///
+/// This function provides a cleaner interface when using the FRIConfigParams struct.
+pub fn calculate_n_test_queries_with_params<F, FEncode>(
+	params: &FRIConfigParams,
+	code: &ReedSolomonCode<FEncode>,
+) -> Result<usize, Error>
+where
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
+{
+	calculate_n_test_queries::<F, FEncode>(params.security_bits, code, params.fri_conjecture)
 }
 
 /// Heuristic for estimating the optimal FRI folding arity that minimizes proof size.
@@ -263,13 +372,13 @@ mod tests {
 		let security_bits = 96;
 		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
 		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code, false)
 				.unwrap();
 		assert_eq!(n_test_queries, 232);
 
 		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
 		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code, false)
 				.unwrap();
 		assert_eq!(n_test_queries, 143);
 	}
@@ -279,9 +388,52 @@ mod tests {
 		let security_bits = 128;
 		let rs_code = ReedSolomonCode::<BinaryField32b>::new(28, 1).unwrap();
 		assert_matches!(
-			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code),
+			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code, false),
 			Err(Error::ParameterError)
 		);
+	}
+
+	#[test]
+	fn test_calculate_n_test_queries_with_fri_conjecture() {
+		let security_bits = 96;
+		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
+		
+		// Test without FRI conjecture
+		let n_test_queries_conservative =
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code, false)
+				.unwrap();
+		
+		// Test with FRI conjecture - should require fewer queries
+		let n_test_queries_conjecture =
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code, true)
+				.unwrap();
+		
+		// FRI conjecture should allow for fewer test queries
+		assert!(n_test_queries_conjecture <= n_test_queries_conservative);
+	}
+
+	#[test]
+	fn test_fri_config_params() {
+		let params = FRIConfigParams::new(2, 128);
+		assert_eq!(params.log_inv_rate, 2);
+		assert_eq!(params.security_bits, 128);
+		assert!(!params.fri_conjecture); // Should default to false
+
+		let params_with_conjecture = FRIConfigParams::with_fri_conjecture(2, 128);
+		assert!(params_with_conjecture.fri_conjecture);
+	}
+
+	#[test]
+	fn test_calculate_n_test_queries_with_params() {
+		let security_bits = 96;
+		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
+		
+		let params = FRIConfigParams::new(1, security_bits);
+		let n_test_queries = calculate_n_test_queries_with_params::<BinaryField128b, BinaryField32b>(&params, &rs_code).unwrap();
+		
+		// Should match the direct call
+		let expected = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code, false).unwrap();
+		assert_eq!(n_test_queries, expected);
 	}
 
 	#[test]
