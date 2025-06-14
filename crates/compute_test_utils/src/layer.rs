@@ -16,7 +16,7 @@ use binius_math::{
 };
 use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
-use rand::{SeedableRng, prelude::StdRng};
+use rand::{Rng, SeedableRng, prelude::StdRng};
 
 pub fn test_generic_single_tensor_expand<
 	F: Field,
@@ -821,5 +821,75 @@ pub fn test_generic_compute_composite<
 
 	for (i, output) in output_host.iter_mut().enumerate() {
 		assert_eq!(*output, input_0_host[i] * input_1_host[i])
+	}
+}
+
+pub fn test_map_kernels<'a, F: Field, Hal: ComputeLayer<F>>(
+	hal: &Hal,
+	dev_mem: FSliceMut<'a, F, Hal>,
+	log_len: usize,
+) {
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let mut host_mem = hal.host_alloc(3 * (1 << log_len));
+	let host_alloc = BumpAllocator::<F, CpuMemory>::new(host_mem.as_mut());
+
+	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();
+
+	input_1_host.fill_with(|| F::random(&mut rng));
+
+	let input_2_host = host_alloc.alloc(1 << log_len).unwrap();
+
+	input_2_host.fill_with(|| if rng.gen_bool(0.5) { F::ONE } else { F::ZERO });
+
+	let output_host = host_alloc.alloc(1 << log_len).unwrap();
+
+	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
+
+	let mut input_1_dev = dev_alloc.alloc(1 << log_len).unwrap();
+	let mut input_2_dev = dev_alloc.alloc(1 << log_len).unwrap();
+
+	hal.copy_h2d(input_1_host, &mut input_1_dev).unwrap();
+	hal.copy_h2d(input_2_host, &mut input_2_dev).unwrap();
+
+	let mem_map = vec![
+		KernelMemMap::ChunkedMut {
+			data: Hal::DevMem::to_owned_mut(&mut input_1_dev),
+			log_min_chunk_size: 0,
+		},
+		KernelMemMap::Chunked {
+			data: Hal::DevMem::as_const(&input_2_dev),
+			log_min_chunk_size: 0,
+		},
+	];
+
+	hal.execute(|exec| {
+		exec.map_kernels(
+			|local_exec, log_chunks, mut buffers| {
+				let log_chunk_size = log_len - log_chunks;
+
+				let Ok([KernelBuffer::Mut(input_1), KernelBuffer::Ref(input_2)]) =
+					TryInto::<&mut [_; 2]>::try_into(buffers.as_mut_slice())
+				else {
+					panic!(
+						"exec_kernels did not create the mapped buffers struct according to the mapping"
+					);
+				};
+				local_exec.add_assign(log_chunk_size, *input_2, input_1)?;
+
+				Ok(())
+			},
+			mem_map,
+		)
+		.unwrap();
+		Ok(vec![])
+	})
+	.unwrap();
+
+	hal.copy_d2h(Hal::DevMem::as_const(&input_1_dev), output_host)
+		.unwrap();
+
+	for (i, output) in output_host.iter_mut().enumerate() {
+		assert_eq!(*output, input_1_host[i] + input_2_host[i]);
 	}
 }

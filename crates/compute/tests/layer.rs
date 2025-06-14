@@ -136,3 +136,11 @@ fn test_extrapolate_line() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_map_kernels() {
+	let log_len = 10;
+	let compute = <CpuLayer<B128>>::default();
+	let mut device_memory = vec![B128::ZERO; 1 << (log_len + 3)];
+	binius_compute_test_utils::layer::test_map_kernels(&compute, &mut device_memory, log_len);
+}
