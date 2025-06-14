@@ -3,13 +3,12 @@
 use binius_field::{BinaryField, PackedField};
 use binius_math::BinarySubspace;
 use binius_maybe_rayon::prelude::*;
-use binius_utils::rayon::get_log_max_threads;
+use binius_utils::{rayon::get_log_max_threads, strided_array::StridedArray2DViewMut};
 
 use super::{
 	additive_ntt::{AdditiveNTT, NTTShape},
 	error::Error,
 	single_threaded::{SingleThreadedNTT, check_batch_transform_inputs_and_params},
-	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
 };
 use crate::twiddle::OnTheFlyTwiddleAccess;
