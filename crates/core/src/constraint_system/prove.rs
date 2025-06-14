@@ -44,7 +44,7 @@ use crate::{
 	oracle::{Constraint, MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
-		fri::CommitOutput,
+		fri::{CommitOutput, FRIConfigParams},
 		gkr_exp,
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
@@ -878,4 +878,68 @@ where
 			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
+}
+
+/// Generates a proof that a witness satisfies a constraint system with configurable FRI parameters.
+/// 
+/// This is a convenience wrapper around `prove` that accepts FRIConfigParams instead of separate
+/// log_inv_rate and security_bits parameters, allowing for easier configuration of FRI conjecture
+/// settings.
+#[allow(clippy::too_many_arguments)]
+#[instrument("constraint_system::prove_with_params", skip_all, level = "debug")]
+pub fn prove_with_params<
+	Hal,
+	U,
+	Tower,
+	Hash,
+	Compress,
+	Challenger_,
+	Backend,
+	HostAllocatorType,
+	DeviceAllocatorType,
+>(
+	compute_data: &mut ComputeData<Tower::B128, Hal, HostAllocatorType, DeviceAllocatorType>,
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
+	fri_params: &FRIConfigParams,
+	constraint_system_digest: &Output<Hash::Digest>,
+	boundaries: &[Boundary<FExt<Tower>>],
+	table_sizes: &[usize],
+	witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
+	backend: &Backend,
+) -> Result<Proof, Error>
+where
+	Hal: ComputeLayer<Tower::B128> + Default,
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
+	Hash: ParallelDigest,
+	Hash::Digest: BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
+	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
+	Challenger_: Challenger + Default,
+	Backend: ComputationBackend,
+	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
+	PackedType<U, Tower::B128>: PackedTop<Tower>
+		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
+		+ RepackedExtension<PackedType<U, Tower::B8>>
+		+ RepackedExtension<PackedType<U, Tower::B16>>
+		+ RepackedExtension<PackedType<U, Tower::B32>>
+		+ RepackedExtension<PackedType<U, Tower::B64>>
+		+ RepackedExtension<PackedType<U, Tower::B128>>
+		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>
+		+ binius_math::PackedTop,
+	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+	HostAllocatorType: ComputeAllocator<Tower::B128, CpuMemory>,
+	DeviceAllocatorType: ComputeAllocator<Tower::B128, Hal::DevMem>,
+{
+	prove(
+		compute_data,
+		constraint_system,
+		fri_params.log_inv_rate,
+		fri_params.security_bits,
+		constraint_system_digest,
+		boundaries,
+		table_sizes,
+		witness,
+		backend,
+	)
 }
