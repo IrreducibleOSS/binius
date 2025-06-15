@@ -774,7 +774,7 @@ pub fn test_generic_compute_composite<
 	Hal: ComputeLayer<F>,
 	ComputeHolderType: ComputeHolder<F, Hal>,
 >(
-	mut compute_data: ComputeHolderType,
+	mut compute_holder: ComputeHolderType,
 	log_len: usize,
 ) {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -784,7 +784,7 @@ pub fn test_generic_compute_composite<
 		host_alloc,
 		dev_alloc,
 		..
-	} = compute_data.to_data();
+	} = compute_holder.to_data();
 
 	let input_0_host = host_alloc.alloc(1 << log_len).unwrap();
 	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();
@@ -824,15 +824,22 @@ pub fn test_generic_compute_composite<
 	}
 }
 
-pub fn test_map_kernels<'a, F: Field, Hal: ComputeLayer<F>>(
-	hal: &Hal,
-	dev_mem: FSliceMut<'a, F, Hal>,
+pub fn test_map_kernels<F, Hal, ComputeHolderType>(
+	mut compute_holder: ComputeHolderType,
 	log_len: usize,
-) {
+) where
+	F: Field,
+	Hal: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, Hal>,
+{
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let mut host_mem = hal.host_alloc(3 * (1 << log_len));
-	let host_alloc = BumpAllocator::<F, CpuMemory>::new(host_mem.as_mut());
+	let ComputeData {
+		hal,
+		host_alloc,
+		dev_alloc,
+		..
+	} = compute_holder.to_data();
 
 	let input_1_host = host_alloc.alloc(1 << log_len).unwrap();
 
@@ -843,8 +850,6 @@ pub fn test_map_kernels<'a, F: Field, Hal: ComputeLayer<F>>(
 	input_2_host.fill_with(|| if rng.gen_bool(0.5) { F::ONE } else { F::ZERO });
 
 	let output_host = host_alloc.alloc(1 << log_len).unwrap();
-
-	let dev_alloc = BumpAllocator::<F, Hal::DevMem>::new(dev_mem);
 
 	let mut input_1_dev = dev_alloc.alloc(1 << log_len).unwrap();
 	let mut input_2_dev = dev_alloc.alloc(1 << log_len).unwrap();

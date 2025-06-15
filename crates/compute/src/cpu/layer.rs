@@ -125,7 +125,7 @@ impl<F: TowerTop> CpuLayerExecutor<F> {
 			Vec<KernelBuffer<'a, F, CpuMemory>>,
 		) -> Result<R, Error>,
 		mut mem_maps: Vec<KernelMemMap<'_, F, CpuMemory>>,
-	) -> Result<Vec<R>, Error> {
+	) -> Result<impl Iterator<Item = Result<R, Error>>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
 			.expect("Many variant must have at least one entry");
 
@@ -133,14 +133,14 @@ impl<F: TowerTop> CpuLayerExecutor<F> {
 		let log_chunks = log_chunks_range.end;
 		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
 		let mut local_buffer = zeroed_vec(total_alloc);
-		(0..1 << log_chunks)
-			.map(|i| {
-				let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
-				let kernel_data =
-					Self::map_kernel_mem(&mut mem_maps, &local_buffer_alloc, log_chunks, i);
-				map(&mut CpuKernelBuilder, log_chunks, kernel_data)
-			})
-			.collect::<Result<Vec<_>, Error>>()
+		let iter = (0..1 << log_chunks).map(move |i| {
+			let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
+			let kernel_data =
+				Self::map_kernel_mem(&mut mem_maps, &local_buffer_alloc, log_chunks, i);
+			map(&mut CpuKernelBuilder, log_chunks, kernel_data)
+		});
+
+		Ok(iter)
 	}
 }
 
@@ -166,19 +166,17 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 		) -> Result<Vec<F>, Error>,
 		inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
-		Ok(self
-			.process_kernels_chunks(map, inputs)?
-			.into_iter()
+		self.process_kernels_chunks(map, inputs)?
 			.reduce(|out1, out2| {
-				let mut out1 = out1;
-				let mut out2_iter = out2.into_iter();
+				let mut out1 = out1?;
+				let mut out2_iter = out2?.into_iter();
 				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
 					*out1_i += out2_i;
 				}
 				out1.extend(out2_iter);
-				out1
+				Ok(out1)
 			})
-			.expect("range is not empty"))
+			.expect("range is not empty")
 	}
 
 	fn map_kernels(
@@ -191,7 +189,7 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 		) -> Result<(), Error>,
 		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<(), Error> {
-		self.process_kernels_chunks(map, mem_maps)?;
+		self.process_kernels_chunks(map, mem_maps)?.for_each(drop);
 		Ok(())
 	}
 
