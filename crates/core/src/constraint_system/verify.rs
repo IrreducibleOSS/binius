@@ -28,6 +28,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
+		fri::FRIConfigParams,
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
@@ -498,4 +499,36 @@ pub fn make_flush_oracles<F: TowerField>(
 				.collect::<Vec<_>>()
 		})
 		.collect()
+}
+
+/// Verifies a proof against a constraint system with configurable FRI parameters.
+/// 
+/// This is a convenience wrapper around `verify` that accepts FRIConfigParams instead of separate
+/// log_inv_rate and security_bits parameters, allowing for easier configuration of FRI conjecture
+/// settings.
+#[instrument("constraint_system::verify_with_params", skip_all, level = "debug")]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_with_params<U, Tower, Hash, Compress, Challenger_>(
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
+	fri_params: &FRIConfigParams,
+	constraint_system_digest: &Output<Hash>,
+	boundaries: &[Boundary<FExt<Tower>>],
+	proof: Proof,
+) -> Result<(), Error>
+where
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
+	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
+	Hash: Digest + BlockSizeUser + OutputSizeUser,
+	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
+	Challenger_: Challenger + Default,
+{
+	verify::<U, Tower, Hash, Compress, Challenger_>(
+		constraint_system,
+		fri_params.log_inv_rate,
+		fri_params.security_bits,
+		constraint_system_digest,
+		boundaries,
+		proof,
+	)
 }
