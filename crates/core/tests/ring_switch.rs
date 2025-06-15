@@ -1,6 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_compute::cpu::{CpuLayer, layer::CpuLayerHolder};
+use binius_compute::{
+	ComputeData, ComputeHolder,
+	cpu::{CpuLayer, layer::CpuLayerHolder},
+};
 use binius_compute_test_utils::ring_switch::{
 	check_eval_point_consistency, commit_prove_verify_piop, generate_multilinears,
 	make_test_oracle_set, setup_test_eval_claims,
@@ -58,6 +61,15 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	type U = OptimalUnderlier128b;
 	type F = B128;
 
+	let mut compute_holder = CpuLayerHolder::<B128>::new(1 << 7, 1 << 12);
+
+	let ComputeData {
+		hal,
+		host_alloc,
+		dev_alloc,
+		..
+	} = compute_holder.to_data();
+
 	let rng = StdRng::seed_from_u64(0);
 	let oracles = make_test_oracle_set();
 
@@ -67,7 +79,8 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove(&system, &witnesses, &mut proof, MemoizedData::new()).unwrap();
+		} = prove(&system, &witnesses, &mut proof, MemoizedData::new(), hal, &dev_alloc, &host_alloc)
+			.unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
@@ -81,6 +94,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 			&witnesses,
 			&transparent_witnesses,
 			&prover_sumcheck_claims,
+			hal,
 		)
 		.unwrap();
 	});
