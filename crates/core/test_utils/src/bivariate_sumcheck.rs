@@ -456,3 +456,44 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<
 		assert_eq!(multilin_i.evaluate(query.to_ref()).unwrap(), eval);
 	}
 }
+
+#[macro_export]
+macro_rules! instantiate_bivariate_sumcheck_tests {
+	($compute_holder:ty) => {
+		#[test]
+		fn test_calculate_round_evals() {
+			let compute_holder = <$compute_holder>::new(1 << 11, 1 << 10);
+			let n_vars = 8;
+			$crate::bivariate_sumcheck::generic_test_calculate_round_evals(compute_holder, n_vars)
+		}
+
+		#[test]
+		fn test_bivariate_sumcheck_prove_verify() {
+			let n_vars = 8;
+			let n_multilins = 8;
+			let n_compositions = 8;
+
+			let compute_holder = <$compute_holder>::new(1 << 13, 1 << 12);
+			$crate::bivariate_sumcheck::generic_test_bivariate_sumcheck_prove_verify(
+				compute_holder,
+				n_vars,
+				n_multilins,
+				n_compositions,
+			)
+		}
+
+		#[test]
+		fn test_bivariate_mlecheck_prove_verify() {
+			let compute_holder = <$compute_holder>::new(1 << 13, 1 << 12);
+			let n_vars = 8;
+			let n_multilins = 8;
+			let n_compositions = 8;
+			$crate::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify(
+				compute_holder,
+				n_vars,
+				n_multilins,
+				n_compositions,
+			);
+		}
+	};
+}
