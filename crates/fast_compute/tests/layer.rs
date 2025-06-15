@@ -157,3 +157,13 @@ fn test_compute_composite() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_map_kernels() {
+	type P = PackedBinaryField2x128b;
+	let log_len = 10;
+	binius_compute_test_utils::layer::test_map_kernels(
+		FastCpuLayerHolder::<CanonicalTowerFamily, P>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+		log_len,
+	);
+}

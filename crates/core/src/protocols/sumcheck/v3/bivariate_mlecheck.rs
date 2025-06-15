@@ -231,7 +231,7 @@ where
 		];
 
 		let _ = self.hal.execute(|exec| {
-			exec.accumulate_kernels(
+			exec.map_kernels(
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
@@ -244,7 +244,7 @@ where
 					};
 					local_exec.add_assign(log_chunk_size, *evals_1, evals_0)?;
 
-					Ok(Vec::new())
+					Ok(())
 				},
 				kernel_mappings,
 			)?;
