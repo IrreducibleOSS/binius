@@ -521,7 +521,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::layer::CpuLayerHolder;
-	use binius_compute_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
+	use binius_core_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
 	use binius_fast_compute::layer::FastCpuLayerHolder;
 	use binius_field::{
 		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,

@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_compute::cpu::layer::CpuLayerHolder;
-use binius_compute_test_utils::piop::commit_prove_verify;
 use binius_core::{merkle_tree::BinaryMerkleTreeProver, piop::CommitMeta};
+use binius_core_test_utils::piop::commit_prove_verify;
 use binius_field::PackedBinaryField2x128b;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
 use binius_math::{B8, B16, B128};

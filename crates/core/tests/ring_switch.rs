@@ -4,10 +4,6 @@ use binius_compute::{
 	ComputeData, ComputeHolder,
 	cpu::{CpuLayer, layer::CpuLayerHolder},
 };
-use binius_compute_test_utils::ring_switch::{
-	check_eval_point_consistency, commit_prove_verify_piop, generate_multilinears,
-	make_test_oracle_set, setup_test_eval_claims,
-};
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::BinaryMerkleTreeProver,
@@ -17,6 +13,10 @@ use binius_core::{
 	ring_switch::{EvalClaimSystem, ReducedClaim, ReducedWitness, prove, verify},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
+};
+use binius_core_test_utils::ring_switch::{
+	check_eval_point_consistency, commit_prove_verify_piop, generate_multilinears,
+	make_test_oracle_set, setup_test_eval_claims,
 };
 use binius_field::{
 	arch::OptimalUnderlier128b,
