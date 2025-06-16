@@ -224,3 +224,146 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 	)
 	.unwrap();
 }
+
+#[macro_export]
+macro_rules! instantiate_piop_tests {
+	($compute_holder:ty) => {
+		#[test]
+		fn test_with_one_poly() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([4]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 1;
+			let log_inv_rate = 1;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+
+		#[test]
+		fn test_without_opening_claims() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([4, 4, 6, 7]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 0;
+			let log_inv_rate = 1;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+
+		#[test]
+		fn test_with_one_n_vars() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([4, 4]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 1;
+			let log_inv_rate = 1;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+
+		#[test]
+		fn test_commit_prove_verify_extreme_rate() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([3, 3, 5, 6]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 2;
+			let log_inv_rate = 8;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+
+		#[test]
+		fn test_commit_prove_verify_small() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([4, 4, 6, 7]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 2;
+			let log_inv_rate = 1;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+
+		#[test]
+		fn test_commit_prove_verify() {
+			use binius_core::piop::CommitMeta;
+			use binius_field::PackedBinaryField2x128b;
+			use binius_hash::groestl::{Groestl256, Groestl256ByteCompression};
+			use binius_math::{B8, B16, B128};
+
+			let commit_meta = CommitMeta::with_vars([6, 6, 8, 9]);
+			let merkle_prover =
+				BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+			let n_transparents = 2;
+			let log_inv_rate = 1;
+			let compute_holder = <$compute_holder>::new(1 << 14, 1 << 22);
+
+			$crate::piop::commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
+				compute_holder,
+				&commit_meta,
+				n_transparents,
+				&merkle_prover,
+				log_inv_rate,
+			);
+		}
+	};
+}
