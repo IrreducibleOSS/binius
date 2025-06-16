@@ -155,12 +155,11 @@ where
 	// FRI-fold the values in place.
 	for &challenge in challenges {
 		// Fold the (2i) and (2i+1)th cells of the scratch buffer in-place into the i-th cell
-		let ntt_round = ntt.log_domain_size() - log_len;
 		for index_offset in 0..1 << (log_size - 1) {
 			let pair = (values[index_offset << 1], values[(index_offset << 1) | 1]);
 			values[index_offset] = fold_pair(
 				ntt,
-				ntt_round,
+				log_len,
 				(chunk_index << (log_size - 1)) | index_offset,
 				pair,
 				challenge,

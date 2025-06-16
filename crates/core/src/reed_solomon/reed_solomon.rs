@@ -44,8 +44,8 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		if log_dimension + log_inv_rate > ntt.log_domain_size() {
 			return Err(Error::SubspaceDimensionMismatch);
 		}
-		let subspace_idx = ntt.log_domain_size() - (log_dimension + log_inv_rate);
-		Self::with_subspace(ntt.subspace(subspace_idx), log_dimension, log_inv_rate)
+		let subspace_dim = log_dimension + log_inv_rate;
+		Self::with_subspace(ntt.subspace(subspace_dim), log_dimension, log_inv_rate)
 	}
 
 	pub fn with_subspace(
@@ -107,7 +107,7 @@ impl<F: BinaryField> ReedSolomonCode<F> {
 		code: &mut [P],
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		if ntt.subspace(ntt.log_domain_size() - self.log_len()) != self.subspace {
+		if ntt.subspace(self.log_len()) != self.subspace {
 			bail!(Error::EncoderSubspaceMismatch);
 		}
 		let expected_buffer_len =

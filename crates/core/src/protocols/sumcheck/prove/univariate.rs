@@ -584,7 +584,7 @@ where
 	// have helpers that apply a subfield NTT to an extension field vector, without the
 	// PackedExtension relation that `forward_transform_ext` and `inverse_transform_ext` require.
 	let subspace_upcast = BinarySubspace::new_unchecked(
-		ntt.subspace(0)
+		ntt.subspace(ntt.log_domain_size())
 			.basis()
 			.iter()
 			.copied()
