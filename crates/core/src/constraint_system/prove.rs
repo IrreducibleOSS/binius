@@ -38,7 +38,7 @@ use crate::{
 		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
-		verify::augument_flush_po2_step_down,
+		verify::augment_flush_po2_step_down,
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -356,7 +356,7 @@ where
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let po2_step_down_polys =
-		augument_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, table_sizes)?;
+		augment_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, table_sizes)?;
 	populate_flush_po2_step_down_witnesses::<U, _>(po2_step_down_polys, &mut witness)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
