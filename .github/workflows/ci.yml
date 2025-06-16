@@ -26,6 +26,9 @@ jobs:
           - runner: "ubuntu-latest"
             name: "clippy"
             cmd: 'RUSTFLAGS="-C target-cpu=native" cargo clippy --all --all-features --tests --benches --examples -- -D warnings'
+          - runner: "ubuntu-latest"
+            name: "typo"
+            cmd: ''
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -34,7 +37,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Run Command
+        if: ${{ matrix.expand.name != 'typo' }}
         run: ${{ matrix.expand.cmd }}
+      - name: Spell Check
+        if: ${{ matrix.expand.name == 'typo' }}
+        uses: crate-ci/typos@v1.33.1
   build:
     name: build-${{ matrix.expand.name }}
     needs: [lint]
