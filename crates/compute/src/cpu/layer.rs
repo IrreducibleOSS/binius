@@ -115,6 +115,33 @@ impl<F: TowerTop> CpuLayerExecutor<F> {
 			})
 			.collect()
 	}
+
+	fn process_kernels_chunks<R>(
+		&self,
+		map: impl Sync
+		+ for<'a> Fn(
+			&'a mut CpuKernelBuilder,
+			usize,
+			Vec<KernelBuffer<'a, F, CpuMemory>>,
+		) -> Result<R, Error>,
+		mut mem_maps: Vec<KernelMemMap<'_, F, CpuMemory>>,
+	) -> Result<impl Iterator<Item = Result<R, Error>>, Error> {
+		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
+			.expect("Many variant must have at least one entry");
+
+		// For the reference implementation, use the smallest chunk size.
+		let log_chunks = log_chunks_range.end;
+		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
+		let mut local_buffer = zeroed_vec(total_alloc);
+		let iter = (0..1 << log_chunks).map(move |i| {
+			let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
+			let kernel_data =
+				Self::map_kernel_mem(&mut mem_maps, &local_buffer_alloc, log_chunks, i);
+			map(&mut CpuKernelBuilder, log_chunks, kernel_data)
+		});
+
+		Ok(iter)
+	}
 }
 
 impl<F> Default for CpuLayerExecutor<F> {
@@ -137,22 +164,9 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 			usize,
 			Vec<KernelBuffer<'a, F, Self::DevMem>>,
 		) -> Result<Vec<F>, Error>,
-		mut inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
+		inputs: Vec<KernelMemMap<'_, F, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
-		let log_chunks_range = KernelMemMap::log_chunks_range(&inputs)
-			.expect("Many variant must have at least one entry");
-
-		// For the reference implementation, use the smallest chunk size.
-		let log_chunks = log_chunks_range.end;
-		let total_alloc = count_total_local_buffer_sizes(&inputs, log_chunks);
-		let mut local_buffer = zeroed_vec(total_alloc);
-		(0..1 << log_chunks)
-			.map(|i| {
-				let local_buffer_alloc = BumpAllocator::new(local_buffer.as_mut());
-				let kernel_data =
-					Self::map_kernel_mem(&mut inputs, &local_buffer_alloc, log_chunks, i);
-				map(&mut CpuKernelBuilder, log_chunks, kernel_data)
-			})
+		self.process_kernels_chunks(map, inputs)?
 			.reduce(|out1, out2| {
 				let mut out1 = out1?;
 				let mut out2_iter = out2?.into_iter();
@@ -163,6 +177,20 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 				Ok(out1)
 			})
 			.expect("range is not empty")
+	}
+
+	fn map_kernels(
+		&mut self,
+		map: impl Sync
+		+ for<'a> Fn(
+			&'a mut Self::KernelExec,
+			usize,
+			Vec<KernelBuffer<'a, F, Self::DevMem>>,
+		) -> Result<(), Error>,
+		mem_maps: Vec<KernelMemMap<'_, F, Self::DevMem>>,
+	) -> Result<(), Error> {
+		self.process_kernels_chunks(map, mem_maps)?.for_each(drop);
+		Ok(())
 	}
 
 	fn inner_product<'a>(
