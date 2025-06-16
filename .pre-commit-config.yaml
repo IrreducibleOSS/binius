@@ -6,20 +6,20 @@ repos:
     language: rust
     types: [rust]
     entry: cargo fmt --
-    stages: [commit]
+    stages: [pre-commit]
   - id: clippy
     name: Run cargo clippy
     types: [rust]
     language: rust
     entry: cargo clippy --all --all-features --tests --benches --examples -- -D warnings
     pass_filenames: false
-    stages: [push]
+    stages: [pre-push]
   - id: copyright-check
     name: Check that files contain copyright notice
     language: rust
     types: [rust]
     entry: sh -c 'head -n1 "$1" | grep -q "// Copyright " || (echo "Copyright notice missing in $1"; exit 1)' --
-    stages: [commit]
+    stages: [pre-commit]
 - repo: https://github.com/crate-ci/typos
   rev: v1.32.0
   hooks:
