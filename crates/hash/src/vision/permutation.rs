@@ -177,7 +177,7 @@ impl Default for Vision32MDSTransform {
 		Self {
 			x: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1)),
 			y: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2)),
-			z: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1)),
+			z: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(2, 1)),
 		}
 	}
 }

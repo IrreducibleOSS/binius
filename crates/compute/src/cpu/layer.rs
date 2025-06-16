@@ -333,12 +333,9 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 			let mut log_len = log_len;
 			let mut log_size = log_size;
 			for &challenge in fold_challenges {
-				let ntt_round = ntt.log_domain_size() - log_len;
 				for index_offset in 0..1 << (log_size - 1) {
-					let t = ntt.get_subspace_eval(
-						ntt_round,
-						(chunk_index << (log_size - 1)) | index_offset,
-					);
+					let t = ntt
+						.get_subspace_eval(log_len, (chunk_index << (log_size - 1)) | index_offset);
 					let (mut u, mut v) =
 						(values[index_offset << 1], values[(index_offset << 1) | 1]);
 					v += u;

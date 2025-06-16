@@ -132,9 +132,9 @@ where
 
 	let log_d = log2_ceil_usize(d);
 	for j in 0..log_d {
-		let subspace_idx = ntt.log_domain_size() - coset_bits + j;
+		let subspace_dim = coset_bits - j;
 		for i in 0..d {
-			x_ell[(i, 1 << j)] = ntt.get_subspace_eval(subspace_idx, i >> (j + 1))
+			x_ell[(i, 1 << j)] = ntt.get_subspace_eval(subspace_dim, i >> (j + 1))
 				+ if (i >> j) & 1 == 1 { F::ONE } else { F::ZERO };
 		}
 
