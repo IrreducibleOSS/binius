@@ -8,7 +8,7 @@ use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{Digest, Output, OutputSizeUser, core_api::BlockSizeUser};
-use itertools::{Itertools, chain};
+use itertools::{Itertools, chain, izip};
 use tracing::instrument;
 
 use super::{
@@ -25,13 +25,22 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeScheme,
-	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
+	oracle::{
+		ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyVariant, OracleId,
+		SizedConstraintSet,
+	},
 	piop,
 	protocols::{
+		evalcheck::{EvalPoint, EvalcheckMultilinearClaim},
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
-		sumcheck::{self, ZerocheckClaim, constraint_set_zerocheck_claim},
+		sumcheck::{
+			self, MLEcheckClaimsWithMeta, ZerocheckClaim, constraint_set_mlecheck_claims,
+			constraint_set_zerocheck_claim,
+			eq_ind::{self, ClaimsSortingOrder, reduce_to_regular_sumchecks},
+			front_loaded,
+		},
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
@@ -198,8 +207,18 @@ where
 
 	// Reduce non_zero_final_layer_claims to evalcheck claims
 	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
-		chain!(flush_oracle_ids, non_zero_oracle_ids),
+		chain!(flush_oracle_ids.clone(), non_zero_oracle_ids),
 		final_layer_claims,
+	)?;
+
+	let mut flush_prodcheck_eval_claims = prodcheck_eval_claims;
+
+	let prodcheck_eval_claims = flush_prodcheck_eval_claims.split_off(flush_oracle_ids.len());
+
+	let flush_eval_claims = reduce_flush_evalcheck_claims::<Tower, Challenger_>(
+		flush_prodcheck_eval_claims,
+		&oracles,
+		&mut transcript,
 	)?;
 
 	// Zerocheck
@@ -223,7 +242,7 @@ where
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(
 		&mut oracles,
-		chain!(prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
+		chain!(flush_eval_claims, prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
 		&mut transcript,
 	)?;
 
@@ -498,4 +517,93 @@ pub fn make_flush_oracles<F: TowerField>(
 				.collect::<Vec<_>>()
 		})
 		.collect()
+}
+
+fn reduce_flush_evalcheck_claims<Tower: TowerFamily, Challenger_>(
+	claims: Vec<EvalcheckMultilinearClaim<FExt<Tower>>>,
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	transcript: &mut VerifierTranscript<Challenger_>,
+) -> Result<Vec<EvalcheckMultilinearClaim<FExt<Tower>>>, Error>
+where
+	Challenger_: Challenger + Default,
+{
+	let mut linear_claims = Vec::new();
+
+	#[allow(clippy::type_complexity)]
+	let mut new_mlechecks_constraints: Vec<(
+		EvalPoint<FExt<Tower>>,
+		ConstraintSetBuilder<FExt<Tower>>,
+	)> = Vec::new();
+
+	for claim in &claims {
+		match &oracles[claim.id].variant {
+			MultilinearPolyVariant::LinearCombination(_) => linear_claims.push(claim.clone()),
+			MultilinearPolyVariant::Composite(composite) => {
+				let eval_point = claim.eval_point.clone();
+				let eval = claim.eval;
+
+				let position = new_mlechecks_constraints
+					.iter()
+					.position(|(ep, _)| *ep == eval_point)
+					.unwrap_or(new_mlechecks_constraints.len());
+
+				let oracle_ids = composite.inner().clone();
+
+				let exp = <_ as CompositionPoly<FExt<Tower>>>::expression(composite.c());
+				if let Some((_, constraint_builder)) = new_mlechecks_constraints.get_mut(position) {
+					constraint_builder.add_sumcheck(oracle_ids, exp, eval);
+				} else {
+					let mut new_builder = ConstraintSetBuilder::new();
+					new_builder.add_sumcheck(oracle_ids, exp, eval);
+					new_mlechecks_constraints.push((eval_point.clone(), new_builder));
+				}
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	let new_mlechecks_constraints = new_mlechecks_constraints;
+
+	let mut eq_ind_challenges = Vec::with_capacity(new_mlechecks_constraints.len());
+	let mut constraint_sets = Vec::with_capacity(new_mlechecks_constraints.len());
+
+	for (ep, builder) in new_mlechecks_constraints {
+		eq_ind_challenges.push(ep.to_vec());
+		constraint_sets.push(builder.build_one(oracles)?)
+	}
+
+	let MLEcheckClaimsWithMeta {
+		claims: mlecheck_claims,
+		metas,
+	} = constraint_set_mlecheck_claims(constraint_sets)?;
+
+	let mut new_evalcheck_claims = Vec::new();
+
+	for (eq_ind_challenges, mlecheck_claim, meta) in
+		izip!(&eq_ind_challenges, mlecheck_claims, metas)
+	{
+		let mlecheck_claim = vec![mlecheck_claim];
+
+		let batch_sumcheck_verifier = front_loaded::BatchVerifier::new(
+			&reduce_to_regular_sumchecks(&mlecheck_claim)?,
+			transcript,
+		)?;
+		let mut sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
+
+		// Reverse challenges since foldling high-to-low
+		sumcheck_output.challenges.reverse();
+
+		let eq_ind_output = eq_ind::verify_sumcheck_outputs(
+			ClaimsSortingOrder::AscendingVars,
+			&mlecheck_claim,
+			eq_ind_challenges,
+			sumcheck_output,
+		)?;
+
+		let evalcheck_claims =
+			sumcheck::make_eval_claims(EvaluationOrder::HighToLow, vec![meta], eq_ind_output)?;
+		new_evalcheck_claims.extend(evalcheck_claims)
+	}
+
+	Ok(chain!(new_evalcheck_claims.into_iter(), linear_claims.into_iter()).collect::<Vec<_>>())
 }

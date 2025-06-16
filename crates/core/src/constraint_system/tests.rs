@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
-	Field, PackedBinaryField2x128b, PackedBinaryField256x1b, PackedField, TowerField,
-	arch::OptimalUnderlier256b, tower::CanonicalTowerFamily,
+	Field, PackedBinaryField2x128b, PackedBinaryField256x1b, PackedBinaryPolyval2x128b,
+	PackedField, TowerField, arch::OptimalUnderlier256b, tower::CanonicalTowerFamily,
 };
 use binius_math::{B1, B128, MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension};
 
@@ -23,6 +23,7 @@ fn test_make_masked_flush_witnesses_handles_small_n_vars() {
 
 	let mut oracles = MultilinearOracleSet::<F>::new();
 	let mut witness = MultilinearExtensionIndex::<P>::new();
+	let mut fast_witness = MultilinearExtensionIndex::<PackedBinaryPolyval2x128b>::new();
 
 	let poly_id = oracles.add_committed(0, F::TOWER_LEVEL);
 	let eval = P::from_scalars(vec![F::ONE]);
@@ -50,6 +51,7 @@ fn test_make_masked_flush_witnesses_handles_small_n_vars() {
 	make_masked_flush_witnesses::<OptimalUnderlier256b, CanonicalTowerFamily>(
 		&oracles,
 		&mut witness,
+		&mut fast_witness,
 		&[poly_id],
 		&[flush],
 		F::ONE,
