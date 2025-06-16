@@ -574,7 +574,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		builder::{ConstraintSystem, Statement, WitnessIndex},
+		builder::{ConstraintSystem, WitnessIndex},
 		gadgets::hash::keccak::test_vector::TEST_VECTOR,
 	};
 
@@ -602,10 +602,9 @@ mod tests {
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
+		let boundaries = vec![];
+		let table_sizes = vec![N_ROWS];
+
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
@@ -614,13 +613,13 @@ mod tests {
 		let trace = trace::keccakf_trace(StateMatrix::default());
 		rb.populate(&mut segment, &[trace]).unwrap();
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
-			&statement.boundaries,
-			&statement.table_sizes,
+			&boundaries,
+			&table_sizes,
 			&witness,
 		)
 		.unwrap();
@@ -639,10 +638,9 @@ mod tests {
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
+		let boundaries = vec![];
+		let table_sizes = vec![N_ROWS];
+
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
@@ -666,13 +664,13 @@ mod tests {
 			}
 		}
 
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
-			&statement.boundaries,
-			&statement.table_sizes,
+			&boundaries,
+			&table_sizes,
 			&witness,
 		)
 		.unwrap();

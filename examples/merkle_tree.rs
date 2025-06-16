@@ -10,7 +10,7 @@ use binius_field::{
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
-	builder::{B128, ConstraintSystem, Statement, WitnessIndex},
+	builder::{B128, ConstraintSystem, WitnessIndex},
 	gadgets::merkle_tree::{
 		MerkleTreeCS,
 		trace::{MerklePath, MerkleTree, MerkleTreeTrace},
@@ -94,12 +94,7 @@ fn main() -> Result<()> {
 
 	let table_sizes = witness.table_sizes();
 
-	let statement = Statement::<B128> {
-		boundaries,
-		table_sizes,
-	};
-
-	let ccs = cs.compile(&statement).unwrap();
+	let ccs = cs.compile().unwrap();
 	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
@@ -128,8 +123,8 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&cs_digest,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		witness,
 		&make_portable_backend(),
 	)
@@ -143,14 +138,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&ccs,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&cs_digest,
-		&statement.boundaries,
-		proof,
-	)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &cs_digest, &boundaries, proof)?;
 
 	Ok(())
 }

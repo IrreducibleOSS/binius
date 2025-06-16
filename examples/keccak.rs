@@ -15,7 +15,7 @@ use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
 use binius_m3::{
 	builder::{
-		B1, B8, B64, B128, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessSegment,
+		B1, B8, B64, B128, ConstraintSystem, TableFiller, TableId, TableWitnessSegment,
 		WitnessIndex,
 	},
 	gadgets::hash::keccak::{StateMatrix, stacked::Keccakf},
@@ -101,10 +101,8 @@ fn main() -> Result<()> {
 	let mut cs = ConstraintSystem::new();
 	let table = PermutationTable::new(&mut cs);
 
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![n_permutations],
-	};
+	let boundaries = vec![];
+	let table_sizes = vec![n_permutations];
 
 	let mut rng = thread_rng();
 	let events = repeat_with(|| StateMatrix::from_fn(|_| rng.next_u64()))
@@ -116,7 +114,7 @@ fn main() -> Result<()> {
 	witness.fill_table_parallel(&table, &events)?;
 	drop(trace_gen_scope);
 
-	let ccs = cs.compile(&statement).unwrap();
+	let ccs = cs.compile().unwrap();
 	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
@@ -145,8 +143,8 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&cs_digest,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		witness,
 		&make_portable_backend(),
 	)?;
@@ -159,14 +157,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&ccs,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&cs_digest,
-		&statement.boundaries,
-		proof,
-	)?;
+	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &cs_digest, &boundaries, proof)?;
 
 	Ok(())
 }

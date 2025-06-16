@@ -8,7 +8,6 @@ pub mod expr;
 pub mod indexed_lookup;
 mod multi_iter;
 pub mod stat;
-pub mod statement;
 pub mod structured;
 pub mod table;
 #[cfg(feature = "test_utils")]
@@ -23,7 +22,6 @@ pub use error::*;
 pub use expr::*;
 pub use indexed_lookup::*;
 pub use stat::*;
-pub use statement::*;
 pub use structured::StructuredDynSize;
 pub use table::*;
 pub use types::*;
