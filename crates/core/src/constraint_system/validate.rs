@@ -12,7 +12,6 @@ use super::{
 	error::Error,
 };
 use crate::{
-	constraint_system::TableSizeSpec,
 	oracle::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ShiftVariant,
@@ -32,47 +31,18 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<BinaryField1b>,
 	F: TowerField,
 {
+	constraint_system.check_table_sizes(table_sizes)?;
+
 	let ConstraintSystem {
-		oracles,
+		oracles: unsized_oracles,
 		table_constraints,
 		non_zero_oracle_ids,
 		flushes,
 		channel_count,
-		table_size_specs,
+		table_size_specs: _,
 		exponents: _,
 	} = constraint_system;
 
-	if table_sizes.len() != table_size_specs.len() {
-		return Err(Error::TableSizesLenMismatch {
-			expected: table_size_specs.len(),
-			got: table_sizes.len(),
-		});
-	}
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
-
-	let unsized_oracles = oracles;
 	let oracles = unsized_oracles.instantiate(table_sizes)?;
 
 	// Check the constraint sets
