@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::collections::hash_map::Entry;
+
 use binius_field::{
 	BinaryField, PackedField, TowerField,
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
@@ -44,6 +46,7 @@ use crate::{
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
+	transparent::step_down::StepDown,
 };
 
 /// Verifies a proof against a constraint system.
@@ -181,6 +184,8 @@ where
 
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
+	let _ =
+		augument_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, &table_sizes)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
@@ -386,6 +391,70 @@ fn verify_channels_balance<F: TowerField>(
 	}
 
 	Ok(())
+}
+
+/// This function will create a special selectors for the flushes, that are defined on tables that
+/// are not of power-of-two size. Those artifical selectors are needed to bridge the gap between
+/// the arbitrary sized tables and the oracles (oracles are always power-of-two sized).
+///
+/// Takes the vector of `flushes` and creates the corresponding list of oracles for them. If the
+/// witness provided, then it will also fill the witness for those oracles.
+pub fn augument_flush_po2_step_down<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	flushes: &mut [Flush<F>],
+	table_size_specs: &[TableSizeSpec],
+	table_sizes: &[usize],
+) -> Result<Vec<(OracleId, StepDown)>, Error> {
+	use std::collections::HashMap;
+
+	use crate::transparent::step_down::StepDown;
+
+	// Track created step-down oracles by (table_id, log_values_per_row)
+	let mut step_down_oracles = HashMap::<(usize, usize), OracleId>::new();
+	let mut step_down_polys = Vec::new();
+
+	// First pass: create step-down oracles for arbitrary-sized tables
+	for flush in flushes.iter() {
+		let table_id = flush.table_id;
+		let table_size = table_sizes[table_id];
+		let table_spec = &table_size_specs[table_id];
+
+		// Only process tables with arbitrary size that are not power-of-two
+		if matches!(table_spec, TableSizeSpec::Arbitrary) {
+			let log_values_per_row = flush.log_values_per_row;
+			let key = (table_id, log_values_per_row);
+
+			// Only create the step-down oracle once per (table_id, log_values_per_row) pair.
+			if let Entry::Vacant(e) = step_down_oracles.entry(key) {
+				let log_capacity = log2_ceil_usize(table_size);
+				let n_vars = log_capacity + log_values_per_row;
+				let size = table_size << log_values_per_row;
+
+				let step_down_poly = StepDown::new(n_vars, size)?;
+				let oracle_id = oracles
+					.add_named(format!("stepdown_table_{table_id}_log_values_{log_values_per_row}"))
+					.transparent(step_down_poly.clone())?;
+
+				step_down_polys.push((oracle_id, step_down_poly));
+				e.insert(oracle_id);
+			}
+		}
+	}
+
+	// Second pass: add step-down oracles as selectors to the appropriate flushes
+	for flush in flushes.iter_mut() {
+		let table_id = flush.table_id;
+		let table_spec = &table_size_specs[table_id];
+
+		if matches!(table_spec, TableSizeSpec::Arbitrary) {
+			let key = (table_id, flush.log_values_per_row);
+			if let Some(&oracle_id) = step_down_oracles.get(&key) {
+				flush.selectors.push(oracle_id);
+			}
+		}
+	}
+
+	Ok(step_down_polys)
 }
 
 /// For each flush,

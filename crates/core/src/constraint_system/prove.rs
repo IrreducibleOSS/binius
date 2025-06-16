@@ -38,6 +38,7 @@ use crate::{
 		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
+		verify::augument_flush_po2_step_down,
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
@@ -62,6 +63,7 @@ use crate::{
 	},
 	ring_switch,
 	transcript::ProverTranscript,
+	transparent::step_down::StepDown,
 	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -340,6 +342,9 @@ where
 
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
+	let po2_step_down_polys =
+		augument_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, table_sizes)?;
+	populate_flush_po2_step_down_witnesses::<U, _>(po2_step_down_polys, &mut witness)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
@@ -647,6 +652,23 @@ where
 
 		Ok(type_erased_zerocheck_prover)
 	}
+}
+
+fn populate_flush_po2_step_down_witnesses<'a, U, Tower>(
+	step_down_polys: Vec<(OracleId, StepDown)>,
+	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+) -> Result<(), Error>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+{
+	for (oracle_id, step_down_poly) in step_down_polys {
+		let witness_poly = step_down_poly
+			.multilinear_extension::<PackedType<U, Tower::B1>>()?
+			.specialize_arc_dyn();
+		witness.update_multilin_poly([(oracle_id, witness_poly)])?
+	}
+	Ok(())
 }
 
 #[instrument(skip_all, level = "debug")]
