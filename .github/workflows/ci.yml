@@ -33,7 +33,7 @@ jobs:
       - name: Run Command
         if: ${{ matrix.expand.name != 'pre-commit' }}
         run: ${{ matrix.expand.cmd }}
-      - name: Spell Check
+      - name: Pre-commit
         uses: pre-commit/action@v3.0.1
         if: ${{ matrix.expand.name == 'pre-commit' }}
         with:
