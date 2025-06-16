@@ -269,6 +269,10 @@ where
 {
 	/// Automatically populate the witness data for all the constant columns in all the tables with
 	/// a [`TableWitnessIndex<P>`].
+	///
+	/// Note, that this will only fill the witness data for the initialized tables, i.e. those
+	/// that had one of [`Self::fill_table_parallel`], [`Self::fill_table_sequential`] or
+	/// [`Self::init_table`] called.
 	pub fn fill_constant_cols(&mut self) -> Result<(), Error> {
 		for table in self.tables.iter_mut() {
 			match table.as_mut() {
