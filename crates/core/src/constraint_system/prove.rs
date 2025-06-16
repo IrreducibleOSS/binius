@@ -407,7 +407,7 @@ where
 
 	let prodcheck_eval_claims = flush_prodcheck_eval_claims.split_off(flush_oracle_ids.len());
 
-	let flush_eval_claims = reduce_flush_evalcheck_cliams::<U, Tower, Challenger_, Backend>(
+	let flush_eval_claims = reduce_flush_evalcheck_claims::<U, Tower, Challenger_, Backend>(
 		flush_prodcheck_eval_claims,
 		&oracles,
 		fast_witness,
@@ -969,8 +969,8 @@ where
 		.collect::<Result<Vec<_>, _>>()
 }
 
-#[instrument(skip_all, name = "flush::reduce_flush_evalcheck_cliams")]
-fn reduce_flush_evalcheck_cliams<
+#[instrument(skip_all, name = "flush::reduce_flush_evalcheck_claims")]
+fn reduce_flush_evalcheck_claims<
 	U,
 	Tower: ProverTowerFamily,
 	Challenger_,

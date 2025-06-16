@@ -215,7 +215,7 @@ where
 
 	let prodcheck_eval_claims = flush_prodcheck_eval_claims.split_off(flush_oracle_ids.len());
 
-	let flush_eval_claims = reduce_flush_evalcheck_cliams::<Tower, Challenger_>(
+	let flush_eval_claims = reduce_flush_evalcheck_claims::<Tower, Challenger_>(
 		flush_prodcheck_eval_claims,
 		&oracles,
 		&mut transcript,
@@ -519,7 +519,7 @@ pub fn make_flush_oracles<F: TowerField>(
 		.collect()
 }
 
-fn reduce_flush_evalcheck_cliams<Tower: TowerFamily, Challenger_>(
+fn reduce_flush_evalcheck_claims<Tower: TowerFamily, Challenger_>(
 	claims: Vec<EvalcheckMultilinearClaim<FExt<Tower>>>,
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	transcript: &mut VerifierTranscript<Challenger_>,
