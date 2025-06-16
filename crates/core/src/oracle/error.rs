@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use crate::oracle::OracleId;
+use crate::{constraint_system::TableId, oracle::OracleId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -32,4 +32,6 @@ pub enum Error {
 		"expected constraint set to contain only constraints with n_vars={expected}, but found n_vars={got}"
 	)]
 	ConstraintSetNvarsMismatch { got: usize, expected: usize },
+	#[error("table size for table {table_id} is missing")]
+	TableSizeMissing { table_id: TableId },
 }

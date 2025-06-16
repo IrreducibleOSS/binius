@@ -128,11 +128,11 @@ where
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let ConstraintSystem {
-		mut oracles,
+		oracles,
 		table_constraints,
 		mut flushes,
 		mut exponents,
-		non_zero_oracle_ids,
+		mut non_zero_oracle_ids,
 		channel_count,
 		table_size_specs,
 	} = constraint_system.clone();
@@ -175,6 +175,33 @@ where
 	let mut writer = transcript.message();
 	writer.write_slice(table_sizes);
 
+	let mut oracles = oracles.instantiate(table_sizes)?;
+
+	// Prepare the constraint system for proving:
+	//
+	// - Trim all the zero sized oracles.
+	// - Canonicalize the ordering.
+
+	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
+	flushes.sort_by_key(|flush| flush.channel_id);
+
+	non_zero_oracle_ids.retain(|oracle| !oracles.is_zero_sized(*oracle));
+	exponents.retain(|exp| !oracles.is_zero_sized(exp.exp_result_id));
+
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.filter_map(|u| {
+			if table_sizes[u.table_id] == 0 {
+				None
+			} else {
+				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
+				Some(SizedConstraintSet::new(n_vars, u))
+			}
+		})
+		.collect::<Vec<_>>();
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
+
 	reorder_exponents(&mut exponents, &oracles);
 
 	let witness_span = tracing::info_span!(
@@ -196,20 +223,6 @@ where
 	drop(exp_compute_layer_span);
 
 	drop(witness_span);
-
-	let mut table_constraints = table_constraints
-		.into_iter()
-		.filter_map(|u| {
-			if table_sizes[u.table_id] == 0 {
-				None
-			} else {
-				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
-				Some(SizedConstraintSet::new(n_vars, u))
-			}
-		})
-		.collect::<Vec<_>>();
-	// Stable sort constraint sets in ascending order by number of variables.
-	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	// Commit polynomials
 	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
