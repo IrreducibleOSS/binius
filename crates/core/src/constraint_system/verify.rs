@@ -89,32 +89,8 @@ where
 	let table_count = table_size_specs.len();
 	let mut reader = transcript.message();
 	let table_sizes: Vec<usize> = reader.read_vec(table_count)?;
-	assert_eq!(table_sizes.len(), table_count);
 
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
-
+	constraint_system.check_table_sizes(&table_sizes)?;
 	let mut oracles = oracles.instantiate(&table_sizes)?;
 
 	// Prepare the constraint system for proving:
