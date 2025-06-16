@@ -6,6 +6,7 @@ repos:
     language: rust
     types: [rust]
     entry: cargo fmt --check
+    pass_filenames: false
     stages: [pre-commit]
   - id: clippy
     name: Run cargo clippy
