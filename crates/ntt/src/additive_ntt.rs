@@ -43,7 +43,7 @@ pub struct NTTShape {
 /// polynomial basis coefficients.
 ///
 /// An [`AdditiveNTT`] implementation with a maximum domain dimension of $\ell$ can be applied on
-/// a sequence of  $\ell + 1$ evaluation domains of sizes $2^0, \ldots, 2^\ell$. These are the
+/// a sequence of $\ell + 1$ evaluation domains of sizes $2^0, \ldots, 2^\ell$. These are the
 /// domains $S^{(\ell)}, S^{(\ell - 1)}, \ldots, S^{(0)}$ defined in [DP24] Section 4. The methods
 /// [`Self::forward_transform`] and [`Self::inverse_transform`] require a parameter
 /// `log_domain_size` that indicates which of the $S^(i)$ domains to use for the transformation's
@@ -59,22 +59,26 @@ pub trait AdditiveNTT<F: BinaryField> {
 	/// Base-2 logarithm of the maximum size of the NTT domain, $\ell$.
 	fn log_domain_size(&self) -> usize;
 
-	/// Returns the binary subspace $S^{(i)}$.
+	/// Returns the binary subspace with dimension $i$.
 	///
-	/// The domain will have dimension $\ell - i$.
+	/// In [DP24], this subspace is referred to as $S^{(\ell - i)}$, where $\ell$ is the maximum
+	/// domain size of the NTT. We choose to reverse the indexing order with respect to the paper
+	/// because it is more natural in code that $i$th subspace have dimension $i$.
 	///
 	/// ## Preconditions
 	///
 	/// * `i` must be less than `self.log_domain_size()`
 	fn subspace(&self, i: usize) -> BinarySubspace<F>;
 
-	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
+	/// Get the $j$'th basis element of the $i$'th subspace.
 	///
 	/// ## Preconditions
 	///
 	/// * `i` must be less than `self.log_domain_size()`
-	/// * `j` must be less than `self.log_domain_size() - i`
-	fn get_subspace_eval(&self, i: usize, j: usize) -> F;
+	/// * `j` must be less than `i`
+	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
+		self.subspace(i).basis()[j]
+	}
 
 	/// Batched forward transformation defined in [DP24], Section 2.3.
 	///
