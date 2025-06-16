@@ -9,6 +9,7 @@ use std::{
 
 use binius_compute::memory::{ComputeMemory, SizedSlice};
 use binius_field::{PackedField, packed::iter_packed_slice_with_offset};
+use itertools::Either;
 
 /// A packed memory implementation that uses slices of packed fields.
 pub struct PackedMemory<P>(PhantomData<P>);
@@ -106,12 +107,16 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 		data: Self::FSliceMut<'a>,
 		chunk_len: usize,
 	) -> impl Iterator<Item = Self::FSliceMut<'a>> {
+		if chunk_len == data.len() {
+			return Either::Left(std::iter::once(data));
+		}
+
 		assert_eq!(chunk_len % P::WIDTH, 0, "chunk_len must be a multiple of {}", P::WIDTH);
 		assert_eq!(data.len() % chunk_len, 0, "data.len() must be a multiple of chunk_len");
 
 		let chunk_len = chunk_len >> P::LOG_WIDTH;
 
-		data.apply_changes_and_deconstruct(
+		let chunks_iter = data.apply_changes_and_deconstruct(
 			|slice| {
 				slice
 					.chunks_mut(chunk_len)
@@ -120,7 +125,9 @@ impl<P: PackedField> ComputeMemory<P::Scalar> for PackedMemory<P> {
 			|_, _| {
 				panic!("splitting slices of length less than `Self::ALIGNMENT` is not supported");
 			},
-		)
+		);
+
+		Either::Right(chunks_iter)
 	}
 
 	fn split_half<'a>(data: Self::FSlice<'a>) -> (Self::FSlice<'a>, Self::FSlice<'a>) {
