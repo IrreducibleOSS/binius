@@ -40,7 +40,7 @@ impl FRIConfigParams {
 		Self {
 			log_inv_rate,
 			security_bits,
-			fri_conjecture: false, // Default to false as per requirement
+			fri_conjecture: false,
 		}
 	}
 
