@@ -21,8 +21,8 @@ jobs:
           - runner: "ubuntu-latest"
             name: "clippy"
             cmd: 'RUSTFLAGS="-C target-cpu=native" cargo clippy --all --all-features --tests --benches --examples -- -D warnings'
-#          - runner: "ubuntu-latest"
-#            name: "pre-commit"
+          - runner: "ubuntu-latest"
+            name: "pre-commit"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
