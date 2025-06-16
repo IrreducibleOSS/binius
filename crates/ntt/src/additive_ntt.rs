@@ -68,6 +68,8 @@ pub trait AdditiveNTT<F: BinaryField> {
 	/// ## Preconditions
 	///
 	/// * `i` must be less than `self.log_domain_size()`
+	///
+	/// [DP24]: <https://eprint.iacr.org/2024/504>
 	fn subspace(&self, i: usize) -> BinarySubspace<F>;
 
 	/// Get the $j$'th basis element of the $i$'th subspace.
