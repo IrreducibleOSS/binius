@@ -134,10 +134,8 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		const SECURITY_BITS: usize = 100;
 
 		let mut compute_holder =
-			FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<U, B128>>::new(
-				1 << 16,
-				1 << (24 - PackedType::<U, B128>::LOG_WIDTH),
-			);
+			FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<U, B128>>::new(1 << 16, 1 << 24);
+
 		let ccs_digest = ccs.digest::<Groestl256>();
 		let proof = binius_core::constraint_system::prove::<
 			_,
