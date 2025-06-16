@@ -43,7 +43,7 @@ jobs:
         if: ${{ matrix.expand.name == 'typo' }}
         uses: crate-ci/typos@v1.32.0
         with:
-          write_changes: true
+          files: '**'
   build:
     name: build-${{ matrix.expand.name }}
     needs: [lint]
