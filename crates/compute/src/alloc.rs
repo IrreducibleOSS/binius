@@ -19,12 +19,6 @@ pub trait ComputeAllocator<F, Mem: ComputeMemory<F>> {
 	/// - `n` must be a multiple of `Mem::ALIGNMENT`
 	fn alloc(&self, n: usize) -> Result<Mem::FSliceMut<'_>, Error>;
 
-	/// Borrow the remaining unallocated capacity.
-	///
-	/// This allows another allocator to have unique mutable access to the rest of the elements in
-	/// this allocator until it gets dropped, at which point this allocator can be used again
-	fn remaining(&mut self) -> Mem::FSliceMut<'_>;
-
 	/// Returns the remaining number of elements that can be allocated.
 	fn capacity(&self) -> usize;
 
@@ -41,7 +35,7 @@ pub struct BumpAllocator<'a, F, Mem: ComputeMemory<F>> {
 impl<'a, F, Mem> BumpAllocator<'a, F, Mem>
 where
 	F: 'static,
-	Mem: ComputeMemory<F> + 'a,
+	Mem: ComputeMemory<F>,
 {
 	pub fn new(buffer: Mem::FSliceMut<'a>) -> Self {
 		Self {
@@ -54,6 +48,16 @@ where
 		BumpAllocator {
 			buffer: Mutex::new(Some(buffer)),
 		}
+	}
+
+	fn remaining(&mut self) -> Mem::FSliceMut<'_> {
+		Mem::to_owned_mut(
+			self.buffer
+				.get_mut()
+				.expect("mutex is always available")
+				.as_mut()
+				.expect("buffer is always Some by invariant"),
+		)
 	}
 }
 
@@ -86,16 +90,6 @@ where
 		}
 	}
 
-	fn remaining(&mut self) -> Mem::FSliceMut<'_> {
-		Mem::to_owned_mut(
-			self.buffer
-				.get_mut()
-				.expect("mutex is always available")
-				.as_mut()
-				.expect("buffer is always Some by invariant"),
-		)
-	}
-
 	fn capacity(&self) -> usize {
 		self.buffer
 			.lock()
@@ -106,7 +100,7 @@ where
 	}
 
 	fn subscope_allocator(&mut self) -> impl ComputeAllocator<F, Mem> {
-		BumpAllocator::new(self.remaining())
+		BumpAllocator::<F, Mem>::new(self.remaining())
 	}
 }
 
