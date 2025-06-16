@@ -142,6 +142,116 @@ impl U32Add {
 	}
 }
 
+/// A gadget for performing SIMD 32-bit integer addition on vertically-packed bit columns.
+///
+/// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
+/// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
+/// A gadget for performing SIMD 32-bit integer addition on vertically-packed bit columns.
+///
+/// This gadget has input columns `xin` and `yin` for the two 32-bit adjacent integers to be added,
+/// and an output column `zout`, and it constrains that `xin + yin = zout` as integers. Only
+/// supports unchecked addition, so it does not handle overflow.
+///
+/// The generic parameter `V` represents the number of vertically-packed bits (the vertical stacking
+/// factor of the bit columns). The default value is 32, which corresponds to the standard 32-bit
+/// integer size. When using a different value for `V`, ensure it is a power of two and at least 32.
+#[derive(Debug)]
+pub struct U32AddStacked<const V: usize = 32> {
+	// Inputs
+	pub xin: Col<B1, V>,
+	pub yin: Col<B1, V>,
+
+	// Private
+	cin: Col<B1, V>,
+	cout: Col<B1, V>,
+	cout_shl: Col<B1, V>,
+
+	carry_in_bit: Option<Col<B1, V>>,
+	pub zout: Col<B1, V>,
+}
+
+impl<const V: usize> U32AddStacked<V> {
+	pub fn new(
+		table: &mut TableBuilder,
+		xin: Col<B1, V>,
+		yin: Col<B1, V>,
+		commit_zout: bool,
+		carry_in_bit: Option<Col<B1, V>>,
+	) -> Self {
+		assert!(
+			V.is_power_of_two() && V >= 32,
+			"V must be a power of two greater than or equal to 32"
+		);
+		let cout = table.add_committed::<B1, V>("cout");
+		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
+
+		let cin = if let Some(carry_in_bit) = carry_in_bit {
+			table.add_computed("cin", cout_shl + carry_in_bit)
+		} else {
+			cout_shl
+		};
+
+		table.assert_zero("carry_out", (xin + cin) * (yin + cin) + cin - cout);
+
+		let zout = if commit_zout {
+			let zout = table.add_committed::<B1, V>("zout");
+			table.assert_zero("zout", xin + yin + cin - zout);
+			zout
+		} else {
+			table.add_computed("zout", xin + yin + cin)
+		};
+
+		Self {
+			xin,
+			yin,
+			cin,
+			cout,
+			cout_shl,
+			zout,
+			carry_in_bit,
+		}
+	}
+
+	pub fn populate<P>(&self, index: &mut TableWitnessSegment<P>) -> Result<(), anyhow::Error>
+	where
+		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1>,
+	{
+		let stacking_factor = V / 32;
+		let xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
+		let yin = index.get_mut_as(self.yin)?;
+		let mut cout = index.get_mut_as(self.cout)?;
+		let mut zout = index.get_mut_as(self.zout)?;
+
+		if let Some(carry_in_bit_col) = self.carry_in_bit {
+			// This is u32 assumed to be either 0 or 1.
+			let carry_in_bit = index.get_mut_as(carry_in_bit_col)?;
+
+			let mut cin = index.get_mut_as(self.cin)?;
+			let mut cout_shl = index.get_mut_as(self.cout_shl)?;
+
+			for i in 0..index.size() * stacking_factor {
+				let (x_plus_y, carry0) = xin[i].overflowing_add(yin[i]);
+				let carry1;
+				(zout[i], carry1) = x_plus_y.overflowing_add(carry_in_bit[i]);
+				let carry = carry0 | carry1;
+
+				cin[i] = xin[i] ^ yin[i] ^ zout[i];
+				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
+				cout_shl[i] = cout[i] << 1;
+			}
+		} else {
+			// When the carry in bit is fixed to zero, we can simplify the logic.
+			let mut cin = index.get_mut_as(self.cin)?;
+			for i in 0..index.size() * stacking_factor {
+				let carry;
+				(zout[i], carry) = xin[i].overflowing_add(yin[i]);
+				cin[i] = xin[i] ^ yin[i] ^ zout[i];
+				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
+			}
+		};
+		Ok(())
+	}
+}
 /// Gadget for unsigned addition using non-packed one-bit columns generic over `u32` and `u64`
 #[derive(Debug)]
 pub struct WideAdd<UX: UnsignedAddPrimitives, const BIT_LENGTH: usize> {
@@ -587,6 +697,53 @@ mod tests {
 			}
 		}
 		// Validate constraint system
+		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
+	}
+
+	#[test]
+	fn test_u32_add_stacked() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("u32_add_stacked");
+		const TABLE_SIZE: usize = 1 << 6;
+		const LOG_STACKING_FACTOR: usize = 2;
+		const TOTAL_BITS: usize = 32 << LOG_STACKING_FACTOR;
+		let xin = table.add_committed::<B1, TOTAL_BITS>("xin");
+		let yin = table.add_committed::<B1, TOTAL_BITS>("yin");
+		let add = U32AddStacked::new(&mut table, xin, yin, true, None);
+		let table_id = table.id();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let test_values: Vec<(u32, u32)> = (0..TABLE_SIZE << LOG_STACKING_FACTOR)
+			.map(|_| (rng.r#gen::<u32>(), rng.r#gen::<u32>()))
+			.collect();
+
+		let mut allocator = CpuComputeAllocator::new(1 << 12);
+		let allocator = allocator.into_bump_allocator();
+		let mut witness =
+			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let table_witness = witness.init_table(table_id, TABLE_SIZE).unwrap();
+		let mut segment = table_witness.full_segment();
+
+		{
+			let mut xin_bits = segment.get_mut_as::<u32, _, TOTAL_BITS>(add.xin).unwrap();
+			let mut yin_bits = segment.get_mut_as::<u32, _, TOTAL_BITS>(add.yin).unwrap();
+			for (i, (x, y)) in test_values.iter().enumerate() {
+				xin_bits[i] = *x;
+				yin_bits[i] = *y;
+			}
+		}
+
+		add.populate(&mut segment).unwrap();
+
+		{
+			let zout_bits = segment.get_mut_as::<u32, _, TOTAL_BITS>(add.zout).unwrap();
+
+			for (i, (x, y)) in test_values.iter().enumerate() {
+				let expected = x.wrapping_add(*y);
+				assert_eq!(zout_bits[i], expected, "row {i}: {} + {} != {}", x, y, zout_bits[i]);
+			}
+		}
+
 		validate_system_witness::<OptimalUnderlier128b>(&cs, witness, vec![]);
 	}
 }
