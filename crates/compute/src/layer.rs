@@ -447,6 +447,48 @@ pub trait ComputeLayerExecutor<F: Field> {
 		output: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
 		composition: &Self::ExprEval,
 	) -> Result<(), Error>;
+
+	/// Reduces a slice of elements to a single value by recursively applying pairwise
+	/// multiplication.
+	///
+	/// Given an input slice `x` of length `n = 2^k` for some integer `k`,
+	/// this function computes the result:
+	///
+	/// $$
+	/// y = \prod_{i=0}^{n-1} x_i
+	/// $$
+	///
+	/// However, instead of a flat left-to-right reduction, the computation proceeds
+	/// in ⌈log₂(n)⌉ rounds, halving the number of elements each time:
+	///
+	/// - **Round 0**: $$ x^{(0)}_i = x_{2i} \cdot x_{2i+1}, \quad \text{for } i = 0 \ldots
+	///   \frac{n}{2} - 1 $$
+	/// - **Round 1**: $$ x^{(1)}_i = x^{(0)}_{2i} \cdot x^{(0)}_{2i+1} $$
+	/// - ...
+	/// - **Final round**: $$ x^{(k)}_0 = \prod_{i=0}^{n-1} x_i $$
+	///
+	/// This binary tree-style reduction is mathematically equivalent to the full product,
+	/// but structured for efficient parallelization (e.g., SIMD or multi-threading).
+	///
+	/// ## Arguments
+	///
+	/// * `input`` - A slice of input field elements provided to the first reduction round
+	/// * `round_outpus` - A mutable slice of preallocated output field elements for each reduction
+	///   round. `round_outpus.len()` must equal log₂(input.len()) - 1. The length of the FSlice at
+	///   index i must equal input.len() / 2**(i + 1) for i in 0..round_outputs.len().
+	///
+	/// ## Throws
+	///
+	/// * Returns an error if the length of `input` is not a power of 2.
+	/// * Returns an error if the length of `input` is less than 2 (no reductions are possible).
+	/// * Returns an error if `round_outputs.len()` != log₂(input.len())
+	/// * Returns an error if any element in `round_outputs` does not satisfy
+	///   `round_outputs[i].len() == input.len() / 2**(i + 1)` for i in 0..round_outputs.len()
+	fn pairwise_product_reduce(
+		&mut self,
+		input: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		round_outputs: &mut [<Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>],
+	) -> Result<(), Error>;
 }
 
 /// An interface for defining execution kernels.

@@ -424,6 +424,53 @@ impl<F: TowerTop> ComputeLayerExecutor<F> for CpuLayerExecutor<F> {
 
 		Ok(())
 	}
+
+	fn pairwise_product_reduce(
+		&mut self,
+		input: <Self::DevMem as ComputeMemory<F>>::FSlice<'_>,
+		round_outputs: &mut [<Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>],
+	) -> Result<(), Error> {
+		if input.len().count_ones() != 1 {
+			return Err(Error::InputValidation(format!(
+				"input length must be a power of 2: {}",
+				input.len()
+			)));
+		}
+		if input.len() < 2 {
+			return Err(Error::InputValidation(format!(
+				"input length must be greater than or equal to 2 in order to perform at least one reduction: {}",
+				input.len()
+			)));
+		}
+		let log_num_inputs = input.len().ilog2();
+		let expected_round_outputs_len = log_num_inputs;
+		if round_outputs.len() != expected_round_outputs_len as usize {
+			return Err(Error::InputValidation(format!(
+				"round_outputs.len() does not match the expected length: {} != {expected_round_outputs_len}",
+				round_outputs.len()
+			)));
+		}
+		for (round_idx, round_output_data) in round_outputs.iter().enumerate() {
+			let expected_output_size = 1usize << (log_num_inputs as usize - round_idx - 1);
+			if round_output_data.len() != expected_output_size {
+				return Err(Error::InputValidation(format!(
+					"round_outputs[{}].len() = {}, expected {expected_output_size}",
+					round_idx,
+					round_output_data.len()
+				)));
+			}
+		}
+		let mut round_data_source = input;
+		for round_output_data in round_outputs.iter_mut() {
+			for idx in 0..round_output_data.len() {
+				round_output_data[idx] =
+					round_data_source[idx * 2] * round_data_source[idx * 2 + 1];
+			}
+			round_data_source = round_output_data
+		}
+
+		Ok(())
+	}
 }
 
 #[derive(Debug)]

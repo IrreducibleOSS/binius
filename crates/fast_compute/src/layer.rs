@@ -603,6 +603,15 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 
 		result.into_iter().map(|(_, out)| out).collect()
 	}
+
+	fn pairwise_product_reduce(
+		&mut self,
+		_input: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		_round_outputs: &mut [<Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>],
+	) -> Result<(), Error> {
+		// TODO(SYS-350)
+		todo!()
+	}
 }
 
 /// In case when `P1` and `P2` are the same type, this function performs the extrapolation
