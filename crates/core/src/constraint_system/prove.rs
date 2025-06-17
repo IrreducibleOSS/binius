@@ -25,6 +25,7 @@ use bytemuck::zeroed_vec;
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
+use tracing_profile::utils::emit_max_rss;
 
 use super::{
 	ConstraintSystem, Proof,
@@ -225,6 +226,7 @@ where
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &ntt, &merkle_prover, &committed_multilins)?;
+	emit_max_rss();
 	drop(commit_span);
 
 	// Observe polynomial commitment
@@ -268,6 +270,7 @@ where
 	.isomorphic();
 
 	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	emit_max_rss();
 	drop(exp_span);
 
 	// Grand product arguments
@@ -287,6 +290,7 @@ where
 	.entered();
 	let non_zero_fast_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+	emit_max_rss();
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -299,6 +303,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(nonzero_prodcheck_compute_layer_span);
 
 	let non_zero_products =
@@ -354,6 +359,7 @@ where
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+	emit_max_rss();
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -366,6 +372,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(flush_prodcheck_compute_layer_span);
 
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
@@ -417,6 +424,7 @@ where
 		backend,
 	)?;
 
+	emit_max_rss();
 	drop(prodcheck_span);
 
 	// Zerocheck
@@ -495,6 +503,7 @@ where
 	let zerocheck_eval_claims =
 		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
+	emit_max_rss();
 	drop(zerocheck_span);
 
 	let evalcheck_span = tracing::info_span!(
@@ -526,6 +535,7 @@ where
 		&eval_claims,
 	)?;
 
+	emit_max_rss();
 	drop(evalcheck_span);
 
 	let ring_switch_span = tracing::info_span!(
@@ -552,6 +562,7 @@ where
 		dev_alloc,
 		host_alloc,
 	)?;
+	emit_max_rss();
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
@@ -575,6 +586,7 @@ where
 		&piop_sumcheck_claims,
 		&mut transcript,
 	)?;
+	emit_max_rss();
 	drop(piop_compiler_span);
 
 	let proof = Proof {
