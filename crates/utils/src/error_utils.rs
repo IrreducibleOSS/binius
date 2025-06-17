@@ -20,7 +20,7 @@ macro_rules! bail {
 macro_rules! ensure {
 	($cond:expr, $err:expr) => {
 		if !$cond {
-			bail!($err);
+			$crate::bail!($err);
 		}
 	};
 }
