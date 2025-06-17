@@ -7,6 +7,7 @@ use binius_compute::{ComputeHolder, cpu::alloc::CpuComputeAllocator};
 use binius_core::{
 	constraint_system::{self, channel::ChannelId},
 	fiat_shamir::HasherChallenger,
+	protocols::fri::FRISoundnessParams,
 };
 use binius_fast_compute::layer::FastCpuLayerHolder;
 use binius_field::{
@@ -156,6 +157,7 @@ fn main() -> Result<()> {
 
 	drop(hal_span);
 
+	let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, args.log_inv_rate as usize);
 	let proof = constraint_system::prove::<
 		_,
 		OptimalUnderlier,
@@ -169,8 +171,7 @@ fn main() -> Result<()> {
 	>(
 		&mut compute_holder.to_data(),
 		&ccs,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
+		&fri_soundness_params,
 		&cs_digest,
 		&statement.boundaries,
 		&statement.table_sizes,
@@ -186,14 +187,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(
-		&ccs,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&cs_digest,
-		&statement.boundaries,
-		proof,
-	)?;
+	>(&ccs, &fri_soundness_params, &cs_digest, &statement.boundaries, proof)?;
 
 	Ok(())
 }

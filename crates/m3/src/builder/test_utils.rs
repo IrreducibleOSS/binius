@@ -3,7 +3,10 @@
 //! Utilities for testing M3 constraint systems and gadgets.
 use anyhow::Result;
 use binius_compute::ComputeHolder;
-use binius_core::{constraint_system::channel::Boundary, fiat_shamir::HasherChallenger};
+use binius_core::{
+	constraint_system::channel::Boundary, fiat_shamir::HasherChallenger,
+	protocols::fri::FRISoundnessParams,
+};
 use binius_fast_compute::layer::FastCpuLayerHolder;
 use binius_field::{
 	BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
@@ -139,6 +142,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 				1 << (24 - PackedType::<U, B128>::LOG_WIDTH),
 			);
 		let ccs_digest = ccs.digest::<Groestl256>();
+		let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, LOG_INV_RATE);
 		let proof = binius_core::constraint_system::prove::<
 			_,
 			U,
@@ -152,8 +156,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		>(
 			&mut compute_holder.to_data(),
 			&ccs,
-			LOG_INV_RATE,
-			SECURITY_BITS,
+			&fri_soundness_params,
 			&ccs_digest,
 			&statement.boundaries,
 			&statement.table_sizes,
@@ -168,7 +171,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &statement.boundaries, proof)
+		>(&ccs, &fri_soundness_params, &ccs_digest, &statement.boundaries, proof)
 		.unwrap();
 	}
 }

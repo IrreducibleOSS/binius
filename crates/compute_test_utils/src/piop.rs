@@ -10,7 +10,7 @@ use binius_core::{
 		CommitMeta, PIOPSumcheckClaim, commit, make_commit_params_with_optimal_arity, prove, verify,
 	},
 	polynomial::MultivariatePoly,
-	protocols::fri::CommitOutput,
+	protocols::fri::{CommitOutput, FRISoundnessParams},
 	transcript::ProverTranscript,
 	transparent,
 };
@@ -108,11 +108,11 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 {
 	let merkle_scheme = merkle_prover.scheme();
 
+	let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, log_inv_rate);
 	let fri_params = make_commit_params_with_optimal_arity::<_, FEncode, _>(
 		commit_meta,
 		merkle_scheme,
-		SECURITY_BITS,
-		log_inv_rate,
+		&fri_soundness_params,
 	)
 	.unwrap();
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();

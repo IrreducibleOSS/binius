@@ -10,7 +10,7 @@ use binius_core::{
 	piop,
 	protocols::{
 		evalcheck::{EvalcheckMultilinearClaim, subclaims::MemoizedData},
-		fri::CommitOutput,
+		fri::{CommitOutput, FRISoundnessParams},
 	},
 	ring_switch::{EvalClaimSystem, ReducedClaim, ReducedWitness, prove, verify},
 	transcript::ProverTranscript,
@@ -209,11 +209,11 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(oracles).unwrap();
 
+	let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, log_inv_rate);
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, B32, _>(
 		&commit_meta,
 		merkle_scheme,
-		SECURITY_BITS,
-		log_inv_rate,
+		&fri_soundness_params,
 	)
 	.unwrap();
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();
