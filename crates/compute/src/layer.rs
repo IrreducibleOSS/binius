@@ -68,6 +68,21 @@ pub trait ComputeLayer<F: Field>: 'static {
 	) -> Result<Vec<F>, Error>
 	where
 		'b: 'a;
+
+	/// Fills a mutable slice of field elements with a given value.
+	///
+	/// This operation takes a mutable slice (`FSliceMut<F>`) and a field element `value`,
+	/// and sets each element in the slice to the given value.
+	///
+	/// ### Arguments
+	///
+	/// * `slice` - A mutable slice of field elements to be filled.
+	/// * `value` - The field element used to fill each position in the slice.
+	fn fill(
+		&self,
+		slice: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		value: F,
+	) -> Result<(), Error>;
 }
 
 /// An interface for executing a sequence of operations on an accelerated compute device

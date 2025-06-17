@@ -7,7 +7,6 @@ use super::{
 	alloc::ComputeAllocator,
 	layer::{ComputeLayer, Error, FSliceMut},
 };
-use crate::cpu::CpuMemory;
 
 /// Computes the partial evaluation of the equality indicator polynomial.
 ///
@@ -24,16 +23,14 @@ use crate::cpu::CpuMemory;
 /// See [DP23], Section 2.1 for more information about the equality indicator polynomial.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-pub fn eq_ind_partial_eval<'a, F, Hal, HostAllocatorType, DeviceAllocatorType>(
+pub fn eq_ind_partial_eval<'a, F, Hal, DeviceAllocatorType>(
 	hal: &Hal,
 	dev_alloc: &'a DeviceAllocatorType,
-	host_alloc: &HostAllocatorType,
 	point: &[F],
 ) -> Result<FSliceMut<'a, F, Hal>, Error>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
-	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 {
 	let n_vars = point.len();
@@ -42,10 +39,8 @@ where
 	// TODO(SYS-248): Introduce a ComputeLayer operation ComputeLayerExecutor::fill, which fills a
 	// slice with constant value. Once that's done, use it instead of the h2d copy.
 	{
-		let host_val = host_alloc.alloc(1)?;
-		host_val[0] = F::ONE;
 		let mut dev_val = Hal::DevMem::slice_power_of_two_mut(&mut out, 1);
-		hal.copy_h2d(host_val, &mut dev_val)?;
+		hal.fill(&mut dev_val, F::ONE)?;
 	}
 
 	hal.execute(|exec| {
