@@ -932,7 +932,7 @@ mod tests {
 
 		for (i, &expected) in state.iter().enumerate() {
 			let state_out = segment.get_as::<u32, _, 32>(sha256.state_out[i]).unwrap();
-			assert_eq!(state_out[0], expected, "State out mismatch at index {}", i);
+			assert_eq!(state_out[0], expected, "State out mismatch at index {i}");
 		}
 
 		// Validate constraint system
@@ -987,8 +987,8 @@ mod tests {
 		let message_blocks: Vec<[u32; 16]> = (0..N_ITER)
 			.map(|_| {
 				let mut block = [0u32; 16];
-				for j in 0..16 {
-					block[j] = rng.r#gen();
+				for word in &mut block {
+					*word = rng.r#gen();
 				}
 				block
 			})
@@ -1006,12 +1006,11 @@ mod tests {
 			compress256(&mut state, &[u32_array_to_bytes(block).into()]);
 
 			// Validate against our gadget's output
-			for j in 0..8 {
-				let state_out = segment.get_as::<u32, _, 32>(sha256.state_out[j]).unwrap();
+			for (j, &state_out) in sha256.state_out.iter().enumerate() {
+				let state_out = segment.get_as::<u32, _, 32>(state_out).unwrap();
 				assert_eq!(
 					state_out[i], state[j],
-					"Random test {}: state out mismatch at index {}",
-					i, j
+					"Random test {i}: state out mismatch at index {j}",
 				);
 			}
 		}
