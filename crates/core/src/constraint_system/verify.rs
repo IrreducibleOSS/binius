@@ -34,7 +34,7 @@ use crate::{
 	piop,
 	protocols::{
 		evalcheck::{EvalPoint, EvalcheckMultilinearClaim},
-    fri::FRISoundnessParams,
+		fri::FRISoundnessParams,
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
