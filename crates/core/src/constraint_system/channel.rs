@@ -69,6 +69,7 @@ pub enum OracleOrConst<F: Field> {
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Flush<F: TowerField> {
 	pub table_id: TableId,
+	pub log_values_per_row: usize,
 	pub oracles: Vec<OracleOrConst<F>>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
@@ -94,6 +95,7 @@ pub fn validate_witness<F, P>(
 	witness: &MultilinearExtensionIndex<P>,
 	flushes: &[Flush<F>],
 	boundaries: &[Boundary<F>],
+	table_sizes: &[usize],
 	channel_count: usize,
 ) -> Result<(), Error>
 where
@@ -127,8 +129,8 @@ where
 			ref selectors,
 			multiplicity,
 			table_id,
+			log_values_per_row,
 		} = flush;
-		let _ = table_id;
 
 		if channel_id > max_channel_id {
 			return Err(Error::ChannelIdOutOfRange {
@@ -137,7 +139,10 @@ where
 			});
 		}
 
-		let channel = &mut channels[channel_id];
+		let table_size = table_sizes[table_id];
+		if table_size == 0 {
+			continue;
+		}
 
 		// We check the variables only of OracleOrConst::Oracle variant oracles being the same.
 		let non_const_polys = oracles
@@ -184,7 +189,9 @@ where
 			}
 		}
 
-		for i in 0..1 << n_vars {
+		let values_per_row = 1 << log_values_per_row;
+		assert!(table_size * values_per_row <= 1 << n_vars);
+		for i in 0..table_size * values_per_row {
 			let selector_off = selector_polys.iter().any(|selector_poly| {
 				selector_poly
 					.evaluate_on_hypercube(i)
@@ -210,7 +217,7 @@ where
 						.evaluate_on_hypercube(i),
 				})
 				.collect::<Result<Vec<_>, _>>()?;
-			channel.flush(direction, multiplicity, values)?;
+			channels[channel_id].flush(direction, multiplicity, values)?;
 		}
 	}
 

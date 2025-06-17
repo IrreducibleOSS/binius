@@ -83,13 +83,13 @@ where
 	}
 
 	fn subspace(&self, i: usize) -> BinarySubspace<F> {
-		let (subspace, shift) = self.s_evals[i].affine_subspace();
+		let (subspace, shift) = self.s_evals[self.log_domain_size() - i].affine_subspace();
 		debug_assert_eq!(shift, F::ZERO, "s_evals subspaces must be linear by construction");
 		subspace
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.s_evals[i].get(j)
+		self.s_evals[self.log_domain_size() - i].get(j)
 	}
 
 	fn forward_transform<P: PackedField<Scalar = F>>(
@@ -479,8 +479,8 @@ mod tests {
 	#[test]
 	fn test_subspace_size_agrees_with_domain_size() {
 		let ntt = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
-		assert_eq!(ntt.subspace(0).dim(), 10);
-		assert_eq!(ntt.subspace(9).dim(), 1);
+		assert_eq!(ntt.subspace(10).dim(), 10);
+		assert_eq!(ntt.subspace(1).dim(), 1);
 	}
 
 	/// The additive NTT has a useful property that the NTT output of an internally zero-padded

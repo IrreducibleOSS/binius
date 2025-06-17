@@ -72,10 +72,6 @@ where
 		eq_ind_partial_evals: FSlice<'a, F, Hal>,
 		eq_ind_challenges: Vec<F>,
 	) -> Result<Self, Error> {
-		if Hal::DevMem::ALIGNMENT != 1 {
-			todo!("support non-trivial minimum slice lengths");
-		}
-
 		let n_vars = claim.n_vars();
 
 		// Check shape of multilinear witness inputs.
@@ -163,7 +159,7 @@ where
 						SumcheckMultilinear::PreFold(evals) => {
 							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
 							let (evals_0, evals_1) =
-								Hal::DevMem::split_at(evals, 1 << (self.n_vars_remaining - 1));
+								Hal::DevMem::split_half(evals);
 
 							// Allocate new buffer for the folded evaluations and copy in evals_0.
 							let mut folded_evals =
@@ -174,7 +170,7 @@ where
 						SumcheckMultilinear::PostFold(evals) => {
 							debug_assert_eq!(evals.len(), 1 << self.n_vars_remaining);
 							let (evals_0, evals_1) =
-								Hal::DevMem::split_at_mut(evals, 1 << (self.n_vars_remaining - 1));
+								Hal::DevMem::split_half_mut(evals);
 							Ok((evals_0, Hal::DevMem::to_const(evals_1)))
 						}
 					}
@@ -231,7 +227,7 @@ where
 		];
 
 		let _ = self.hal.execute(|exec| {
-			exec.accumulate_kernels(
+			exec.map_kernels(
 				|local_exec, log_chunks, mut buffers| {
 					let log_chunk_size = split_n_vars - log_chunks;
 
@@ -244,7 +240,7 @@ where
 					};
 					local_exec.add_assign(log_chunk_size, *evals_1, evals_0)?;
 
-					Ok(Vec::new())
+					Ok(())
 				},
 				kernel_mappings,
 			)?;
@@ -417,7 +413,7 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 		.iter()
 		.copied()
 		.flat_map(|multilin| {
-			let (lo_half, hi_half) = Hal::DevMem::split_at(multilin, 1 << split_n_vars);
+			let (lo_half, hi_half) = Hal::DevMem::split_half(multilin);
 			[
 				KernelMemMap::Chunked {
 					data: lo_half,
@@ -526,11 +522,32 @@ fn calculate_round_evals<'a, F: TowerField, Hal: ComputeLayer<F>>(
 mod tests {
 	use binius_compute::cpu::layer::CpuLayerHolder;
 	use binius_compute_test_utils::bivariate_sumcheck::generic_test_bivariate_mlecheck_prove_verify;
+	use binius_fast_compute::layer::FastCpuLayerHolder;
+	use binius_field::{
+		arch::OptimalUnderlier, as_packed_field::PackedType, tower::CanonicalTowerFamily,
+	};
 	use binius_math::B128;
 
 	#[test]
 	fn test_bivariate_mlecheck_prove_verify() {
 		let compute_holder = CpuLayerHolder::<B128>::new(1 << 13, 1 << 12);
+		let n_vars = 8;
+		let n_multilins = 8;
+		let n_compositions = 8;
+		generic_test_bivariate_mlecheck_prove_verify(
+			compute_holder,
+			n_vars,
+			n_multilins,
+			n_compositions,
+		);
+	}
+
+	#[test]
+	fn test_bivariate_mlecheck_prove_verify_fast() {
+		type F = B128;
+		type P = PackedType<OptimalUnderlier, F>;
+
+		let compute_holder = FastCpuLayerHolder::<CanonicalTowerFamily, P>::new(1 << 13, 1 << 12);
 		let n_vars = 8;
 		let n_multilins = 8;
 		let n_compositions = 8;

@@ -361,7 +361,7 @@ where
 			});
 		}
 
-		let mut result = zeroed_vec(1 << new_n_vars);
+		let mut result = zeroed_vec(1 << new_n_vars.saturating_sub(PE::LOG_WIDTH));
 
 		zero_pad(&self.evals, init_n_vars, new_n_vars, start_index, nonzero_index, &mut result)?;
 		MultilinearExtension::new(new_n_vars, result)

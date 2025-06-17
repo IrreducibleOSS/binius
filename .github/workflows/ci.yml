@@ -15,17 +15,14 @@ jobs:
     name: ${{ matrix.expand.name }}
     runs-on: ${{ matrix.expand.runner }}
     strategy:
+      fail-fast: false
       matrix:
         expand:
           - runner: "ubuntu-latest"
-            name: "copyright-check"
-            cmd: "./scripts/check_copyright_notice.sh"
-          - runner: "ubuntu-latest"
-            name: "cargofmt"
-            cmd: "cargo fmt --check"
-          - runner: "ubuntu-latest"
             name: "clippy"
             cmd: 'RUSTFLAGS="-C target-cpu=native" cargo clippy --all --all-features --tests --benches --examples -- -D warnings'
+          - runner: "ubuntu-latest"
+            name: "pre-commit"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -34,7 +31,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Run Command
+        if: ${{ matrix.expand.name != 'pre-commit' }}
         run: ${{ matrix.expand.cmd }}
+      - name: Pre-commit
+        uses: pre-commit/action@v3.0.1
+        if: ${{ matrix.expand.name == 'pre-commit' }}
+        with:
+          extra_args: --all-files
   build:
     name: build-${{ matrix.expand.name }}
     needs: [lint]

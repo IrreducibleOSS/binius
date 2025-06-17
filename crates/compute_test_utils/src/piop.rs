@@ -2,7 +2,10 @@
 
 use std::iter::repeat_with;
 
-use binius_compute::{ComputeHolder, ComputeLayer};
+use binius_compute::{
+	ComputeHolder, ComputeLayer, ComputeMemory, FSlice, SizedSlice, alloc::ComputeAllocator,
+	cpu::CpuMemory,
+};
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
@@ -18,7 +21,7 @@ use binius_field::{BinaryField, Field, PackedExtension, PackedField, PackedField
 use binius_hash::groestl::Groestl256;
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly, TowerTop};
 use binius_ntt::SingleThreadedNTT;
-use binius_utils::{DeserializeBytes, SerializeBytes};
+use binius_utils::{DeserializeBytes, SerializeBytes, checked_arithmetics::checked_log_2};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const SECURITY_BITS: usize = 32;
@@ -54,26 +57,33 @@ where
 		.collect()
 }
 
-fn make_sumcheck_claims<F, P, M>(
+fn make_sumcheck_claims<'a, F, P, M, Hal: ComputeLayer<F>, HostAllocatorType>(
 	committed_multilins: &[M],
-	transparent_multilins: &[M],
+	transparent_multilins: &[FSlice<'a, F, Hal>],
+	hal: &Hal,
+	host_alloc: &HostAllocatorType,
 ) -> Vec<PIOPSumcheckClaim<F>>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P>,
+	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
 {
 	let mut sumcheck_claims = Vec::new();
 	for (i, committed_multilin) in committed_multilins.iter().enumerate() {
 		for (j, transparent_multilin) in transparent_multilins.iter().enumerate() {
-			if committed_multilin.n_vars() == transparent_multilin.n_vars() {
+			if committed_multilin.n_vars() == checked_log_2(transparent_multilin.len()) {
 				let n_vars = committed_multilin.n_vars();
+
+				let transparent_evals = host_alloc.alloc(transparent_multilin.len()).unwrap();
+
+				hal.copy_d2h(*transparent_multilin, transparent_evals)
+					.unwrap();
+
 				let sum = (0..1 << n_vars)
 					.map(|v| {
 						let committed_eval = committed_multilin.evaluate_on_hypercube(v).unwrap();
-						let transparent_eval =
-							transparent_multilin.evaluate_on_hypercube(v).unwrap();
-						committed_eval * transparent_eval
+						committed_eval * transparent_evals[v]
 					})
 					.sum();
 				sumcheck_claims.push(PIOPSumcheckClaim {
@@ -106,6 +116,15 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 	HAL: ComputeLayer<F>,
 	ComputeHolderType: ComputeHolder<F, HAL>,
 {
+	let mut compute_data = compute_holder.to_data();
+
+	let compute_data_ref = &mut compute_data;
+
+	let hal = compute_data_ref.hal;
+
+	let dev_alloc = &compute_data_ref.dev_alloc;
+	let host_alloc = &compute_data_ref.host_alloc;
+
 	let merkle_scheme = merkle_prover.scheme();
 
 	let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, log_inv_rate);
@@ -138,11 +157,23 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 	let transparent_mles = generate_multilins::<P>(&transparent_multilins_by_vars, &mut rng);
 	let transparent_multilins = transparent_mles
 		.iter()
-		.map(|mle| MLEDirectAdapter::from(mle.clone()))
+		.map(|mle| {
+			let mut buffer = dev_alloc.alloc(1 << mle.n_vars()).unwrap();
+
+			let evals = P::iter_slice(mle.evals()).collect::<Vec<_>>();
+
+			hal.copy_h2d(&evals[0..1 << mle.n_vars()], &mut buffer)
+				.unwrap();
+			HAL::DevMem::to_const(buffer)
+		})
 		.collect::<Vec<_>>();
 
-	let sumcheck_claims =
-		make_sumcheck_claims(&committed_multilins, transparent_multilins.as_slice());
+	let sumcheck_claims = make_sumcheck_claims(
+		&committed_multilins,
+		transparent_multilins.as_slice(),
+		hal,
+		host_alloc,
+	);
 
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	proof.message().write(&commitment);
@@ -150,7 +181,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 	// If this unwraps on an out-of-memory error, allocate more above (tests are assumed to not
 	// require so much memory)
 	prove(
-		&mut compute_holder.to_data(),
+		compute_data_ref,
 		&fri_params,
 		&ntt,
 		merkle_prover,
@@ -158,7 +189,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&sumcheck_claims,
 		&mut proof,
 	)

@@ -71,6 +71,19 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 		self.cols.end - self.cols.start
 	}
 
+	/// Iterate over the mutable references to the elements in the specified column.
+	pub fn iter_column_mut(&mut self, col: usize) -> impl Iterator<Item = &mut T> + '_ {
+		assert!(col < self.width());
+		let start = col + self.cols.start;
+		let data_ptr = self.data.as_mut_ptr();
+		(0..self.height).map(move |i|
+				// Safety: 
+				// - `data_ptr` points to the start of the data slice.
+				// - `col` is within bounds of the width.
+				// - different iterator values do not overlap.
+				unsafe { &mut *data_ptr.add(i * self.data_width + start) })
+	}
+
 	/// Returns iterator over vertical slices of the data for the given stride.
 	#[allow(dead_code)]
 	pub fn into_strides(self, stride: usize) -> impl Iterator<Item = Self> + 'a {
@@ -192,5 +205,19 @@ mod tests {
 
 		assert_eq!(data[0], 88);
 		assert_eq!(data[5], 99);
+	}
+
+	#[test]
+	fn test_iter_column_mut() {
+		let mut data = array::from_fn::<_, 12, _>(|i| i);
+		let data_clone = data;
+		let mut arr = StridedArray2DViewMut::without_stride(&mut data, 4, 3).unwrap();
+
+		let mut col_iter = arr.iter_column_mut(1);
+		assert_eq!(col_iter.next().copied(), Some(data_clone[1]));
+		assert_eq!(col_iter.next().copied(), Some(data_clone[4]));
+		assert_eq!(col_iter.next().copied(), Some(data_clone[7]));
+		assert_eq!(col_iter.next().copied(), Some(data_clone[10]));
+		assert_eq!(col_iter.next(), None);
 	}
 }

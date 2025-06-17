@@ -219,7 +219,7 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal, ComputeHolderType>(
 			dev_multilin
 		})
 		.collect::<Vec<_>>();
-	// TODO: into_const would be useful here
+	// TODO: to_const would be useful here
 	let dev_multilins = dev_multilins
 		.iter()
 		.map(Hal::DevMem::as_const)

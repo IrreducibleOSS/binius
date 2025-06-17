@@ -113,11 +113,11 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	) -> Result<OracleId, Error> {
 		ensure!(self.mut_ref.is_valid_oracle_id(inner_id), Error::InvalidOracleId(inner_id));
 
-		let inner = &self.mut_ref[inner_id];
-		if block_bits > inner.n_vars {
-			bail!(PolynomialError::InvalidBlockSize {
-				n_vars: inner.n_vars,
-			});
+		let n_vars = self.mut_ref.n_vars(inner_id);
+		let tower_level = self.mut_ref.tower_level(inner_id);
+
+		if block_bits > n_vars {
+			bail!(PolynomialError::InvalidBlockSize { n_vars });
 		}
 
 		if offset == 0 || offset >= 1 << block_bits {
@@ -127,10 +127,8 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let shifted = Shifted::new(inner, offset, block_bits, variant)?;
+		let shifted = Shifted::new(self.mut_ref, inner_id, offset, block_bits, variant)?;
 
-		let tower_level = inner.tower_level;
-		let n_vars = inner.n_vars;
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
 			n_vars,
@@ -188,10 +186,9 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
-		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(inner, values, start_index)?;
+		let tower_level = self.mut_ref.tower_level(inner_id);
+		let projected = Projected::new(self.mut_ref, inner_id, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -221,10 +218,9 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = &self.mut_ref[inner_id];
 		// TODO: This is wrong, should be F::TOWER_LEVEL
-		let tower_level = inner.binary_tower_level();
-		let projected = Projected::new(inner, values, start_index)?;
+		let tower_level = self.mut_ref.tower_level(inner_id);
+		let projected = Projected::new(self.mut_ref, inner_id, values, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -251,28 +247,18 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		offset: F,
 		inner: impl IntoIterator<Item = (OracleId, F)>,
 	) -> Result<OracleId, Error> {
-		let inner = inner
-			.into_iter()
-			.map(|(inner_id, coeff)| {
-				ensure!(
-					self.mut_ref.is_valid_oracle_id(inner_id),
-					Error::InvalidOracleId(inner_id)
-				);
-				if self.mut_ref.n_vars(inner_id) != n_vars {
-					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
-				}
-				Ok((self.mut_ref[inner_id].clone(), coeff))
-			})
-			.collect::<Result<Vec<_>, _>>()?;
-
+		let inner = inner.into_iter().collect::<Vec<_>>();
 		let tower_level = inner
 			.iter()
-			.map(|(oracle, coeff)| oracle.binary_tower_level().max(coeff.min_tower_level()))
+			.map(|(oracle, coeff)| {
+				self.mut_ref
+					.tower_level(*oracle)
+					.max(coeff.min_tower_level())
+			})
 			.max()
 			.unwrap_or(0)
 			.max(offset.min_tower_level());
-
-		let linear_combination = LinearCombination::new(n_vars, offset, inner)?;
+		let linear_combination = LinearCombination::new(self.mut_ref, n_vars, offset, inner)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -291,27 +277,13 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		inner: impl IntoIterator<Item = OracleId>,
 		comp: ArithCircuit<F>,
 	) -> Result<OracleId, Error> {
-		let inner = inner
-			.into_iter()
-			.map(|inner_id| {
-				ensure!(
-					self.mut_ref.is_valid_oracle_id(inner_id),
-					Error::InvalidOracleId(inner_id)
-				);
-				if self.mut_ref.n_vars(inner_id) != n_vars {
-					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
-				}
-				Ok(self.mut_ref[inner_id].clone())
-			})
-			.collect::<Result<Vec<_>, _>>()?;
-
+		let inner: Vec<OracleId> = inner.into_iter().collect();
 		let tower_level = inner
 			.iter()
-			.map(|oracle| oracle.binary_tower_level())
+			.map(|&oracle| self.mut_ref[oracle].binary_tower_level())
 			.max()
 			.unwrap_or(0);
-
-		let composite_mle = CompositeMLE::new(n_vars, inner, comp)?;
+		let composite_mle = CompositeMLE::new(self.mut_ref, n_vars, inner, comp)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -332,15 +304,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		start_index: usize,
 	) -> Result<OracleId, Error> {
 		let inner_n_vars = self.mut_ref.n_vars(inner_id);
+		let tower_level = self.mut_ref.tower_level(inner_id);
 		if start_index > inner_n_vars {
 			bail!(Error::InvalidStartIndex {
 				expected: inner_n_vars
 			});
 		}
-
-		let inner = &self.mut_ref[inner_id];
-		let tower_level = inner.binary_tower_level();
-		let padded = ZeroPadded::new(inner, n_pad_vars, nonzero_index, start_index)?;
+		let padded =
+			ZeroPadded::new(self.mut_ref, inner_id, n_pad_vars, nonzero_index, start_index)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -382,32 +353,42 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 #[derive(Default, Debug, Clone, SerializeBytes, DeserializeBytes)]
 #[deserialize_bytes(eval_generics(F = BinaryField128b))]
 pub struct MultilinearOracleSet<F: TowerField> {
-	oracles: Vec<MultilinearPolyOracle<F>>,
+	/// The vector of oracles.
+	///
+	/// During sizing, an oracle could be skipped. In which case, the entry corresponding to the
+	/// oracle will be `None`.
+	oracles: Vec<Option<MultilinearPolyOracle<F>>>,
+	/// The number of non-`None` entries in `oracles`.
+	size: usize,
 }
 
 impl<F: TowerField> MultilinearOracleSet<F> {
 	pub const fn new() -> Self {
 		Self {
 			oracles: Vec::new(),
+			size: 0,
 		}
 	}
 
 	pub fn size(&self) -> usize {
-		self.oracles.len()
+		self.size
 	}
 
 	pub fn polys(&self) -> impl Iterator<Item = &MultilinearPolyOracle<F>> + '_ {
-		(0..self.oracles.len()).map(|index| &self[OracleId::from_index(index)])
+		self.iter().map(|(_, poly)| poly)
 	}
 
 	pub fn ids(&self) -> impl Iterator<Item = OracleId> {
-		(0..self.oracles.len()).map(OracleId::from_index)
+		self.iter().map(|(id, _)| id)
 	}
 
 	pub fn iter(&self) -> impl Iterator<Item = (OracleId, &MultilinearPolyOracle<F>)> + '_ {
-		(0..self.oracles.len()).map(|index| {
-			let oracle_id = OracleId::from_index(index);
-			(oracle_id, &self[oracle_id])
+		(0..self.oracles.len()).filter_map(|index| match self.oracles[index] {
+			Some(ref oracle) => {
+				let oracle_id = OracleId::from_index(index);
+				Some((oracle_id, oracle))
+			}
+			None => None,
 		})
 	}
 
@@ -429,13 +410,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		id.index() < self.oracles.len()
 	}
 
-	fn add_to_set(
+	pub(crate) fn add_to_set(
 		&mut self,
 		oracle: impl FnOnce(OracleId) -> MultilinearPolyOracle<F>,
 	) -> OracleId {
 		let id = OracleId::from_index(self.oracles.len());
-		self.oracles.push(oracle(id));
+		self.oracles.push(Some(oracle(id)));
+		self.size += 1;
 		id
+	}
+
+	/// Instead of adding a concrete oracle adds a skip mark, essentially just reserving an
+	/// [`OracleId`]. Accessing such oracle, with some exceptions, is an error.
+	pub(crate) fn add_skip(&mut self) {
+		self.oracles.push(None);
+		// don't increment size
 	}
 
 	pub fn add_transparent(
@@ -544,13 +533,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn tower_level(&self, id: OracleId) -> usize {
 		self[id].binary_tower_level()
 	}
+
+	/// Returns `true` if the given [`OracleId`] refers to an oracle that was skipped during the
+	/// instantiation of the symbolic multilinear oracle set.
+	pub fn is_zero_sized(&self, id: OracleId) -> bool {
+		self.oracles[id.index()].is_none()
+	}
 }
 
 impl<F: TowerField> std::ops::Index<OracleId> for MultilinearOracleSet<F> {
 	type Output = MultilinearPolyOracle<F>;
 
 	fn index(&self, id: OracleId) -> &Self::Output {
-		&self.oracles[id.index()]
+		self.oracles[id.index()]
+			.as_ref()
+			.expect("tried to access skipped oracle")
 	}
 }
 
@@ -680,7 +677,7 @@ impl DeserializeBytes for TransparentPolyOracle<BinaryField128b> {
 }
 
 impl<F: TowerField> TransparentPolyOracle<F> {
-	fn new(poly: Arc<dyn MultivariatePoly<F>>) -> Result<Self, Error> {
+	pub fn new(poly: Arc<dyn MultivariatePoly<F>>) -> Result<Self, Error> {
 		if poly.binary_tower_level() > F::TOWER_LEVEL {
 			bail!(Error::TowerLevelTooHigh {
 				tower_level: poly.binary_tower_level(),
@@ -716,19 +713,20 @@ pub struct Projected<F: TowerField> {
 }
 
 impl<F: TowerField> Projected<F> {
-	fn new(
-		oracle: &MultilinearPolyOracle<F>,
+	pub fn new(
+		oracles: &MultilinearOracleSet<F>,
+		id: OracleId,
 		values: Vec<F>,
 		start_index: usize,
 	) -> Result<Self, Error> {
-		if values.len() + start_index > oracle.n_vars() {
+		if values.len() + start_index > oracles.n_vars(id) {
 			bail!(Error::InvalidProjection {
-				n_vars: oracle.n_vars(),
+				n_vars: oracles.n_vars(id),
 				values_len: values.len()
 			});
 		}
 		Ok(Self {
-			id: oracle.id(),
+			id,
 			values,
 			start_index,
 		})
@@ -748,12 +746,14 @@ pub struct ZeroPadded {
 }
 
 impl ZeroPadded {
-	fn new<F: TowerField>(
-		oracle: &MultilinearPolyOracle<F>,
+	pub fn new<F: TowerField>(
+		oracles: &MultilinearOracleSet<F>,
+		id: OracleId,
 		n_pad_vars: usize,
 		nonzero_index: usize,
 		start_index: usize,
 	) -> Result<Self, Error> {
+		let oracle = &oracles[id];
 		if start_index > oracle.n_vars() {
 			bail!(Error::InvalidStartIndex {
 				expected: oracle.n_vars(),
@@ -767,7 +767,7 @@ impl ZeroPadded {
 		}
 
 		Ok(Self {
-			id: oracle.id(),
+			id,
 			n_pad_vars,
 			nonzero_index,
 			start_index,
@@ -795,15 +795,16 @@ pub struct Shifted {
 }
 
 impl Shifted {
-	fn new<F: TowerField>(
-		oracle: &MultilinearPolyOracle<F>,
+	pub fn new<F: TowerField>(
+		oracles: &MultilinearOracleSet<F>,
+		id: OracleId,
 		shift_offset: usize,
 		block_size: usize,
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
-		if block_size > oracle.n_vars() {
+		if block_size > oracles.n_vars(id) {
 			bail!(PolynomialError::InvalidBlockSize {
-				n_vars: oracle.n_vars(),
+				n_vars: oracles.n_vars(id),
 			});
 		}
 
@@ -815,7 +816,7 @@ impl Shifted {
 		}
 
 		Ok(Self {
-			id: oracle.id(),
+			id,
 			shift_offset,
 			block_size,
 			shift_variant,
@@ -837,6 +838,12 @@ pub struct Packed {
 	log_degree: usize,
 }
 
+impl Packed {
+	pub fn new(id: OracleId, log_degree: usize) -> Self {
+		Self { id, log_degree }
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct LinearCombination<F: TowerField> {
 	#[get_copy = "pub"]
@@ -847,21 +854,17 @@ pub struct LinearCombination<F: TowerField> {
 }
 
 impl<F: TowerField> LinearCombination<F> {
-	fn new(
+	pub fn new(
+		oracles: &MultilinearOracleSet<F>,
 		n_vars: usize,
 		offset: F,
-		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
+		inner: Vec<(OracleId, F)>,
 	) -> Result<Self, Error> {
-		let inner = inner
-			.into_iter()
-			.map(|(oracle, value)| {
-				if oracle.n_vars() == n_vars {
-					Ok((oracle.id(), value))
-				} else {
-					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
-				}
-			})
-			.collect::<Result<Vec<_>, _>>()?;
+		for (oracle, _) in &inner {
+			if oracles[*oracle].n_vars() != n_vars {
+				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+			}
+		}
 		Ok(Self {
 			n_vars,
 			offset,
@@ -904,20 +907,16 @@ pub struct CompositeMLE<F: TowerField> {
 
 impl<F: TowerField> CompositeMLE<F> {
 	pub fn new(
+		oracles: &MultilinearOracleSet<F>,
 		n_vars: usize,
-		inner: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
+		inner: Vec<OracleId>,
 		c: ArithCircuit<F>,
 	) -> Result<Self, Error> {
-		let inner = inner
-			.into_iter()
-			.map(|oracle| {
-				if oracle.n_vars() == n_vars {
-					Ok(oracle.id())
-				} else {
-					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
-				}
-			})
-			.collect::<Result<Vec<_>, _>>()?;
+		for &oracle in &inner {
+			if oracles.n_vars(oracle) != n_vars {
+				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+			}
+		}
 		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
 			.map_err(|_| Error::CompositionMismatch)?; // occurs if `c` has more variables than `inner.len()`
 		Ok(Self { n_vars, inner, c })

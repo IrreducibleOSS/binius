@@ -2,14 +2,12 @@
 
 use std::{iter, marker::PhantomData, sync::Arc};
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, TowerField, packed::pack_slice,
+use binius_compute::{
+	ComputeLayer, ComputeLayerExecutor, ComputeMemory, SizedSlice, SubfieldSlice,
+	alloc::ComputeAllocator, cpu::CpuMemory,
 };
-use binius_math::{
-	MultilinearExtension, MultilinearQuery, MultilinearQueryRef, tensor_prod_eq_ind,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_utils::bail;
-use bytemuck::zeroed_vec;
 
 use super::error::Error;
 use crate::{
@@ -48,6 +46,12 @@ pub struct RingSwitchEqInd<FSub, F> {
 	_marker: PhantomData<FSub>,
 }
 
+pub struct RingSwitchEqIndPrecompute<'a, F: Field, Mem: ComputeMemory<F>> {
+	evals: Mem::FSliceMut<'a>,
+	row_batching_query_expansion: Mem::FSlice<'a>,
+	mle: Mem::FSliceMut<'a>,
+}
+
 impl<FSub, F> RingSwitchEqInd<FSub, F>
 where
 	FSub: Field,
@@ -74,26 +78,72 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<P: PackedField<Scalar = F> + PackedExtension<FSub>>(
+	pub fn precompute_values<'a, Hal: ComputeLayer<F>, HostAllocatorType, DeviceAllocatorType>(
+		z_vals: Arc<[F]>,
+		row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
+		mixing_coeff: F,
+		kappa: usize,
+		hal: &Hal,
+		dev_alloc: &'a DeviceAllocatorType,
+		host_alloc: &HostAllocatorType,
+	) -> Result<RingSwitchEqIndPrecompute<'a, F, Hal::DevMem>, Error>
+	where
+		HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+		DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
+	{
+		let extension_degree = 1 << (kappa);
+
+		let mut row_batching_query_expansion = dev_alloc.alloc(extension_degree)?;
+
+		hal.copy_h2d(
+			&row_batch_coeffs.coeffs()[0..extension_degree],
+			&mut row_batching_query_expansion,
+		)?;
+
+		let row_batching_query_expansion = Hal::DevMem::to_const(row_batching_query_expansion);
+
+		let n_vars = z_vals.len();
+		let mut evals = dev_alloc.alloc(1 << n_vars)?;
+
+		{
+			let host_val = host_alloc.alloc(1)?;
+			host_val[0] = mixing_coeff;
+			let mut dev_val = Hal::DevMem::slice_power_of_two_mut(&mut evals, 1);
+			hal.copy_h2d(host_val, &mut dev_val)?;
+		}
+
+		let mle = dev_alloc.alloc(evals.len())?;
+
+		Ok(RingSwitchEqIndPrecompute {
+			evals,
+			row_batching_query_expansion,
+			mle,
+		})
+	}
+
+	pub fn multilinear_extension<
+		'a,
+		Mem: ComputeMemory<F>,
+		Exec: ComputeLayerExecutor<F, DevMem = Mem>,
+	>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
-		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
-		evals[0].set(0, self.mixing_coeff);
-		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
+		precompute: RingSwitchEqIndPrecompute<'a, F, Mem>,
+		exec: &mut Exec,
+		tower_level: usize,
+	) -> Result<Mem::FSlice<'a>, Error> {
+		let RingSwitchEqIndPrecompute {
+			mut evals,
+			row_batching_query_expansion,
+			mut mle,
+		} = precompute;
 
-		let subfield_vector = <P as PackedExtension<FSub>>::cast_bases(&evals);
+		exec.tensor_expand(0, &self.z_vals, &mut evals)?;
 
-		let subfield_vector_mle =
-			MultilinearExtension::new(self.z_vals.len() + F::LOG_DEGREE, subfield_vector)?;
+		let subfield_vector = SubfieldSlice::new(Mem::as_const(&evals), tower_level);
 
-		let row_batch_coeffs = pack_slice(&self.row_batch_coeffs.coeffs()[0..F::DEGREE]);
-		let row_batching_query_expansion =
-			MultilinearQuery::with_expansion(F::LOG_DEGREE, row_batch_coeffs)?;
+		exec.fold_right(subfield_vector, row_batching_query_expansion, &mut mle)?;
 
-		let partial_low_eval = subfield_vector_mle
-			.evaluate_partial_low(MultilinearQueryRef::new(&row_batching_query_expansion))?;
-
-		Ok(partial_low_eval)
+		Ok(Mem::to_const(mle))
 	}
 }
 
@@ -140,8 +190,9 @@ where
 
 #[cfg(test)]
 mod tests {
+	use binius_compute::{ComputeData, ComputeHolder, cpu::layer::CpuLayerHolder};
 	use binius_field::{BinaryField8b, BinaryField128b};
-	use binius_math::MultilinearQuery;
+	use binius_math::{MultilinearQuery, eq_ind_partial_eval};
 	use iter::repeat_with;
 	use rand::{SeedableRng, prelude::StdRng};
 
@@ -171,15 +222,49 @@ mod tests {
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
-		let eval_query = MultilinearQuery::<F>::expand(&eval_point);
 
 		let mixing_coeff = <F as Field>::random(&mut rng);
 
+		let mut compute_holder = CpuLayerHolder::new(1 << 10, 1 << 10);
+
+		let compute_data = compute_holder.to_data();
+
+		let ComputeData {
+			hal,
+			dev_alloc,
+			host_alloc,
+			..
+		} = compute_data;
+
+		let precompute = RingSwitchEqInd::<FS, _>::precompute_values(
+			z_vals.clone(),
+			row_batch_coeffs.clone(),
+			mixing_coeff,
+			kappa,
+			hal,
+			&dev_alloc,
+			&host_alloc,
+		)
+		.unwrap();
+
 		let rs_eq = RingSwitchEqInd::<FS, _>::new(z_vals, row_batch_coeffs, mixing_coeff).unwrap();
-		let mle = rs_eq.multilinear_extension::<F>().unwrap();
 
 		let val1 = rs_eq.evaluate(&eval_point).unwrap();
-		let val2 = mle.evaluate(&eval_query).unwrap();
-		assert_eq!(val1, val2);
+
+		hal.execute(|exec| {
+			let mle = rs_eq
+				.multilinear_extension(precompute, exec, BinaryField8b::TOWER_LEVEL)
+				.unwrap();
+
+			let mle = SubfieldSlice::new(mle, BinaryField128b::TOWER_LEVEL);
+
+			let query = eq_ind_partial_eval(&eval_point);
+
+			let val2 = exec.inner_product(mle, &query).unwrap();
+
+			assert_eq!(val1, val2);
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }

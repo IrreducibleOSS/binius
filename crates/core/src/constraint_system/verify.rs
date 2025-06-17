@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::collections::hash_map::Entry;
+
 use binius_field::{
 	BinaryField, PackedField, TowerField,
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
@@ -8,7 +10,7 @@ use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{Digest, Output, OutputSizeUser, core_api::BlockSizeUser};
-use itertools::{Itertools, chain};
+use itertools::{Itertools, chain, izip};
 use tracing::instrument;
 
 use super::{
@@ -25,17 +27,27 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeScheme,
-	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
+	oracle::{
+		ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyVariant, OracleId,
+		SizedConstraintSet,
+	},
 	piop,
 	protocols::{
-		fri::FRISoundnessParams,
+		evalcheck::{EvalPoint, EvalcheckMultilinearClaim},
+    fri::FRISoundnessParams,
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
-		sumcheck::{self, ZerocheckClaim, constraint_set_zerocheck_claim},
+		sumcheck::{
+			self, MLEcheckClaimsWithMeta, ZerocheckClaim, constraint_set_mlecheck_claims,
+			constraint_set_zerocheck_claim,
+			eq_ind::{self, ClaimsSortingOrder, reduce_to_regular_sumchecks},
+			front_loaded,
+		},
 	},
 	ring_switch,
 	transcript::VerifierTranscript,
+	transparent::step_down::StepDown,
 };
 
 /// Verifies a proof against a constraint system.
@@ -56,12 +68,11 @@ where
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 {
-	let _ = constraint_system_digest;
 	let ConstraintSystem {
-		mut oracles,
+		oracles,
 		table_constraints,
 		mut flushes,
-		non_zero_oracle_ids,
+		mut non_zero_oracle_ids,
 		channel_count,
 		mut exponents,
 		table_size_specs,
@@ -78,31 +89,20 @@ where
 	let table_count = table_size_specs.len();
 	let mut reader = transcript.message();
 	let table_sizes: Vec<usize> = reader.read_vec(table_count)?;
-	assert_eq!(table_sizes.len(), table_count);
 
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
+	constraint_system.check_table_sizes(&table_sizes)?;
+	let mut oracles = oracles.instantiate(&table_sizes)?;
+
+	// Prepare the constraint system for proving:
+	//
+	// - Trim all the zero sized oracles.
+	// - Canonicalize the ordering.
+
+	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
+	flushes.sort_by_key(|flush| flush.channel_id);
+
+	non_zero_oracle_ids.retain(|oracle| !oracles.is_zero_sized(*oracle));
+	exponents.retain(|exp| !oracles.is_zero_sized(exp.exp_result_id));
 
 	let mut table_constraints = table_constraints
 		.into_iter()
@@ -118,6 +118,9 @@ where
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
+	// GKR exp multiplication
+	reorder_exponents(&mut exponents, &oracles);
+
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
@@ -129,9 +132,6 @@ where
 	// Read polynomial commitment polynomials
 	let mut reader = transcript.message();
 	let commitment = reader.read::<Output<Hash>>()?;
-
-	// GKR exp multiplication
-	reorder_exponents(&mut exponents, &oracles);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
@@ -171,6 +171,8 @@ where
 
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
+	let _ =
+		augment_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, &table_sizes)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
@@ -197,8 +199,18 @@ where
 
 	// Reduce non_zero_final_layer_claims to evalcheck claims
 	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
-		chain!(flush_oracle_ids, non_zero_oracle_ids),
+		chain!(flush_oracle_ids.clone(), non_zero_oracle_ids),
 		final_layer_claims,
+	)?;
+
+	let mut flush_prodcheck_eval_claims = prodcheck_eval_claims;
+
+	let prodcheck_eval_claims = flush_prodcheck_eval_claims.split_off(flush_oracle_ids.len());
+
+	let flush_eval_claims = reduce_flush_evalcheck_claims::<Tower, Challenger_>(
+		flush_prodcheck_eval_claims,
+		&oracles,
+		&mut transcript,
 	)?;
 
 	// Zerocheck
@@ -222,7 +234,7 @@ where
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(
 		&mut oracles,
-		chain!(prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
+		chain!(flush_eval_claims, prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
 		&mut transcript,
 	)?;
 
@@ -368,6 +380,70 @@ fn verify_channels_balance<F: TowerField>(
 	Ok(())
 }
 
+/// This function will create a special selectors for the flushes, that are defined on tables that
+/// are not of power-of-two size. Those artificial selectors are needed to bridge the gap between
+/// the arbitrary sized tables and the oracles (oracles are always power-of-two sized).
+///
+/// Takes the vector of `flushes` and creates the corresponding list of oracles for them. If the
+/// witness provided, then it will also fill the witness for those oracles.
+pub fn augment_flush_po2_step_down<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	flushes: &mut [Flush<F>],
+	table_size_specs: &[TableSizeSpec],
+	table_sizes: &[usize],
+) -> Result<Vec<(OracleId, StepDown)>, Error> {
+	use std::collections::HashMap;
+
+	use crate::transparent::step_down::StepDown;
+
+	// Track created step-down oracles by (table_id, log_values_per_row)
+	let mut step_down_oracles = HashMap::<(usize, usize), OracleId>::new();
+	let mut step_down_polys = Vec::new();
+
+	// First pass: create step-down oracles for arbitrary-sized tables
+	for flush in flushes.iter() {
+		let table_id = flush.table_id;
+		let table_size = table_sizes[table_id];
+		let table_spec = &table_size_specs[table_id];
+
+		// Only process tables with arbitrary size that are not power-of-two
+		if matches!(table_spec, TableSizeSpec::Arbitrary) {
+			let log_values_per_row = flush.log_values_per_row;
+			let key = (table_id, log_values_per_row);
+
+			// Only create the step-down oracle once per (table_id, log_values_per_row) pair.
+			if let Entry::Vacant(e) = step_down_oracles.entry(key) {
+				let log_capacity = log2_ceil_usize(table_size);
+				let n_vars = log_capacity + log_values_per_row;
+				let size = table_size << log_values_per_row;
+
+				let step_down_poly = StepDown::new(n_vars, size)?;
+				let oracle_id = oracles
+					.add_named(format!("stepdown_table_{table_id}_log_values_{log_values_per_row}"))
+					.transparent(step_down_poly.clone())?;
+
+				step_down_polys.push((oracle_id, step_down_poly));
+				e.insert(oracle_id);
+			}
+		}
+	}
+
+	// Second pass: add step-down oracles as selectors to the appropriate flushes
+	for flush in flushes.iter_mut() {
+		let table_id = flush.table_id;
+		let table_spec = &table_size_specs[table_id];
+
+		if matches!(table_spec, TableSizeSpec::Arbitrary) {
+			let key = (table_id, flush.log_values_per_row);
+			if let Some(&oracle_id) = step_down_oracles.get(&key) {
+				flush.selectors.push(oracle_id);
+			}
+		}
+	}
+
+	Ok(step_down_polys)
+}
+
 /// For each flush,
 /// - if there is a selector $S$, we are taking the Grand product of the composite $1 + S * (-1 + r
 ///   + F_0 + F_1 s + F_2 s^1 + …)$
@@ -497,4 +573,93 @@ pub fn make_flush_oracles<F: TowerField>(
 				.collect::<Vec<_>>()
 		})
 		.collect()
+}
+
+fn reduce_flush_evalcheck_claims<Tower: TowerFamily, Challenger_>(
+	claims: Vec<EvalcheckMultilinearClaim<FExt<Tower>>>,
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	transcript: &mut VerifierTranscript<Challenger_>,
+) -> Result<Vec<EvalcheckMultilinearClaim<FExt<Tower>>>, Error>
+where
+	Challenger_: Challenger + Default,
+{
+	let mut linear_claims = Vec::new();
+
+	#[allow(clippy::type_complexity)]
+	let mut new_mlechecks_constraints: Vec<(
+		EvalPoint<FExt<Tower>>,
+		ConstraintSetBuilder<FExt<Tower>>,
+	)> = Vec::new();
+
+	for claim in &claims {
+		match &oracles[claim.id].variant {
+			MultilinearPolyVariant::LinearCombination(_) => linear_claims.push(claim.clone()),
+			MultilinearPolyVariant::Composite(composite) => {
+				let eval_point = claim.eval_point.clone();
+				let eval = claim.eval;
+
+				let position = new_mlechecks_constraints
+					.iter()
+					.position(|(ep, _)| *ep == eval_point)
+					.unwrap_or(new_mlechecks_constraints.len());
+
+				let oracle_ids = composite.inner().clone();
+
+				let exp = <_ as CompositionPoly<FExt<Tower>>>::expression(composite.c());
+				if let Some((_, constraint_builder)) = new_mlechecks_constraints.get_mut(position) {
+					constraint_builder.add_sumcheck(oracle_ids, exp, eval);
+				} else {
+					let mut new_builder = ConstraintSetBuilder::new();
+					new_builder.add_sumcheck(oracle_ids, exp, eval);
+					new_mlechecks_constraints.push((eval_point.clone(), new_builder));
+				}
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	let new_mlechecks_constraints = new_mlechecks_constraints;
+
+	let mut eq_ind_challenges = Vec::with_capacity(new_mlechecks_constraints.len());
+	let mut constraint_sets = Vec::with_capacity(new_mlechecks_constraints.len());
+
+	for (ep, builder) in new_mlechecks_constraints {
+		eq_ind_challenges.push(ep.to_vec());
+		constraint_sets.push(builder.build_one(oracles)?)
+	}
+
+	let MLEcheckClaimsWithMeta {
+		claims: mlecheck_claims,
+		metas,
+	} = constraint_set_mlecheck_claims(constraint_sets)?;
+
+	let mut new_evalcheck_claims = Vec::new();
+
+	for (eq_ind_challenges, mlecheck_claim, meta) in
+		izip!(&eq_ind_challenges, mlecheck_claims, metas)
+	{
+		let mlecheck_claim = vec![mlecheck_claim];
+
+		let batch_sumcheck_verifier = front_loaded::BatchVerifier::new(
+			&reduce_to_regular_sumchecks(&mlecheck_claim)?,
+			transcript,
+		)?;
+		let mut sumcheck_output = batch_sumcheck_verifier.run(transcript)?;
+
+		// Reverse challenges since foldling high-to-low
+		sumcheck_output.challenges.reverse();
+
+		let eq_ind_output = eq_ind::verify_sumcheck_outputs(
+			ClaimsSortingOrder::AscendingVars,
+			&mlecheck_claim,
+			eq_ind_challenges,
+			sumcheck_output,
+		)?;
+
+		let evalcheck_claims =
+			sumcheck::make_eval_claims(EvaluationOrder::HighToLow, vec![meta], eq_ind_output)?;
+		new_evalcheck_claims.extend(evalcheck_claims)
+	}
+
+	Ok(chain!(new_evalcheck_claims.into_iter(), linear_claims.into_iter()).collect::<Vec<_>>())
 }

@@ -136,3 +136,12 @@ fn test_extrapolate_line() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_map_kernels() {
+	let log_len = 10;
+	binius_compute_test_utils::layer::test_map_kernels(
+		CpuLayerHolder::<B128>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+		log_len,
+	);
+}

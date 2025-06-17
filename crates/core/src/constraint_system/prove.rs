@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{env, iter, marker::PhantomData};
+use std::{collections::HashSet, env, iter, marker::PhantomData};
 
 use binius_compute::{ComputeData, ComputeLayer, alloc::ComputeAllocator, cpu::CpuMemory};
 use binius_field::{
@@ -15,7 +15,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::{PseudoCompressionFunction, multi_digest::ParallelDigest};
 use binius_math::{
-	DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
+	CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -25,6 +25,7 @@ use bytemuck::zeroed_vec;
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
+use tracing_profile::utils::emit_max_rss;
 
 use super::{
 	ConstraintSystem, Proof,
@@ -34,27 +35,36 @@ use super::{
 };
 use crate::{
 	constraint_system::{
-		Flush, TableSizeSpec,
+		Flush,
 		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
+		verify::augment_flush_po2_step_down,
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{Constraint, MultilinearOracleSet, OracleId, SizedConstraintSet},
+	oracle::{
+		Constraint, ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyVariant, OracleId,
+		SizedConstraintSet,
+	},
 	piop,
 	protocols::{
+		evalcheck::{
+			ConstraintSetEqIndPoint, EvalPoint, EvalcheckMultilinearClaim,
+			subclaims::{MemoizedData, prove_mlecheck_with_switchover},
+		},
 		fri::{CommitOutput, FRISoundnessParams},
 		gkr_exp,
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, prove::ZerocheckProver,
-			standard_switchover_heuristic,
+			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
+			prove::ZerocheckProver, standard_switchover_heuristic,
 		},
 	},
 	ring_switch,
 	transcript::ProverTranscript,
+	transparent::step_down::StepDown,
 	witness::{IndexEntry, MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -85,7 +95,8 @@ where
 	Hal: ComputeLayer<Tower::B128> + Default,
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
-	Tower::B128: binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower>,
+	Tower::B128:
+		binius_math::TowerTop + binius_math::PackedTop + PackedTop<Tower> + From<FFastExt<Tower>>,
 	Hash: ParallelDigest,
 	Hash::Digest: BlockSizeUser + FixedOutputReset + Send + Sync + Clone,
 	Compress: PseudoCompressionFunction<Output<Hash::Digest>, 2> + Default + Sync,
@@ -93,7 +104,9 @@ where
 	Backend: ComputationBackend,
 	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
 	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ PackedFieldIndexable // REVIEW: remove this bound after piop::commit is adjusted
+		+ PackedFieldIndexable
+		// REVIEW: remove this bound after piop::commit is adjusted
+		+ RepackedExtension<PackedType<U, Tower::B1>>
 		+ RepackedExtension<PackedType<U, Tower::B8>>
 		+ RepackedExtension<PackedType<U, Tower::B16>>
 		+ RepackedExtension<PackedType<U, Tower::B32>>
@@ -115,44 +128,44 @@ where
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let ConstraintSystem {
-		mut oracles,
+		oracles,
 		table_constraints,
 		mut flushes,
 		mut exponents,
-		non_zero_oracle_ids,
+		mut non_zero_oracle_ids,
 		channel_count,
 		table_size_specs,
 	} = constraint_system.clone();
 
-	if table_sizes.len() != table_size_specs.len() {
-		return Err(Error::TableSizesLenMismatch {
-			expected: table_size_specs.len(),
-			got: table_sizes.len(),
-		});
-	}
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
+	constraint_system.check_table_sizes(table_sizes)?;
+	let mut oracles = oracles.instantiate(table_sizes)?;
+
+	// Prepare the constraint system for proving:
+	//
+	// - Trim all the zero sized oracles.
+	// - Canonicalize the ordering.
+
+	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
+	flushes.sort_by_key(|flush| flush.channel_id);
+
+	non_zero_oracle_ids.retain(|oracle| !oracles.is_zero_sized(*oracle));
+	exponents.retain(|exp| !oracles.is_zero_sized(exp.exp_result_id));
+
+	let mut table_constraints = table_constraints
+		.into_iter()
+		.filter_map(|u| {
+			if table_sizes[u.table_id] == 0 {
+				None
+			} else {
+				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
+				Some(SizedConstraintSet::new(n_vars, u))
 			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
+		})
+		.collect::<Vec<_>>();
+	// Stable sort constraint sets in ascending order by number of variables.
+	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
+
+	reorder_exponents(&mut exponents, &oracles);
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
 	transcript
@@ -161,8 +174,6 @@ where
 	transcript.observe().write_slice(boundaries);
 	let mut writer = transcript.message();
 	writer.write_slice(table_sizes);
-
-	reorder_exponents(&mut exponents, &oracles);
 
 	let witness_span = tracing::info_span!(
 		"[phase] Witness Finalization",
@@ -183,20 +194,6 @@ where
 	drop(exp_compute_layer_span);
 
 	drop(witness_span);
-
-	let mut table_constraints = table_constraints
-		.into_iter()
-		.filter_map(|u| {
-			if table_sizes[u.table_id] == 0 {
-				None
-			} else {
-				let n_vars = u.log_values_per_row + log2_ceil_usize(table_sizes[u.table_id]);
-				Some(SizedConstraintSet::new(n_vars, u))
-			}
-		})
-		.collect::<Vec<_>>();
-	// Stable sort constraint sets in ascending order by number of variables.
-	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	// Commit polynomials
 	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
@@ -227,6 +224,7 @@ where
 		committed,
 		codeword,
 	} = piop::commit(&fri_params, &ntt, &merkle_prover, &committed_multilins)?;
+	emit_max_rss();
 	drop(commit_span);
 
 	// Observe polynomial commitment
@@ -270,6 +268,7 @@ where
 	.isomorphic();
 
 	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
+	emit_max_rss();
 	drop(exp_span);
 
 	// Grand product arguments
@@ -289,6 +288,7 @@ where
 	.entered();
 	let non_zero_fast_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &non_zero_oracle_ids)?;
+	emit_max_rss();
 	drop(nonzero_convert_span);
 
 	let nonzero_prodcheck_compute_layer_span = tracing::info_span!(
@@ -301,6 +301,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(nonzero_prodcheck_compute_layer_span);
 
 	let non_zero_products =
@@ -328,6 +329,9 @@ where
 
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
+	let po2_step_down_polys =
+		augment_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, table_sizes)?;
+	populate_flush_po2_step_down_witnesses::<U, _>(po2_step_down_polys, &mut witness)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
@@ -337,9 +341,13 @@ where
 		perfetto_category = "task.main"
 	)
 	.entered();
+
+	let mut fast_witness = MultilinearExtensionIndex::<PackedType<U, FFastExt<Tower>>>::new();
+
 	make_masked_flush_witnesses::<U, _>(
 		&oracles,
 		&mut witness,
+		&mut fast_witness,
 		&flush_oracle_ids,
 		&flushes,
 		mixing_challenge,
@@ -349,6 +357,7 @@ where
 	// there are no oracle ids associated with these flush_witnesses
 	let flush_witnesses =
 		convert_witnesses_to_fast_ext::<U, _>(&oracles, &witness, &flush_oracle_ids)?;
+	emit_max_rss();
 	drop(flush_convert_span);
 
 	let flush_prodcheck_compute_layer_span = tracing::info_span!(
@@ -361,6 +370,7 @@ where
 		.into_par_iter()
 		.map(|(n_vars, evals)| GrandProductWitness::new(n_vars, evals))
 		.collect::<Result<Vec<_>, _>>()?;
+	emit_max_rss();
 	drop(flush_prodcheck_compute_layer_span);
 
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
@@ -395,9 +405,24 @@ where
 
 	// Reduce non_zero_final_layer_claims to evalcheck claims
 	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
-		chain!(flush_oracle_ids, non_zero_oracle_ids),
+		chain!(flush_oracle_ids.clone(), non_zero_oracle_ids),
 		final_layer_claims,
 	)?;
+
+	let mut flush_prodcheck_eval_claims = prodcheck_eval_claims;
+
+	let prodcheck_eval_claims = flush_prodcheck_eval_claims.split_off(flush_oracle_ids.len());
+
+	let flush_eval_claims = reduce_flush_evalcheck_claims::<U, Tower, Challenger_, Backend>(
+		flush_prodcheck_eval_claims,
+		&oracles,
+		fast_witness,
+		fast_domain_factory.clone(),
+		&mut transcript,
+		backend,
+	)?;
+
+	emit_max_rss();
 	drop(prodcheck_span);
 
 	// Zerocheck
@@ -476,6 +501,7 @@ where
 	let zerocheck_eval_claims =
 		sumcheck::make_zerocheck_eval_claims(zerocheck_oracle_metas, zerocheck_output)?;
 
+	emit_max_rss();
 	drop(zerocheck_span);
 
 	let evalcheck_span = tracing::info_span!(
@@ -492,7 +518,7 @@ where
 	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
-		chain!(prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
+		chain!(flush_eval_claims, prodcheck_eval_claims, zerocheck_eval_claims, exp_eval_claims,),
 		standard_switchover_heuristic(-2),
 		&mut transcript,
 		&domain_factory,
@@ -507,6 +533,7 @@ where
 		&eval_claims,
 	)?;
 
+	emit_max_rss();
 	drop(evalcheck_span);
 
 	let ring_switch_span = tracing::info_span!(
@@ -515,10 +542,25 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
+	let hal = compute_data.hal;
+
+	let dev_alloc = &compute_data.dev_alloc;
+	let host_alloc = &compute_data.host_alloc;
+
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove(&system, &committed_multilins, &mut transcript, memoized_data)?;
+	} = ring_switch::prove(
+		&system,
+		&committed_multilins,
+		&mut transcript,
+		memoized_data,
+		hal,
+		dev_alloc,
+		host_alloc,
+	)?;
+	emit_max_rss();
 	drop(ring_switch_span);
 
 	// Prove evaluation claims using PIOP compiler
@@ -528,6 +570,7 @@ where
 		perfetto_category = "phase.main"
 	)
 	.entered();
+
 	piop::prove(
 		compute_data,
 		&fri_params,
@@ -537,10 +580,11 @@ where
 		committed,
 		&codeword,
 		&committed_multilins,
-		&transparent_multilins,
+		transparent_multilins,
 		&piop_sumcheck_claims,
 		&mut transcript,
 	)?;
+	emit_max_rss();
 	drop(piop_compiler_span);
 
 	let proof = Proof {
@@ -604,10 +648,28 @@ where
 	}
 }
 
+fn populate_flush_po2_step_down_witnesses<'a, U, Tower>(
+	step_down_polys: Vec<(OracleId, StepDown)>,
+	witness: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+) -> Result<(), Error>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+{
+	for (oracle_id, step_down_poly) in step_down_polys {
+		let witness_poly = step_down_poly
+			.multilinear_extension::<PackedType<U, Tower::B1>>()?
+			.specialize_arc_dyn();
+		witness.update_multilin_poly([(oracle_id, witness_poly)])?
+	}
+	Ok(())
+}
+
 #[instrument(skip_all, level = "debug")]
 pub fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	fast_witness_index: &mut MultilinearExtensionIndex<'a, PackedType<U, FFastExt<Tower>>>,
 	flush_oracle_ids: &[OracleId],
 	flushes: &[Flush<FExt<Tower>>],
 	mixing_challenge: FExt<Tower>,
@@ -616,11 +678,16 @@ pub fn make_masked_flush_witnesses<'a, U, Tower>(
 where
 	U: ProverTowerUnderlier<Tower>,
 	Tower: ProverTowerFamily,
+	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>
+		+ RepackedExtension<PackedType<U, Tower::B1>>,
 {
 	// TODO: Move me out into a separate function & deduplicate.
 	// Count the suffix zeros on all selectors.
 	for flush in flushes {
-		for &selector_id in &flush.selectors {
+		let fast_selectors =
+			convert_1b_witnesses_to_fast_ext::<U, Tower>(witness_index, &flush.selectors)?;
+
+		for (&selector_id, fast_selector) in flush.selectors.iter().zip(fast_selectors) {
 			let selector = witness_index.get_multilin_poly(selector_id)?;
 			let zero_suffix_len = count_zero_suffixes(&selector);
 
@@ -630,7 +697,46 @@ where
 				selector,
 				nonzero_prefix_len,
 			)])?;
+
+			fast_witness_index.update_multilin_poly_with_nonzero_scalars_prefixes([(
+				selector_id,
+				fast_selector,
+				nonzero_prefix_len,
+			)])?;
 		}
+	}
+
+	let inner_oracles_id = flushes
+		.iter()
+		.flat_map(|flush| {
+			flush
+				.oracles
+				.iter()
+				.filter_map(|oracle_or_const| match oracle_or_const {
+					OracleOrConst::Oracle(oracle_id) => Some(*oracle_id),
+					_ => None,
+				})
+		})
+		.collect::<HashSet<_>>();
+
+	let inner_oracles_id = inner_oracles_id.into_iter().collect::<Vec<_>>();
+
+	let fast_inner_oracles =
+		convert_witnesses_to_fast_ext::<U, Tower>(oracles, witness_index, &inner_oracles_id)?;
+
+	for ((n_vars, witness_data), id) in fast_inner_oracles.into_iter().zip(inner_oracles_id) {
+		let fast_witness = MLEDirectAdapter::from(
+			MultilinearExtension::new(n_vars, witness_data)
+				.expect("witness_data created with correct n_vars"),
+		);
+
+		let nonzero_scalars_prefix = witness_index.get_index_entry(id)?.nonzero_scalars_prefix;
+
+		fast_witness_index.update_multilin_poly_with_nonzero_scalars_prefixes([(
+			id,
+			fast_witness.upcast_arc_dyn(),
+			nonzero_scalars_prefix,
+		)])?;
 	}
 
 	// Find the maximum power of the mixing challenge needed.
@@ -876,4 +982,134 @@ where
 			Ok((n_vars, fast_ext_result))
 		})
 		.collect()
+}
+
+#[allow(clippy::type_complexity)]
+pub fn convert_1b_witnesses_to_fast_ext<'a, U, Tower>(
+	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	ids: &[OracleId],
+) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FFastExt<Tower>>>>, Error>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+	PackedType<U, Tower::B128>: PackedTransformationFactory<PackedType<U, Tower::FastB128>>
+		+ RepackedExtension<PackedType<U, Tower::B1>>,
+{
+	ids.iter()
+		.map(|&id| {
+			let exp_witness = witness.get_multilin_poly(id)?;
+
+			let packed_evals = exp_witness
+				.packed_evals()
+				.expect("poly contain packed_evals");
+
+			let packed_evals = PackedType::<U, Tower::B128>::cast_bases(packed_evals);
+
+			MultilinearExtension::new(exp_witness.n_vars(), packed_evals.to_vec())
+				.map(|mle| mle.specialize_arc_dyn())
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, _>>()
+}
+
+#[instrument(skip_all, name = "flush::reduce_flush_evalcheck_claims")]
+fn reduce_flush_evalcheck_claims<
+	U,
+	Tower: ProverTowerFamily,
+	Challenger_,
+	Backend: ComputationBackend,
+>(
+	claims: Vec<EvalcheckMultilinearClaim<FExt<Tower>>>,
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	witness_index: MultilinearExtensionIndex<PackedType<U, FFastExt<Tower>>>,
+	domain_factory: IsomorphicEvaluationDomainFactory<FFastExt<Tower>>,
+	transcript: &mut ProverTranscript<Challenger_>,
+	backend: &Backend,
+) -> Result<Vec<EvalcheckMultilinearClaim<FExt<Tower>>>, Error>
+where
+	FExt<Tower>: From<FFastExt<Tower>>,
+	FFastExt<Tower>: From<FExt<Tower>>,
+	U: ProverTowerUnderlier<Tower>,
+	Challenger_: Challenger + Default,
+{
+	let mut linear_claims = Vec::new();
+
+	#[allow(clippy::type_complexity)]
+	let mut new_mlechecks_constraints: Vec<(
+		EvalPoint<FFastExt<Tower>>,
+		ConstraintSetBuilder<FFastExt<Tower>>,
+	)> = Vec::new();
+
+	for claim in &claims {
+		match &oracles[claim.id].variant {
+			MultilinearPolyVariant::LinearCombination(_) => linear_claims.push(claim.clone()),
+			MultilinearPolyVariant::Composite(composite) => {
+				let eval_point = claim.eval_point.isomorphic();
+
+				let eval = claim.eval.into();
+
+				let position = new_mlechecks_constraints
+					.iter()
+					.position(|(ep, _)| *ep == eval_point)
+					.unwrap_or(new_mlechecks_constraints.len());
+
+				let oracle_ids = composite.inner().clone();
+
+				let exp = <_ as CompositionPoly<FExt<Tower>>>::expression(composite.c());
+				let fast_exp = exp.convert_field::<FFastExt<Tower>>();
+
+				if let Some((_, constraint_builder)) = new_mlechecks_constraints.get_mut(position) {
+					constraint_builder.add_sumcheck(oracle_ids, fast_exp, eval);
+				} else {
+					let mut new_builder = ConstraintSetBuilder::new();
+					new_builder.add_sumcheck(oracle_ids, fast_exp, eval);
+					new_mlechecks_constraints.push((eval_point.clone(), new_builder));
+				}
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	let new_mlechecks = new_mlechecks_constraints
+		.into_iter()
+		.map(|(ep, builder)| {
+			builder
+				.build_one(oracles)
+				.map(|constraint| ConstraintSetEqIndPoint {
+					eq_ind_challenges: ep.clone(),
+					constraint_set: constraint,
+				})
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	let mut memoized_data = MemoizedData::new();
+
+	let mut fast_new_evalcheck_claims = Vec::new();
+
+	for ConstraintSetEqIndPoint {
+		eq_ind_challenges,
+		constraint_set,
+	} in new_mlechecks
+	{
+		let evalcheck_claims = prove_mlecheck_with_switchover::<_, _, FFastExt<Tower>, _, _>(
+			&witness_index,
+			constraint_set,
+			eq_ind_challenges,
+			&mut memoized_data,
+			transcript,
+			immediate_switchover_heuristic,
+			domain_factory.clone(),
+			backend,
+		)?;
+		fast_new_evalcheck_claims.extend(evalcheck_claims);
+	}
+
+	Ok(chain!(
+		fast_new_evalcheck_claims
+			.into_iter()
+			.map(|claim| claim.isomorphic::<FExt<Tower>>()),
+		linear_claims.into_iter()
+	)
+	.collect::<Vec<_>>())
 }

@@ -620,7 +620,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		builder::{ConstraintSystem, Statement, WitnessIndex, tally},
+		builder::{ConstraintSystem, WitnessIndex, tally},
 		gadgets::{
 			hash::keccak::test_vector::TEST_VECTOR,
 			indexed_lookup::and::{BitAndIndexedLookup, BitAndLookup},
@@ -675,17 +675,14 @@ mod tests {
 		witness
 			.fill_table_parallel(&bitand_lookup, &sorted_counts)
 			.unwrap();
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: witness.table_sizes(),
-		};
-		let ccs = cs.compile(&statement).unwrap();
+		let table_sizes = witness.table_sizes();
+		let ccs = cs.compile().unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
 			&[],
-			&statement.table_sizes,
+			&table_sizes,
 			&witness,
 		)
 		.unwrap();
@@ -742,18 +739,14 @@ mod tests {
 			.fill_table_parallel(&bitand_lookup, &sorted_counts)
 			.unwrap();
 
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: witness.table_sizes(),
-		};
-
-		let ccs = cs.compile(&statement).unwrap();
+		let table_sizes = witness.table_sizes();
+		let ccs = cs.compile().unwrap();
 		let witness = witness.into_multilinear_extension_index();
 
 		binius_core::constraint_system::validate::validate_witness(
 			&ccs,
 			&[],
-			&statement.table_sizes,
+			&table_sizes,
 			&witness,
 		)
 		.unwrap();

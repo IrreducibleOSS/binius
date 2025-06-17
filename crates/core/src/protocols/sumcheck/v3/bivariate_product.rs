@@ -26,6 +26,7 @@ use crate::{
 /// slices.
 pub struct BivariateSumcheckProver<
 	'a,
+	'b,
 	F: Field,
 	Hal: ComputeLayer<F>,
 	DeviceAllocatorType,
@@ -33,19 +34,20 @@ pub struct BivariateSumcheckProver<
 > where
 	DeviceAllocatorType: ComputeAllocator<F, Hal::DevMem>,
 	HostAllocatorType: ComputeAllocator<F, CpuMemory>,
+	'a: 'b,
 {
 	hal: &'a Hal,
 	dev_alloc: &'a DeviceAllocatorType,
 	host_alloc: &'a HostAllocatorType,
 	n_vars_initial: usize,
 	n_vars_remaining: usize,
-	multilins: Vec<SumcheckMultilinear<'a, F, Hal::DevMem>>,
+	multilins: Vec<SumcheckMultilinear<'b, F, Hal::DevMem>>,
 	compositions: Vec<IndexComposition<BivariateProduct, 2>>,
 	last_coeffs_or_sums: PhaseState<F>,
 }
 
-impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
-	BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
+impl<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
+	BivariateSumcheckProver<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -57,7 +59,7 @@ where
 		dev_alloc: &'a DeviceAllocatorType,
 		host_alloc: &'a HostAllocatorType,
 		claim: &SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>,
-		multilins: Vec<FSlice<'a, F, Hal>>,
+		multilins: Vec<FSlice<'b, F, Hal>>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars();
 
@@ -112,8 +114,8 @@ where
 	}
 }
 
-impl<'a, F, Hal, DeviceAllocatorType, HostAllocatorType> SumcheckProver<F>
-	for BivariateSumcheckProver<'a, F, Hal, DeviceAllocatorType, HostAllocatorType>
+impl<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType> SumcheckProver<F>
+	for BivariateSumcheckProver<'a, 'b, F, Hal, DeviceAllocatorType, HostAllocatorType>
 where
 	F: TowerField,
 	Hal: ComputeLayer<F>,
@@ -188,7 +190,7 @@ where
 				.drain(..)
 				.map(
 					|multilin| -> Result<
-						PreparedExtrapolateLineArgs<'a, F, Hal>,
+						PreparedExtrapolateLineArgs<'b, F, Hal>,
 						binius_compute::Error,
 					> {
 						match multilin {

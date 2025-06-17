@@ -11,9 +11,7 @@ use binius_field::{
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::{Groestl256, Groestl256ByteCompression, Groestl256Parallel};
-use binius_m3::builder::{
-	B32, B128, ConstraintSystem, Statement, WitnessIndex, test_utils::ClosureFiller,
-};
+use binius_m3::builder::{B32, B128, ConstraintSystem, WitnessIndex, test_utils::ClosureFiller};
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
@@ -58,10 +56,8 @@ fn main() -> Result<()> {
 	table.assert_zero("b32_mul", in_a * in_b - out);
 
 	let table_id = table.id();
-	let statement = Statement {
-		boundaries: vec![],
-		table_sizes: vec![test_vector.len()],
-	};
+	let boundaries = vec![];
+	let table_sizes = vec![test_vector.len()];
 
 	let trace_gen_scope = tracing::info_span!("Generating trace", n_ops = args.n_ops).entered();
 	let mut allocator = CpuComputeAllocator::new(
@@ -94,17 +90,16 @@ fn main() -> Result<()> {
 		.unwrap();
 	drop(trace_gen_scope);
 
-	let ccs = cs.compile(&statement).unwrap();
+	let ccs = cs.compile().unwrap();
 	let cs_digest = ccs.digest::<Groestl256>();
 	let witness = witness.into_multilinear_extension_index();
 
 	let hal_span = tracing::info_span!("HAL Setup", perfetto_category = "phase.main").entered();
 
-	let mut compute_holder =
-		FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<OptimalUnderlier, B128>>::new(
-			1 << 20,
-			1 << (28 - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
-		);
+	let mut compute_holder = FastCpuLayerHolder::<
+		CanonicalTowerFamily,
+		PackedType<OptimalUnderlier, B128>,
+	>::new(1 << 20, 1 << 28);
 
 	drop(hal_span);
 
@@ -124,8 +119,8 @@ fn main() -> Result<()> {
 		&ccs,
 		&fri_soundness_params,
 		&cs_digest,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		witness,
 		&make_portable_backend(),
 	)?;
@@ -138,7 +133,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&ccs, &fri_soundness_params, &cs_digest, &statement.boundaries, proof)?;
+	>(&ccs, &fri_soundness_params, &cs_digest, &boundaries, proof)?;
 
 	Ok(())
 }

@@ -24,7 +24,7 @@ use super::{
 	table::TableId,
 	witness::{TableFiller, TableWitnessSegment},
 };
-use crate::builder::{B128, Statement, WitnessIndex};
+use crate::builder::{B128, WitnessIndex};
 
 /// An easy-to-use implementation of [`TableFiller`] that is constructed with a closure.
 ///
@@ -117,17 +117,14 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, BinaryField128bPolyval>>,
 	PackedType<U, BinaryField128bPolyval>: PackedTransformationFactory<PackedType<U, B128>>,
 {
-	let statement = Statement {
-		boundaries,
-		table_sizes: witness.table_sizes(),
-	};
-	let ccs = cs.compile(&statement).unwrap();
+	let table_sizes = witness.table_sizes();
+	let ccs = cs.compile().unwrap();
 	let witness = witness.into_multilinear_extension_index();
 
 	binius_core::constraint_system::validate::validate_witness(
 		&ccs,
-		&statement.boundaries,
-		&statement.table_sizes,
+		&boundaries,
+		&table_sizes,
 		&witness,
 	)
 	.unwrap();
@@ -137,10 +134,8 @@ pub fn validate_system_witness_with_prove_verify<U>(
 		const SECURITY_BITS: usize = 100;
 
 		let mut compute_holder =
-			FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<U, B128>>::new(
-				1 << 16,
-				1 << (24 - PackedType::<U, B128>::LOG_WIDTH),
-			);
+			FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<U, B128>>::new(1 << 16, 1 << 24);
+
 		let ccs_digest = ccs.digest::<Groestl256>();
 		let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, LOG_INV_RATE);
 		let proof = binius_core::constraint_system::prove::<
@@ -158,8 +153,8 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			&ccs,
 			&fri_soundness_params,
 			&ccs_digest,
-			&statement.boundaries,
-			&statement.table_sizes,
+			&boundaries,
+			&table_sizes,
 			witness,
 			&binius_hal::make_portable_backend(),
 		)
@@ -171,7 +166,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&ccs, &fri_soundness_params, &ccs_digest, &statement.boundaries, proof)
+		>(&ccs, &fri_soundness_params, &ccs_digest, &boundaries, proof)
 		.unwrap();
 	}
 }

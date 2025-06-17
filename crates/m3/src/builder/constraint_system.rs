@@ -8,25 +8,24 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{
-		ConstraintSystem as CompiledConstraintSystem, TableSizeSpec,
+		ConstraintSystem as CompiledConstraintSystem,
 		channel::{ChannelId, OracleOrConst},
 		exp::Exp,
 	},
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
-	transparent::step_down::StepDown,
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, OracleId, SymbolicMultilinearOracleSet,
+	},
 };
 use binius_field::{PackedField, TowerField};
 use binius_math::{ArithCircuit, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_strict_usize;
-use itertools::chain;
 
 use super::{
 	ColumnId, Table, TableBuilder, TableId, ZeroConstraint,
 	channel::{Channel, Flush},
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
-	statement::Statement,
-	table::{self, TablePartition},
+	table::TablePartition,
 	types::B128,
 	witness::WitnessIndex,
 };
@@ -180,15 +179,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// oracles for all columns. The main difference between column definitions and oracle
 	/// definitions is that multilinear oracle definitions have a number of variables, whereas the
 	/// column definitions contained in a [`ConstraintSystem`] do not have size information.
-	pub fn compile(&self, statement: &Statement<F>) -> Result<CompiledConstraintSystem<F>, Error> {
-		if statement.table_sizes.len() != self.tables.len() {
-			return Err(Error::StatementMissingTableSize {
-				expected: self.tables.len(),
-				actual: statement.table_sizes.len(),
-			});
-		}
-
-		let mut oracles = MultilinearOracleSet::new();
+	pub fn compile(&self) -> Result<CompiledConstraintSystem<F>, Error> {
+		let mut oracles = SymbolicMultilinearOracleSet::new();
 		let mut table_constraints = Vec::new();
 		let mut compiled_flushes = Vec::new();
 		let mut non_zero_oracle_ids = Vec::new();
@@ -197,47 +189,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 		let mut oracle_lookup = OracleLookup::new();
 
-		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
+		for table in &self.tables {
 			table_size_specs.push(table.size_spec());
-
-			if count == 0 {
-				continue;
-			}
-			match table.size_spec() {
-				TableSizeSpec::PowerOfTwo => {
-					if !count.is_power_of_two() {
-						return Err(Error::TableSizePowerOfTwoRequired {
-							table_id: table.id,
-							size: count,
-						});
-					}
-					if count != 1 << table::log_capacity(count) {
-						panic!(
-							"Tables with required power-of-two size currently cannot have capacity \
-						exceeding their count. This is because the flushes do not have automatic \
-						selectors applied, and so the table would flush invalid events"
-						);
-					}
-				}
-				TableSizeSpec::Fixed { log_size } => {
-					if count != 1 << log_size {
-						return Err(Error::TableSizeFixedRequired {
-							table_id: table.id,
-							size: count,
-						});
-					}
-				}
-				TableSizeSpec::Arbitrary => (),
-			}
-
-			let log_capacity = table::log_capacity(count);
 
 			// Add multilinear oracles for all table columns.
 			add_oracles_for_columns(
 				&mut oracle_lookup,
 				&mut oracles,
 				table,
-				log_capacity,
 				&mut non_zero_oracle_ids,
 			)?;
 
@@ -249,8 +208,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 					values_per_row,
 					..
 				} = partition;
-
-				let n_vars = log_capacity + log2_strict_usize(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
@@ -295,24 +252,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 					}
 				});
 
-				// In case the size of the table is not defined as a power-of-two we need to add
-				// a special selector which is equal to 1 for the first `count` rows and 0 after
-				// that.
-				//
-				// StepDown witness data is populated in
-				// WitnessIndex::into_multilinear_extension_index
-				let mut step_down: Option<OracleId> = None;
-				if !table.requires_any_po2_size() {
-					let step_down_poly = StepDown::new(n_vars, count * values_per_row)?;
-					let oracle_id = oracles.add_transparent(step_down_poly)?;
-					oracle_lookup.register_step_down(
-						table.id(),
-						log2_strict_usize(*values_per_row),
-						oracle_id,
-					);
-					step_down = Some(oracle_id);
-				}
-
 				// Translate flushes for the compiled constraint system.
 				for Flush {
 					columns: flush_columns,
@@ -326,16 +265,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 						.iter()
 						.map(|&column_id| OracleOrConst::Oracle(oracle_lookup[column_id]))
 						.collect::<Vec<_>>();
-					let selectors = chain!(
-						selectors
-							.iter()
-							.map(|column_idx| oracle_lookup[*column_idx]),
-						step_down
-					)
-					.collect::<Vec<_>>();
+					let selectors = selectors
+						.iter()
+						.map(|column_idx| oracle_lookup[*column_idx])
+						.collect::<Vec<_>>();
 
 					compiled_flushes.push(CompiledFlush {
 						table_id: table.id(),
+						log_values_per_row: log2_strict_usize(*values_per_row),
 						oracles: flush_oracles,
 						channel_id: *channel_id,
 						direction: *direction,
@@ -348,7 +285,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 					let constraint_set = translate_constraint_set(
 						table.id(),
 						log2_strict_usize(*values_per_row),
-						n_vars,
 						zero_constraints,
 						partition_oracle_ids,
 					);
@@ -391,7 +327,6 @@ pub(crate) enum OracleMapping {
 #[derive(Debug, Default)]
 pub(crate) struct OracleLookup {
 	column_to_oracle: BTreeMap<ColumnId, OracleMapping>,
-	partition_to_oracle: BTreeMap<(TableId, usize), OracleId>,
 }
 
 impl OracleLookup {
@@ -399,7 +334,6 @@ impl OracleLookup {
 	pub(crate) fn new() -> Self {
 		Self {
 			column_to_oracle: BTreeMap::new(),
-			partition_to_oracle: BTreeMap::new(),
 		}
 	}
 
@@ -410,16 +344,6 @@ impl OracleLookup {
 	/// The column ID must exist in the registry, otherwise this function will panic.
 	pub fn lookup(&self, column_id: ColumnId) -> &OracleMapping {
 		&self.column_to_oracle[&column_id]
-	}
-
-	/// Returns the step-down oracle for a table partition if it exists.
-	///
-	/// Returns `None` if no step-down oracle has been registered for the
-	/// given (table, partition_id) pair.
-	pub(crate) fn lookup_step_down(&self, table: TableId, partition_id: usize) -> Option<OracleId> {
-		self.partition_to_oracle
-			.get(&(table, partition_id))
-			.cloned()
 	}
 
 	/// Adds a mapping from a column ID to an oracle mapping.
@@ -459,19 +383,6 @@ impl OracleLookup {
 		);
 		assert!(prev.is_none());
 	}
-
-	/// Registers a step-down oracle for a table partition.
-	///
-	/// # Preconditions
-	///
-	/// The (table, partition_id) pair must not already be registered in the registry, otherwise
-	/// this function will panic.
-	fn register_step_down(&mut self, table: TableId, partition_id: usize, oracle: OracleId) {
-		let prev = self
-			.partition_to_oracle
-			.insert((table, partition_id), oracle);
-		assert!(prev.is_none());
-	}
 }
 
 /// Indexing for [`OracleLookup`]. For transparents this returns the repeating column.
@@ -490,14 +401,12 @@ impl Index<ColumnId> for OracleLookup {
 /// the `non_zero_oracle_ids`.
 fn add_oracles_for_columns<F: TowerField>(
 	oracle_lookup: &mut OracleLookup,
-	oracle_set: &mut MultilinearOracleSet<F>,
+	oracle_set: &mut SymbolicMultilinearOracleSet<F>,
 	table: &Table<F>,
-	log_capacity: usize,
 	non_zero_oracle_ids: &mut Vec<OracleId>,
 ) -> Result<(), Error> {
 	for column_info in table.columns.iter() {
-		let n_vars = log_capacity + column_info.shape.log_values_per_row;
-		add_oracle_for_column(oracle_set, oracle_lookup, column_info, n_vars)?;
+		add_oracle_for_column(oracle_set, oracle_lookup, column_info, table.id())?;
 		if column_info.is_nonzero {
 			non_zero_oracle_ids.push(oracle_lookup[column_info.id]);
 		}
@@ -514,10 +423,10 @@ fn add_oracles_for_columns<F: TowerField>(
 /// * `column_info` - information about the column to be added
 /// * `n_vars` - number of variables of the multilinear oracle
 fn add_oracle_for_column<F: TowerField>(
-	oracles: &mut MultilinearOracleSet<F>,
+	oracles: &mut SymbolicMultilinearOracleSet<F>,
 	oracle_lookup: &mut OracleLookup,
 	column_info: &ColumnInfo<F>,
-	n_vars: usize,
+	table_id: TableId,
 ) -> Result<(), Error> {
 	let ColumnInfo {
 		id: column_id,
@@ -528,7 +437,9 @@ fn add_oracle_for_column<F: TowerField>(
 	} = column_info;
 	match col {
 		ColumnDef::Committed { tower_level } => {
-			let oracle_id = oracles.add_named(name).committed(n_vars, *tower_level);
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.committed(*tower_level);
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::Selected {
@@ -545,10 +456,9 @@ fn add_oracle_for_column<F: TowerField>(
 					}
 				})
 				.collect();
-			let oracle_id =
-				oracles
-					.add_named(name)
-					.projected(oracle_lookup[*col], index_values, 0)?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.projected(oracle_lookup[*col], index_values, 0)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::Projected {
@@ -566,11 +476,9 @@ fn add_oracle_for_column<F: TowerField>(
 					}
 				})
 				.collect();
-			let oracle_id = oracles.add_named(name).projected(
-				oracle_lookup[*col],
-				query_values,
-				*start_index,
-			)?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.projected(oracle_lookup[*col], query_values, *start_index)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::ZeroPadded {
@@ -579,12 +487,9 @@ fn add_oracle_for_column<F: TowerField>(
 			start_index,
 			nonzero_index,
 		} => {
-			let oracle_id = oracles.add_named(name).zero_padded(
-				oracle_lookup[*col],
-				*n_pad_vars,
-				*nonzero_index,
-				*start_index,
-			)?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.zero_padded(oracle_lookup[*col], *n_pad_vars, *nonzero_index, *start_index)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::Shifted {
@@ -594,18 +499,17 @@ fn add_oracle_for_column<F: TowerField>(
 			variant,
 		} => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
-			let oracle_id = oracles.add_named(name).shifted(
-				oracle_lookup[*col],
-				*offset,
-				*log_block_size,
-				*variant,
-			)?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.shifted(oracle_lookup[*col], *offset, *log_block_size, *variant)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::Packed { col, log_degree } => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
 			let source = oracle_lookup[*col];
-			let oracle_id = oracles.add_named(name).packed(source, *log_degree)?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.packed(source, *log_degree)?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::Computed { cols, expr } => {
@@ -619,55 +523,57 @@ fn add_oracle_for_column<F: TowerField>(
 					.zip(var_coeffs)
 					.map(|(&col_id, coeff)| (oracle_lookup[col_id], coeff))
 					.collect::<Vec<_>>();
-				let oracle_id = oracles.add_named(name).linear_combination_with_offset(
-					n_vars,
-					offset,
-					col_scalars,
-				)?;
+				let oracle_id = oracles
+					.add_oracle(table_id, shape.log_values_per_row, name)
+					.linear_combination_with_offset(offset, col_scalars)?;
 				oracle_lookup.register_regular(*column_id, oracle_id);
 			} else {
 				let inner_oracles = cols
 					.iter()
 					.map(|&col_index| oracle_lookup[col_index])
 					.collect::<Vec<_>>();
-				let oracle_id =
-					oracles
-						.add_named(name)
-						.composite_mle(n_vars, inner_oracles, expr.clone())?;
+				let oracle_id = oracles
+					.add_oracle(table_id, shape.log_values_per_row, name)
+					.composite_mle(inner_oracles, expr.clone())?;
 				oracle_lookup.register_regular(*column_id, oracle_id);
 			};
 		}
 		ColumnDef::Constant { poly, .. } => {
 			let oracle_id_original = oracles
-				.add_named(format!("{name}_single"))
+				.add_oracle(table_id, shape.log_values_per_row, format!("{name}_single"))
 				.transparent(poly.clone())?;
 			let oracle_id_repeating = oracles
-				.add_named(name)
-				.repeating(oracle_id_original, n_vars - shape.log_values_per_row)?;
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.repeating(oracle_id_original)?;
 			oracle_lookup.register_transparent(*column_id, oracle_id_original, oracle_id_repeating);
 		}
 		ColumnDef::StructuredDynSize(structured) => {
-			structured.check_nvars(n_vars)?;
 			let expr = structured.expr()?;
 			let oracle_id = oracles
-				.add_named(name)
-				.structured(n_vars, ArithCircuit::from(&expr))?;
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.structured(ArithCircuit::from(&expr))?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::StructuredFixedSize { expr } => {
-			let oracle_id = oracles.add_named(name).transparent(expr.clone())?;
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.transparent(expr.clone())?;
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::StaticExp {
 			base_tower_level, ..
 		} => {
-			let oracle_id = oracles.add_named(name).committed(n_vars, *base_tower_level);
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.committed(*base_tower_level);
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 		ColumnDef::DynamicExp {
 			base_tower_level, ..
 		} => {
-			let oracle_id = oracles.add_named(name).committed(n_vars, *base_tower_level);
+			let oracle_id = oracles
+				.add_oracle(table_id, shape.log_values_per_row, name)
+				.committed(*base_tower_level);
 			oracle_lookup.register_regular(*column_id, oracle_id);
 		}
 	};
@@ -681,7 +587,6 @@ fn add_oracle_for_column<F: TowerField>(
 fn translate_constraint_set<F: TowerField>(
 	table_id: TableId,
 	log_values_per_row: usize,
-	n_vars: usize,
 	zero_constraints: &[ZeroConstraint<F>],
 	partition_oracle_ids: Vec<OracleId>,
 ) -> ConstraintSet<F> {
@@ -737,41 +642,7 @@ fn translate_constraint_set<F: TowerField>(
 	ConstraintSet {
 		table_id,
 		log_values_per_row,
-		n_vars,
 		oracle_ids: dense_oracle_ids,
 		constraints: compiled_constraints,
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use assert_matches::assert_matches;
-
-	use super::*;
-
-	#[test]
-	fn test_unsatisfied_po2_requirement() {
-		let mut cs = ConstraintSystem::<B128>::new();
-		let mut table_builder = cs.add_table("fibonacci");
-		table_builder.require_power_of_two_size();
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![15],
-		};
-		assert_matches!(cs.compile(&statement), Err(Error::TableSizePowerOfTwoRequired { .. }));
-	}
-
-	#[test]
-	fn test_unsatisfied_fixed_size_requirement() {
-		let mut cs = ConstraintSystem::<B128>::new();
-		let mut table_builder = cs.add_table("fibonacci");
-		table_builder.require_fixed_size(4);
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![15],
-		};
-		assert_matches!(cs.compile(&statement), Err(Error::TableSizeFixedRequired { .. }));
 	}
 }
