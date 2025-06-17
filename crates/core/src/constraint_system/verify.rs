@@ -28,6 +28,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
+		fri::FRISoundnessParams,
 		gkr_exp,
 		gkr_gpa::{self},
 		greedy_evalcheck,
@@ -42,8 +43,7 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
-	log_inv_rate: usize,
-	security_bits: usize,
+	fri_soundness_params: &FRISoundnessParams,
 	constraint_system_digest: &Output<Hash>,
 	boundaries: &[Boundary<FExt<Tower>>],
 	proof: Proof,
@@ -123,8 +123,7 @@ where
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
 		&commit_meta,
 		&merkle_scheme,
-		security_bits,
-		log_inv_rate,
+		fri_soundness_params,
 	)?;
 
 	// Read polynomial commitment polynomials

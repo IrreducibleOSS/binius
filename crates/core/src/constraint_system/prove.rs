@@ -44,7 +44,7 @@ use crate::{
 	oracle::{Constraint, MultilinearOracleSet, OracleId, SizedConstraintSet},
 	piop,
 	protocols::{
-		fri::CommitOutput,
+		fri::{CommitOutput, FRISoundnessParams},
 		gkr_exp,
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
@@ -74,8 +74,7 @@ pub fn prove<
 >(
 	compute_data: &mut ComputeData<Tower::B128, Hal, HostAllocatorType, DeviceAllocatorType>,
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
-	log_inv_rate: usize,
-	security_bits: usize,
+	fri_soundness_params: &FRISoundnessParams,
 	constraint_system_digest: &Output<Hash::Digest>,
 	boundaries: &[Boundary<FExt<Tower>>],
 	table_sizes: &[usize],
@@ -214,8 +213,7 @@ where
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
 		&commit_meta,
 		merkle_scheme,
-		security_bits,
-		log_inv_rate,
+		fri_soundness_params,
 	)?;
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace())?
 		.precompute_twiddles()

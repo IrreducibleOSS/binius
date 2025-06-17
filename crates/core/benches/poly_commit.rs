@@ -6,7 +6,10 @@ use binius_core::{
 	merkle_tree::BinaryMerkleTreeProver,
 	piop,
 	piop::CommitMeta,
-	protocols::{fri, fri::FRIParams},
+	protocols::{
+		fri,
+		fri::{FRIParams, FRISoundnessParams},
+	},
 };
 use binius_field::{
 	AESTowerField32b, AESTowerField128b, BinaryField, BinaryField32b, BinaryField128b,
@@ -113,11 +116,11 @@ where
 
 	let commit_meta = CommitMeta::with_vars([LOG_SIZE]);
 
+	let fri_soundness_params = FRISoundnessParams::new(SECURITY_BITS, LOG_INV_RATE);
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, _, _>(
 		&commit_meta,
 		merkle_scheme,
-		SECURITY_BITS,
-		LOG_INV_RATE,
+		&fri_soundness_params,
 	)
 	.unwrap();
 

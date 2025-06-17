@@ -17,7 +17,7 @@ use crate::{
 	piop::util::ResizeableIndex,
 	polynomial::MultivariatePoly,
 	protocols::{
-		fri::{FRIParams, FRIVerifier, estimate_optimal_arity},
+		fri::{FRIParams, FRISoundnessParams, FRIVerifier, estimate_optimal_arity},
 		sumcheck::{
 			CompositeSumClaim, SumcheckClaim, front_loaded::BatchVerifier as SumcheckBatchVerifier,
 		},
@@ -117,22 +117,19 @@ pub struct PIOPSumcheckClaim<F: Field> {
 fn make_commit_params_with_constant_arity<F, FEncode>(
 	ntt: &impl AdditiveNTT<FEncode>,
 	commit_meta: &CommitMeta,
-	security_bits: usize,
-	log_inv_rate: usize,
+	fri_soundness_params: &FRISoundnessParams,
 	arity: usize,
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 {
-	let params = FRIParams::choose_with_constant_fold_arity(
+	Ok(FRIParams::choose_with_constant_fold_arity(
 		ntt,
-		commit_meta.total_vars(),
-		security_bits,
-		log_inv_rate,
+		commit_meta,
+		fri_soundness_params,
 		arity,
-	)?;
-	Ok(params)
+	)?)
 }
 
 /// Choose commit parameters based on protocol parameters.
@@ -141,13 +138,11 @@ where
 ///
 /// * `commit_meta` - the metadata about the committed batch of multilinears.
 /// * `merkle_scheme` - the Merkle tree commitment scheme used in FRI.
-/// * `security_bits` - the target security level in bits.
-/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
+/// * `fri_soundness_params` - FRI soundness parameters.
 pub fn make_commit_params_with_optimal_arity<F, FEncode, MTScheme>(
 	commit_meta: &CommitMeta,
 	_merkle_scheme: &MTScheme,
-	security_bits: usize,
-	log_inv_rate: usize,
+	fri_soundness_params: &FRISoundnessParams,
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
@@ -160,11 +155,11 @@ where
 	let ntt = SingleThreadedNTT::<FEncode>::new(FEncode::N_BITS)?;
 
 	let arity = estimate_optimal_arity(
-		commit_meta.total_vars + log_inv_rate,
+		commit_meta.total_vars + fri_soundness_params.log_inv_rate,
 		size_of::<MTScheme::Digest>(),
 		size_of::<F>(),
 	);
-	make_commit_params_with_constant_arity(&ntt, commit_meta, security_bits, log_inv_rate, arity)
+	make_commit_params_with_constant_arity(&ntt, commit_meta, fri_soundness_params, arity)
 }
 
 /// A description of a sumcheck claim arising from a FRI PCS sumcheck.
