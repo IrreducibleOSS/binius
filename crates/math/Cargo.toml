@@ -25,9 +25,6 @@ thiserror.workspace = true
 tracing.workspace = true
 trait-set.workspace = true
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["wasm_js"] }
-
 [dev-dependencies]
 assert_matches.workspace = true
 criterion.workspace = true

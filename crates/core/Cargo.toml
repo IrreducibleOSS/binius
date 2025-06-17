@@ -36,9 +36,6 @@ thiserror.workspace = true
 tracing.workspace = true
 tracing-profile.workspace = true
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["wasm_js"] }
-
 [dev-dependencies]
 binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
 binius_macros = { path = "../macros", default-features = false }

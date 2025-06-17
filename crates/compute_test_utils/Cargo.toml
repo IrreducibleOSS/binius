@@ -19,6 +19,3 @@ binius_ntt = { path = "../ntt", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 rand.workspace = true
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["wasm_js"] }
