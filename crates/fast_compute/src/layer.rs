@@ -180,9 +180,8 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 			PackedMemorySliceMut::Slice(items) => {
 				items.fill(P::broadcast(value));
 			}
-			PackedMemorySliceMut::SingleElement { .. } => {
-				self.copy_h2d(&vec![value; slice.len()], slice)
-					.expect("dimensions are correct");
+			PackedMemorySliceMut::SingleElement { owned, .. } => {
+				owned.fill(value);
 			}
 		};
 		Ok(())

@@ -36,8 +36,6 @@ where
 	let n_vars = point.len();
 	let mut out = dev_alloc.alloc(1 << n_vars)?;
 
-	// TODO(SYS-248): Introduce a ComputeLayer operation ComputeLayerExecutor::fill, which fills a
-	// slice with constant value. Once that's done, use it instead of the h2d copy.
 	{
 		let mut dev_val = Hal::DevMem::slice_power_of_two_mut(&mut out, 1);
 		hal.fill(&mut dev_val, F::ONE)?;
