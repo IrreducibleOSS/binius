@@ -895,7 +895,7 @@ pub fn u32_array_to_bytes(input: &[u32; 16]) -> [u8; 64] {
 mod tests {
 	use binius_compute::cpu::alloc::CpuComputeAllocator;
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
-	use rand::{Rng, SeedableRng, prelude::StdRng};
+	use rand::{RngCore, SeedableRng, prelude::StdRng};
 	use sha2::compress256;
 
 	use super::*;
@@ -988,7 +988,7 @@ mod tests {
 			.map(|_| {
 				let mut block = [0u32; 16];
 				for word in &mut block {
-					*word = rng.r#gen();
+					*word = rng.next_u32();
 				}
 				block
 			})
