@@ -22,7 +22,7 @@ binius_utils = { path = "../crates/utils", default-features = false }
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 itertools.workspace = true
-rand = { workspace = true, features = ["std", "std_rng"] }
+rand.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
 

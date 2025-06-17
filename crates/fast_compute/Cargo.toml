@@ -23,4 +23,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
-rand = { workspace = true, features = ["std"] }
+rand.workspace = true

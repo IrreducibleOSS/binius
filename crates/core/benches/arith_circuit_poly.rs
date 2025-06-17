@@ -9,7 +9,7 @@ use binius_field::{
 };
 use binius_math::{ArithExpr as Expr, CompositionPoly, RowsBatchRef};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rand::{RngCore, thread_rng};
+use rand::RngCore;
 
 const BATCH_SIZE: usize = 256;
 
@@ -43,7 +43,7 @@ fn evaluate_arith_circuit_poly<P: PackedField>(
 }
 
 fn benchmark_evaluate(c: &mut Criterion) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	let query128x1b = generate_input_data(&mut rng);
 	let query128x1b = query128x1b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();

@@ -282,7 +282,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		for _ in 0..n_vars + 5 {
-			nonzero_prefixes.push(rng.gen_range(1..max_nonzero_prefix));
+			nonzero_prefixes.push(rng.random_range(1..max_nonzero_prefix));
 		}
 
 		for nonzero_prefix in nonzero_prefixes {

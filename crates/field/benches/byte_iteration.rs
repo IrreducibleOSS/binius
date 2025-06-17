@@ -17,7 +17,7 @@ pub fn bench_create_partial_sums<P>(
 ) where
 	P: PackedField + Clone,
 {
-	let mut rng = rand::thread_rng();
+	let mut rng = rand::rng();
 
 	for count in counts {
 		let count = count.next_power_of_two().max(8);

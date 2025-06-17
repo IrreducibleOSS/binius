@@ -847,7 +847,13 @@ pub fn test_map_kernels<F, Hal, ComputeHolderType>(
 
 	let input_2_host = host_alloc.alloc(1 << log_len).unwrap();
 
-	input_2_host.fill_with(|| if rng.gen_bool(0.5) { F::ONE } else { F::ZERO });
+	input_2_host.fill_with(|| {
+		if rng.random_bool(0.5) {
+			F::ONE
+		} else {
+			F::ZERO
+		}
+	});
 
 	let output_host = host_alloc.alloc(1 << log_len).unwrap();
 

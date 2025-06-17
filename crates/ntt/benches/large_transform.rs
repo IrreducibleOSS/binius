@@ -10,14 +10,13 @@ use binius_field::{
 };
 use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rand::thread_rng;
 
 fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterion, field: &str) {
 	let mut group = c.benchmark_group("NTT");
 	for log_dim in [16, 20] {
 		for log_stride_batch in [1, 4] {
 			let data_len = 1 << (log_dim + log_stride_batch - PE::LOG_WIDTH);
-			let mut rng = thread_rng();
+			let mut rng = rand::rng();
 			let mut data = repeat_with(|| PE::random(&mut rng))
 				.take(data_len)
 				.collect::<Vec<_>>();

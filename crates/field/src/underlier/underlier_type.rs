@@ -3,10 +3,7 @@
 use std::fmt::Debug;
 
 use bytemuck::{NoUninit, Zeroable};
-use rand::{
-	Rng, RngCore,
-	distributions::{Distribution, Standard},
-};
+use rand::distr::{Distribution, StandardUniform};
 use subtle::ConstantTimeEq;
 
 /// Primitive integer underlying a binary field or packed binary field implementation.
@@ -167,15 +164,15 @@ unsafe impl<U: UnderlierType> WithUnderlier for U {
 /// A value that can be randomly generated
 pub trait Random {
 	/// Generate random value
-	fn random(rng: impl RngCore) -> Self;
+	fn random(rng: impl rand::Rng) -> Self;
 }
 
 impl<T> Random for T
 where
-	Standard: Distribution<T>,
+	StandardUniform: Distribution<T>,
 {
-	fn random(mut rng: impl RngCore) -> Self {
-		rng.r#gen()
+	fn random(mut rng: impl rand::Rng) -> Self {
+		rng.random()
 	}
 }
 

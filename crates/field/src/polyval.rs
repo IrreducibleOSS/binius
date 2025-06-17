@@ -263,7 +263,7 @@ impl Field for BinaryField128bPolyval {
 	const CHARACTERISTIC: usize = 2;
 
 	fn random(mut rng: impl RngCore) -> Self {
-		Self(rng.r#gen())
+		Self(rng.random())
 	}
 
 	fn double(&self) -> Self {
@@ -1075,7 +1075,6 @@ pub fn is_polyval_tower<F: TowerField>() -> bool {
 mod tests {
 	use binius_utils::{SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::prelude::*;
-	use rand::thread_rng;
 
 	use super::*;
 	use crate::{
@@ -1232,7 +1231,7 @@ mod tests {
 	fn test_canonical_serialization() {
 		let mode = SerializationMode::CanonicalTower;
 		let mut buffer = BytesMut::new();
-		let mut rng = thread_rng();
+		let mut rng = rand::rng();
 
 		let b128_poly1 = <BinaryField128bPolyval as Field>::random(&mut rng);
 		let b128_poly2 = <BinaryField128bPolyval as Field>::random(&mut rng);

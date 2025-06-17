@@ -4,11 +4,10 @@ use std::hint::black_box;
 
 use binius_field::{PackedField, arch::byte_sliced::*};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rand::thread_rng;
 
 macro_rules! bench_transform_to_byte_sliced {
 	($byte_sliced:ty, $group:ident) => {{
-		let mut rng = thread_rng();
+		let mut rng = rand::rng();
 		let original = std::array::from_fn(|_| PackedField::random(&mut rng));
 
 		$group.throughput(Throughput::Elements(<$byte_sliced>::WIDTH as _));
@@ -20,7 +19,7 @@ macro_rules! bench_transform_to_byte_sliced {
 
 macro_rules! bench_transform_from_byte_sliced {
 	($byte_sliced:ty, $group:ident) => {{
-		let mut rng = thread_rng();
+		let mut rng = rand::rng();
 		let original = <$byte_sliced>::random(&mut rng);
 		let mut target = std::array::from_fn(|_| PackedField::zero());
 

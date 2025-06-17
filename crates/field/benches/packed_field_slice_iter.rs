@@ -13,7 +13,6 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::thread_rng;
 
 fn benchmark_iter_impl<P: PackedField>(
 	group: &mut BenchmarkGroup<'_, WallTime>,
@@ -21,7 +20,7 @@ fn benchmark_iter_impl<P: PackedField>(
 	len: usize,
 	skip: Option<usize>,
 ) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let values = repeat_with(|| P::random(&mut rng))
 		.take(len)
 		.collect::<Vec<P>>();

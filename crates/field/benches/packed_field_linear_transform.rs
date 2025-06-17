@@ -15,7 +15,6 @@ use binius_field::{
 use cfg_if::cfg_if;
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;
-use rand::thread_rng;
 
 mod packed_field_utils;
 
@@ -24,7 +23,7 @@ trait TransformToSelfFactory: PackedTransformationFactory<Self> {}
 impl<T: PackedTransformationFactory<Self>> TransformToSelfFactory for T {}
 
 fn create_transformation_main<PT: TransformToSelfFactory>() -> impl Transformation<PT, PT> {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 		.map(|_| PT::Scalar::random(&mut rng))
 		.collect();
@@ -52,7 +51,7 @@ cfg_if! {
 
 		fn create_transformation_pairwise<PT: TaggedTransformToSelfFactory<PairwiseStrategy>>(
 		) -> impl Transformation<PT, PT> {
-			let mut rng = thread_rng();
+			let mut rng = rand::rng();
 			let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 				.map(|_| PT::Scalar::random(&mut rng))
 				.collect();
@@ -63,7 +62,7 @@ cfg_if! {
 
 		fn create_transformation_packed<PT: TaggedTransformToSelfFactory<PackedStrategy>>(
 		) -> impl Transformation<PT, PT> {
-			let mut rng = thread_rng();
+			let mut rng = rand::rng();
 			let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 				.map(|_| PT::Scalar::random(&mut rng))
 				.collect();
@@ -74,7 +73,7 @@ cfg_if! {
 
 		fn create_transformation_simd<PT: TaggedTransformToSelfFactory<SimdStrategy>>(
 		) -> impl Transformation<PT, PT> {
-			let mut rng = thread_rng();
+			let mut rng = rand::rng();
 			let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 				.map(|_| PT::Scalar::random(&mut rng))
 				.collect();

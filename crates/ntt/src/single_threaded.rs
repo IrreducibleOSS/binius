@@ -542,7 +542,7 @@ mod tests {
 	#[test]
 	fn one_packed_field_forward() {
 		let s = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
-		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_entropy())];
+		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_os_rng())];
 
 		let mut packed_copy = packed;
 
@@ -564,7 +564,7 @@ mod tests {
 	#[test]
 	fn one_packed_field_inverse() {
 		let s = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
-		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_entropy())];
+		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_os_rng())];
 
 		let mut packed_copy = packed;
 
@@ -586,7 +586,7 @@ mod tests {
 	#[test]
 	fn smaller_embedded_batch_forward() {
 		let s = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
-		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_entropy())];
+		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_os_rng())];
 
 		let mut packed_copy = packed;
 
@@ -608,7 +608,7 @@ mod tests {
 	#[test]
 	fn smaller_embedded_batch_inverse() {
 		let s = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
-		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_entropy())];
+		let mut packed = [PackedBinaryField8x16b::random(StdRng::from_os_rng())];
 
 		let mut packed_copy = packed;
 

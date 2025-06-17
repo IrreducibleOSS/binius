@@ -141,7 +141,7 @@ mod tests {
 			look_indices.extend(0..lookup_table_size);
 		}
 		let remaining = look_indices.capacity() - look_indices.len();
-		look_indices.extend(repeat_with(|| rng.gen_range(0..lookup_table_size)).take(remaining));
+		look_indices.extend(repeat_with(|| rng.random_range(0..lookup_table_size)).take(remaining));
 
 		let look_values = look_indices
 			.into_iter()

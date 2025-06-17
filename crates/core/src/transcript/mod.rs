@@ -523,7 +523,7 @@ mod tests {
 		BinaryField32b, BinaryField64b, BinaryField128b, BinaryField128bPolyval,
 	};
 	use binius_hash::groestl::Groestl256;
-	use rand::{RngCore, thread_rng};
+	use rand::RngCore;
 
 	use super::*;
 	use crate::fiat_shamir::HasherChallenger;
@@ -638,7 +638,7 @@ mod tests {
 
 		const NUM_SAMPLING: usize = 32;
 		let mut random_bytes = [0u8; NUM_SAMPLING * 8];
-		thread_rng().fill_bytes(&mut random_bytes);
+		rand::rng().fill_bytes(&mut random_bytes);
 		let mut sampled_arrays = [[0u8; 8]; NUM_SAMPLING];
 
 		for i in 0..NUM_SAMPLING {

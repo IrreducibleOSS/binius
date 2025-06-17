@@ -428,9 +428,9 @@ mod tests {
 	#[test]
 	fn test_high_level_model_inclusion() {
 		let mut rng = StdRng::from_seed([0; 32]);
-		let path_index = rng.gen_range(0..1 << 10);
+		let path_index = rng.random_range(0..1 << 10);
 		let leaves = (0..1 << 10)
-			.map(|_| rng.r#gen::<[u8; 32]>())
+			.map(|_| rng.random::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
@@ -454,14 +454,14 @@ mod tests {
 		let mut rng = StdRng::from_seed([0; 32]);
 
 		let leaves = (0..1 << 4)
-			.map(|_| rng.r#gen::<[u8; 32]>())
+			.map(|_| rng.random::<[u8; 32]>())
 			.collect::<Vec<_>>();
 
 		let tree = MerkleTree::new(&leaves);
 		let root = tree.root();
 		let paths = (0..2)
 			.map(|_| {
-				let path_index = rng.gen_range(0..1 << 4);
+				let path_index = rng.random_range(0..1 << 4);
 				MerklePath {
 					root_id: 0u8,
 					index: path_index,
@@ -477,11 +477,11 @@ mod tests {
 	#[test]
 	fn test_high_level_model_inclusion_multiple_roots() {
 		let mut rng = StdRng::from_seed([0; 32]);
-		let path_index = rng.gen_range(0..1 << 10);
+		let path_index = rng.random_range(0..1 << 10);
 		let leaves = (0..3)
 			.map(|_| {
 				(0..1 << 10)
-					.map(|_| rng.r#gen::<[u8; 32]>())
+					.map(|_| rng.random::<[u8; 32]>())
 					.collect::<Vec<_>>()
 			})
 			.collect::<Vec<_>>();

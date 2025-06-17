@@ -15,7 +15,7 @@ pub fn bench_tensor_prod_eq_ind<P: PackedField>(
 	name: &str,
 	params: impl Iterator<Item = (usize, usize)>,
 ) {
-	let mut rng = rand::thread_rng();
+	let mut rng = rand::rng();
 	for param in params {
 		let (log_n_values, extra_query_len) = param;
 

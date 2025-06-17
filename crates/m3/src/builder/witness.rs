@@ -1569,7 +1569,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.r#gen())
+		let rows = repeat_with(|| rng.random())
 			.take(table_size)
 			.collect::<Vec<_>>();
 
@@ -1614,7 +1614,7 @@ mod tests {
 		let table_index = index.init_table(test_table.id(), table_size).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
-		let rows = repeat_with(|| rng.r#gen())
+		let rows = repeat_with(|| rng.random())
 			.take(table_size)
 			.collect::<Vec<_>>();
 

@@ -9,12 +9,11 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::thread_rng;
 
 const BATCH_SIZE: usize = 32;
 
 fn benchmark_get_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, id: &str) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let values = array::from_fn::<_, BATCH_SIZE, _>(|_| {
 		(0..P::WIDTH)
 			.map(|_| P::Scalar::random(&mut rng))

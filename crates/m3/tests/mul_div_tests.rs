@@ -94,7 +94,7 @@ impl TableFiller for MulUU64TestTable {
 impl MulDivTestSuiteHelper for MulUU64TestTable {
 	fn generate_inputs(&self, table_size: usize) -> Vec<(B64, B64)> {
 		let mut rng = StdRng::seed_from_u64(0);
-		repeat_with(|| (B64::new(rng.r#gen::<u64>()), B64::new(rng.r#gen::<u64>())))
+		repeat_with(|| (B64::new(rng.random::<u64>()), B64::new(rng.random::<u64>())))
 			.take(table_size)
 			.collect::<Vec<_>>()
 	}
@@ -199,7 +199,7 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 		let mut rng = StdRng::seed_from_u64(seed);
 		match self.mul_div {
 			MulDivEnum::MulUU32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.take(table_size)
 					.collect()
 			}
@@ -214,26 +214,26 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 				chain!(
 					EXPLICIT_TESTS.into_iter(),
 					repeat_with(|| (
-						B32::new(rng.r#gen::<i32>() as u32),
-						B32::new(rng.r#gen::<u32>())
+						B32::new(rng.random::<i32>() as u32),
+						B32::new(rng.random::<u32>())
 					))
 				)
 				.take(table_size)
 				.collect()
 			}
 			MulDivEnum::MulSS32(_) => repeat_with(|| {
-				(B32::new(rng.r#gen::<i32>() as u32), B32::new(rng.r#gen::<i32>() as u32))
+				(B32::new(rng.random::<i32>() as u32), B32::new(rng.random::<i32>() as u32))
 			})
 			.take(table_size)
 			.collect(),
 			MulDivEnum::DivUU32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
 			}
 			MulDivEnum::DivSS32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
@@ -374,8 +374,8 @@ fn test_mul_next_to_stacked_col() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let test_inputs = repeat_with(|| {
-		let a = rng.r#gen::<u32>();
-		let b = rng.r#gen::<u32>();
+		let a = rng.random::<u32>();
+		let b = rng.random::<u32>();
 		(a, b)
 	})
 	.take(17)

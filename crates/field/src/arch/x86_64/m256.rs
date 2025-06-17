@@ -329,7 +329,7 @@ impl ConditionallySelectable for M256 {
 
 impl Random for M256 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: [u128; 2] = rng.r#gen();
+		let val: [u128; 2] = rng.random();
 		val.into()
 	}
 }
@@ -1547,7 +1547,7 @@ mod tests {
 
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let original_value = M256::from([rng.r#gen::<u128>(), rng.r#gen::<u128>()]);
+		let original_value = M256::from([rng.random::<u128>(), rng.random::<u128>()]);
 
 		let mut buf = BytesMut::new();
 		original_value.serialize(&mut buf, mode).unwrap();
