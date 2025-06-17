@@ -343,26 +343,30 @@ mod tests {
 
 	#[test]
 	fn test_calculate_n_test_queries() {
-		let security_bits = 96;
-		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
-		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
-			security_bits,
-			&rs_code,
-			false,
-			1,
-		)
-		.unwrap();
-		assert_eq!(n_test_queries, 232);
+		// The target security bits.
+		const SECURITY_BITS: usize = 96;
+		// The binary logarithm of the RS code dimension.
+		const RS_LOG_DIM: usize = 28;
+		// The number of polynomials being batched together during commit.
+		const BATCH_SIZE: usize = 32;
 
-		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
-		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
-			security_bits,
-			&rs_code,
-			false,
-			1,
-		)
-		.unwrap();
-		assert_eq!(n_test_queries, 143);
+		for (log_inv_rate, expected_n_test_queries) in [(1, 232), (2, 143)] {
+			let rs_code = ReedSolomonCode::new(RS_LOG_DIM, log_inv_rate).unwrap();
+			let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+				SECURITY_BITS,
+				&rs_code,
+				false,
+				BATCH_SIZE,
+			)
+			.unwrap();
+			let n_test_queries_with_conjecture = calculate_n_test_queries::<
+				BinaryField128b,
+				BinaryField32b,
+			>(SECURITY_BITS, &rs_code, true, BATCH_SIZE)
+			.unwrap();
+			assert_eq!(n_test_queries, expected_n_test_queries);
+			assert!(n_test_queries_with_conjecture < n_test_queries);
+		}
 	}
 
 	#[test]
