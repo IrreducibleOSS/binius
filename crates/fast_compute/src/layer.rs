@@ -3,7 +3,7 @@
 use std::{
 	any::TypeId,
 	cell::RefCell,
-	iter::{repeat_with, zip},
+	iter::zip,
 	marker::PhantomData,
 	mem::{MaybeUninit, transmute},
 	slice,
@@ -43,6 +43,7 @@ use binius_ntt::{AdditiveNTT, fri::fold_interleaved_allocated};
 use binius_utils::{
 	checked_arithmetics::{checked_int_div, strict_log_2},
 	rayon::get_log_max_threads,
+	strided_array::StridedArray2DViewMut,
 };
 use bytemuck::{Pod, zeroed_vec};
 use itertools::izip;
@@ -212,21 +213,38 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 			.max(log_chunks_range.start);
 		let total_alloc = count_total_local_buffer_sizes(&mem_maps, log_chunks);
 
-		// Calculate memory needed for each chunk
+		// Initialize the kernel memory for each chunk.
 		let mem_maps_count = mem_maps.len();
-		let mut memory_chunks: Vec<KernelMemMap<'_, <T as TowerFamily>::B128, PackedMemory<P>>> =
-			repeat_with(|| KernelMemMap::Local { log_size: 0 })
-				.take(mem_maps_count << log_chunks)
-				.collect::<Vec<_>>();
-		for (i, mem_map) in mem_maps.into_iter().enumerate() {
-			for (j, chunk) in mem_map.chunks(log_chunks).enumerate() {
-				memory_chunks[i + j * mem_maps_count] = chunk;
-			}
+		// We store chunks in a way [mem_map_0_chunk_0, mem_map_0_chunk_1, ..., mem_map_0_chunk_N,
+		// mem_map_1_chunk_0, ...] This allows us to initialize `memory_chunks` in parallel which
+		// is faster when `mem_maps_count << log_chunks` is big. As a downside, we have to use
+		// `StridedArray2DViewMut` to access the memory for different chunks later.
+		let mut memory_chunks = Vec::with_capacity(mem_maps_count << log_chunks);
+		let uninit = memory_chunks.spare_capacity_mut();
+		uninit
+			.par_chunks_exact_mut(1 << log_chunks)
+			.zip(mem_maps)
+			.for_each(|(chunk, mem_map)| {
+				for (input, out) in chunk.iter_mut().zip(mem_map.chunks(log_chunks)) {
+					input.write(out);
+				}
+			});
+		// Safety:
+		// - `memory_chunks` is initialized with `mem_maps_count << log_chunks` elements.
+		// - Each element is initialized by the previous `for_each` loop.
+		unsafe {
+			memory_chunks.set_len(mem_maps_count << log_chunks);
 		}
+		let memory_chunks_view = StridedArray2DViewMut::without_stride(
+			&mut memory_chunks,
+			mem_maps_count,
+			1 << log_chunks,
+		)
+		.expect("dimensions must be correct");
 
-		memory_chunks
-			.par_chunks_exact_mut(mem_maps_count)
-			.map(|chunk| {
+		memory_chunks_view
+			.into_par_strides(1)
+			.map(|mut chunk| {
 				let buffer = self
 					.kernel_buffers
 					.get_or(|| RefCell::new(zeroed_vec(total_alloc)));
@@ -239,7 +257,7 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 				let allocator = BumpAllocator::<T::B128, PackedMemory<P>>::new(buffer);
 
 				let kernel_data = chunk
-					.iter_mut()
+					.iter_column_mut(0)
 					.map(|mem_map| {
 						match std::mem::replace(mem_map, KernelMemMap::Local { log_size: 0 }) {
 							KernelMemMap::Chunked { data, .. } => KernelBuffer::Ref(data),
