@@ -19,21 +19,22 @@
 //! The gadget is organized around several key components:
 //!
 //! - **Message Schedule Extension**: Expands the 16-word input block to 64 words using the σ₀ and
-//!   σ₁ functions
+//!   σ₁ functions.
 //! - **Compression Rounds**: 64 rounds of the main compression algorithm using working variables
-//!   a-h and the Σ₀, Σ₁, Ch, and Maj functions
-//! - **State Management**: Tracks the evolution of the 256-bit state through all rounds
+//!   a-h and the Σ₀, Σ₁, Ch, and Maj functions.
+//! - **State Management**: Tracks the evolution of the 256-bit state through all rounds.
 //!
 //! ## Cryptographic Functions
 //!
 //! The implementation includes arithmetic circuits for all SHA-256 primitive functions:
 //!
-//! - **σ₀(x)**: `ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x)` - Used in message schedule
-//! - **σ₁(x)**: `ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x)` - Used in message schedule
-//! - **Σ₀(x)**: `ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x)` - Used in compression
-//! - **Σ₁(x)**: `ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x)` - Used in compression
-//! - **Ch(x,y,z)**: `(x ∧ y) ⊕ (¬x ∧ z)` - Choice function
-//! - **Maj(x,y,z)**: `(x ∧ y) ⊕ (x ∧ z) ⊕ (y ∧ z)` - Majority function
+//! - **σ₀(x)**: `ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x)` - Used in message schedule extension.
+//! - **σ₁(x)**: `ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x)` - Used in message schedule extension.
+//! - **Σ₀(x)**: `ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x)` - Used in compression rounds.
+//! - **Σ₁(x)**: `ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x)` - Used in compression rounds.
+//! - **Ch(x, y, z)**: `(x ∧ y) ⊕ (¬x ∧ z)` - Choice function used in compression rounds.
+//! - **Maj(x, y, z)**: `(x ∧ y) ⊕ (x ∧ z) ⊕ (y ∧ z)` - Majority function used in compression
+//!   rounds.
 //!
 //! ## Usage Example
 //!
@@ -42,8 +43,8 @@
 //! let mut table = cs.add_table("sha256");
 //! let sha256 = Sha256::new(&mut table);
 //!
-//! // The gadget provides columns for state input/output and message schedule
-//! // Populate with actual SHA-256 computation data during proving
+//! // Populate the table with actual SHA-256 computation data during proving
+//! sha256.populate(&mut table_witness_segment, message_blocks)?;
 //! ```
 //!
 //! ## Technical Details
@@ -51,13 +52,18 @@
 //! This implementation uses a bit-packed representation where 32-bit words are stored as
 //! columns of individual bits. This approach:
 //!
-//! - Enables efficient constraint representation of bitwise operations
-//! - Allows for precise tracking of carry propagation in additions
-//! - Supports the circular shift operations required by SHA-256
+//! - Enables efficient constraint representation of bitwise operations.
+//! - Allows for precise tracking of carry propagation in additions.
+//! - Supports the circular shift operations required by SHA-256.
 //!
-//! The gadget follows the style established by other hash function gadgets in this crate,
-//! particularly the Groestl and Keccak implementations, ensuring consistency across the
-//! cryptographic primitives library.
+//! ## Key Components
+//!
+//! - **Message Schedule (`w`)**: A 64-word schedule derived from the input message block.
+//! - **Working Variables (`a` to `h`)**: Eight 32-bit variables used in each compression round.
+//! - **Round Constants (`K`)**: Predefined constants used in each round to ensure cryptographic
+//!   strength.
+//! - **State (`state_in` and `state_out`)**: The 256-bit input and output states for the
+//!   compression function.
 //!
 //! ## References
 //!
@@ -67,6 +73,7 @@
 use std::array;
 
 use anyhow::Result;
+use array_util::ArrayExt;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{Field, PackedExtension, PackedFieldIndexable, packed::set_packed_slice};
 
@@ -167,8 +174,18 @@ pub struct Sha256 {
 	/// The expanded message schedule W₀, W₁, ..., W₆₃ where:
 	/// - W₀ through W₁₅ are the original 16 words of the message block
 	/// - W₁₆ through W₆₃ are computed using the message schedule extension
-	pub w: Col<B1, { 32 * 64 }>,
-	pub w_blocks: [Col<B1, 32>; 64],
+	w: Col<B1, { 32 * 64 }>,
+	sigma0: Sigma0,
+	sigma1: Sigma1,
+	w_blocks: [Col<B1, 32>; 64],
+	w_minus_16: Col<B1, { 32 * 64 }>,
+	w_minus_7: Col<B1, { 32 * 64 }>,
+	sigma0_minus_2: Col<B1, { 32 * 64 }>,
+	sigma1_minus_15: Col<B1, { 32 * 64 }>,
+
+	s0: U32AddStacked<{ 32 * 64 }>,
+	s1: U32AddStacked<{ 32 * 64 }>,
+	s3: U32AddStacked<{ 32 * 64 }>,
 	/// Working variables for all 64 rounds.
 	///
 	/// These represent the 8 working variables (a, b, c, d, e, f, g, h) as they
@@ -176,11 +193,21 @@ pub struct Sha256 {
 	/// as a bit-packed column spanning all rounds.
 	initial_state: [Col<B1, 32>; 8],
 	rounds: [Round; 64],
+
+	final_sums: [U32Add; 8],
+
 	/// Round constants: 64 32-bit words.
 	///
 	/// The cryptographic constants K₀, K₁, ..., K₆₃ used in each round of the
 	/// compression function.
-	k: [Col<B1, 32>; 64],
+	round_constants: [Col<B1, 32>; 64],
+
+	/// Selector for message schedule expansion.
+	///
+	/// This column is used to select the first 48 words of the message schedule
+	/// for the SHA-256 compression function. It constrains the message schedule
+	/// extension operations in the gadget.
+	pub selector: Col<B1, { 32 * 64 }>,
 }
 
 impl Sha256 {
@@ -284,24 +311,12 @@ impl Sha256 {
 			..
 		} = &rounds[63];
 
-		let final_sum_0 = U32Add::new(table, a, initial_state[0], ADD_FLAGS);
-		let final_sum_1 = U32Add::new(table, b, initial_state[1], ADD_FLAGS);
-		let final_sum_2 = U32Add::new(table, c, initial_state[2], ADD_FLAGS);
-		let final_sum_3 = U32Add::new(table, d, initial_state[3], ADD_FLAGS);
-		let final_sum_4 = U32Add::new(table, e, initial_state[4], ADD_FLAGS);
-		let final_sum_5 = U32Add::new(table, f, initial_state[5], ADD_FLAGS);
-		let final_sum_6 = U32Add::new(table, g, initial_state[6], ADD_FLAGS);
-		let final_sum_7 = U32Add::new(table, h, initial_state[7], ADD_FLAGS);
-		let state_out: [Col<B1, 32>; 8] = [
-			final_sum_0.zout,
-			final_sum_1.zout,
-			final_sum_2.zout,
-			final_sum_3.zout,
-			final_sum_4.zout,
-			final_sum_5.zout,
-			final_sum_6.zout,
-			final_sum_7.zout,
-		];
+		let final_state: [Col<B1, 32>; 8] = [a, b, c, d, e, f, g, h];
+
+		let final_sums: [U32Add; 8] =
+			array::from_fn(|i| U32Add::new(table, final_state[i], initial_state[i], ADD_FLAGS));
+
+		let state_out: [Col<B1, 32>; 8] = array::from_fn(|i| final_sums[i].zout);
 
 		Self {
 			state_in,
@@ -310,7 +325,18 @@ impl Sha256 {
 			rounds: rounds.try_into().expect("64 rounds expected"),
 			w_blocks,
 			w,
-			k: round_constants,
+			round_constants,
+			w_minus_16,
+			w_minus_7,
+			sigma0_minus_2,
+			sigma1_minus_15,
+			sigma0,
+			sigma1,
+			s0,
+			s1,
+			s3,
+			selector,
+			final_sums,
 		}
 	}
 
@@ -333,6 +359,78 @@ impl Sha256 {
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
 	{
+		{
+			let mut w = index.get_mut_as::<u32, _, { 32 * 64 }>(self.w)?;
+			let mut w_blocks = self
+				.w_blocks
+				.try_map_ext(|col| index.get_mut_as::<u32, _, 32>(col))?;
+			let mut state_in = self
+				.state_in
+				.try_map_ext(|col| index.get_mut_as::<u32, _, 32>(col))?;
+			let mut w_minus_16: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.w_minus_16)?;
+			let mut w_minus_7: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.w_minus_7)?;
+
+			let mut initial_state = self
+				.initial_state
+				.try_map_ext(|col| index.get_mut_as::<u32, _, 32>(col))?;
+			let mut round_constants = self
+				.round_constants
+				.try_map_ext(|col| index.get_mut_as::<u32, _, 32>(col))?;
+			let mut selector: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.selector)?;
+
+			for (i, message) in message_blocks.into_iter().enumerate() {
+				for j in 0..16 {
+					w[64 * i + j] = message[j];
+					w_blocks[j][i] = message[j];
+					state_in[j][i] = message[j];
+				}
+
+				compute_message_schedule(&mut w[64 * i..64 * (i + 1)]);
+				for j in 0..48 {
+					w_blocks[j + 16][i] = w[64 * i + j + 16];
+					w_minus_16[64 * i + j] = w[64 * i + j + 16];
+					w_minus_7[64 * i + j] = w[64 * i + j + 9];
+					selector[64 * i + j] = 0xFFFFFFFF;
+				}
+
+				for j in 0..64 {
+					round_constants[j][i] = ROUND_CONSTS_K[j];
+				}
+				for j in 0..8 {
+					initial_state[j][i] = INIT[j];
+				}
+			}
+		}
+		{
+			self.sigma0.populate(index)?;
+			self.sigma1.populate(index)?;
+			let sigma0: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.sigma0.out)?;
+			let sigma1: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.sigma1.out)?;
+			let mut sigma0_minus_2: std::cell::RefMut<'_, [u32]> =
+				index.get_mut_as(self.sigma0_minus_2)?;
+			let mut sigma1_minus_15: std::cell::RefMut<'_, [u32]> =
+				index.get_mut_as(self.sigma1_minus_15)?;
+
+			for i in 0..index.size() / 64 {
+				for j in 0..64 {
+					sigma0_minus_2[i * 64 + j] = sigma0[i * 64 + j + 14];
+					sigma1_minus_15[i * 64 + j] = sigma1[i * 64 + j + 1];
+				}
+			}
+		}
+
+		self.s0.populate(index)?;
+		self.s1.populate(index)?;
+		self.s3.populate(index)?;
+
+		for i in 0..64 {
+			self.rounds[i].populate(index)?;
+		}
+
+		for i in 0..8 {
+			self.final_sums[i].populate(index)?;
+		}
+
 		Ok(())
 	}
 }
@@ -405,7 +503,7 @@ impl Round {
 		let maj = table.add_committed(format!("maj[{}]", round + 1));
 
 		table.assert_zero(format!("ch[{}]", round + 1), g + e * (f + g));
-
+		table.assert_zero(format!("maj[{}]", round + 1), maj - (a * (b + c) + b * c));
 		let temp_sum_0 = U32Add::new(table, bigsigma1.out, ch, ADD_FLAGS);
 		let temp_sum_1 = U32Add::new(table, round_constant, message_schedule, ADD_FLAGS);
 		let temp_sum_2 = U32Add::new(table, temp_sum_0.zout, temp_sum_1.zout, ADD_FLAGS);
@@ -469,7 +567,7 @@ impl Round {
 		let maj = table.add_committed("maj[0]");
 
 		table.assert_zero("ch[0]", g + e * (f + g));
-
+		table.assert_zero("maj[0]", maj - (a * (b + c) + b * c));
 		let temp_sum_0 = U32Add::new(table, bigsigma1.out, ch, ADD_FLAGS);
 		let temp_sum_1 = U32Add::new(table, round_constant, message_schedule, ADD_FLAGS);
 		let temp_sum_2 = U32Add::new(table, temp_sum_0.zout, temp_sum_1.zout, ADD_FLAGS);
@@ -847,6 +945,31 @@ impl BigSigma1 {
 	}
 }
 
+/// Computes the SHA-256 message schedule W₀, W₁, ..., W₆₃ for the given index i.
+///
+/// This function extends the first 16 words of the message block into a full
+/// 64-word schedule using the σ₀ and σ₁ functions.
+///
+/// # Arguments
+///
+/// * `w` - The mutable slice containing the message schedule words
+/// * `i` - The current index in the message schedule (0-63)
+pub fn compute_message_schedule(w: &mut [u32]) {
+	for i in 16..64 {
+		let w_i_16 = w[i - 16];
+		let w_i_7 = w[i - 7];
+		let w_i_2 = w[i - 2];
+		let w_i_15 = w[i - 15];
+
+		let sigma0 = w_i_15.rotate_right(7) ^ w_i_15.rotate_right(18) ^ (w_i_15 >> 3);
+		let sigma1 = w_i_2.rotate_right(17) ^ w_i_2.rotate_right(19) ^ (w_i_2 >> 10);
+
+		w[i] = w_i_16
+			.wrapping_add(sigma0)
+			.wrapping_add(w_i_7)
+			.wrapping_add(sigma1);
+	}
+}
 /// Selector for message schedule expansion.
 ///
 /// This constant array is used to select the first 48 words of the message schedule
@@ -864,3 +987,85 @@ pub const SCHEDULE_EXPAND_SELECTOR: [B1; 32 * 64] = {
 	}
 	arr
 };
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::builder::{ConstraintSystem, TableWitnessSegment};
+
+	#[test]
+	fn test_sha256_initialization() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("sha256");
+		let sha256 = Sha256::new(&mut table);
+
+		// Validate that the initial state and round constants are correctly initialized
+		for (i, &init_value) in INIT.iter().enumerate() {
+			let expected_bits = u32_to_b1_bits_le(init_value);
+			assert_eq!(sha256.initial_state[i].value(), expected_bits);
+		}
+
+		for (i, &round_const) in ROUND_CONSTS_K.iter().enumerate() {
+			let expected_bits = u32_to_b1_bits_le(round_const);
+			assert_eq!(sha256.round_constants[i].value(), expected_bits);
+		}
+	}
+
+	#[test]
+	fn test_sha256_message_schedule() {
+		let mut message = [0u32; 64];
+		for i in 0..16 {
+			message[i] = i as u32;
+		}
+
+		compute_message_schedule(&mut message);
+
+		// Validate the computed message schedule
+		for i in 16..64 {
+			let w_i_16 = (i - 16) as u32;
+			let w_i_7 = (i - 7) as u32;
+			let w_i_2 = (i - 2) as u32;
+			let w_i_15 = (i - 15) as u32;
+
+			let sigma0 = w_i_15.rotate_right(7) ^ w_i_15.rotate_right(18) ^ (w_i_15 >> 3);
+			let sigma1 = w_i_2.rotate_right(17) ^ w_i_2.rotate_right(19) ^ (w_i_2 >> 10);
+
+			let expected = w_i_16
+				.wrapping_add(sigma0)
+				.wrapping_add(w_i_7)
+				.wrapping_add(sigma1);
+			assert_eq!(message[i], expected);
+		}
+	}
+
+	#[test]
+	fn test_sha256_full_computation() {
+		let mut cs = ConstraintSystem::new();
+		let mut table = cs.add_table("sha256");
+		let sha256 = Sha256::new(&mut table);
+
+		let mut witness_segment = TableWitnessSegment::new(&mut table);
+		let message_blocks = vec![[0u32; 16]]; // Single block of zeros
+
+		// Populate the witness with the message blocks
+		sha256
+			.populate(&mut witness_segment, message_blocks)
+			.unwrap();
+
+		// Validate the output state
+		let expected_output = [
+			0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+			0x5be0cd19,
+		]; // Expected output for a single block of zeros
+
+		for (i, &expected) in expected_output.iter().enumerate() {
+			let output_bits = witness_segment
+				.get_as::<u32, _, 32>(sha256.state_out[i])
+				.unwrap();
+			let reconstructed = output_bits
+				.iter()
+				.fold(0, |acc, &bit| (acc << 1) | bit as u32);
+			assert_eq!(reconstructed, expected);
+		}
+	}
+}
