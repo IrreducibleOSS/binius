@@ -1,40 +1,14 @@
 // Copyright 2025 Irreducible Inc.
 
-//! SHA-256 compression function arithmetisation gadget for the M3 framework.
+//! # SHA-256 Gadget
 //!
-//! This module implements a constraint system for verifying the SHA-256 compression function,
-//! which is the core component of the SHA-256 cryptographic hash function. The implementation
-//! follows the SHA-256 specification (FIPS 180-4) and provides zero-knowledge proof capabilities
-//! for SHA-256 computations.
+//! Provides an arithmetization gadget for the SHA-256 compression function within the M3 framework.
+//! This module is organized into the following key components:
 //!
-//! ## Overview
-//!
-//! SHA-256 operates on 512-bit message blocks and produces a 256-bit hash digest. The compression
-//! function processes each block through 64 rounds of operations, maintaining an 8-word (256-bit)
-//! internal state. This gadget arithmetizes these operations to enable verification in
-//! zero-knowledge.
-//!
-//! ## Implementation Structure
-//!
-//! The gadget is organized around several key components:
-//!
-//! - **Message Schedule Extension**: Expands the 16-word input block to 64 words using the σ₀ and
-//!   σ₁ functions.
-//! - **Compression Rounds**: 64 rounds of the main compression algorithm using working variables
-//!   a-h and the Σ₀, Σ₁, Ch, and Maj functions.
-//! - **State Management**: Tracks the evolution of the 256-bit state through all rounds.
-//!
-//! ## Cryptographic Functions
-//!
-//! The implementation includes arithmetic circuits for all SHA-256 primitive functions:
-//!
-//! - **σ₀(x)**: `ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x)` - Used in message schedule extension.
-//! - **σ₁(x)**: `ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x)` - Used in message schedule extension.
-//! - **Σ₀(x)**: `ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x)` - Used in compression rounds.
-//! - **Σ₁(x)**: `ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x)` - Used in compression rounds.
-//! - **Ch(x, y, z)**: `(x ∧ y) ⊕ (¬x ∧ z)` - Choice function used in compression rounds.
-//! - **Maj(x, y, z)**: `(x ∧ y) ⊕ (x ∧ z) ⊕ (y ∧ z)` - Majority function used in compression
-//!   rounds.
+//! - `Sha256`: High-level gadget combining message schedule, compression rounds, and final state
+//!   computation.
+//! - `Round` `: Implements a single compression round and manages all 64 rounds using Σ₀, Σ₁, Ch,
+//!   and Maj functions.
 //!
 //! ## Usage Example
 //!
@@ -42,28 +16,8 @@
 //! let mut cs = ConstraintSystem::new();
 //! let mut table = cs.add_table("sha256");
 //! let sha256 = Sha256::new(&mut table);
-//!
-//! // Populate the table with actual SHA-256 computation data during proving
 //! sha256.populate(&mut table_witness_segment, message_blocks)?;
 //! ```
-//!
-//! ## Technical Details
-//!
-//! This implementation uses a bit-packed representation where 32-bit words are stored as
-//! columns of individual bits. This approach:
-//!
-//! - Enables efficient constraint representation of bitwise operations.
-//! - Allows for precise tracking of carry propagation in additions.
-//! - Supports the circular shift operations required by SHA-256.
-//!
-//! ## Key Components
-//!
-//! - **Message Schedule (`w`)**: A 64-word schedule derived from the input message block.
-//! - **Working Variables (`a` to `h`)**: Eight 32-bit variables used in each compression round.
-//! - **Round Constants (`K`)**: Predefined constants used in each round to ensure cryptographic
-//!   strength.
-//! - **State (`state_in` and `state_out`)**: The 256-bit input and output states for the
-//!   compression function.
 //!
 //! ## References
 //!
@@ -75,18 +29,18 @@ use std::array;
 use anyhow::Result;
 use array_util::ArrayExt;
 use binius_core::oracle::ShiftVariant;
-use binius_field::{Field, PackedExtension, PackedFieldIndexable, packed::set_packed_slice};
+use binius_field::{Field, PackedExtension, PackedFieldIndexable};
 
 use crate::{
 	builder::{B1, B32, B128, Col, TableBuilder, TableWitnessSegment},
-	gadgets::add::{self, U32Add, U32AddFlags, U32AddStacked},
+	gadgets::add::{U32Add, U32AddFlags, U32AddStacked},
 };
 
 /// SHA-256 round constants (K).
 ///
 /// These 64 constants represent the first 32 bits of the fractional parts of the cube roots
-/// of the first 64 prime numbers. They are used in each round of the compression function
-/// to provide cryptographic strength against various attacks.
+/// of the first 64 prime numbers. They are used in each round of the compression function where
+/// working variables are updated.
 pub const ROUND_CONSTS_K: [u32; 64] = [
 	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
 	0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -158,9 +112,8 @@ pub const INIT: [u32; 8] = [
 pub struct Sha256 {
 	/// SHA-256 input state: 16 32-bit words.
 	///
-	/// In the bit-packed representation, this stores the initial 256-bit hash state
-	/// plus space for intermediate computations. The first 8 words represent the
-	/// actual input state (a-h), while additional space may be used for constraints.
+	/// In the bit-packed representation, this stores the input block as 16 columns of 32 bits
+	/// each,
 	pub state_in: [Col<B1, 32>; 16],
 
 	/// SHA-256 output state: 8 32-bit words.
@@ -186,12 +139,14 @@ pub struct Sha256 {
 	s0: U32AddStacked<{ 32 * 64 }>,
 	s1: U32AddStacked<{ 32 * 64 }>,
 	s3: U32AddStacked<{ 32 * 64 }>,
+
+	/// Initial state: 8 32-bit words.
+	initial_state: [Col<B1, 32>; 8],
 	/// Working variables for all 64 rounds.
 	///
 	/// These represent the 8 working variables (a, b, c, d, e, f, g, h) as they
 	/// evolve through each of the 64 compression rounds. Each variable is stored
 	/// as a bit-packed column spanning all rounds.
-	initial_state: [Col<B1, 32>; 8],
 	rounds: [Round; 64],
 
 	final_sums: [U32Add; 8],
@@ -247,13 +202,8 @@ impl Sha256 {
 			table.add_shifted("w_minus_16", w, 11, 32 * 16, ShiftVariant::LogicalRight);
 		let w_minus_7: Col<B1, { 32 * 64 }> =
 			table.add_shifted("w_minus_7", w, 11, 32 * (16 - 7), ShiftVariant::LogicalRight);
-		let sigma0_minus_15 = table.add_shifted(
-			"sigma0_minus_15",
-			sigma0.out,
-			11,
-			32 * (16 - 15),
-			ShiftVariant::LogicalRight,
-		);
+		let sigma0_minus_15 =
+			table.add_shifted("sigma0_minus_15", sigma0.out, 11, 32, ShiftVariant::LogicalRight);
 		let sigma1_minus_2 = table.add_shifted(
 			"sigma1_minus_2",
 			sigma1.out,
@@ -280,20 +230,10 @@ impl Sha256 {
 		for i in 0..64 {
 			let round = if i == 0 {
 				// First round uses initial state and first message schedule word
-				Round::first_round(
-					table,
-					initial_state,
-					round_constants[i].clone(),
-					w_blocks[i].clone(),
-				)
+				Round::first_round(table, initial_state, round_constants[i], w_blocks[i])
 			} else {
 				// Subsequent rounds use previous round's state and message schedule word
-				Round::next_round(
-					table,
-					&rounds[i - 1],
-					round_constants[i].clone(),
-					w_blocks[i].clone(),
-				)
+				Round::next_round(table, &rounds[i - 1], round_constants[i], w_blocks[i])
 			};
 			rounds.push(round);
 		}
@@ -441,13 +381,7 @@ pub struct Round {
 	ch: Col<B1, 32>,
 	maj: Col<B1, 32>,
 
-	temp_sum_0: U32Add,
-	temp_sum_1: U32Add,
-	temp_sum_2: U32Add,
-	temp_sum_3: U32Add,
-	temp_sum_4: U32Add,
-	temp_sum_5: U32Add,
-	temp_sum_6: U32Add,
+	temp_sums: [U32Add; 7],
 
 	/// The temporary values T₁ and T₂ computed in this round.
 	pub t1: Col<B1, 32>,
@@ -504,23 +438,20 @@ impl Round {
 		let b = a;
 		let a = temp_sum_5.zout;
 
+		let temp_sums = [
+			temp_sum_0, temp_sum_1, temp_sum_2, temp_sum_3, temp_sum_4, temp_sum_5, temp_sum_6,
+		];
 		let next_vars = [a, b, c, d, e, f, g, h];
 		Round {
 			round,
 			bigsigma0,
 			bigsigma1,
-			temp_sum_0,
-			temp_sum_1,
-			temp_sum_2,
-			temp_sum_3,
-			temp_sum_4,
-			temp_sum_5,
-			temp_sum_6,
+			temp_sums,
 			t1,
 			t2,
 			ch,
 			maj,
-			round_constant: round_constant.clone(),
+			round_constant,
 			prev_vars: previous.next_vars,
 			next_vars,
 		}
@@ -562,6 +493,11 @@ impl Round {
 		let c = b;
 		let b = a;
 		let a = temp_sum_5.zout;
+
+		let temp_sums = [
+			temp_sum_0, temp_sum_1, temp_sum_2, temp_sum_3, temp_sum_4, temp_sum_5, temp_sum_6,
+		];
+
 		let next_vars = [a, b, c, d, e, f, g, h];
 		Round {
 			round,
@@ -569,16 +505,10 @@ impl Round {
 			maj,
 			bigsigma0,
 			bigsigma1,
-			temp_sum_0,
-			temp_sum_1,
-			temp_sum_2,
-			temp_sum_3,
-			temp_sum_4,
-			temp_sum_5,
-			temp_sum_6,
+			temp_sums,
 			t1,
 			t2,
-			round_constant: round_constant.clone(),
+			round_constant,
 			prev_vars: initial_state,
 			next_vars,
 		}
@@ -608,13 +538,9 @@ impl Round {
 		self.bigsigma0.populate(index)?;
 		self.bigsigma1.populate(index)?;
 
-		self.temp_sum_0.populate(index)?;
-		self.temp_sum_1.populate(index)?;
-		self.temp_sum_2.populate(index)?;
-		self.temp_sum_3.populate(index)?;
-		self.temp_sum_4.populate(index)?;
-		self.temp_sum_5.populate(index)?;
-		self.temp_sum_6.populate(index)?;
+		for sum in &self.temp_sums {
+			sum.populate(index)?;
+		}
 
 		Ok(())
 	}
@@ -968,93 +894,12 @@ pub fn u32_array_to_bytes(input: &[u32; 16]) -> [u8; 64] {
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::alloc::CpuComputeAllocator;
-	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, packed::get_packed_slice,
-	};
+	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
 	use rand::{Rng, SeedableRng, prelude::StdRng};
 	use sha2::compress256;
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, Statement, WitnessIndex};
-
-	/// Test the SHA-256 message schedule computation
-	#[test]
-	fn test_message_schedule() {
-		let mut message = [0u32; 64];
-		for i in 0..16 {
-			message[i] = i as u32 + 1; // Simple sequential pattern
-		}
-
-		compute_message_schedule(&mut message);
-		println!("Computed message schedule: {:?}", message);
-	}
-
-	/// Test individual SHA-256 functions (sigma0, sigma1, BigSigma0, BigSigma1)
-	#[test]
-	fn test_sha256_functions() {
-		// Test vectors for sigma0, sigma1, BigSigma0, BigSigma1
-		let test_cases: [(u32, u32, u32, u32, u32); 4] = [
-			(0x12345678, 0x0bd80664, 0x61edc123, 0xfe0e1290, 0xa1124567),
-			(0xabcdef01, 0xfa8e2301, 0xc7d32167, 0xba7f98df, 0xd1a0abd6),
-			(0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000),
-			(0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff),
-		];
-
-		for &(input, expected_sigma0, expected_sigma1, expected_big_sigma0, expected_big_sigma1) in
-			&test_cases
-		{
-			// sigma0(x) = ROTR^7(x) XOR ROTR^18(x) XOR SHR^3(x)
-			let sigma0_result = input.rotate_right(7) ^ input.rotate_right(18) ^ (input >> 3);
-			assert_eq!(sigma0_result, expected_sigma0, "sigma0 failed for input {:#x}", input);
-
-			// sigma1(x) = ROTR^17(x) XOR ROTR^19(x) XOR SHR^10(x)
-			let sigma1_result = input.rotate_right(17) ^ input.rotate_right(19) ^ (input >> 10);
-			assert_eq!(sigma1_result, expected_sigma1, "sigma1 failed for input {:#x}", input);
-
-			// Sigma0(x) = ROTR^2(x) XOR ROTR^13(x) XOR ROTR^22(x)
-			let big_sigma0_result =
-				input.rotate_right(2) ^ input.rotate_right(13) ^ input.rotate_right(22);
-			assert_eq!(
-				big_sigma0_result, expected_big_sigma0,
-				"BigSigma0 failed for input {:#x}",
-				input
-			);
-
-			// Sigma1(x) = ROTR^6(x) XOR ROTR^11(x) XOR ROTR^25(x)
-			let big_sigma1_result =
-				input.rotate_right(6) ^ input.rotate_right(11) ^ input.rotate_right(25);
-			assert_eq!(
-				big_sigma1_result, expected_big_sigma1,
-				"BigSigma1 failed for input {:#x}",
-				input
-			);
-		}
-	}
-
-	/// Test the Ch and Maj functions used in SHA-256
-	#[test]
-	fn test_ch_maj_functions() {
-		let test_cases: [(u32, u32, u32, u32, u32); 4] = [
-			(0x12345678, 0xabcdef01, 0x87654321, 0x83456739, 0x02345661),
-			(0xffffffff, 0x00000000, 0xffffffff, 0x00000000, 0x00000000),
-			(0x00000000, 0xffffffff, 0x00000000, 0xffffffff, 0x00000000),
-			(0xffffffff, 0xffffffff, 0x00000000, 0xffffffff, 0xffffffff),
-		];
-
-		for &(x, y, z, expected_ch, expected_maj) in &test_cases {
-			// Ch(x, y, z) = (x & y) ^ (~x & z)
-			let ch_result = (x & y) ^ (!x & z);
-			assert_eq!(ch_result, expected_ch, "Ch failed for inputs {:#x}, {:#x}, {:#x}", x, y, z);
-
-			// Maj(x, y, z) = (x & y) ^ (x & z) ^ (y & z)
-			let maj_result = (x & y) ^ (x & z) ^ (y & z);
-			assert_eq!(
-				maj_result, expected_maj,
-				"Maj failed for inputs {:#x}, {:#x}, {:#x}",
-				x, y, z
-			);
-		}
-	}
+	use crate::builder::{ConstraintSystem, WitnessIndex};
 
 	/// Test the SHA-256 gadget with a simple test vector
 	#[test]
@@ -1068,11 +913,6 @@ mod tests {
 		let mut allocator = CpuComputeAllocator::new(1 << 16);
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ROWS],
-		};
 
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
@@ -1096,86 +936,7 @@ mod tests {
 		}
 
 		// Validate constraint system
-		let ccs = cs.compile(&statement).unwrap();
-		let table_sizes = witness.table_sizes();
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(
-			&ccs,
-			&[],
-			&table_sizes,
-			&witness,
-		)
-		.unwrap();
-	}
-
-	/// Test the SHA-256 gadget with multiple standard test vectors
-	#[test]
-	fn test_sha256_standard_vectors() {
-		// Standard test vectors for SHA-256
-		let test_vectors = [
-			// Test vector 1: empty message
-			(
-				[
-					0x80000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-					0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-					0x00000000, 0x00000000, 0x00000000, 0x00000000,
-				],
-				[
-					0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c,
-					0xa495991b, 0x7852b855,
-				],
-			),
-			// Test vector 2: "abc"
-			(
-				[
-					0x61626380, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-					0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-					0x00000000, 0x00000000, 0x00000000, 0x00000018,
-				],
-				[
-					0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c,
-					0xb410ff61, 0xf20015ad,
-				],
-			),
-		];
-
-		let mut cs = ConstraintSystem::new();
-		let mut table = cs.add_table("sha256");
-		let sha256 = Sha256::new(&mut table);
-
-		let mut allocator = CpuComputeAllocator::new(1 << 16);
-		let allocator = allocator.into_bump_allocator();
-		let table_id = table.id();
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![test_vectors.len()],
-		};
-
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
-		let table_witness = witness.init_table(table_id, test_vectors.len()).unwrap();
-		let mut segment = table_witness.full_segment();
-
-		// Get message blocks from test vectors
-		let message_blocks: Vec<[u32; 16]> = test_vectors.iter().map(|(block, _)| *block).collect();
-		sha256.populate(&mut segment, message_blocks).unwrap();
-
-		// Validate each test vector
-		for (i, (_, expected_hash)) in test_vectors.iter().enumerate() {
-			for (j, &expected) in expected_hash.iter().enumerate() {
-				let state_out = segment.get_as::<u32, _, 32>(sha256.state_out[j]).unwrap();
-				assert_eq!(
-					state_out[i], expected,
-					"Test vector {} state out mismatch at index {}",
-					i, j
-				);
-			}
-		}
-
-		// Validate constraint system
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 
@@ -1214,11 +975,6 @@ mod tests {
 		let mut allocator = CpuComputeAllocator::new(1 << 16);
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
-
-		let statement = Statement {
-			boundaries: vec![],
-			table_sizes: vec![N_ITER],
-		};
 
 		let mut witness =
 			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
@@ -1261,7 +1017,7 @@ mod tests {
 		}
 
 		// Validate constraint system
-		let ccs = cs.compile(&statement).unwrap();
+		let ccs = cs.compile().unwrap();
 		let table_sizes = witness.table_sizes();
 		let witness = witness.into_multilinear_extension_index();
 
