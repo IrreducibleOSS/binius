@@ -19,12 +19,14 @@ use crate::{
 };
 
 /// A hardware abstraction layer (HAL) for compute operations.
-pub trait ComputeLayer<F: Field>: 'static {
+pub trait ComputeLayer<F: Field> {
 	/// The device memory.
 	type DevMem: ComputeMemory<F>;
 
 	/// The executor that can execute operations on the device.
-	type Exec<'a>: ComputeLayerExecutor<F, DevMem = Self::DevMem>;
+	type Exec<'a>: ComputeLayerExecutor<F, DevMem = Self::DevMem>
+	where
+		Self: 'a;
 
 	/// Copy data from the host to the device.
 	///
