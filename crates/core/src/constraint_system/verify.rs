@@ -173,7 +173,7 @@ where
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
 	let _ =
-		augument_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, &table_sizes)?;
+		augment_flush_po2_step_down(&mut oracles, &mut flushes, &table_size_specs, &table_sizes)?;
 	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 
@@ -382,12 +382,12 @@ fn verify_channels_balance<F: TowerField>(
 }
 
 /// This function will create a special selectors for the flushes, that are defined on tables that
-/// are not of power-of-two size. Those artifical selectors are needed to bridge the gap between
+/// are not of power-of-two size. Those artificial selectors are needed to bridge the gap between
 /// the arbitrary sized tables and the oracles (oracles are always power-of-two sized).
 ///
 /// Takes the vector of `flushes` and creates the corresponding list of oracles for them. If the
 /// witness provided, then it will also fill the witness for those oracles.
-pub fn augument_flush_po2_step_down<F: TowerField>(
+pub fn augment_flush_po2_step_down<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	flushes: &mut [Flush<F>],
 	table_size_specs: &[TableSizeSpec],
