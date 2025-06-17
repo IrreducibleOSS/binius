@@ -34,7 +34,7 @@ use super::{
 };
 use crate::{
 	constraint_system::{
-		Flush, TableSizeSpec,
+		Flush,
 		channel::OracleOrConst,
 		common::{FDomain, FEncode, FExt, FFastExt},
 		exp::{self, reorder_exponents},
@@ -137,44 +137,7 @@ where
 		table_size_specs,
 	} = constraint_system.clone();
 
-	if table_sizes.len() != table_size_specs.len() {
-		return Err(Error::TableSizesLenMismatch {
-			expected: table_size_specs.len(),
-			got: table_sizes.len(),
-		});
-	}
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
-
-	let mut transcript = ProverTranscript::<Challenger_>::new();
-	transcript
-		.observe()
-		.write_slice(constraint_system_digest.as_ref());
-	transcript.observe().write_slice(boundaries);
-	let mut writer = transcript.message();
-	writer.write_slice(table_sizes);
-
+	constraint_system.check_table_sizes(table_sizes)?;
 	let mut oracles = oracles.instantiate(table_sizes)?;
 
 	// Prepare the constraint system for proving:
@@ -203,6 +166,14 @@ where
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
 	reorder_exponents(&mut exponents, &oracles);
+
+	let mut transcript = ProverTranscript::<Challenger_>::new();
+	transcript
+		.observe()
+		.write_slice(constraint_system_digest.as_ref());
+	transcript.observe().write_slice(boundaries);
+	let mut writer = transcript.message();
+	writer.write_slice(table_sizes);
 
 	let witness_span = tracing::info_span!(
 		"[phase] Witness Finalization",

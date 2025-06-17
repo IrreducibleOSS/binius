@@ -20,7 +20,10 @@ use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
 
-use crate::oracle::{ConstraintSet, OracleId, SymbolicMultilinearOracleSet};
+use crate::{
+	constraint_system::error::Error,
+	oracle::{ConstraintSet, OracleId, SymbolicMultilinearOracleSet},
+};
 
 /// Contains the 3 things that place constraints on witness data in Binius
 /// - virtual oracles
@@ -50,6 +53,43 @@ impl<F: TowerField> ConstraintSystem<F> {
 		self.serialize(&mut buf, SerializationMode::CanonicalTower)
 			.expect("the constraint system should be serializable");
 		Hash::digest(&buf)
+	}
+
+	/// Checks whether the table sizes assigned by prover matches the specification of this
+	/// constraint system.
+	pub fn check_table_sizes(&self, table_sizes: &[usize]) -> Result<(), Error> {
+		if table_sizes.len() != self.table_size_specs.len() {
+			return Err(Error::TableSizesLenMismatch {
+				expected: self.table_size_specs.len(),
+				got: table_sizes.len(),
+			});
+		}
+		for (table_id, (&table_size, table_size_spec)) in table_sizes
+			.iter()
+			.zip(self.table_size_specs.iter())
+			.enumerate()
+		{
+			match table_size_spec {
+				TableSizeSpec::PowerOfTwo => {
+					if !table_size.is_power_of_two() {
+						return Err(Error::TableSizePowerOfTwoRequired {
+							table_id,
+							size: table_size,
+						});
+					}
+				}
+				TableSizeSpec::Fixed { log_size } => {
+					if table_size != 1 << log_size {
+						return Err(Error::TableSizeFixedRequired {
+							table_id,
+							size: table_size,
+						});
+					}
+				}
+				TableSizeSpec::Arbitrary => (),
+			}
+		}
+		Ok(())
 	}
 }
 

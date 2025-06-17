@@ -89,33 +89,14 @@ where
 	let table_count = table_size_specs.len();
 	let mut reader = transcript.message();
 	let table_sizes: Vec<usize> = reader.read_vec(table_count)?;
-	assert_eq!(table_sizes.len(), table_count);
 
-	for (table_id, (&table_size, table_size_spec)) in
-		table_sizes.iter().zip(table_size_specs.iter()).enumerate()
-	{
-		match table_size_spec {
-			TableSizeSpec::PowerOfTwo => {
-				if !table_size.is_power_of_two() {
-					return Err(Error::TableSizePowerOfTwoRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Fixed { log_size } => {
-				if table_size != 1 << log_size {
-					return Err(Error::TableSizeFixedRequired {
-						table_id,
-						size: table_size,
-					});
-				}
-			}
-			TableSizeSpec::Arbitrary => (),
-		}
-	}
-
+	constraint_system.check_table_sizes(&table_sizes)?;
 	let mut oracles = oracles.instantiate(&table_sizes)?;
+
+	// Prepare the constraint system for proving:
+	//
+	// - Trim all the zero sized oracles.
+	// - Canonicalize the ordering.
 
 	flushes.retain(|flush| table_sizes[flush.table_id] > 0);
 	flushes.sort_by_key(|flush| flush.channel_id);
@@ -137,6 +118,9 @@ where
 	// Stable sort constraint sets in ascending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| constraint_set.n_vars);
 
+	// GKR exp multiplication
+	reorder_exponents(&mut exponents, &oracles);
+
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
@@ -149,9 +133,6 @@ where
 	// Read polynomial commitment polynomials
 	let mut reader = transcript.message();
 	let commitment = reader.read::<Output<Hash>>()?;
-
-	// GKR exp multiplication
-	reorder_exponents(&mut exponents, &oracles);
 
 	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
