@@ -11,7 +11,6 @@ use binius_hash::{
 };
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
-use rand::thread_rng;
 
 const LOG_ELEMS: usize = 17;
 const LOG_ELEMS_IN_LEAF: usize = 4;
@@ -24,7 +23,7 @@ where
 	C: PseudoCompressionFunction<Output<H::Digest>, 2> + Sync,
 {
 	let merkle_prover = BinaryMerkleTreeProver::<_, H, C>::new(compression);
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let data: Vec<F> = repeat_with(|| Field::random(&mut rng))
 		.take(1 << (LOG_ELEMS + LOG_ELEMS_IN_LEAF))
 		.collect();

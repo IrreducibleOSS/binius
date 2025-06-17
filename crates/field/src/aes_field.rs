@@ -352,7 +352,6 @@ serialize_deserialize_non_canonical!(AESTowerField128b, canonical = BinaryField1
 mod tests {
 	use binius_utils::{SerializationMode, SerializeBytes, bytes::BytesMut};
 	use proptest::{arbitrary::any, proptest};
-	use rand::thread_rng;
 
 	use super::*;
 	use crate::{
@@ -650,7 +649,7 @@ mod tests {
 	#[test]
 	fn test_canonical_serialization() {
 		let mut buffer = BytesMut::new();
-		let mut rng = thread_rng();
+		let mut rng = rand::rng();
 		let aes8 = <AESTowerField8b as Field>::random(&mut rng);
 		let aes16 = <AESTowerField16b as Field>::random(&mut rng);
 		let aes32 = <AESTowerField32b as Field>::random(&mut rng);

@@ -12,7 +12,6 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::Measurement,
 };
-use rand::thread_rng;
 
 const BATCH_SIZE: usize = 32;
 
@@ -21,7 +20,7 @@ fn bench_function<F: Field, M: Measurement, R>(
 	id: &str,
 	func: impl Fn(F, F) -> R,
 ) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let a: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
 	let b: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
 	c.bench_function(id, |bench| {

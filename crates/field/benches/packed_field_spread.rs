@@ -11,7 +11,6 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::thread_rng;
 
 const BATCH_SIZE: usize = 32;
 
@@ -21,7 +20,7 @@ fn benchmark_get_impl<P: PackedField>(
 	id: &str,
 	log_block_len: usize,
 ) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let values = array::from_fn::<_, BATCH_SIZE, _>(|_| P::random(&mut rng));
 
 	group.throughput(Throughput::Elements(P::WIDTH as _));

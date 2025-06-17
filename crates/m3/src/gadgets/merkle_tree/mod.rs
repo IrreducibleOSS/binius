@@ -797,11 +797,11 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		// Create a Merkle tree with 1<<10 leaves.
-		let index = rng.gen_range(0..1 << 10);
+		let index = rng.random_range(0..1 << 10);
 		let leaves = (0..3)
 			.map(|_| {
 				(0..1 << 10)
-					.map(|_| rng.r#gen::<[u8; 32]>())
+					.map(|_| rng.random::<[u8; 32]>())
 					.collect::<Vec<_>>()
 			})
 			.collect::<Vec<_>>();

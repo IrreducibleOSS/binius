@@ -12,7 +12,6 @@ use criterion::{
 	BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
 	measurement::WallTime,
 };
-use rand::thread_rng;
 
 trait BenchTransformationFunc {
 	fn run_bench<F, P>(
@@ -36,7 +35,7 @@ fn bench_helper<P, BT: BenchTransformationFunc>(
 	P: PackedField<Scalar: BinaryField>,
 {
 	let data_len = 1 << (log_n + log_stride_batch - P::LOG_WIDTH);
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let mut data = repeat_with(|| P::random(&mut rng))
 		.take(data_len)
 		.collect::<Vec<_>>();

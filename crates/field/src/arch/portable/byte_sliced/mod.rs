@@ -12,7 +12,7 @@ pub use underlier::ByteSlicedUnderlier;
 #[cfg(test)]
 pub mod tests {
 	use proptest::prelude::*;
-	use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+	use rand::{Rng, SeedableRng, distr::Uniform, rngs::StdRng};
 
 	use super::*;
 	use crate::{
@@ -187,7 +187,7 @@ pub mod tests {
 						let mut rng = StdRng::seed_from_u64(0);
 						for log_block_len in 0..<$name>::LOG_WIDTH {
 							// iterating over all possible block lengths is too slow
-							let distribution = Uniform::from(0..(1 << (<$name>::LOG_WIDTH - log_block_len)));
+							let distribution = Uniform::new(0, (1 << (<$name>::LOG_WIDTH - log_block_len))).expect("Failed to create uniform distribution");
 							let block_index = rng.sample(distribution);
 
 							let bytesliced_result = bytesliced.spread(log_block_len, block_index);

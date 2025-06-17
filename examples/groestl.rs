@@ -22,7 +22,6 @@ use binius_m3::{
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
-use rand::thread_rng;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -102,7 +101,7 @@ fn main() -> Result<()> {
 	let boundaries = vec![];
 	let table_sizes = vec![n_permutations];
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let events = repeat_with(|| array::from_fn::<_, 64, _>(|_| B8::random(&mut rng)))
 		.take(n_permutations)
 		.collect::<Vec<_>>();

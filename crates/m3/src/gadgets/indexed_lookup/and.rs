@@ -319,8 +319,8 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let in_a = rng.r#gen::<u8>();
-			let in_b = rng.r#gen::<u8>();
+			let in_a = rng.random::<u8>();
+			let in_b = rng.random::<u8>();
 			(in_a, in_b)
 		})
 		.take(looker_1_size)
@@ -337,8 +337,8 @@ mod tests {
 
 		let boundary_reads = (0..5)
 			.map(|_| {
-				let in_a = rng.r#gen::<u8>();
-				let in_b = rng.r#gen::<u8>();
+				let in_a = rng.random::<u8>();
+				let in_b = rng.random::<u8>();
 				merge_bitand_vals(in_a, in_b, in_a & in_b)
 			})
 			.collect::<Vec<_>>();

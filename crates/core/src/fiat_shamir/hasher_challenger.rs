@@ -202,7 +202,7 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_hash::groestl::Groestl256;
-	use rand::{RngCore, thread_rng};
+	use rand::RngCore;
 
 	use super::*;
 
@@ -259,7 +259,7 @@ mod tests {
 
 		// first observing
 		let mut observable = [0u8; 1019];
-		thread_rng().fill_bytes(&mut observable);
+		rand::rng().fill_bytes(&mut observable);
 		challenger.observer().put_slice(&observable[..39]);
 		challenger.observer().put_slice(&observable[39..300]);
 		challenger.observer().put_slice(&observable[300..987]);
@@ -277,7 +277,7 @@ mod tests {
 		assert_eq!(first_hash_out[..7], out);
 
 		// second observing
-		thread_rng().fill_bytes(&mut observable);
+		rand::rng().fill_bytes(&mut observable);
 		challenger.observer().put_slice(&observable[..128]);
 		hasher.update([7, 0, 0, 0, 0, 0, 0, 0]);
 

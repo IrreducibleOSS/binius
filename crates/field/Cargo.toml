@@ -21,6 +21,9 @@ transpose.workspace = true
 tracing.workspace = true
 trait-set.workspace = true
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+
 [dev-dependencies]
 criterion.workspace = true
 itertools.workspace = true

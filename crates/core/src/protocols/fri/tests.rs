@@ -42,10 +42,10 @@ proptest! {
 fn test_help_fri_compatible_ntt_domains(log_dim: usize, arity: usize) {
 	let ntt = SingleThreadedNTT::<BinaryField32b>::new(32).unwrap();
 
-	let msg = repeat_with(|| BinaryField32b::random(&mut thread_rng()))
+	let msg = repeat_with(|| BinaryField32b::random(&mut rand::rng()))
 		.take(1 << (log_dim + arity))
 		.collect::<Vec<_>>();
-	let challenges = repeat_with(|| BinaryField32b::random(&mut thread_rng()))
+	let challenges = repeat_with(|| BinaryField32b::random(&mut rand::rng()))
 		.take(arity)
 		.collect::<Vec<_>>();
 

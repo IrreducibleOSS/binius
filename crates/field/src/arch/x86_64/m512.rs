@@ -380,7 +380,7 @@ impl ConditionallySelectable for M512 {
 
 impl Random for M512 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: [u128; 4] = rng.r#gen();
+		let val: [u128; 4] = rng.random();
 		val.into()
 	}
 }
@@ -1748,7 +1748,7 @@ mod tests {
 
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let original_value = M512::from(core::array::from_fn(|_| rng.r#gen::<u128>()));
+		let original_value = M512::from(core::array::from_fn(|_| rng.random::<u128>()));
 
 		let mut buf = BytesMut::new();
 		original_value.serialize(&mut buf, mode).unwrap();

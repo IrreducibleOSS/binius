@@ -20,4 +20,4 @@ thiserror.workspace = true
 assert_matches.workspace = true
 binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
 binius_core = { path = "../core", default-features = false }
-rand = { workspace = true, features = ["std"] }
+rand.workspace = true
