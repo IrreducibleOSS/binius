@@ -414,13 +414,9 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<
 			>>::required_device_memory(&claim, false)
 	);
 
-	let eq_ind_partial_evals = eq_ind_partial_eval(
-		hal,
-		&dev_alloc,
-		&host_alloc,
-		&eq_ind_challenges[..n_vars.saturating_sub(1)],
-	)
-	.unwrap();
+	let eq_ind_partial_evals =
+		eq_ind_partial_eval(hal, &dev_alloc, &eq_ind_challenges[..n_vars.saturating_sub(1)])
+			.unwrap();
 
 	let prover = BivariateMLEcheckProver::new(
 		hal,

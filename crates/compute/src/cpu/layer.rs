@@ -74,6 +74,15 @@ impl<F: TowerTop> ComputeLayer<F> for CpuLayer<F> {
 	) -> Result<<Self::Exec<'_> as ComputeLayerExecutor<F>>::ExprEval, Error> {
 		Ok(expr.clone())
 	}
+
+	fn fill(
+		&self,
+		slice: &mut <Self::DevMem as ComputeMemory<F>>::FSliceMut<'_>,
+		value: F,
+	) -> Result<(), Error> {
+		slice.fill(value);
+		Ok(())
+	}
 }
 
 #[derive(Debug)]

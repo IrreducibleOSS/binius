@@ -170,6 +170,22 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 	{
 		f(&mut FastCpuExecutor::<'a, T, P>::new(&self.kernel_buffers))
 	}
+
+	fn fill(
+		&self,
+		slice: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
+		value: T::B128,
+	) -> Result<(), Error> {
+		match slice {
+			PackedMemorySliceMut::Slice(items) => {
+				items.fill(P::broadcast(value));
+			}
+			PackedMemorySliceMut::SingleElement { owned, .. } => {
+				owned.fill(value);
+			}
+		};
+		Ok(())
+	}
 }
 
 pub struct FastCpuExecutor<'a, T: TowerFamily, P: PackedTop<T>> {
