@@ -202,8 +202,9 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 			usize,
 			Vec<KernelBuffer<'b, T::B128, PackedMemory<P>>>,
 		) -> Result<R, Error>,
+		reduce_op: impl Sync + Fn(R, R) -> R,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, PackedMemory<P>>>,
-	) -> Result<Vec<R>, Error> {
+	) -> Result<Option<R>, Error> {
 		let log_chunks_range = KernelMemMap::log_chunks_range(&mem_maps)
 			.ok_or_else(|| Error::InputValidation("no chunks range found".to_string()))?;
 
@@ -275,7 +276,8 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> FastCpuExecutor<'a, T, P> {
 
 				map(&mut FastKernelExecutor::default(), log_chunks, kernel_data)
 			})
-			.collect::<Result<Vec<_>, Error>>()
+			.reduce_with(|lhs, rhs| Ok(reduce_op(lhs?, rhs?)))
+			.transpose()
 	}
 }
 
@@ -336,20 +338,19 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 		) -> Result<Vec<T::B128>, Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<Vec<Self::OpValue>, Error> {
-		let results = self.process_kernels_chunks(map, mem_maps)?;
-
-		Ok(results
-			.into_iter()
-			.reduce(|out1, out2| {
-				let mut out1 = out1;
+		self.process_kernels_chunks(
+			map,
+			|mut out1, out2| {
 				let mut out2_iter = out2.into_iter();
 				for (out1_i, out2_i) in std::iter::zip(&mut out1, &mut out2_iter) {
 					*out1_i += out2_i;
 				}
 				out1.extend(out2_iter);
 				out1
-			})
-			.expect("range is not empty"))
+			},
+			mem_maps,
+		)
+		.map(|opt| opt.unwrap_or_default())
 	}
 
 	fn map_kernels(
@@ -362,9 +363,8 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 		) -> Result<(), Error>,
 		mem_maps: Vec<KernelMemMap<'_, T::B128, Self::DevMem>>,
 	) -> Result<(), Error> {
-		self.process_kernels_chunks(map, mem_maps)?;
-
-		Ok(())
+		self.process_kernels_chunks(map, |_, _| {}, mem_maps)
+			.map(|_| ())
 	}
 
 	fn fold_left(
