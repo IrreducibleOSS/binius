@@ -31,7 +31,10 @@ mod prove;
 mod tests;
 mod verify;
 
-pub use common::{FRIParams, TerminateCodeword, calculate_n_test_queries, estimate_optimal_arity};
+pub use common::{
+	FRIParams, FRISoundnessParams, TerminateCodeword, calculate_n_test_queries,
+	estimate_optimal_arity,
+};
 pub use error::*;
 pub use prove::*;
 pub use verify::*;

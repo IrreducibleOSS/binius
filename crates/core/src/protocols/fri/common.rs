@@ -8,9 +8,49 @@ use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use getset::{CopyGetters, Getters};
 
 use crate::{
-	merkle_tree::MerkleTreeScheme, protocols::fri::Error,
+	merkle_tree::MerkleTreeScheme, piop::CommitMeta, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
+
+/// η in Conjecture 8.4 of the Proximity Gaps [BCIKS21]
+///
+/// [BCIKS21]: https://eprint.iacr.org/2020/654.pdf
+pub const FRI_CONJECTURE_ETA: f64 = 0.005;
+
+/// Parameters to finetune security of the FRI protocol.
+pub struct FRISoundnessParams {
+	/// The target number of bits of security.
+	pub security_bits: usize,
+	/// The logarithm to the base 2 of the inverse of the RS rate.
+	///
+	/// log2(1/ρ)
+	pub log_inv_rate: usize,
+	/// Boolean flag, whether or not to assume the conjecture 8.4 in [paper].
+	///
+	/// [paper]: https://eprint.iacr.org/2020/654
+	pub fri_conjecture: bool,
+}
+
+impl FRISoundnessParams {
+	/// Construct FRI soundness parameters based on proven bounds, i.e. not assuming the FRI
+	/// conjecture.
+	pub fn new(security_bits: usize, log_inv_rate: usize) -> Self {
+		Self {
+			security_bits,
+			log_inv_rate,
+			fri_conjecture: false,
+		}
+	}
+
+	/// Construct FRI soundness parameters assuming the FRI conjecture.
+	pub fn new_with_conjecture(security_bits: usize, log_inv_rate: usize) -> Self {
+		Self {
+			security_bits,
+			log_inv_rate,
+			fri_conjecture: true,
+		}
+	}
+}
 
 /// Parameters for an FRI interleaved code proximity protocol.
 #[derive(Debug, Getters, CopyGetters)]
@@ -61,28 +101,38 @@ where
 	///
 	/// ## Arguments
 	///
-	/// * `log_msg_len` - the binary logarithm of the length of the message to commit.
-	/// * `security_bits` - the target security level in bits.
-	/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
+	/// * `commit_meta` - the metadata about the committed batch of multilinears.
+	/// * `soundness_params` - FRI soundness parameters.
 	/// * `arity` - the folding arity.
 	pub fn choose_with_constant_fold_arity(
 		ntt: &impl AdditiveNTT<FA>,
-		log_msg_len: usize,
-		security_bits: usize,
-		log_inv_rate: usize,
+		commit_meta: &CommitMeta,
+		soundness_params: &FRISoundnessParams,
 		arity: usize,
 	) -> Result<Self, Error> {
 		assert!(arity > 0);
 
+		// The binary logarithm of the length of the message to commit.
+		let log_msg_len = commit_meta.total_vars();
+		// The total number of polynomials being committed in a single batch.
+		let total_multilins = commit_meta.total_multilins();
+
 		let log_dim = log_msg_len.saturating_sub(arity);
 		let log_batch_size = log_msg_len.min(arity);
-		let rs_code = ReedSolomonCode::with_ntt_subspace(ntt, log_dim, log_inv_rate)?;
-		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+		let rs_code =
+			ReedSolomonCode::with_ntt_subspace(ntt, log_dim, soundness_params.log_inv_rate)?;
+		let n_test_queries = calculate_n_test_queries::<F, _>(
+			soundness_params.security_bits,
+			&rs_code,
+			soundness_params.fri_conjecture,
+			total_multilins,
+		)?;
 
 		let cap_height = log2_ceil_usize(n_test_queries);
 		let fold_arities = std::iter::repeat_n(
 			arity,
-			log_msg_len.saturating_sub(cap_height.saturating_sub(log_inv_rate)) / arity,
+			log_msg_len.saturating_sub(cap_height.saturating_sub(soundness_params.log_inv_rate))
+				/ arity,
 		)
 		.collect::<Vec<_>>();
 		// here is the down-to-earth explanation of what we're doing: we want the terminal
@@ -194,11 +244,18 @@ pub type TerminateCodeword<F> = Vec<F>;
 
 /// Calculates the number of test queries required to achieve a target security level.
 ///
+/// - `fri_conjecture` boolean denotes whether or not to assume the conjecture 8.4 in [BCIKS21].
+/// - `total_multilins` denotes the number of polynomials being batched together during commit.
+///
 /// Throws [`Error::ParameterError`] if the security level is unattainable given the code
 /// parameters.
+///
+/// [BCIKS21]: https://eprint.iacr.org/2020/654.pdf
 pub fn calculate_n_test_queries<F, FEncode>(
 	security_bits: usize,
 	code: &ReedSolomonCode<FEncode>,
+	fri_conjecture: bool,
+	total_multilins: usize,
 ) -> Result<usize, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
@@ -209,7 +266,11 @@ where
 	// 2 ⋅ ℓ' / |T_{τ}|
 	let folding_err = code.len() as f64 / field_size;
 	// 2^{ℓ' + R} / |T_{τ}|
-	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
+	let per_query_err = if fri_conjecture {
+		conjectured_per_query_err(code, field_size, total_multilins)
+	} else {
+		0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)))
+	};
 	let allowed_query_err = 2.0_f64.powi(-(security_bits as i32)) - sumcheck_err - folding_err;
 	if allowed_query_err <= 0.0 {
 		return Err(Error::ParameterError);
@@ -251,6 +312,28 @@ pub fn estimate_optimal_arity(
 		.unwrap_or(1)
 }
 
+/// Calculates the per-query error ϵ assuming the conjecture 8.4 in [BCIKS21].
+///
+/// ϵ <= (1/(η.ρ)^(c1)) . (N.n)^(c2) . (1/|F|)
+///
+/// - We assume c1 = c2 = 1, as used in ethSTARK and Plonky2.
+/// - η is a tunable parameter, currently set by constant [`FRI_CONJECTURE_ETA`].
+/// - n is the length of the Reed-Solomon Code.
+/// - N is the number of polynomials being batched together during commit.
+/// - |F| is the size of the extension field.
+///
+/// [BCIKS21]: https://eprint.iacr.org/2020/654.pdf
+fn conjectured_per_query_err<FEncode: BinaryField>(
+	code: &ReedSolomonCode<FEncode>,
+	field_size: f64,
+	batch_size: usize,
+) -> f64 {
+	let rho = 2.0f64.powi(-(code.log_inv_rate() as i32));
+	(1.0f64 / (FRI_CONJECTURE_ETA * rho))
+		* ((batch_size * code.len()) as f64)
+		* (1.0f64 / field_size)
+}
+
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
@@ -262,15 +345,23 @@ mod tests {
 	fn test_calculate_n_test_queries() {
 		let security_bits = 96;
 		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
-		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
-				.unwrap();
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			false,
+			1,
+		)
+		.unwrap();
 		assert_eq!(n_test_queries, 232);
 
 		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
-		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
-				.unwrap();
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			false,
+			1,
+		)
+		.unwrap();
 		assert_eq!(n_test_queries, 143);
 	}
 
@@ -279,7 +370,7 @@ mod tests {
 		let security_bits = 128;
 		let rs_code = ReedSolomonCode::<BinaryField32b>::new(28, 1).unwrap();
 		assert_matches!(
-			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code),
+			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code, false, 1),
 			Err(Error::ParameterError)
 		);
 	}
