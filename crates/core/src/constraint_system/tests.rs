@@ -39,15 +39,15 @@ fn test_make_masked_flush_witnesses_handles_small_n_vars() {
 	// 	.update_multilin_poly(vec![(selector_id, selector.clone()), (poly_id, poly.clone())])
 	// 	.unwrap();
 
-	let flush = Flush {
-		table_id: 0,
-		log_values_per_row: 0,
-		oracles: vec![OracleOrConst::<F>::Oracle(poly_id)],
-		channel_id: 0,
-		direction: FlushDirection::Push,
-		selectors: vec![selector_id],
-		multiplicity: 1,
-	};
+	// let flush = Flush {
+	// 	table_id: 0,
+	// 	log_values_per_row: 0,
+	// 	oracles: vec![OracleOrConst::<F>::Oracle(poly_id)],
+	// 	channel_id: 0,
+	// 	direction: FlushDirection::Push,
+	// 	selectors: vec![selector_id],
+	// 	multiplicity: 1,
+	// };
 
 	// make_masked_flush_witnesses::<OptimalUnderlier256b, CanonicalTowerFamily>(
 	// 	&oracles,

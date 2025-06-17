@@ -22,7 +22,7 @@ use binius_math::{
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::SingleThreadedNTT;
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
-use bytemuck::zeroed_vec;
+use bytemuck::{Pod, zeroed_vec};
 use digest::{FixedOutputReset, Output, core_api::BlockSizeUser};
 use itertools::chain;
 use tracing::instrument;
@@ -122,6 +122,12 @@ where
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
 	HostAllocatorType: ComputeAllocator<Tower::B128, CpuMemory>,
 	DeviceAllocatorType: ComputeAllocator<Tower::B128, Hal::DevMem>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod>
+		+ PackScalar<AESTowerField8b>
+		+ PackScalar<AESTowerField128b, Packed: Pod>,
+	u8: NumCast<U>,
+	PackedType<U, B8>: PackedTransformationFactory<PackedType<U, AESTowerField8b>>,
+	AESTowerField128b: From<Tower::B128>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -1031,7 +1037,7 @@ where
 				&mut evals[0..(1 << poly.n_vars().saturating_sub(log_width))],
 			)?;
 
-			Ok((poly.n_vars(), Tower::transform_128b_to_bytesliced(evals.clone())))
+			Ok((poly.n_vars(), Tower::transform_128b_to_bytesliced(&evals)))
 		})
 		.collect::<Result<Vec<_>, _>>()
 }
@@ -1168,4 +1174,38 @@ where
 		linear_claims.into_iter()
 	)
 	.collect::<Vec<_>>())
+}
+
+#[allow(clippy::type_complexity)]
+pub fn convert_1b_witnesses_to_byte_sliced<'a, U, Tower>(
+	witness: &MultilinearExtensionIndex<'a, PackedType<U, FExt<Tower>>>,
+	ids: &[OracleId],
+) -> Result<
+	Vec<MultilinearWitness<'a, PackedType<ByteSlicedUnderlier<U, 16>, AESTowerField128b>>>,
+	Error,
+>
+where
+	U: ProverTowerUnderlier<Tower>,
+	Tower: ProverTowerFamily,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, Tower::B1>>,
+	ByteSlicedUnderlier<U, 16>: PackScalar<B1, Packed: Pod> + PackScalar<AESTowerField128b>,
+	u8: NumCast<U>,
+{
+	ids.iter()
+		.map(|&id| {
+			let exp_witness = witness.get_multilin_poly(id)?;
+
+			let packed_evals = exp_witness
+				.packed_evals()
+				.expect("poly contain packed_evals");
+
+			let packed_evals = PackedType::<U, Tower::B128>::cast_bases(packed_evals);
+
+			let byte_sliced = Tower::transform_1b_to_bytesliced(packed_evals);
+
+			MultilinearExtension::new(exp_witness.n_vars(), byte_sliced)
+				.map(|mle| mle.specialize_arc_dyn())
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, _>>()
 }
