@@ -84,10 +84,10 @@ fn main() -> Result<()> {
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
 	let n_blocks = args.n_blocks as usize;
-	println!("Verifying {n_blocks} Keccakf permutations");
+	println!("Verifying {n_blocks} SHA256 permutations");
 
 	let mut allocator = CpuComputeAllocator::new(
-		1 << (11 + log2_ceil_usize(n_blocks) - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
+		1 << (12 + log2_ceil_usize(n_blocks) - PackedType::<OptimalUnderlier, B128>::LOG_WIDTH),
 	);
 	let allocator = allocator.into_bump_allocator();
 	let mut cs = ConstraintSystem::new();
