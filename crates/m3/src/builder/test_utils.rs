@@ -34,15 +34,14 @@ where
 	P::Scalar: TowerField,
 {
 	table_id: TableId,
-	fill: Box<
-		dyn for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a,
-	>,
+	fill:
+		Box<dyn for<'b> Fn(&'b [Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a>,
 }
 
 impl<'a, P: PackedField<Scalar: TowerField>, Event> ClosureFiller<'a, P, Event> {
 	pub fn new(
 		table_id: TableId,
-		fill: impl for<'b> Fn(&'b [&'b Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a,
+		fill: impl for<'b> Fn(&'b [Event], &'b mut TableWitnessSegment<P>) -> Result<()> + Sync + 'a,
 	) -> Self {
 		Self {
 			table_id,
@@ -60,12 +59,8 @@ impl<P: PackedField<Scalar: TowerField>, Event: Clone> TableFiller<P>
 		self.table_id
 	}
 
-	fn fill<'b>(
-		&'b self,
-		rows: impl Iterator<Item = &'b Self::Event> + Clone,
-		witness: &'b mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		(*self.fill)(&rows.collect::<Vec<_>>(), witness)
+	fn fill(&self, rows: &[Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
+		(*self.fill)(rows, witness)
 	}
 }
 

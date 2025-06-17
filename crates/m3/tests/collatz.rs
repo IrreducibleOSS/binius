@@ -167,16 +167,16 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill<'a>(
-			&'a self,
-			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<P>,
+		fn fill(
+			&self,
+			rows: &[Self::Event],
+			witness: &mut TableWitnessSegment<P>,
 		) -> Result<(), anyhow::Error> {
 			let mut even = witness.get_mut_as(self.even)?;
 			let mut even_lsb = witness.get_mut(self.even_lsb)?;
 			let mut half = witness.get_mut_as(self.half)?;
 
-			for (i, event) in rows.enumerate() {
+			for (i, event) in rows.iter().enumerate() {
 				even[i] = event.val;
 				half[i] = event.val >> 1;
 			}
@@ -260,10 +260,10 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill<'a>(
+		fn fill(
 			&self,
-			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<P>,
+			rows: &[Self::Event],
+			witness: &mut TableWitnessSegment<P>,
 		) -> Result<(), anyhow::Error> {
 			{
 				let mut odd = witness.get_mut_as(self.odd)?;
@@ -271,7 +271,7 @@ mod arithmetization {
 				let mut double = witness.get_mut_as(self.double)?;
 				let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
-				for (i, event) in rows.enumerate() {
+				for (i, event) in rows.iter().enumerate() {
 					odd[i] = event.val;
 					double[i] = event.val << 1;
 					carry_bit[i] = 1u32;

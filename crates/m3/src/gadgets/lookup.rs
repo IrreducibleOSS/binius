@@ -186,7 +186,7 @@ mod tests {
 				&ClosureFiller::new(looker_1_id, |inputs_1, witness| {
 					let mut looker_1_vals = witness.get_scalars_mut(looker_1_vals)?;
 					for (dst, src) in iter::zip(&mut *looker_1_vals, inputs_1) {
-						*dst = **src;
+						*dst = *src;
 					}
 					Ok(())
 				}),
@@ -199,7 +199,7 @@ mod tests {
 				&ClosureFiller::new(looker_2_id, |inputs_2, witness| {
 					let mut looker_2_vals = witness.get_scalars_mut(looker_2_vals)?;
 					for (dst, src) in iter::zip(&mut *looker_2_vals, inputs_2) {
-						*dst = **src;
+						*dst = *src;
 					}
 					Ok(())
 				}),

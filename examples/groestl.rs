@@ -66,12 +66,8 @@ where
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		self.permutation.populate_state_in(witness, rows)?;
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
+		self.permutation.populate_state_in(witness, rows.iter())?;
 		self.permutation.populate(witness)?;
 		Ok(())
 	}

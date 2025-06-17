@@ -77,11 +77,7 @@ where
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessSegment<P>,
-	) -> Result<()> {
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
 		self.keccakf.populate_state_in(witness, rows)?;
 		self.keccakf.populate(witness)?;
 		Ok(())
