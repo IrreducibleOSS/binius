@@ -288,6 +288,7 @@ where
 
 	prove_interleaved_fri_sumcheck(
 		hal,
+		host_alloc,
 		dev_alloc,
 		commit_meta.total_vars(),
 		fri_params,
@@ -305,6 +306,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn prove_interleaved_fri_sumcheck<Hal, F, FEncode, P, NTT, MTScheme, MTProver, Challenger_>(
 	hal: &Hal,
+	host_alloc: &impl ComputeAllocator<F, CpuMemory>,
 	dev_alloc: &impl ComputeAllocator<F, Hal::DevMem>,
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
@@ -381,7 +383,7 @@ where
 			?dimensions_data,
 		)
 		.entered();
-		match fri_prover.execute_fold_round(dev_alloc, challenge)? {
+		match fri_prover.execute_fold_round(host_alloc, dev_alloc, challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
 				transcript.message().write(&round_commitment);
@@ -391,7 +393,7 @@ where
 	}
 
 	sumcheck_batch_prover.finish(&mut transcript.message())?;
-	fri_prover.finish_proof(transcript)?;
+	fri_prover.finish_proof(transcript, host_alloc)?;
 	Ok(())
 }
 

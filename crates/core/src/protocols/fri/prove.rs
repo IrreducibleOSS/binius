@@ -2,6 +2,7 @@
 use binius_compute::{
 	ComputeLayerExecutor,
 	alloc::ComputeAllocator,
+	cpu::CpuMemory,
 	layer::ComputeLayer,
 	memory::{ComputeMemory, SizedSlice},
 };
@@ -209,7 +210,7 @@ where
 	MerkleProver: MerkleTreeProver<F>,
 {
 	/// The folded codeword on the host
-	pub host_codeword: Vec<F>,
+	pub host_codeword: &'b [F],
 	/// The folded codeword on the device
 	pub device_codeword: <Hal::DevMem as ComputeMemory<F>>::FSliceMut<'b>,
 	/// The Merkle tree commitment
@@ -308,7 +309,8 @@ where
 	/// intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
-		allocator: &'b impl ComputeAllocator<F, Hal::DevMem>,
+		host_alloc: &'b impl ComputeAllocator<F, CpuMemory>,
+		dev_alloc: &'b impl ComputeAllocator<F, Hal::DevMem>,
 		challenge: F,
 	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
@@ -343,7 +345,7 @@ where
 			Some(prev_round) => {
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
-				let mut folded_codeword = allocator.alloc(
+				let mut folded_codeword = dev_alloc.alloc(
 					prev_round.device_codeword.len() / (1 << self.unprocessed_challenges.len()),
 				)?;
 
@@ -364,13 +366,19 @@ where
 			}
 			None => {
 				let codeword_len = len_packed_slice(self.codeword);
-				let mut original_codeword = allocator.alloc(codeword_len)?;
+				let mut original_codeword = dev_alloc.alloc(codeword_len)?;
 				unpack_if_possible(
 					self.codeword,
-					|scalars| self.cl.copy_h2d(scalars, &mut original_codeword),
+					|scalars| {
+						// TODO: this extra copy possibly can be eliminated at least for the CPU
+						// layers.
+						let host_buffer = host_alloc.alloc(codeword_len)?;
+						host_buffer.copy_from_slice(scalars);
+						self.cl.copy_h2d(scalars, &mut original_codeword)
+					},
 					|_packed| unimplemented!("non-dense packed fields not supported"),
 				)?;
-				let mut folded_codeword = allocator.alloc(
+				let mut folded_codeword = dev_alloc.alloc(
 					1 << (self.params.rs_code().log_len()
 						- (self.unprocessed_challenges.len() - self.params.log_batch_size())),
 				)?;
@@ -393,9 +401,9 @@ where
 		drop(fri_fold_span);
 		self.unprocessed_challenges.clear();
 
-		let mut folded_codeword_host = zeroed_vec(folded_codeword.len());
+		let folded_codeword_host = host_alloc.alloc(folded_codeword.len())?;
 		self.cl
-			.copy_d2h(Hal::DevMem::as_const(&folded_codeword), &mut folded_codeword_host)?;
+			.copy_d2h(Hal::DevMem::as_const(&folded_codeword), folded_codeword_host)?;
 
 		// take the first arity as coset_log_len, or use inv_rate if arities are empty
 		let coset_size = self
@@ -415,7 +423,7 @@ where
 		.entered();
 		let (commitment, committed) = self
 			.merkle_prover
-			.commit(&folded_codeword_host, coset_size)
+			.commit(folded_codeword_host, coset_size)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 		drop(merkle_tree_span);
 
@@ -443,16 +451,38 @@ where
 	#[allow(clippy::type_complexity)]
 	pub fn finalize(
 		mut self,
-	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, P, MerkleProver, VCS>), Error> {
+		host_alloc: &'b impl ComputeAllocator<F, CpuMemory>,
+	) -> Result<
+		(TerminateCodeword<'b, F>, FRIQueryProver<'a, 'b, F, FA, P, MerkleProver, VCS>),
+		Error,
+	> {
 		if self.curr_round != self.n_rounds() {
 			bail!(Error::EarlyProverFinish);
 		}
 
-		let terminate_codeword = self
+		let terminate_codeword: &'b [F] = self
 			.round_committed
 			.last()
-			.map(|round| round.host_codeword.clone())
-			.unwrap_or_else(|| PackedField::iter_slice(self.codeword).collect());
+			.map(|round| -> Result<&[F], Error> { Ok(round.host_codeword) })
+			.unwrap_or_else(|| {
+				unpack_if_possible(
+					self.codeword,
+					|scalars| {
+						let buffer = host_alloc.alloc(len_packed_slice(self.codeword))?;
+						buffer.copy_from_slice(scalars);
+
+						Ok(&buffer[..])
+					},
+					|packed| {
+						let buffer = host_alloc.alloc(len_packed_slice(self.codeword))?;
+						for (src, dst) in PackedField::iter_slice(packed).zip(buffer.iter_mut()) {
+							*dst = src;
+						}
+
+						Ok(buffer)
+					},
+				)
+			})?;
 
 		self.unprocessed_challenges.clear();
 
@@ -483,17 +513,18 @@ where
 	pub fn finish_proof<Challenger_>(
 		self,
 		transcript: &mut ProverTranscript<Challenger_>,
+		host_alloc: &'b impl ComputeAllocator<F, CpuMemory>,
 	) -> Result<(), Error>
 	where
 		Challenger_: Challenger,
 	{
-		let (terminate_codeword, query_prover) = self.finalize()?;
+		let (terminate_codeword, query_prover) = self.finalize(host_alloc)?;
 		let mut advice = transcript.decommitment();
-		advice.write_scalar_slice(&terminate_codeword);
+		advice.write_scalar_slice(terminate_codeword);
 
 		let layers = query_prover.vcs_optimal_layers()?;
-		for layer in layers {
-			advice.write_slice(&layer);
+		for layer in &layers {
+			advice.write_slice(layer);
 		}
 
 		let params = query_prover.params;
@@ -508,7 +539,7 @@ where
 }
 
 /// A prover for the FRI query phase.
-pub struct FRIQueryProver<'a, F, FA, P, MerkleProver, VCS>
+pub struct FRIQueryProver<'a, 'b, F, FA, P, MerkleProver, VCS>
 where
 	F: BinaryField,
 	FA: BinaryField,
@@ -519,11 +550,11 @@ where
 	params: &'a FRIParams<F, FA>,
 	codeword: &'a [P],
 	codeword_committed: &'a MerkleProver::Committed,
-	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
+	round_committed: Vec<(&'b [F], MerkleProver::Committed)>,
 	merkle_prover: &'a MerkleProver,
 }
 
-impl<F, FA, P, MerkleProver, VCS> FRIQueryProver<'_, F, FA, P, MerkleProver, VCS>
+impl<F, FA, P, MerkleProver, VCS> FRIQueryProver<'_, '_, F, FA, P, MerkleProver, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,

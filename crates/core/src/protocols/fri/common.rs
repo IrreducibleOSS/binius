@@ -190,7 +190,7 @@ where
 }
 
 /// The type of the termination round codeword in the FRI protocol.
-pub type TerminateCodeword<F> = Vec<F>;
+pub type TerminateCodeword<'a, F> = &'a [F];
 
 /// Calculates the number of test queries required to achieve a target security level.
 ///
