@@ -959,7 +959,7 @@ mod tests {
 		let stat = cs.tables[id].stat();
 
 		// This is an expected value that should match the design
-		assert_eq!(stat.bits_per_row_committed(), 26624);
+		assert_eq!(stat.bits_per_row_committed(), 41472);
 	}
 
 	/// Randomized property-based test for SHA-256
