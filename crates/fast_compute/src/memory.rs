@@ -286,10 +286,6 @@ impl<P: PackedField> SmallOwnedChunk<P> {
 	fn iter_scalars(&self) -> impl Iterator<Item = P::Scalar> {
 		self.data.iter().take(self.len)
 	}
-
-	pub fn fill(&mut self, value: P::Scalar) {
-		self.data = P::broadcast(value)
-	}
 }
 
 /// Memory slice that can be either a borrowed slice or an owned small chunk (with length <
