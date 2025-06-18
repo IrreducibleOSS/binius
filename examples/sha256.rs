@@ -99,8 +99,8 @@ fn main() -> Result<()> {
 	let mut rng = rand::rng();
 	let events = repeat_with(|| {
 		let mut block = [0u32; 16];
-		for j in 0..16 {
-			block[j] = rng.next_u32();
+		for word in &mut block {
+			*word = rng.next_u32();
 		}
 		block
 	})
