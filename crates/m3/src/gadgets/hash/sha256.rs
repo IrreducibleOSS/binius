@@ -894,18 +894,12 @@ pub fn u32_array_to_bytes(input: &[u32; 16]) -> [u8; 64] {
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::alloc::CpuComputeAllocator;
-	use binius_field::{
-		arch::{OptimalUnderlier, OptimalUnderlier128b},
-		as_packed_field::PackedType,
-	};
+	use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType};
 	use rand::{RngCore, SeedableRng, prelude::StdRng};
 	use sha2::compress256;
 
 	use super::*;
-	use crate::builder::{
-		ConstraintSystem, WitnessIndex,
-		test_utils::{validate_system_witness, validate_system_witness_with_prove_verify},
-	};
+	use crate::builder::{ConstraintSystem, WitnessIndex, test_utils::validate_system_witness};
 
 	/// Test the SHA-256 gadget with a simple test vector
 	#[test]
@@ -920,8 +914,7 @@ mod tests {
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ROWS).unwrap();
 		let mut segment = table_witness.full_segment();
 
@@ -982,8 +975,7 @@ mod tests {
 		let allocator = allocator.into_bump_allocator();
 		let table_id = table.id();
 
-		let mut witness =
-			WitnessIndex::<PackedType<OptimalUnderlier128b, B128>>::new(&cs, &allocator);
+		let mut witness = WitnessIndex::<PackedType<OptimalUnderlier, B128>>::new(&cs, &allocator);
 		let table_witness = witness.init_table(table_id, N_ITER).unwrap();
 		let mut segment = table_witness.full_segment();
 
