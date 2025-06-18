@@ -61,12 +61,8 @@ where
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.cloned().unzip();
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
+		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.iter().cloned().unzip();
 		self.mul_table.populate_with_inputs(witness, x_vals, y_vals)
 	}
 }

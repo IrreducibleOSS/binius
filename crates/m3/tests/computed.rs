@@ -50,16 +50,16 @@ where
 		self.id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessSegment<P>,
+	fn fill(
+		&self,
+		rows: &[Self::Event],
+		witness: &mut TableWitnessSegment<P>,
 	) -> Result<(), anyhow::Error> {
 		let mut committed_1 = witness.get_mut_as(self.committed_1)?;
 		let mut committed_2 = witness.get_mut_as(self.committed_2)?;
 		let mut computed = witness.get_mut_as(self.computed)?;
 
-		for (i, &(com1, com2)) in rows.enumerate() {
+		for (i, &(com1, com2)) in rows.iter().enumerate() {
 			for j in 0..VALUES_PER_ROW {
 				committed_1[i * VALUES_PER_ROW + j] = com1;
 				committed_2[i * VALUES_PER_ROW + j] = com2;

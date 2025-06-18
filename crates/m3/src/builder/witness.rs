@@ -568,7 +568,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.zip(rows.chunks(segment_size).take(n_chunks - 1))
 			.try_for_each(|(mut witness_segment, row_chunk)| {
 				table
-					.fill(row_chunk.iter(), &mut witness_segment)
+					.fill(row_chunk, &mut witness_segment)
 					.map_err(Error::TableFill)
 			})?;
 
@@ -597,7 +597,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			"segmented_view.split_at called with 1 must return a view with exactly one segment",
 		);
 		table
-			.fill(row_chunk.iter(), &mut witness_segment)
+			.fill(row_chunk, &mut witness_segment)
 			.map_err(Error::TableFill)?;
 		assert!(partial_chunk_segment_iter.next().is_none());
 
@@ -668,7 +668,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			.zip(rows.par_chunks(segment_size).take(n_chunks - 1))
 			.try_for_each(|(mut witness_segment, row_chunk)| {
 				table
-					.fill(row_chunk.iter(), &mut witness_segment)
+					.fill(row_chunk, &mut witness_segment)
 					.map_err(Error::TableFill)
 			})?;
 
@@ -697,7 +697,7 @@ impl<'cs, 'alloc, F: TowerField, P: PackedField<Scalar = F>> TableWitnessIndex<'
 			"segmented_view.split_at called with 1 must return a view with exactly one segment",
 		);
 		table
-			.fill(row_chunk.iter(), &mut witness_segment)
+			.fill(row_chunk, &mut witness_segment)
 			.map_err(Error::TableFill)?;
 		assert!(partial_chunk_segment_iter.next().is_none());
 
@@ -1273,10 +1273,10 @@ where
 	/// ## Preconditions
 	///
 	/// * the number of elements in `rows` must equal `witness.size()`
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
+	fn fill(
+		&self,
+		rows: &[Self::Event],
+		witness: &mut TableWitnessSegment<P>,
 	) -> anyhow::Result<()>;
 }
 
@@ -1541,14 +1541,14 @@ mod tests {
 			self.id
 		}
 
-		fn fill<'a>(
-			&'a self,
-			rows: impl Iterator<Item = &'a Self::Event> + Clone,
-			witness: &'a mut TableWitnessSegment<PackedType<OptimalUnderlier128b, B128>>,
+		fn fill(
+			&self,
+			rows: &[Self::Event],
+			witness: &mut TableWitnessSegment<PackedType<OptimalUnderlier128b, B128>>,
 		) -> anyhow::Result<()> {
 			let mut col0 = witness.get_scalars_mut(self.col0)?;
 			let mut col1 = witness.get_scalars_mut(self.col1)?;
-			for (i, &val) in rows.enumerate() {
+			for (i, &val) in rows.iter().enumerate() {
 				col0[i] = B32::new(val);
 				col1[i] = col0[i].pow(2) + B32::new(0x03);
 			}

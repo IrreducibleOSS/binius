@@ -141,16 +141,16 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill<'a>(
-			&'a self,
-			rows: impl Iterator<Item = &'a Self::Event>,
-			witness: &'a mut TableWitnessSegment<P>,
+		fn fill(
+			&self,
+			rows: &[Self::Event],
+			witness: &mut TableWitnessSegment<P>,
 		) -> anyhow::Result<()> {
 			{
 				let mut f0_bits = witness.get_mut_as(self.f0_bits)?;
 				let mut f1_bits = witness.get_mut_as(self.f1_bits)?;
 
-				for (i, event) in rows.enumerate() {
+				for (i, event) in rows.iter().enumerate() {
 					f0_bits[i] = event.f0;
 					f1_bits[i] = event.f1;
 				}

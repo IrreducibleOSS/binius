@@ -80,13 +80,9 @@ impl TableFiller for MulUU64TestTable {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		let x_vals = rows.clone().map(|(x, _)| *x);
-		let y_vals = rows.map(|(_, y)| *y);
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
+		let x_vals = rows.iter().map(|(x, _)| *x);
+		let y_vals = rows.iter().map(|(_, y)| *y);
 		self.muluu.populate_with_inputs(witness, x_vals, y_vals)
 	}
 }
@@ -168,13 +164,9 @@ impl TableFiller for MulDiv32TestTable {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		let x_vals = rows.clone().map(|(x, _)| *x);
-		let y_vals = rows.map(|(_, y)| *y);
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
+		let x_vals = rows.iter().map(|(x, _)| *x);
+		let y_vals = rows.iter().map(|(_, y)| *y);
 		match &self.mul_div {
 			MulDivEnum::MulUU32(muluu) => muluu.populate_with_inputs(witness, x_vals, y_vals)?,
 			MulDivEnum::MulSU32(mulsu) => mulsu.populate_with_inputs(witness, x_vals, y_vals)?,
