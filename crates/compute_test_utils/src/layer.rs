@@ -16,6 +16,7 @@ use binius_math::{
 };
 use binius_ntt::fri::fold_interleaved;
 use binius_utils::checked_arithmetics::checked_log_2;
+use itertools::Itertools;
 use rand::{Rng, SeedableRng, prelude::StdRng};
 
 pub fn test_generic_single_tensor_expand<
@@ -902,5 +903,58 @@ pub fn test_map_kernels<F, Hal, ComputeHolderType>(
 
 	for (i, output) in output_host.iter_mut().enumerate() {
 		assert_eq!(*output, input_1_host[i] + input_2_host[i]);
+	}
+}
+
+pub fn test_generic_pairwise_product_reduce<F, Hal, ComputeHolderType>(
+	mut compute_holder: ComputeHolderType,
+	log_len: usize,
+) where
+	F: Field,
+	Hal: ComputeLayer<F>,
+	ComputeHolderType: ComputeHolder<F, Hal>,
+{
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let ComputeData {
+		hal,
+		host_alloc,
+		dev_alloc,
+		..
+	} = compute_holder.to_data();
+
+	let input = host_alloc.alloc(1 << log_len).unwrap();
+	input.fill_with(|| F::random(&mut rng));
+
+	let mut round_outputs = Vec::new();
+	let mut current_len = input.len() / 2;
+	while current_len >= 1 {
+		round_outputs.push(dev_alloc.alloc(current_len).unwrap());
+		current_len /= 2;
+	}
+
+	let mut dev_input = dev_alloc.alloc(input.len()).unwrap();
+	hal.copy_h2d(input, &mut dev_input).unwrap();
+	hal.execute(|exec| {
+		exec.pairwise_product_reduce(Hal::DevMem::as_const(&dev_input), round_outputs.as_mut())
+			.unwrap();
+		Ok(vec![])
+	})
+	.unwrap();
+	let mut working_input = input.to_vec();
+	let mut round_idx = 0;
+	while working_input.len() >= 2 {
+		let mut round_results = (0..working_input.len() / 2).map(|_| F::ZERO).collect_vec();
+		for idx in 0..round_results.len() {
+			round_results[idx] = working_input[idx * 2] * working_input[idx * 2 + 1];
+		}
+
+		let actual_round_result = host_alloc.alloc(working_input.len() / 2).unwrap();
+		hal.copy_d2h(Hal::DevMem::as_const(&round_outputs[round_idx]), actual_round_result)
+			.unwrap();
+		assert_eq!(round_results, actual_round_result);
+
+		working_input = round_results;
+		round_idx += 1;
 	}
 }
