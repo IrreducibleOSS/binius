@@ -21,7 +21,7 @@
 //!
 //! ## References
 //!
-//! - [FIPS 180-4: Secure Hash Standard (SHS)](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
+//! - [FIPS 180-4: Secure Hash Standard](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
 //! - [RFC 6234: US Secure Hash Algorithms](https://tools.ietf.org/rfc/rfc6234.txt)
 
 use std::array;
