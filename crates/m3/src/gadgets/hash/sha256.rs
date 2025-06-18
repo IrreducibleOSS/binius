@@ -395,7 +395,7 @@ pub struct Round {
 
 const ADD_FLAGS: U32AddFlags = U32AddFlags {
 	carry_in_bit: None,
-	commit_zout: false,
+	commit_zout: true,
 	expose_final_carry: false,
 };
 impl Round {
@@ -894,12 +894,18 @@ pub fn u32_array_to_bytes(input: &[u32; 16]) -> [u8; 64] {
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::alloc::CpuComputeAllocator;
-	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackedType};
+	use binius_field::{
+		arch::{OptimalUnderlier, OptimalUnderlier128b},
+		as_packed_field::PackedType,
+	};
 	use rand::{RngCore, SeedableRng, prelude::StdRng};
 	use sha2::compress256;
 
 	use super::*;
-	use crate::builder::{ConstraintSystem, WitnessIndex};
+	use crate::builder::{
+		ConstraintSystem, WitnessIndex,
+		test_utils::{validate_system_witness, validate_system_witness_with_prove_verify},
+	};
 
 	/// Test the SHA-256 gadget with a simple test vector
 	#[test]
@@ -1015,17 +1021,6 @@ mod tests {
 			}
 		}
 
-		// Validate constraint system
-		let ccs = cs.compile().unwrap();
-		let table_sizes = witness.table_sizes();
-		let witness = witness.into_multilinear_extension_index();
-
-		binius_core::constraint_system::validate::validate_witness(
-			&ccs,
-			&[],
-			&table_sizes,
-			&witness,
-		)
-		.unwrap();
+		validate_system_witness::<OptimalUnderlier>(&cs, witness, vec![]);
 	}
 }
