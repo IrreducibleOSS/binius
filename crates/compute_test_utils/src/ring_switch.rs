@@ -207,7 +207,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
 
-	let mut compute_holder = create_hal_holder(1 << 7, 1 << 15);
+	let mut compute_holder = create_hal_holder(1 << 12, 1 << 15);
 	let mut compute_data = compute_holder.to_data();
 
 	let compute_data_ref = &mut compute_data;
