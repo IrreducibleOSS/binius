@@ -605,8 +605,8 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let byte_low: u8 = rng.r#gen();
-		let byte_high: u8 = rng.r#gen();
+		let byte_low: u8 = rng.random();
+		let byte_high: u8 = rng.random();
 
 		let combined_underlier = ((byte_high as u16) << 8) | (byte_low as u16);
 

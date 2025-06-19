@@ -9,7 +9,7 @@ use binius_math::MultilinearExtension;
 use criterion::{
 	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::{Rng, thread_rng};
+use rand::Rng;
 
 type B1Packed = <BinaryField1b as ArchOptimal>::OptimalThroughputPacked;
 type B128Packed = <BinaryField128b as ArchOptimal>::OptimalThroughputPacked;
@@ -28,7 +28,7 @@ fn generate_scalar<F: Field>(mut rng: impl Rng, log_n: usize) -> Vec<F> {
 
 fn bench_tensor_product_full_query(c: &mut Criterion) {
 	let mut group = c.benchmark_group("tensor_product_full_query");
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let backend = make_portable_backend();
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(((1 << n) * size_of::<BinaryField128b>()) as u64));
@@ -42,7 +42,7 @@ fn bench_tensor_product_full_query(c: &mut Criterion) {
 
 fn bench_evaluate(c: &mut Criterion) {
 	let mut group = c.benchmark_group("evaluate");
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let backend = make_portable_backend();
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(((1 << n) * size_of::<BinaryField128b>()) as u64));
@@ -66,7 +66,7 @@ fn run_evaluate_partial_high_bench<P, PE>(
 	P: PackedField<Scalar: BinaryField>,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar> + BinaryField>,
 {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let evals = generate_packed::<P>(&mut rng, log_evals_size);
 	let multilin = MultilinearExtension::from_values(evals).unwrap();
 	let query = generate_scalar::<PE::Scalar>(&mut rng, log_query_size);
@@ -103,7 +103,7 @@ fn bench_evaluate_partial_high(c: &mut Criterion) {
 
 fn bench_evaluate_partial_low(c: &mut Criterion) {
 	let mut group = c.benchmark_group("evaluate_partial_low");
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let backend = make_portable_backend();
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(((1 << n) * size_of::<BinaryField128b>()) as u64));

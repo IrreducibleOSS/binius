@@ -13,12 +13,11 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::thread_rng;
 
 const BATCH_SIZE: usize = 32;
 
 fn bench_mul_subfield<PE: PackedExtension<F>, F: Field>(group: &mut BenchmarkGroup<'_, WallTime>) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let packed: [PE; BATCH_SIZE] = array::from_fn(|_| PE::random(&mut rng));
 	let scalars: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
 

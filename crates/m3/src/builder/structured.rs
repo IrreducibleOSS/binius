@@ -134,7 +134,7 @@ mod tests {
 					&ClosureFiller::new(test_table_id, |events, index| {
 						{
 							let mut expected_col = index.get_scalars_mut::<B32, 1>(expected_col)?;
-							for (&&i, col_i) in iter::zip(events, &mut *expected_col) {
+							for (&i, col_i) in iter::zip(events, &mut *expected_col) {
 								*col_i = BinaryField32b::new(i);
 							}
 						}
@@ -192,7 +192,7 @@ mod tests {
 					{
 						let mut expected_col = index.get_scalars_mut::<B16, 1>(expected_col)?;
 						let mut structured_col = index.get_scalars_mut::<B16, 1>(structured_col)?;
-						for (&&i, col_i, s_col) in
+						for (&i, col_i, s_col) in
 							izip!(events, &mut *expected_col, &mut *structured_col)
 						{
 							let x = ((i >> 4) & 15) as u16;

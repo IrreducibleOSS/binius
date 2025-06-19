@@ -9,10 +9,9 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::thread_rng;
 
 fn benchmark_iter<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, id: &str) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let value = P::random(&mut rng);
 
 	group.throughput(Throughput::Elements(P::WIDTH as _));

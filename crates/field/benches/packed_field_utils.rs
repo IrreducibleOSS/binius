@@ -173,7 +173,7 @@ macro_rules! benchmark_packed_operation {
                 group.measurement_time(core::time::Duration::from_secs(3));
                 group.throughput(criterion::Throughput::Elements((<$packed_field as binius_field::PackedField>::WIDTH *  $crate::packed_field_utils::BATCH_SIZE) as _));
 
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 let a: $crate::packed_field_utils::Batch<$packed_field> = std::array::from_fn(|_| <$packed_field as binius_field::PackedField>::random(&mut rng));
                 let b: $crate::packed_field_utils::Batch<$packed_field> = std::array::from_fn(|_| <$packed_field as binius_field::PackedField>::random(&mut rng));
 

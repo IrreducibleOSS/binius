@@ -13,7 +13,7 @@ const fn packed_size<P: PackedField>(log_size: usize) -> usize {
 }
 
 fn generate_random_field<P: PackedField>(log_n_values: usize) -> Vec<P> {
-	let mut rng = rand::thread_rng();
+	let mut rng = rand::rng();
 	repeat_with(|| P::random(&mut rng))
 		.take(packed_size::<P>(log_n_values))
 		.collect::<Vec<P>>()

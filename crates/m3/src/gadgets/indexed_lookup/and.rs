@@ -245,11 +245,7 @@ impl TableFiller for BitAndLookup {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
 		// Fill the entries_ordered column
 		{
 			let mut col_data = witness.get_scalars_mut(self.entries_ordered)?;
@@ -265,7 +261,7 @@ impl TableFiller for BitAndLookup {
 		// Fill the entries_sorted column
 		{
 			let mut entries_sorted = witness.get_scalars_mut(self.entries_sorted)?;
-			for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.clone()) {
+			for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows) {
 				let mut entry_128b = B128::default();
 				BitAndIndexedLookup.index_to_entry(index, slice::from_mut(&mut entry_128b));
 				*merged_i = B32::try_from(entry_128b).expect("guaranteed by BitAndIndexedLookup");
@@ -273,7 +269,7 @@ impl TableFiller for BitAndLookup {
 		}
 
 		self.lookup_producer
-			.populate(witness, rows.map(|&(_i, count)| count))?;
+			.populate(witness, rows.iter().map(|&(_i, count)| count))?;
 		Ok(())
 	}
 }
@@ -319,8 +315,8 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let in_a = rng.r#gen::<u8>();
-			let in_b = rng.r#gen::<u8>();
+			let in_a = rng.random::<u8>();
+			let in_b = rng.random::<u8>();
 			(in_a, in_b)
 		})
 		.take(looker_1_size)
@@ -329,7 +325,7 @@ mod tests {
 		witness
 			.fill_table_parallel(
 				&ClosureFiller::new(looker_id, |inputs, segment| {
-					bitand_1.populate(segment, inputs.iter().copied())
+					bitand_1.populate(segment, inputs.iter())
 				}),
 				&inputs_1,
 			)
@@ -337,8 +333,8 @@ mod tests {
 
 		let boundary_reads = (0..5)
 			.map(|_| {
-				let in_a = rng.r#gen::<u8>();
-				let in_b = rng.r#gen::<u8>();
+				let in_a = rng.random::<u8>();
+				let in_b = rng.random::<u8>();
 				merge_bitand_vals(in_a, in_b, in_a & in_b)
 			})
 			.collect::<Vec<_>>();

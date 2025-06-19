@@ -23,7 +23,6 @@ use binius_m3::{
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{Parser, value_parser};
-use rand::thread_rng;
 use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
@@ -64,12 +63,8 @@ where
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.cloned().unzip();
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
+		let (x_vals, y_vals): (Vec<_>, Vec<_>) = rows.iter().cloned().unzip();
 		self.mul_table.populate_with_inputs(witness, x_vals, y_vals)
 	}
 }
@@ -99,7 +94,7 @@ fn main() -> Result<()> {
 	let boundaries = vec![];
 	let table_sizes = vec![1 << log_n_muls];
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let events = repeat_with(|| (B32::random(&mut rng), B32::random(&mut rng)))
 		.take(1 << log_n_muls)
 		.collect::<Vec<_>>();

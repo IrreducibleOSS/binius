@@ -209,11 +209,7 @@ impl TableFiller for IncrLookup {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
 		// Fill the entries_ordered column
 		{
 			let mut col_data = witness.get_scalars_mut(self.entries_ordered)?;
@@ -228,7 +224,7 @@ impl TableFiller for IncrLookup {
 		// Fill the entries_sorted column
 		{
 			let mut entries_sorted = witness.get_scalars_mut(self.entries_sorted)?;
-			for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.clone()) {
+			for (merged_i, &(index, _)) in iter::zip(&mut *entries_sorted, rows.iter()) {
 				let mut entry_128b = B128::default();
 				IncrIndexedLookup.index_to_entry(index, slice::from_mut(&mut entry_128b));
 				*merged_i = B32::try_from(entry_128b).expect("guaranteed by IncrIndexedLookup");
@@ -236,7 +232,7 @@ impl TableFiller for IncrLookup {
 		}
 
 		self.lookup_producer
-			.populate(witness, rows.map(|&(_i, count)| count))?;
+			.populate(witness, rows.iter().map(|&(_i, count)| count))?;
 		Ok(())
 	}
 }
@@ -378,8 +374,8 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let inputs_1 = repeat_with(|| {
-			let input = rng.r#gen::<u8>();
-			let carry_in_bit = rng.gen_bool(0.5);
+			let input = rng.random::<u8>();
+			let carry_in_bit = rng.random_bool(0.5);
 			(input, carry_in_bit)
 		})
 		.take(looker_1_size)
@@ -388,15 +384,15 @@ mod tests {
 		witness
 			.fill_table_sequential(
 				&ClosureFiller::new(looker_1_id, |inputs, segment| {
-					incr_1.populate(segment, inputs.iter().copied())
+					incr_1.populate(segment, inputs.iter())
 				}),
 				&inputs_1,
 			)
 			.unwrap();
 
 		let inputs_2 = repeat_with(|| {
-			let input = rng.r#gen::<u8>();
-			let carry_in_bit = rng.gen_bool(0.5);
+			let input = rng.random::<u8>();
+			let carry_in_bit = rng.random_bool(0.5);
 			(input, carry_in_bit)
 		})
 		.take(looker_2_size)
@@ -405,7 +401,7 @@ mod tests {
 		witness
 			.fill_table_sequential(
 				&ClosureFiller::new(looker_2_id, |inputs, segment| {
-					incr_2.populate(segment, inputs.iter().copied())
+					incr_2.populate(segment, inputs.iter())
 				}),
 				&inputs_2,
 			)

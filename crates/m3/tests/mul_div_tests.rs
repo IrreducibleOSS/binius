@@ -80,13 +80,9 @@ impl TableFiller for MulUU64TestTable {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		let x_vals = rows.clone().map(|(x, _)| *x);
-		let y_vals = rows.map(|(_, y)| *y);
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
+		let x_vals = rows.iter().map(|(x, _)| *x);
+		let y_vals = rows.iter().map(|(_, y)| *y);
 		self.muluu.populate_with_inputs(witness, x_vals, y_vals)
 	}
 }
@@ -94,7 +90,7 @@ impl TableFiller for MulUU64TestTable {
 impl MulDivTestSuiteHelper for MulUU64TestTable {
 	fn generate_inputs(&self, table_size: usize) -> Vec<(B64, B64)> {
 		let mut rng = StdRng::seed_from_u64(0);
-		repeat_with(|| (B64::new(rng.r#gen::<u64>()), B64::new(rng.r#gen::<u64>())))
+		repeat_with(|| (B64::new(rng.random::<u64>()), B64::new(rng.random::<u64>())))
 			.take(table_size)
 			.collect::<Vec<_>>()
 	}
@@ -168,13 +164,9 @@ impl TableFiller for MulDiv32TestTable {
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment,
-	) -> anyhow::Result<()> {
-		let x_vals = rows.clone().map(|(x, _)| *x);
-		let y_vals = rows.map(|(_, y)| *y);
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment) -> anyhow::Result<()> {
+		let x_vals = rows.iter().map(|(x, _)| *x);
+		let y_vals = rows.iter().map(|(_, y)| *y);
 		match &self.mul_div {
 			MulDivEnum::MulUU32(muluu) => muluu.populate_with_inputs(witness, x_vals, y_vals)?,
 			MulDivEnum::MulSU32(mulsu) => mulsu.populate_with_inputs(witness, x_vals, y_vals)?,
@@ -199,7 +191,7 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 		let mut rng = StdRng::seed_from_u64(seed);
 		match self.mul_div {
 			MulDivEnum::MulUU32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.take(table_size)
 					.collect()
 			}
@@ -214,26 +206,26 @@ impl MulDivTestSuiteHelper for MulDiv32TestTable {
 				chain!(
 					EXPLICIT_TESTS.into_iter(),
 					repeat_with(|| (
-						B32::new(rng.r#gen::<i32>() as u32),
-						B32::new(rng.r#gen::<u32>())
+						B32::new(rng.random::<i32>() as u32),
+						B32::new(rng.random::<u32>())
 					))
 				)
 				.take(table_size)
 				.collect()
 			}
 			MulDivEnum::MulSS32(_) => repeat_with(|| {
-				(B32::new(rng.r#gen::<i32>() as u32), B32::new(rng.r#gen::<i32>() as u32))
+				(B32::new(rng.random::<i32>() as u32), B32::new(rng.random::<i32>() as u32))
 			})
 			.take(table_size)
 			.collect(),
 			MulDivEnum::DivUU32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
 			}
 			MulDivEnum::DivSS32(_) => {
-				repeat_with(|| (B32::new(rng.r#gen::<u32>()), B32::new(rng.r#gen::<u32>())))
+				repeat_with(|| (B32::new(rng.random::<u32>()), B32::new(rng.random::<u32>())))
 					.filter(|(_, y)| y.val() != 0)
 					.take(table_size)
 					.collect()
@@ -374,8 +366,8 @@ fn test_mul_next_to_stacked_col() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let test_inputs = repeat_with(|| {
-		let a = rng.r#gen::<u32>();
-		let b = rng.r#gen::<u32>();
+		let a = rng.random::<u32>();
+		let b = rng.random::<u32>();
 		(a, b)
 	})
 	.take(17)

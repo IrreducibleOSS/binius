@@ -634,11 +634,7 @@ impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
 #[cfg(test)]
 mod tests {
 	use itertools::Itertools;
-	use rand::{
-		SeedableRng,
-		distributions::{Distribution, Uniform},
-		rngs::StdRng,
-	};
+	use rand::{Rng, SeedableRng, rngs::StdRng};
 
 	use super::*;
 	use crate::{
@@ -844,7 +840,7 @@ mod tests {
 			for offset in [
 				0,
 				1,
-				Uniform::new(0, elements_count.max(1)).sample(&mut rng),
+				rng.random_range(0..elements_count.max(1)),
 				elements_count.saturating_sub(1),
 				elements_count,
 			] {
@@ -913,10 +909,10 @@ mod tests {
 
 	fn check_collection_get_set<F: Field>(
 		collection: &mut impl RandomAccessSequenceMut<F>,
-		r#gen: &mut impl FnMut() -> F,
+		random: &mut impl FnMut() -> F,
 	) {
 		for i in 0..collection.len() {
-			let value = r#gen();
+			let value = random();
 			collection.set(i, value);
 			assert_eq!(collection.get(i), value);
 			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
@@ -946,7 +942,7 @@ mod tests {
 	#[test]
 	fn check_packed_slice_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut r#gen = || <BinaryField8b as Field>::random(&mut rng);
+		let mut random = || <BinaryField8b as Field>::random(&mut rng);
 
 		let slice: &mut [PackedBinaryField16x8b] = &mut [];
 		let packed_slice = PackedSliceMut::new(slice);
@@ -962,11 +958,11 @@ mod tests {
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new(slice);
 		check_collection(&packed_slice, &values);
-		check_collection_get_set(&mut packed_slice, &mut r#gen);
+		check_collection_get_set(&mut packed_slice, &mut random);
 
 		let values = PackedField::iter_slice(slice).collect_vec();
 		let mut packed_slice = PackedSliceMut::new_with_len(slice, 3);
 		check_collection(&packed_slice, &values[..3]);
-		check_collection_get_set(&mut packed_slice, &mut r#gen);
+		check_collection_get_set(&mut packed_slice, &mut random);
 	}
 }

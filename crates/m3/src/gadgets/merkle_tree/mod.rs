@@ -505,13 +505,13 @@ where
 		self.id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
+	fn fill(
+		&self,
+		rows: &[Self::Event],
+		witness: &mut TableWitnessSegment<P>,
 	) -> anyhow::Result<()> {
 		let state_ins = rows
-			.clone()
+			.iter()
 			.map(|MerklePathEvent { left, right, .. }| {
 				let mut digest = [B8::ZERO; 64];
 				let (left_bytes, right_bytes) =
@@ -560,7 +560,7 @@ where
 		let mut increment_merged: RefMut<'_, [u32]> = witness.get_mut_as(self.increment.merged)?;
 
 		{
-			for (i, event) in rows.enumerate() {
+			for (i, event) in rows.iter().enumerate() {
 				let &MerklePathEvent {
 					root_id,
 					parent_depth,
@@ -631,17 +631,17 @@ where
 		self.id
 	}
 
-	fn fill<'a>(
-		&'a self,
-		rows: impl Iterator<Item = &'a Self::Event> + Clone,
-		witness: &'a mut TableWitnessSegment<P>,
+	fn fill(
+		&self,
+		rows: &[Self::Event],
+		witness: &mut TableWitnessSegment<P>,
 	) -> anyhow::Result<()> {
 		let mut witness_root_id = witness.get_mut_as(self.root_id)?;
 		let mut witness_root_digest: Vec<RefMut<'_, [PackedBinaryField4x8b]>> = (0..8)
 			.map(|i| witness.get_mut_as(self.digest[i]))
 			.collect::<Result<Vec<_>, _>>()?;
 
-		for (i, event) in rows.enumerate() {
+		for (i, event) in rows.iter().enumerate() {
 			let &MerkleRootEvent { root_id, digest } = event;
 			witness_root_id[i] = root_id;
 			let digest_as_field = B8::from_underliers_arr(digest);
@@ -797,11 +797,11 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		// Create a Merkle tree with 1<<10 leaves.
-		let index = rng.gen_range(0..1 << 10);
+		let index = rng.random_range(0..1 << 10);
 		let leaves = (0..3)
 			.map(|_| {
 				(0..1 << 10)
-					.map(|_| rng.r#gen::<[u8; 32]>())
+					.map(|_| rng.random::<[u8; 32]>())
 					.collect::<Vec<_>>()
 			})
 			.collect::<Vec<_>>();

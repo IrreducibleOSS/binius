@@ -8,7 +8,6 @@ use binius_field::{
 	packed::set_packed_slice_unchecked,
 };
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rand::thread_rng;
 
 // Constants for input sizes
 const EXT_WIDTH: usize = 64 * 1024; // Fixed extension width
@@ -20,7 +19,7 @@ fn benchmark_packed_extension_mul<F>(
 	F: Field,
 	PackedBinaryField2x128b: PackedExtension<F>,
 {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	// Compute base width based on extension width and field degree
 	let base_width: usize = EXT_WIDTH / <BinaryField128b as ExtensionField<F>>::DEGREE;

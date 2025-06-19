@@ -16,7 +16,7 @@ pub fn bench_inner_product_par<FX, PX, PY>(
 	PY: PackedField,
 	FX: ExtensionField<PY::Scalar>,
 {
-	let mut rng = rand::thread_rng();
+	let mut rng = rand::rng();
 	for count in counts {
 		let xs = repeat_with(|| PX::random(&mut rng))
 			.take(count)

@@ -29,7 +29,6 @@ use binius_math::{
 };
 use binius_maybe_rayon::prelude::*;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use rand::thread_rng;
 
 fn bench_bivariate_with_evaluation_order<
 	F: TowerField + ExtensionField<FDomain>,
@@ -41,7 +40,7 @@ fn bench_bivariate_with_evaluation_order<
 	eval_order: EvaluationOrder,
 	n_vars: usize,
 ) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let multilins = repeat_with(|| {
 		let values = repeat_with(|| P::random(&mut rng))
 			.take(1 << n_vars.saturating_sub(P::LOG_WIDTH))
@@ -119,7 +118,7 @@ fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
 	field: &str,
 	n_vars: usize,
 ) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let multilins = repeat_with(|| {
 		let values = repeat_with(|| P::random(&mut rng))
 			.take(1 << n_vars.saturating_sub(P::LOG_WIDTH))

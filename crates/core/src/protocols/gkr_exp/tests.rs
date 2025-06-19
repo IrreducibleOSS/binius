@@ -11,7 +11,7 @@ use binius_math::{
 	DefaultEvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
 	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
-use rand::{Rng, thread_rng};
+use rand::Rng;
 
 use super::{batch_prove, common::BaseExpReductionOutput};
 use crate::{
@@ -100,13 +100,13 @@ fn generate_claim_witness<'a>(
 fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
 ) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P>>) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	let a: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.r#gen::<u64>() % (1 << exponent_bit_width))
+		.map(|_| rng.random::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let b: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| rng.r#gen::<u64>() % (1 << exponent_bit_width))
+		.map(|_| rng.random::<u64>() % (1 << exponent_bit_width))
 		.collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
@@ -164,13 +164,13 @@ fn witness_gen_happens_correctly() {
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
 	const EXPONENT_BIT_WIDTH: usize = 4usize;
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	let a: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| (rng.gen_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
+		.map(|_| (rng.random_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
 		.collect();
 	let b: Vec<_> = (0..COLUMN_LEN)
-		.map(|_| (rng.gen_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
+		.map(|_| (rng.random_range(0..1 << EXPONENT_BIT_WIDTH)) as u64)
 		.collect();
 	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 

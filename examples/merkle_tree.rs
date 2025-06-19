@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 	let mut rng = StdRng::seed_from_u64(0);
 	// Create a Merkle tree with 8 leaves
 	let leaves = (0..1 << args.log_leaves)
-		.map(|_| rng.r#gen::<[u8; 32]>())
+		.map(|_| rng.random::<[u8; 32]>())
 		.collect::<Vec<_>>();
 
 	let tree = MerkleTree::new(&leaves);
@@ -63,7 +63,7 @@ fn main() -> Result<()> {
 	let roots = tree.root();
 	let paths = (0..1 << args.log_paths)
 		.map(|_| {
-			let index = rng.gen_range(0..1 << args.log_leaves);
+			let index = rng.random_range(0..1 << args.log_leaves);
 			MerklePath {
 				root_id: 0,
 				index,

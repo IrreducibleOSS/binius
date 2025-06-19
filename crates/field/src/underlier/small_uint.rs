@@ -14,10 +14,7 @@ use binius_utils::{
 };
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
-use rand::{
-	RngCore,
-	distributions::{Distribution, Uniform},
-};
+use rand::Rng;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
 use super::{Random, UnderlierType, underlier_with_bit_ops::UnderlierWithBitOps};
@@ -112,10 +109,8 @@ impl<const N: usize> ConditionallySelectable for SmallU<N> {
 }
 
 impl<const N: usize> Random for SmallU<N> {
-	fn random(mut rng: impl RngCore) -> Self {
-		let distr = Uniform::from(0u8..1u8 << N);
-
-		Self(distr.sample(&mut rng))
+	fn random(mut rng: impl Rng) -> Self {
+		Self(rng.random_range(0..1u8 << N))
 	}
 }
 

@@ -191,10 +191,10 @@ mod tests {
 
 	fn check_collection_get_set<T: Eq + Copy + Debug>(
 		collection: &mut impl RandomAccessSequenceMut<T>,
-		r#gen: &mut impl FnMut() -> T,
+		random: &mut impl FnMut() -> T,
 	) {
 		for i in 0..collection.len() {
-			let value = r#gen();
+			let value = random();
 			collection.set(i, value);
 			assert_eq!(collection.get(i), value);
 			assert_eq!(unsafe { collection.get_unchecked(i) }, value);
@@ -213,16 +213,16 @@ mod tests {
 	#[test]
 	fn check_slice_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut r#gen = || -> usize { rng.r#gen() };
+		let mut random = || -> usize { rng.random::<u64>() as usize };
 
 		let mut slice: &mut [usize] = &mut [];
 
 		check_collection(&slice, slice);
-		check_collection_get_set(&mut slice, &mut r#gen);
+		check_collection_get_set(&mut slice, &mut random);
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3];
 		check_collection(&slice, slice);
-		check_collection_get_set(&mut slice, &mut r#gen);
+		check_collection_get_set(&mut slice, &mut random);
 	}
 
 	#[test]
@@ -235,12 +235,12 @@ mod tests {
 	#[test]
 	fn test_subrange_mut() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut r#gen = || -> usize { rng.r#gen() };
+		let mut random = || -> usize { rng.random::<u64>() as usize };
 
 		let mut slice: &mut [usize] = &mut [1, 2, 3, 4, 5];
 		let values = slice[1..4].to_vec();
 		let mut subrange = SequenceSubrangeMut::new(&mut slice, 1, 3);
 		check_collection(&subrange, &values);
-		check_collection_get_set(&mut subrange, &mut r#gen);
+		check_collection_get_set(&mut subrange, &mut random);
 	}
 }

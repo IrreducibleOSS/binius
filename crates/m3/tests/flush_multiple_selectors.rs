@@ -53,7 +53,7 @@ pub fn test_flush_multiple_selectors() {
 				{
 					let mut selector1_col = index.get_mut(selector1_col)?;
 					let mut selector2_col = index.get_mut(selector2_col)?;
-					for &&i in events {
+					for &i in events {
 						set_packed_slice(
 							&mut selector1_col,
 							i,

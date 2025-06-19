@@ -9,17 +9,14 @@ use binius_field::{
 use criterion::{
 	BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use rand::{
-	distributions::{Distribution, Uniform},
-	thread_rng,
-};
+use rand::distr::{Distribution, Uniform};
 
 const BATCH_SIZE: usize = 32;
 
 fn benchmark_get_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, id: &str) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let value = P::random(&mut rng);
-	let distr = Uniform::<usize>::new(0, P::WIDTH);
+	let distr = Uniform::<usize>::new(0, P::WIDTH).expect("Failed to create uniform distribution");
 	let indices = array::from_fn::<_, BATCH_SIZE, _>(|_| distr.sample(&mut rng));
 
 	group.throughput(Throughput::Elements(BATCH_SIZE as _));
@@ -27,9 +24,9 @@ fn benchmark_get_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, 
 }
 
 fn benchmark_set_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, id: &str) {
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let mut value = P::random(&mut rng);
-	let distr = Uniform::<usize>::new(0, P::WIDTH);
+	let distr = Uniform::<usize>::new(0, P::WIDTH).expect("Failed to create uniform distribution");
 	let indices_values = array::from_fn::<_, BATCH_SIZE, _>(|_| {
 		(distr.sample(&mut rng), P::Scalar::random(&mut rng))
 	});

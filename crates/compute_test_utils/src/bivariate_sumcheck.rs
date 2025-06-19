@@ -160,8 +160,8 @@ pub fn generic_test_bivariate_sumcheck_prove_verify<F, Hal, ComputeHolderType>(
 	.collect::<Vec<_>>();
 	let compositions = repeat_with(|| {
 		// Choose 2 distinct indices at random
-		let idx0 = rng.gen_range(0..n_multilins);
-		let idx1 = (idx0 + rng.gen_range(0..n_multilins - 1)) % n_multilins;
+		let idx0 = rng.random_range(0..n_multilins);
+		let idx1 = (idx0 + rng.random_range(0..n_multilins - 1)) % n_multilins;
 		IndexComposition::new(n_multilins, [idx0, idx1], BivariateProduct::default()).unwrap()
 	})
 	.take(n_compositions)
@@ -338,8 +338,8 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<
 
 	let compositions = repeat_with(|| {
 		// Choose 2 distinct indices at random
-		let idx0 = rng.gen_range(0..n_multilins);
-		let idx1 = (idx0 + rng.gen_range(0..n_multilins - 1)) % n_multilins;
+		let idx0 = rng.random_range(0..n_multilins);
+		let idx1 = (idx0 + rng.random_range(0..n_multilins - 1)) % n_multilins;
 		IndexComposition::new(n_multilins, [idx0, idx1], BivariateProduct::default()).unwrap()
 	})
 	.take(n_compositions)
@@ -414,13 +414,9 @@ pub fn generic_test_bivariate_mlecheck_prove_verify<
 			>>::required_device_memory(&claim, false)
 	);
 
-	let eq_ind_partial_evals = eq_ind_partial_eval(
-		hal,
-		&dev_alloc,
-		&host_alloc,
-		&eq_ind_challenges[..n_vars.saturating_sub(1)],
-	)
-	.unwrap();
+	let eq_ind_partial_evals =
+		eq_ind_partial_eval(hal, &dev_alloc, &eq_ind_challenges[..n_vars.saturating_sub(1)])
+			.unwrap();
 
 	let prover = BivariateMLEcheckProver::new(
 		hal,

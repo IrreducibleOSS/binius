@@ -21,7 +21,6 @@ use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_ntt::SingleThreadedNTT;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use itertools::Itertools;
-use rand::thread_rng;
 
 fn merge_multilins<P, M>(multilins: &[M], message_buffer: &mut [P])
 where
@@ -102,7 +101,7 @@ where
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 	let poly_data = repeat_with(|| P::random(&mut rng))
 		.take(1 << LOG_SIZE.saturating_sub(P::LOG_WIDTH))
 		.collect::<Vec<_>>();

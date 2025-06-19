@@ -141,7 +141,7 @@ mod tests {
 			look_indices.extend(0..lookup_table_size);
 		}
 		let remaining = look_indices.capacity() - look_indices.len();
-		look_indices.extend(repeat_with(|| rng.gen_range(0..lookup_table_size)).take(remaining));
+		look_indices.extend(repeat_with(|| rng.random_range(0..lookup_table_size)).take(remaining));
 
 		let look_values = look_indices
 			.into_iter()
@@ -186,7 +186,7 @@ mod tests {
 				&ClosureFiller::new(looker_1_id, |inputs_1, witness| {
 					let mut looker_1_vals = witness.get_scalars_mut(looker_1_vals)?;
 					for (dst, src) in iter::zip(&mut *looker_1_vals, inputs_1) {
-						*dst = **src;
+						*dst = *src;
 					}
 					Ok(())
 				}),
@@ -199,7 +199,7 @@ mod tests {
 				&ClosureFiller::new(looker_2_id, |inputs_2, witness| {
 					let mut looker_2_vals = witness.get_scalars_mut(looker_2_vals)?;
 					for (dst, src) in iter::zip(&mut *looker_2_vals, inputs_2) {
-						*dst = **src;
+						*dst = *src;
 					}
 					Ok(())
 				}),

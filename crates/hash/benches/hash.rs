@@ -11,12 +11,12 @@ use binius_hash::{
 use binius_maybe_rayon::{iter::IntoParallelRefIterator, prelude::ParallelIterator};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use digest::{Digest, consts::U32, generic_array::GenericArray};
-use rand::{RngCore, thread_rng};
+use rand::RngCore;
 
 fn bench_groestl(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Grøstl");
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	const N: usize = 1 << 16;
 	let mut data = vec![0u8; N];
@@ -61,7 +61,7 @@ fn bench_groestl(c: &mut Criterion) {
 fn bench_vision32(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Vision Mark-32");
 
-	let mut rng = thread_rng();
+	let mut rng = rand::rng();
 
 	const N: usize = 1 << 16;
 	let mut data = [0u8; N];

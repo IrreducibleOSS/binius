@@ -320,7 +320,7 @@ impl ConditionallySelectable for M128 {
 
 impl Random for M128 {
 	fn random(mut rng: impl RngCore) -> Self {
-		let val: u128 = rng.r#gen();
+		let val: u128 = rng.random();
 		val.into()
 	}
 }
@@ -1139,7 +1139,7 @@ mod tests {
 
 		let mut rng = StdRng::from_seed([0; 32]);
 
-		let original_value = M128::from(rng.r#gen::<u128>());
+		let original_value = M128::from(rng.random::<u128>());
 
 		let mut buf = BytesMut::new();
 		original_value.serialize(&mut buf, mode).unwrap();

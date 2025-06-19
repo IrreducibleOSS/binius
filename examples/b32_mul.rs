@@ -43,7 +43,7 @@ fn main() -> Result<()> {
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let test_vector: Vec<(u32, u32)> = (0..args.n_ops)
-		.map(|_| (rng.r#gen(), rng.r#gen()))
+		.map(|_| (rng.random(), rng.random()))
 		.collect();
 
 	let mut cs = ConstraintSystem::new();
