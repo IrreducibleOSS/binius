@@ -20,6 +20,7 @@ itertools = { workspace = true }
 stackalloc = { workspace = true }
 thread_local = { workspace = true }
 tracing = { workspace = true }
+libc = { workspace = true }
 
 [dev-dependencies]
 binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
