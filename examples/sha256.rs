@@ -62,12 +62,8 @@ where
 		self.table_id
 	}
 
-	fn fill<'a>(
-		&self,
-		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &mut TableWitnessSegment<P>,
-	) -> Result<()> {
-		self.sha256.populate(witness, rows)?;
+	fn fill(&self, rows: &[Self::Event], witness: &mut TableWitnessSegment<P>) -> Result<()> {
+		self.sha256.populate(witness, rows.iter())?;
 		Ok(())
 	}
 }
