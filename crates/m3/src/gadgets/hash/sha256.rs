@@ -281,10 +281,10 @@ impl Sha256 {
 	/// # Returns
 	///
 	/// Ok(()) on success, Error otherwise
-	pub fn populate<P>(
+	pub fn populate<'a, P>(
 		&self,
 		index: &mut TableWitnessSegment<P>,
-		message_blocks: impl IntoIterator<Item = [u32; 16]>,
+		message_blocks: impl Iterator<Item = &'a [u32; 16]>,
 	) -> Result<(), anyhow::Error>
 	where
 		P: PackedFieldIndexable<Scalar = B128> + PackedExtension<B1> + PackedExtension<B32>,
@@ -922,7 +922,7 @@ mod tests {
 		let message_block: [u32; 16] = array::from_fn(|i| i as u32);
 
 		sha256
-			.populate(&mut segment, std::iter::once(message_block))
+			.populate(&mut segment, [message_block].iter())
 			.unwrap();
 
 		let mut state = INIT;
@@ -994,7 +994,7 @@ mod tests {
 
 		// Process the blocks with our SHA-256 implementation
 		sha256
-			.populate(&mut segment, message_blocks.clone())
+			.populate(&mut segment, message_blocks.iter())
 			.unwrap();
 
 		// Now validate using a reference implementation (we'll use our compute_message_schedule
