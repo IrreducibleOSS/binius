@@ -63,6 +63,10 @@ name = "merkle_tree"
 path = "merkle_tree.rs"
 
 [[bench]]
+name = "binary_zerocheck"
+harness = false
+
+[[bench]]
 name = "additive_ntt"
 harness = false
 
