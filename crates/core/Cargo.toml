@@ -38,6 +38,7 @@ tracing-profile.workspace = true
 
 [dev-dependencies]
 binius_compute_test_utils = { path = "../compute/test_utils", default-features = false }
+binius_core_test_utils = { path = "test_utils", default-features = false }
 binius_macros = { path = "../macros", default-features = false }
 criterion.workspace = true
 proptest.workspace = true

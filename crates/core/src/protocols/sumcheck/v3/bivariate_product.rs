@@ -433,7 +433,7 @@ pub enum PhaseState<F: Field> {
 #[cfg(test)]
 mod tests {
 	use binius_compute::cpu::layer::CpuLayerHolder;
-	use binius_compute_test_utils::bivariate_sumcheck::{
+	use binius_core_test_utils::bivariate_sumcheck::{
 		generic_test_bivariate_sumcheck_prove_verify, generic_test_calculate_round_evals,
 	};
 	use binius_fast_compute::layer::FastCpuLayerHolder;
