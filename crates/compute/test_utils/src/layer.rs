@@ -190,9 +190,16 @@ pub fn test_generic_multiple_multilinear_evaluations<
 		.execute(|exec| {
 			{
 				// Swap first element on the device buffer
-				let mut first_elt =
-					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
-				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				let alignment = <C::DevMem as ComputeMemory<F>>::ALIGNMENT;
+				let mut first_elts = vec![F::ZERO; alignment];
+				let mut first_elts_dev =
+					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, 0..alignment);
+				compute.copy_d2h(
+					<C::DevMem as ComputeMemory<F>>::as_const(&first_elts_dev),
+					&mut first_elts,
+				)?;
+				first_elts[0] = F::ONE;
+				compute.copy_h2d(&first_elts, &mut first_elts_dev)?;
 			}
 
 			exec.tensor_expand(0, &coordinates, &mut eq_ind_slice)?;
@@ -287,9 +294,16 @@ pub fn test_generic_map_with_multilinear_evaluations<
 		.execute(|exec| {
 			{
 				// Swap first element on the device buffer
-				let mut first_elt =
-					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, ..1);
-				compute.copy_h2d(&[F::ONE], &mut first_elt)?;
+				let alignment = <C::DevMem as ComputeMemory<F>>::ALIGNMENT;
+				let mut first_elts = vec![F::ZERO; alignment];
+				let mut fist_elts_dev =
+					<C::DevMem as ComputeMemory<F>>::slice_mut(&mut eq_ind_slice, 0..alignment);
+				compute.copy_d2h(
+					<C::DevMem as ComputeMemory<F>>::as_const(&fist_elts_dev),
+					&mut first_elts,
+				)?;
+				first_elts[0] = F::ONE;
+				compute.copy_h2d(&first_elts, &mut fist_elts_dev)?;
 			}
 
 			exec.tensor_expand(0, &coordinates, &mut eq_ind_slice)?;
@@ -957,4 +971,163 @@ pub fn test_generic_pairwise_product_reduce<F, Hal, ComputeHolderType>(
 		working_input = round_results;
 		round_idx += 1;
 	}
+}
+
+#[macro_export]
+macro_rules! instantiate_compute_layer_tests {
+	($tower:ty, $hal:ty, $compute_holder:ty) => {
+		mod fields {
+			use super::*;
+
+			pub type B16 = <$tower as binius_field::tower::TowerFamily>::B16;
+			pub type B32 = <$tower as binius_field::tower::TowerFamily>::B32;
+			pub type B128 = <$tower as binius_field::tower::TowerFamily>::B128;
+		}
+
+		#[test]
+		fn test_single_tensor_expand() {
+			let n_vars = 8;
+			$crate::layer::test_generic_single_tensor_expand::<fields::B128, $hal, $compute_holder>(
+				<$compute_holder>::new(1 << (n_vars + 1), 1 << n_vars),
+				n_vars,
+			);
+		}
+
+		#[test]
+		fn test_exec_single_left_fold() {
+			let n_vars = 8;
+			$crate::layer::test_generic_single_left_fold::<fields::B16, fields::B128, _, _>(
+				<$compute_holder>::new(1 << (n_vars + 1), 1 << n_vars),
+				n_vars / 2,
+				n_vars / 8,
+			);
+		}
+
+		#[test]
+		fn test_exec_single_right_fold() {
+			let n_vars = 8;
+			$crate::layer::test_generic_single_right_fold::<fields::B16, fields::B128, _, _>(
+				<$compute_holder>::new(1 << (n_vars + 1), 1 << n_vars),
+				n_vars / 2,
+				n_vars / 8,
+			);
+		}
+
+		#[test]
+		fn test_exec_single_inner_product() {
+			let n_vars = 8;
+			$crate::layer::test_generic_single_inner_product::<fields::B128, _, _, _>(
+				<$compute_holder>::new(1 << (n_vars + 2), 1 << (n_vars + 1)),
+				n_vars,
+			);
+		}
+
+		#[test]
+		fn test_exec_multiple_multilinear_evaluations() {
+			let n_vars = 8;
+			$crate::layer::test_generic_multiple_multilinear_evaluations::<
+				fields::B16,
+				fields::B32,
+				_,
+				_,
+				_,
+			>(<$compute_holder>::new(1 << (n_vars + 2), 1 << (n_vars + 1)), n_vars);
+		}
+
+		#[test]
+		fn test_exec_map_with_mle_evaluations() {
+			let n_vars = 8;
+			$crate::layer::test_generic_map_with_multilinear_evaluations(
+				<$compute_holder>::new(3 << n_vars, 3 << (n_vars + 1)),
+				n_vars,
+			);
+		}
+
+		#[test]
+		fn test_exec_single_inner_product_using_kernel_accumulator() {
+			let n_vars = 8;
+			$crate::layer::test_generic_single_inner_product_using_kernel_accumulator::<
+				fields::B128,
+				_,
+				_,
+			>(<$compute_holder>::new(1 << (n_vars + 2), 1 << (n_vars + 1)), n_vars);
+		}
+
+		#[test]
+		fn test_exec_fri_fold_non_zero_log_batch() {
+			let log_len = 10;
+			let log_batch_size = 4;
+			let log_fold_challenges = 2;
+			$crate::layer::test_generic_fri_fold::<fields::B128, fields::B16, _, _>(
+				<$compute_holder>::new(
+					1 << (log_len + log_batch_size + 2),
+					1 << (log_len + log_batch_size + 1),
+				),
+				log_len,
+				log_batch_size,
+				log_fold_challenges,
+			);
+		}
+
+		#[test]
+		fn test_exec_fri_fold_zero_log_batch() {
+			let log_len = 10;
+			let log_batch_size = 0;
+			let log_fold_challenges = 2;
+			$crate::layer::test_generic_fri_fold::<fields::B128, fields::B16, _, _>(
+				<$compute_holder>::new(
+					1 << (log_len + log_batch_size + 2),
+					1 << (log_len + log_batch_size + 1),
+				),
+				log_len,
+				log_batch_size,
+				log_fold_challenges,
+			);
+		}
+
+		#[test]
+		fn test_exec_kernel_add() {
+			let log_len = 10;
+			$crate::layer::test_generic_kernel_add::<fields::B128, _, _>(
+				<$compute_holder>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+				log_len,
+			);
+		}
+
+		#[test]
+		fn test_extrapolate_line() {
+			let log_len = 10;
+			$crate::layer::test_extrapolate_line(
+				<$compute_holder>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+				log_len,
+			);
+		}
+
+		#[test]
+		fn test_map_kernels() {
+			let log_len = 10;
+			$crate::layer::test_map_kernels(
+				<$compute_holder>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+				log_len,
+			);
+		}
+
+		#[test]
+		fn test_pairwise_product_reduce_single_round() {
+			let log_len = 1;
+			binius_compute_test_utils::layer::test_generic_pairwise_product_reduce(
+				<$compute_holder>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+				log_len,
+			);
+		}
+
+		#[test]
+		fn test_pairwise_product_reduce() {
+			let log_len = 8;
+			binius_compute_test_utils::layer::test_generic_pairwise_product_reduce(
+				<$compute_holder>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+				log_len,
+			);
+		}
+	};
 }
