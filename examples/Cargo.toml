@@ -18,6 +18,7 @@ binius_hash = { path = "../crates/hash", default-features = false }
 binius_m3 = { path = "../crates/m3", default-features = false, features = ["test_utils"] }
 binius_macros = { path = "../crates/macros", default-features = false }
 binius_math = { path = "../crates/math", default-features = false }
+binius_maybe_rayon = { path = "../crates/maybe_rayon", default-features = false }
 binius_ntt = { path = "../crates/ntt", default-features = false }
 binius_utils = { path = "../crates/utils", default-features = false }
 bytesize.workspace = true
@@ -65,11 +66,15 @@ path = "merkle_tree.rs"
 name = "additive_ntt"
 harness = false
 
+[[bench]]
+name = "big_field_sumcheck"
+harness = false
+
 [features]
 default = ["rayon", "nightly_features"]
 bail_panic = ["binius_utils/bail_panic"]
 perfetto = ["tracing-profile/perfetto"]
-rayon = ["binius_utils/rayon"]
+rayon = ["binius_utils/rayon", "binius_maybe_rayon/rayon"]
 nightly_features = [
     "binius_core/nightly_features",
     "binius_hal/nightly_features",
