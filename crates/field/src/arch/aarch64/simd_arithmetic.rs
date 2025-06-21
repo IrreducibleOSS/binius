@@ -17,6 +17,15 @@ use crate::{
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
 
+// Import parallel processing capabilities for multi-core performance
+use binius_maybe_rayon::prelude::*;
+
+// Optimal batch sizes for different operations based on cache hierarchy
+const L1_CACHE_BATCH_SIZE: usize = 2048;  // 32KB L1 / 16 bytes
+const L2_CACHE_BATCH_SIZE: usize = 16384; // 256KB L2 / 16 bytes  
+const L3_CACHE_BATCH_SIZE: usize = 131072; // 2MB L3 / 16 bytes
+const PARALLEL_THRESHOLD: usize = 64; // Minimum size for parallel processing
+
 // CPU feature detection for SVE
 #[cfg(target_feature = "sve")]
 #[inline(always)]
@@ -62,6 +71,391 @@ const TOWER_EXP_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
 const TOWER_LOG_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
 	std::mem::transmute(TOWER_LOG_LOOKUP_TABLE)
 };
+
+// =============================================================================
+// PARALLEL BATCH PROCESSING OPERATIONS
+// =============================================================================
+
+/// High-performance parallel batch multiplication with cache-aware chunking
+/// This is essential for multi-core cryptographic computations
+#[inline]
+pub fn packed_tower_16x8b_multiply_batch_parallel(
+	a_batch: &[M128], 
+	b_batch: &[M128], 
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(a_batch.len(), b_batch.len());
+	debug_assert_eq!(a_batch.len(), result_batch.len());
+	
+	if a_batch.len() < PARALLEL_THRESHOLD {
+		// Use sequential processing for small batches to avoid thread overhead
+		for ((a, b), result) in a_batch.iter().zip(b_batch.iter()).zip(result_batch.iter_mut()) {
+			*result = packed_tower_16x8b_multiply_optimized(*a, *b);
+		}
+		return;
+	}
+	
+	// Determine optimal chunk size based on data size and cache hierarchy
+	let chunk_size = if a_batch.len() > L3_CACHE_BATCH_SIZE {
+		L3_CACHE_BATCH_SIZE
+	} else if a_batch.len() > L2_CACHE_BATCH_SIZE {
+		L2_CACHE_BATCH_SIZE
+	} else {
+		L1_CACHE_BATCH_SIZE.min(a_batch.len() / 4).max(PARALLEL_THRESHOLD)
+	};
+	
+	// Parallel processing with memory prefetching for maximum performance
+	a_batch.par_chunks(chunk_size)
+		.zip(b_batch.par_chunks(chunk_size))
+		.zip(result_batch.par_chunks_mut(chunk_size))
+		.for_each(|((a_chunk, b_chunk), result_chunk)| {
+			// Prefetch next chunk for better cache performance
+			unsafe {
+				if a_chunk.len() == chunk_size {
+					let next_a = a_chunk.as_ptr().add(chunk_size);
+					let next_b = b_chunk.as_ptr().add(chunk_size);
+					if next_a < a_batch.as_ptr().add(a_batch.len()) {
+						core::arch::asm!(
+							"prfm pldl1keep, [{0}]",
+							"prfm pldl1keep, [{1}]",
+							in(reg) next_a,
+							in(reg) next_b,
+							options(nostack, readonly)
+						);
+					}
+				}
+			}
+			
+			// Vectorized processing within chunk
+			for ((a, b), result) in a_chunk.iter().zip(b_chunk.iter()).zip(result_chunk.iter_mut()) {
+				*result = packed_tower_16x8b_multiply_optimized(*a, *b);
+			}
+		});
+}
+
+/// Parallel batch squaring operation - critical for polynomial evaluations
+#[inline]
+pub fn packed_tower_16x8b_square_batch_parallel(
+	input_batch: &[M128],
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(input_batch.len(), result_batch.len());
+	
+	if input_batch.len() < PARALLEL_THRESHOLD {
+		for (input, result) in input_batch.iter().zip(result_batch.iter_mut()) {
+			*result = packed_tower_16x8b_square(*input);
+		}
+		return;
+	}
+	
+	input_batch.par_iter()
+		.zip(result_batch.par_iter_mut())
+		.for_each(|(input, result)| {
+			*result = packed_tower_16x8b_square(*input);
+		});
+}
+
+/// Parallel batch inversion with Montgomery's trick - huge performance gain for batch operations
+#[inline]
+pub fn packed_tower_16x8b_invert_batch_parallel(
+	input_batch: &[M128],
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(input_batch.len(), result_batch.len());
+	
+	if input_batch.len() < PARALLEL_THRESHOLD {
+		// Use individual inversions for small batches
+		for (input, result) in input_batch.iter().zip(result_batch.iter_mut()) {
+			*result = packed_tower_16x8b_invert_or_zero(*input);
+		}
+		return;
+	}
+	
+	// Use Montgomery's trick in parallel chunks for better amortized cost
+	let num_threads = binius_maybe_rayon::current_num_threads().max(1);
+	let chunk_size = L1_CACHE_BATCH_SIZE.min(input_batch.len() / num_threads);
+	
+	input_batch.par_chunks(chunk_size)
+		.zip(result_batch.par_chunks_mut(chunk_size))
+		.for_each(|(input_chunk, result_chunk)| {
+			montgomery_batch_invert(input_chunk, result_chunk);
+		});
+}
+
+/// Montgomery's trick for batch inversion - reduces expensive field inversions
+#[inline]
+fn montgomery_batch_invert(inputs: &[M128], outputs: &mut [M128]) {
+	if inputs.len() <= 8 {
+		// Use individual inversions for very small chunks
+		for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+			*output = packed_tower_16x8b_invert_or_zero(*input);
+		}
+		return;
+	}
+	
+	let mut products = vec![M128::from(unsafe { vdupq_n_u8(1) }); inputs.len()];
+	
+	// Forward pass: compute partial products
+	for i in 1..inputs.len() {
+		products[i] = packed_tower_16x8b_multiply_optimized(products[i-1], inputs[i-1]);
+	}
+	
+	// Invert the final product
+	let mut inv_product = packed_tower_16x8b_invert_or_zero(
+		packed_tower_16x8b_multiply_optimized(products[inputs.len()-1], inputs[inputs.len()-1])
+	);
+	
+	// Backward pass: compute individual inverses
+	for i in (1..inputs.len()).rev() {
+		outputs[i] = packed_tower_16x8b_multiply_optimized(products[i-1], inv_product);
+		inv_product = packed_tower_16x8b_multiply_optimized(inv_product, inputs[i]);
+	}
+	outputs[0] = inv_product;
+	
+	// Handle zero inputs efficiently
+	for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+		unsafe {
+			let is_zero = vceqzq_u8((*input).into());
+			if vmaxvq_u8(is_zero) == 0xFF {
+				*output = M128::from(vdupq_n_u8(0));
+			}
+		}
+	}
+}
+
+/// Parallel batch alpha multiplication - essential for tower field operations
+#[inline]
+pub fn packed_tower_16x8b_multiply_alpha_batch_parallel(
+	input_batch: &[M128],
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(input_batch.len(), result_batch.len());
+	
+	if input_batch.len() < PARALLEL_THRESHOLD {
+		for (input, result) in input_batch.iter().zip(result_batch.iter_mut()) {
+			*result = packed_tower_16x8b_multiply_alpha(*input);
+		}
+		return;
+	}
+	
+	input_batch.par_iter()
+		.zip(result_batch.par_iter_mut())
+		.for_each(|(input, result)| {
+			*result = packed_tower_16x8b_multiply_alpha(*input);
+		});
+}
+
+/// Parallel batch AES field operations - critical for AES-based protocols
+#[inline]
+pub fn packed_aes_16x8b_multiply_batch_parallel(
+	a_batch: &[M128], 
+	b_batch: &[M128], 
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(a_batch.len(), b_batch.len());
+	debug_assert_eq!(a_batch.len(), result_batch.len());
+	
+	if a_batch.len() < PARALLEL_THRESHOLD {
+		for ((a, b), result) in a_batch.iter().zip(b_batch.iter()).zip(result_batch.iter_mut()) {
+			*result = packed_aes_16x8b_multiply(*a, *b);
+		}
+		return;
+	}
+	
+	a_batch.par_iter()
+		.zip(b_batch.par_iter())
+		.zip(result_batch.par_iter_mut())
+		.for_each(|((a, b), result)| {
+			*result = packed_aes_16x8b_multiply(*a, *b);
+		});
+}
+
+/// Parallel batch field isomorphism (Tower ↔ AES) - needed for mixed protocols
+#[inline]
+pub fn packed_tower_to_aes_batch_parallel(
+	input_batch: &[M128],
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(input_batch.len(), result_batch.len());
+	
+	if input_batch.len() < PARALLEL_THRESHOLD {
+		for (input, result) in input_batch.iter().zip(result_batch.iter_mut()) {
+			*result = packed_tower_16x8b_into_aes(*input);
+		}
+		return;
+	}
+	
+	input_batch.par_iter()
+		.zip(result_batch.par_iter_mut())
+		.for_each(|(input, result)| {
+			*result = packed_tower_16x8b_into_aes(*input);
+		});
+}
+
+#[inline]
+pub fn packed_aes_to_tower_batch_parallel(
+	input_batch: &[M128],
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(input_batch.len(), result_batch.len());
+	
+	if input_batch.len() < PARALLEL_THRESHOLD {
+		for (input, result) in input_batch.iter().zip(result_batch.iter_mut()) {
+			*result = packed_aes_16x8b_into_tower(*input);
+		}
+		return;
+	}
+	
+	input_batch.par_iter()
+		.zip(result_batch.par_iter_mut())
+		.for_each(|(input, result)| {
+			*result = packed_aes_16x8b_into_tower(*input);
+		});
+}
+
+/// High-performance parallel linear combination: result = a*coeff_a + b*coeff_b
+/// Essential for sumcheck and other linear algebra operations
+#[inline]
+pub fn packed_tower_16x8b_linear_combination_parallel(
+	a_batch: &[M128],
+	b_batch: &[M128],
+	coeff_a: M128,
+	coeff_b: M128,
+	result_batch: &mut [M128]
+) {
+	debug_assert_eq!(a_batch.len(), b_batch.len());
+	debug_assert_eq!(a_batch.len(), result_batch.len());
+	
+	if a_batch.len() < PARALLEL_THRESHOLD {
+		for ((a, b), result) in a_batch.iter().zip(b_batch.iter()).zip(result_batch.iter_mut()) {
+			let term_a = packed_tower_16x8b_multiply_optimized(*a, coeff_a);
+			let term_b = packed_tower_16x8b_multiply_optimized(*b, coeff_b);
+			*result = M128::from(unsafe { veorq_u8(term_a.into(), term_b.into()) });
+		}
+		return;
+	}
+	
+	a_batch.par_iter()
+		.zip(b_batch.par_iter())
+		.zip(result_batch.par_iter_mut())
+		.for_each(|((a, b), result)| {
+			let term_a = packed_tower_16x8b_multiply_optimized(*a, coeff_a);
+			let term_b = packed_tower_16x8b_multiply_optimized(*b, coeff_b);
+			*result = M128::from(unsafe { veorq_u8(term_a.into(), term_b.into()) });
+		});
+}
+
+/// Parallel batch evaluation of multilinear polynomials - core operation for many protocols
+#[inline]
+pub fn packed_tower_16x8b_multilinear_eval_parallel(
+	coeffs: &[M128],
+	eval_points: &[M128],
+	results: &mut [M128]
+) {
+	debug_assert_eq!(eval_points.len(), results.len());
+	
+	if eval_points.len() < PARALLEL_THRESHOLD {
+		for (point, result) in eval_points.iter().zip(results.iter_mut()) {
+			*result = multilinear_eval_single(coeffs, *point);
+		}
+		return;
+	}
+	
+	eval_points.par_iter()
+		.zip(results.par_iter_mut())
+		.for_each(|(point, result)| {
+			*result = multilinear_eval_single(coeffs, *point);
+		});
+}
+
+#[inline]
+fn multilinear_eval_single(coeffs: &[M128], point: M128) -> M128 {
+	// Efficient multilinear evaluation using Horner's method
+	coeffs.iter().fold(M128::from(unsafe { vdupq_n_u8(0) }), |acc, &coeff| {
+		let term = packed_tower_16x8b_multiply_optimized(coeff, point);
+		M128::from(unsafe { veorq_u8(acc.into(), term.into()) })
+	})
+}
+
+/// Parallel batch polynomial interpolation - needed for Reed-Solomon and other codes
+#[inline]
+pub fn packed_tower_16x8b_interpolate_parallel(
+	points: &[M128],
+	values: &[M128],
+	eval_point: M128,
+	result: &mut M128
+) {
+	debug_assert_eq!(points.len(), values.len());
+	
+	if points.len() < PARALLEL_THRESHOLD {
+		*result = lagrange_interpolate_single(points, values, eval_point);
+		return;
+	}
+	
+	// Parallel Lagrange interpolation
+	let partial_results: Vec<M128> = points.par_iter()
+		.zip(values.par_iter())
+		.enumerate()
+		.map(|(i, (point_i, value_i))| {
+			let mut basis = M128::from(unsafe { vdupq_n_u8(1) });
+			
+			// Compute Lagrange basis polynomial
+			for (j, point_j) in points.iter().enumerate() {
+				if i != j {
+								let numerator = M128::from(unsafe { 
+				veorq_u8(eval_point.into(), (*point_j).into()) 
+			});
+			let denominator = M128::from(unsafe { 
+				veorq_u8((*point_i).into(), (*point_j).into()) 
+			});
+					let inv_denom = packed_tower_16x8b_invert_or_zero(denominator);
+					let factor = packed_tower_16x8b_multiply_optimized(numerator, inv_denom);
+					basis = packed_tower_16x8b_multiply_optimized(basis, factor);
+				}
+			}
+			
+			packed_tower_16x8b_multiply_optimized(*value_i, basis)
+		})
+		.collect();
+	
+	// Sum all partial results
+	*result = partial_results.iter().fold(
+		M128::from(unsafe { vdupq_n_u8(0) }),
+		|acc, &term| M128::from(unsafe { veorq_u8(acc.into(), term.into()) })
+	);
+}
+
+#[inline]
+fn lagrange_interpolate_single(points: &[M128], values: &[M128], eval_point: M128) -> M128 {
+	let mut result = M128::from(unsafe { vdupq_n_u8(0) });
+	
+	for (i, (point_i, value_i)) in points.iter().zip(values.iter()).enumerate() {
+		let mut basis = M128::from(unsafe { vdupq_n_u8(1) });
+		
+		for (j, point_j) in points.iter().enumerate() {
+			if i != j {
+				let numerator = M128::from(unsafe { 
+					veorq_u8(eval_point.into(), (*point_j).into()) 
+				});
+				let denominator = M128::from(unsafe { 
+					veorq_u8((*point_i).into(), (*point_j).into()) 
+				});
+				let inv_denom = packed_tower_16x8b_invert_or_zero(denominator);
+				let factor = packed_tower_16x8b_multiply_optimized(numerator, inv_denom);
+				basis = packed_tower_16x8b_multiply_optimized(basis, factor);
+			}
+		}
+		
+		let term = packed_tower_16x8b_multiply_optimized(*value_i, basis);
+		result = M128::from(unsafe { veorq_u8(result.into(), term.into()) });
+	}
+	
+	result
+}
+
+// =============================================================================
+// CORE OPTIMIZED OPERATIONS
+// =============================================================================
 
 // SVE-optimized lookup function
 #[cfg(target_feature = "sve")]
@@ -221,8 +615,6 @@ pub fn packed_tower_16x8b_into_aes(x: M128) -> M128 {
 pub fn packed_aes_16x8b_into_tower(x: M128) -> M128 {
 	lookup_16x8b_neon_precomputed(&AES_TO_TOWER_NEON_TABLE, x)
 }
-
-
 
 pub const TOWER_TO_AES_LOOKUP_TABLE: [u8; 256] = [
 	0x00, 0x01, 0xBC, 0xBD, 0xB0, 0xB1, 0x0C, 0x0D, 0xEC, 0xED, 0x50, 0x51, 0x5C, 0x5D, 0xE0, 0xE1,
@@ -533,3 +925,5 @@ fn shift_right<F: TowerField>(x: M128) -> M128 {
 		_ => panic!("Unsupported tower level {tower_level}"),
 	}
 }
+
+

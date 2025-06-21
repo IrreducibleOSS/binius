@@ -28,6 +28,8 @@ pub mod packed_polyval_512;
 
 pub mod byte_sliced;
 
+pub mod parallel_fallback;
+
 pub(super) mod packed_scaled;
 
 pub(super) mod hybrid_recursive_arithmetics;
