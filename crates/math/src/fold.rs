@@ -47,7 +47,7 @@ fn sve_optimized_lerp_fold<P, PE>(
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
 	unsafe {
-		use std::arch::asm;
+
 		
 		// SVE-optimized vectorized linear interpolation
 		// This processes multiple evaluations simultaneously using scalable vectors

@@ -23,8 +23,8 @@ cfg_if! {
 		mod groestl_avx512;
 		pub use groestl_avx512::GroestlShortImpl;
 	} else if #[cfg(all(target_arch = "aarch64", target_feature = "sve", target_feature = "aes"))] {
-		mod groestl_sve;
-		pub use groestl_sve::GroestlShortImpl;
+		mod groestl_sve_short;
+		pub use groestl_sve_short::GroestlShortImpl;
 	} else {
 		mod portable;
 		pub use portable::GroestlShortImpl;

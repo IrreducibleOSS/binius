@@ -23,10 +23,11 @@ use crate::{
 #[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
 mod sve_compute {
 	use super::*;
-	use std::arch::asm;
+	
 	
 	/// SVE-optimized tensor expansion
 	/// Processes multiple tensor products simultaneously using scalable vectors
+	#[allow(dead_code)]
 	#[inline]
 	pub fn sve_tensor_expand<F: Field>(
 		log_n: usize,
@@ -42,20 +43,18 @@ mod sve_compute {
 			));
 		}
 		
-		unsafe {
-			// SVE-optimized tensor expansion
-			// This processes multiple tensor products in parallel
+		// SVE-optimized tensor expansion
+		// This processes multiple tensor products in parallel
+		
+		for (i, &coord) in coordinates.iter().enumerate() {
+			let stride = 1 << i;
+			let block_size = stride * 2;
 			
-			for (i, &coord) in coordinates.iter().enumerate() {
-				let stride = 1 << i;
-				let block_size = stride * 2;
-				
-				// Use SVE to process multiple blocks simultaneously
-				for chunk_start in (0..data.len()).step_by(block_size * 8) { // Process 8 blocks at once
-					let chunk_end = (chunk_start + block_size * 8).min(data.len());
-					if chunk_end - chunk_start >= block_size {
-						sve_tensor_expand_chunk(&mut data[chunk_start..chunk_end], stride, coord);
-					}
+			// Use SVE to process multiple blocks simultaneously
+			for chunk_start in (0..data.len()).step_by(block_size * 8) { // Process 8 blocks at once
+				let chunk_end = (chunk_start + block_size * 8).min(data.len());
+				if chunk_end - chunk_start >= block_size {
+					sve_tensor_expand_chunk(&mut data[chunk_start..chunk_end], stride, coord);
 				}
 			}
 		}
@@ -64,7 +63,8 @@ mod sve_compute {
 	}
 	
 	/// SVE-optimized tensor expansion for a single chunk
-	unsafe fn sve_tensor_expand_chunk<F: Field>(data: &mut [F], stride: usize, coord: F) {
+	#[allow(dead_code)]
+	fn sve_tensor_expand_chunk<F: Field>(data: &mut [F], stride: usize, coord: F) {
 		// SVE implementation for parallel tensor expansion
 		// This would use SVE instructions to process multiple elements simultaneously
 		
@@ -83,6 +83,7 @@ mod sve_compute {
 	}
 	
 	/// SVE-optimized inner product computation
+	#[allow(dead_code)]
 	#[inline]
 	pub fn sve_inner_product<F: Field>(a: &[F], b: &[F]) -> Result<F, Error> {
 		if a.len() != b.len() {
@@ -91,29 +92,28 @@ mod sve_compute {
 			));
 		}
 		
-		unsafe {
-			let mut result = F::ZERO;
+		let mut result = F::ZERO;
+		
+		// SVE-optimized parallel reduction
+		// Process multiple elements simultaneously and accumulate
+		
+		// Process in SVE-sized chunks
+		const SVE_CHUNK_SIZE: usize = 64; // Typical SVE vector length in elements
+		
+		for chunk in a.chunks(SVE_CHUNK_SIZE).zip(b.chunks(SVE_CHUNK_SIZE)) {
+			let (a_chunk, b_chunk) = chunk;
 			
-			// SVE-optimized parallel reduction
-			// Process multiple elements simultaneously and accumulate
-			
-			// Process in SVE-sized chunks
-			const SVE_CHUNK_SIZE: usize = 64; // Typical SVE vector length in elements
-			
-			for chunk in a.chunks(SVE_CHUNK_SIZE).zip(b.chunks(SVE_CHUNK_SIZE)) {
-				let (a_chunk, b_chunk) = chunk;
-				
-				// SVE vectorized multiply-accumulate
-				for (a_elem, b_elem) in a_chunk.iter().zip(b_chunk.iter()) {
-					result += *a_elem * *b_elem;
-				}
+			// SVE vectorized multiply-accumulate
+			for (a_elem, b_elem) in a_chunk.iter().zip(b_chunk.iter()) {
+				result += *a_elem * *b_elem;
 			}
-			
-			Ok(result)
 		}
+		
+		Ok(result)
 	}
 	
 	/// SVE-optimized element-wise operations
+	#[allow(dead_code)]
 	#[inline]
 	pub fn sve_elementwise_add<F: Field>(a: &[F], b: &[F], result: &mut [F]) -> Result<(), Error> {
 		if a.len() != b.len() || a.len() != result.len() {
@@ -122,19 +122,18 @@ mod sve_compute {
 			));
 		}
 		
-		unsafe {
-			// SVE-optimized parallel addition
-			// Process multiple elements simultaneously
-			
-			for ((a_elem, b_elem), res_elem) in a.iter().zip(b.iter()).zip(result.iter_mut()) {
-				*res_elem = *a_elem + *b_elem;
-			}
+		// SVE-optimized parallel addition
+		// Process multiple elements simultaneously
+		
+		for ((a_elem, b_elem), res_elem) in a.iter().zip(b.iter()).zip(result.iter_mut()) {
+			*res_elem = *a_elem + *b_elem;
 		}
 		
 		Ok(())
 	}
 	
 	/// SVE-optimized matrix-vector multiplication
+	#[allow(dead_code)]
 	#[inline]
 	pub fn sve_matrix_vector_mul<F: Field>(
 		matrix: &[F],
@@ -149,17 +148,15 @@ mod sve_compute {
 			));
 		}
 		
-		unsafe {
-			// SVE-optimized matrix-vector multiplication
-			// Use SVE to process multiple dot products in parallel
+		// SVE-optimized matrix-vector multiplication
+		// Use SVE to process multiple dot products in parallel
+		
+		for (i, result_elem) in result.iter_mut().enumerate() {
+			let row_start = i * cols;
+			let matrix_row = &matrix[row_start..row_start + cols];
 			
-			for (i, result_elem) in result.iter_mut().enumerate() {
-				let row_start = i * cols;
-				let matrix_row = &matrix[row_start..row_start + cols];
-				
-				// SVE vectorized dot product
-				*result_elem = sve_inner_product(matrix_row, vector)?;
-			}
+			// SVE vectorized dot product
+			*result_elem = sve_inner_product(matrix_row, vector)?;
 		}
 		
 		Ok(())
