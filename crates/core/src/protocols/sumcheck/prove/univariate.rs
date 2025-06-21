@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{collections::HashMap, iter::repeat_n};
+use std::{collections::HashMap, iter::repeat_n, time::Instant};
 
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, TowerField,
@@ -335,24 +335,29 @@ where
 	let pbase_coset_composition_evals_len =
 		1 << subcube_vars.saturating_sub(P::LOG_WIDTH + log_embedding_degree);
 
+	// println!("zerocheck_univariate_evals number of staggered rounds {:?}", 1 << log_subcube_count);
+	// let start = Instant::now();
 	// NB: we avoid evaluation on the first 2^skip_rounds points because honest
 	// prover would always evaluate to zero there; we also factor out first
 	// skip_rounds terms of the equality indicator and apply them pointwise to
 	// the final round evaluations, which equates to lowering the composition_degree
 	// by one (this is an extension of Gruen section 3.2 trick)
-	let staggered_round_evals = (0..1 << log_subcube_count)
-		.into_par_iter()
+	// let staggered_round_evals = (0..1 << log_subcube_count)
+	let staggered_round_evals = gray_order_par_iter(log_subcube_count)
 		.try_fold(
 			|| {
-				ParFoldStates::<FBase, P>::new(
-					n_multilinears,
-					skip_rounds,
-					log_batch,
-					log_embedding_degree,
-					composition_degrees.clone(),
+				(
+					ParFoldStates::<FBase, P>::new(
+						n_multilinears,
+						skip_rounds,
+						log_batch,
+						log_embedding_degree,
+						composition_degrees.clone(),
+					),
+					None::<usize>,
 				)
 			},
-			|mut par_fold_states, subcube_index| -> Result<_, Error> {
+			|(mut par_fold_states, mut last_index), subcube_index| -> Result<_, Error> {
 				let ParFoldStates {
 					evals,
 					extrapolated_evals,
@@ -360,18 +365,50 @@ where
 					packed_round_evals,
 				} = &mut par_fold_states;
 
+				let pbase_log_width = P::LOG_WIDTH;
+				// Which bit flipped since the previous sub-cube?
+				let (need_recompute, flip_dim) = match last_index {
+					None => (true, 0),
+					Some(prev) => {
+						let diff = prev ^ subcube_index;
+						let d = diff.trailing_zeros() as usize;
+						// elements, so we recompute; otherwise we can just permute.
+						(d >= pbase_log_width + log_embedding_degree, d)
+					}
+				};
+
+				let start = Instant::now();
 				// Interpolate multilinear evals for each multilinear
 				for (multilinear, extrapolated_evals) in
 					izip!(multilinears, extrapolated_evals.iter_mut())
 				{
 					// Sample evals subcube from a multilinear poly
-					multilinear.subcube_evals(
-						subcube_vars,
-						subcube_index,
-						log_embedding_degree,
-						evals,
-					)?;
+					// multilinear.subcube_evals(
+					// 	subcube_vars,
+					// 	subcube_index,
+					// 	log_embedding_degree,
+					// 	evals,
+					// )?;
 
+					if need_recompute {
+						// println!("need recompute");
+						multilinear.subcube_evals(
+								subcube_vars,
+								subcube_index,
+								log_embedding_degree,
+								evals,
+						)?;
+					} else {
+							// fast in-place update
+							gray_flip_axis(evals, flip_dim, pbase_log_width);
+					}
+
+					// if subcube_index == 1 || subcube_index == 0 {
+					// 	println!(
+					// 		"zerocheck_univariate_evals evals.len() subcube_index {} {:?}",
+					// 		subcube_index, evals
+					// 	);
+					// }
 					// Extrapolate evals using a conservative upper bound of the composition
 					// degree. We use Additive NTT to extrapolate evals beyond the first
 					// 2^skip_rounds, exploiting the fact that extension field NTT is a strided
@@ -390,6 +427,11 @@ where
 						extrapolated_evals_domain,
 					)?
 				}
+
+				// if subcube_index == 1 {
+				// 	let total = start.elapsed();
+				// 	println!("zerocheck_univariate_evals_loop {total:?}");
+				// }
 
 				// Evaluate the compositions and accumulate round results
 				for (composition, packed_round_evals, &pbase_prefix_len) in
@@ -436,31 +478,35 @@ where
 						);
 					}
 				}
+				// let total = start.elapsed();
+				// println!("zerocheck_univariate_evals__rayon_loop {total:?}");
 
-				Ok(par_fold_states)
+				last_index = Some(subcube_index);
+				Ok((par_fold_states, last_index))
 			},
 		)
 		.map(|states| -> Result<_, Error> {
-			let scalar_round_evals = izip!(composition_degrees.clone(), states?.packed_round_evals)
-				.map(|(composition_degree, packed_round_evals)| {
-					let mut composition_round_evals = Vec::with_capacity(
-						extrapolated_scalars_count(composition_degree, skip_rounds),
-					);
+			let scalar_round_evals =
+				izip!(composition_degrees.clone(), states?.0.packed_round_evals)
+					.map(|(composition_degree, packed_round_evals)| {
+						let mut composition_round_evals = Vec::with_capacity(
+							extrapolated_scalars_count(composition_degree, skip_rounds),
+						);
 
-					for packed_round_evals_coset in
-						packed_round_evals.chunks_exact(p_coset_round_evals_len)
-					{
-						let coset_scalars = packed_round_evals_coset
-							.iter()
-							.flat_map(|packed| packed.iter())
-							.take(1 << skip_rounds);
+						for packed_round_evals_coset in
+							packed_round_evals.chunks_exact(p_coset_round_evals_len)
+						{
+							let coset_scalars = packed_round_evals_coset
+								.iter()
+								.flat_map(|packed| packed.iter())
+								.take(1 << skip_rounds);
 
-						composition_round_evals.extend(coset_scalars);
-					}
+							composition_round_evals.extend(coset_scalars);
+						}
 
-					composition_round_evals
-				})
-				.collect::<Vec<_>>();
+						composition_round_evals
+					})
+					.collect::<Vec<_>>();
 
 			Ok(scalar_round_evals)
 		})
@@ -488,6 +534,8 @@ where
 			},
 		)?;
 
+	// let total = start.elapsed();
+	// println!("zerocheck_univariate_evals {total:?}");
 	// So far evals of each composition are "staggered" in a sense that they are evaluated on the
 	// smallest domain which guarantees uniqueness of the round polynomial. We extrapolate them to
 	// max_domain_size to aid in Gruen section 3.2 optimization below and batch mixing.
@@ -502,6 +550,31 @@ where
 		max_domain_size,
 		partial_eq_ind_evals,
 	})
+}
+
+fn gray_order_par_iter(
+	m: usize,
+) -> impl binius_maybe_rayon::prelude::ParallelIterator<Item = usize> {
+	use binius_maybe_rayon::prelude::*;
+	(0..1usize << m).into_par_iter().map(|i| i ^ (i >> 1))
+}
+
+/// Swap the two halves of `slice` along the Boolean axis `dim`.
+#[inline(always)]
+fn gray_flip_axis<T>(slice: &mut [T], dim: usize, pbase_log_width: usize) {
+    if dim < pbase_log_width { return }
+
+    let block      = 1usize << (dim - pbase_log_width);   // elements to swap
+    let stride     = block << 1;                          // distance of pairs
+    for chunk in (0..slice.len()).step_by(stride) {
+        for i in 0..block {
+					if chunk + i >= slice.len() || chunk + i + block >= slice.len() {	
+						println!("gray_flip_axis dim {} block {} stride {}", dim, block, stride);
+						println!("gray_flip_axis chunk {} i {}", chunk, i);
+					}
+          slice.swap(chunk + i, chunk + i + block);
+        }
+    }
 }
 
 // A helper to perform spread multiplication of small field composition evals by appropriate
@@ -919,6 +992,8 @@ mod tests {
 					.iter()
 					.map(|round_evals| round_evals[round_evals_index])
 					.collect::<Vec<_>>();
+				println!("univariate_skip_composition_sums {:?}", univariate_skip_composition_sums);
+
 				assert_eq!(univariate_skip_composition_sums, composition_sums);
 			}
 		}

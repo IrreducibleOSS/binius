@@ -3,10 +3,9 @@
 use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
 
 use binius_field::{
-	ExtensionField, Field, PackedField, RepackedExtension,
-	packed::{
+	arithmetic_traits::TaggedPackedTransformationFactory, packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
-	},
+	}, ExtensionField, Field, PackedField, RepackedExtension
 };
 use binius_utils::bail;
 
@@ -214,6 +213,9 @@ where
 		log_embedding_degree: usize,
 		evals: &mut [PE],
 	) -> Result<(), Error> {
+		// println!("subcube_evals 1 subcube_vars {} subcube_index {} log_embedding_degree {} evals.len() {}",
+			// subcube_vars, subcube_index, log_embedding_degree, evals.len());
+
 		let log_extension_degree = PE::Scalar::LOG_DEGREE;
 
 		if subcube_vars > self.n_vars() {
@@ -250,6 +252,9 @@ where
 		}
 
 		let subcube_start = subcube_index << subcube_vars;
+		// if subcube_index == 1 {
+		// 	println!("subcube_start {}", subcube_start);
+		// } 
 
 		if log_embedding_degree == 0 {
 			// One-to-one embedding can bypass the extension field construction overhead.
@@ -273,6 +278,9 @@ where
 			let bases_count = 1 << log_embedding_degree.min(subcube_vars);
 			for i in 0..1 << subcube_vars.saturating_sub(log_embedding_degree) {
 				for (j, base) in bases[..bases_count].iter_mut().enumerate() {
+					// if subcube_index == 1 {
+					// 	println!("subcube_evals inner loop i {} j {} base {}", i, j, base);
+					// } 
 					// Safety: i > 0 iff log_embedding_degree < subcube_vars and subcube_index <
 					// max_index check
 					*base = unsafe {
@@ -517,6 +525,9 @@ where
 		log_embedding_degree: usize,
 		evals: &mut [P],
 	) -> Result<(), Error> {
+		// println!("subcube_evals subcube_vars {} subcube_index {} log_embedding_degree {} evals.len() {}",
+			// subcube_vars, subcube_index, log_embedding_degree, evals.len());
+
 		let n_vars = self.n_vars();
 		if subcube_vars > n_vars {
 			bail!(Error::ArgumentRangeError {

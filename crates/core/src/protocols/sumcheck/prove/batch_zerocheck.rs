@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use binius_field::{ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{CpuBackend, make_portable_backend};
@@ -175,6 +175,7 @@ where
 	Prover: ZerocheckProver<'a, P>,
 	Challenger_: Challenger,
 {
+
 	// Check that the provers are in non-descending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars())) {
 		bail!(Error::ClaimsOutOfOrder);
@@ -190,6 +191,7 @@ where
 		.max()
 		.unwrap_or(0);
 
+
 	// Sample batching coefficients while computing round polynomials per claim, then batch
 	// those in Lagrange domain.
 	let mut batch_coeffs = Vec::with_capacity(provers.len());
@@ -199,8 +201,12 @@ where
 		let next_batch_coeff = transcript.sample();
 		batch_coeffs.push(next_batch_coeff);
 
+		// let start = Instant::now();
+
 		let prover_round_evals =
 			prover.execute_univariate_round(skip_rounds, max_domain_size, next_batch_coeff)?;
+		// let total = start.elapsed();
+		// println!("batch_prove 1 {total:?}");
 
 		round_evals.add_assign_lagrange(&(prover_round_evals * next_batch_coeff))?;
 	}
@@ -209,12 +215,17 @@ where
 	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
+
 	// Prove reduced multilinear eq-ind sumchecks, high-to-low, with front-loaded batching
 	let mut sumcheck_provers = Vec::with_capacity(provers.len());
+
+
 	for prover in &mut provers {
 		let sumcheck_prover = prover.fold_univariate_round(univariate_challenge)?;
 		sumcheck_provers.push(sumcheck_prover);
-	}
+}
+
+// let start = Instant::now();
 
 	let regular_sumcheck_prover =
 		front_loaded::BatchProver::new_prebatched(batch_coeffs, sumcheck_provers)?;
@@ -288,6 +299,9 @@ where
 		unskipped_challenges,
 		concat_multilinear_evals,
 	};
+
+	// let total = start.elapsed();
+	// println!("batch_prove 2 {total:?}");
 
 	Ok(output)
 }

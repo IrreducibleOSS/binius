@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, mem, sync::Arc};
+use std::{marker::PhantomData, mem, sync::Arc, time::Instant};
 
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedSubfield, RepackedExtension,
@@ -319,6 +319,7 @@ where
 		max_domain_size: usize,
 		batch_coeff: F,
 	) -> Result<ZerocheckRoundEvals<F>, Error> {
+
 		let ZerocheckProverState::RoundEval {
 			multilinears,
 			compositions,
@@ -340,6 +341,8 @@ where
 			.map(|(_, composition_base, _)| composition_base)
 			.collect::<Vec<_>>();
 
+		// let start = Instant::now();
+
 		// Output contains values that are needed for computations that happen after
 		// the round challenge has been sampled
 		let univariate_evals_output = zerocheck_univariate_evals::<_, _, FBase, _, _, _, _>(
@@ -350,6 +353,9 @@ where
 			max_domain_size,
 			self.backend,
 		)?;
+
+		// let total = start.elapsed();
+		// println!("execute_univariate_round {total:?}");
 
 		// Batch together Lagrange round evals using powers of batch_coeff
 		let batched_round_evals = univariate_evals_output
@@ -422,6 +428,7 @@ where
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
+		// let start = Instant::now();
 		let folded_multilinears = padded_multilinears
 			.par_iter()
 			.map(|multilinear| -> Result<_, Error> {
@@ -432,6 +439,9 @@ where
 				Ok(folded_multilinear)
 			})
 			.collect::<Result<Vec<_>, _>>()?;
+
+		// let total = start.elapsed();
+		// println!("Folded multilinears in {total:?}");
 
 		let composite_claims = izip!(compositions, claimed_sums)
 			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })

@@ -111,9 +111,19 @@ fn bench_univariate_skip_aes_tower(c: &mut Criterion) {
 	group.finish()
 }
 
+fn criterion_config() -> Criterion {
+	let default = 10;
+	let ss = std::env::var("CRITERION_SAMPLE_SIZE")
+			.ok()
+			.and_then(|v| v.parse::<usize>().ok())
+			.unwrap_or(default);
+
+	Criterion::default().sample_size(ss)
+}
+
 criterion_group! {
 	name = binary_zerocheck;
-	config = Criterion::default().sample_size(10);
+	config = criterion_config();
 	targets = bench_univariate_skip_aes_tower
 }
 criterion_main!(binary_zerocheck);
