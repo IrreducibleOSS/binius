@@ -27,13 +27,13 @@ const L3_CACHE_BATCH_SIZE: usize = 131072; // 2MB L3 / 16 bytes
 const PARALLEL_THRESHOLD: usize = 64; // Minimum size for parallel processing
 
 // CPU feature detection for SVE
-#[cfg(target_feature = "sve")]
+#[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
 #[inline(always)]
 fn is_sve_available() -> bool {
 	true
 }
 
-#[cfg(not(target_feature = "sve"))]
+#[cfg(not(all(target_arch = "aarch64", target_feature = "sve")))]
 #[inline(always)]
 fn is_sve_available() -> bool {
 	false
@@ -458,7 +458,7 @@ fn lagrange_interpolate_single(points: &[M128], values: &[M128], eval_point: M12
 // =============================================================================
 
 // SVE-optimized lookup function with scalable vector support
-#[cfg(target_feature = "sve")]
+#[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
 #[inline]
 pub fn lookup_sve_optimized(table_neon: &[uint8x16x4_t; 4], x: M128) -> M128 {
 	unsafe {
@@ -514,7 +514,7 @@ pub fn lookup_16x8b_neon_precomputed(table_neon: &[uint8x16x4_t; 4], x: M128) ->
 }
 
 // SVE-optimized multiplication with scalable vector processing
-#[cfg(target_feature = "sve")]
+#[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
 #[inline]
 pub fn packed_tower_sve_multiply(a: M128, b: M128) -> M128 {
 	unsafe {
@@ -605,9 +605,9 @@ pub fn packed_tower_16x8b_multiply_optimized(a: M128, b: M128) -> M128 {
 #[inline]
 pub fn packed_tower_16x8b_multiply(a: M128, b: M128) -> M128 {
 	if is_sve_available() {
-		#[cfg(target_feature = "sve")]
+		#[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
 		{ packed_tower_sve_multiply(a, b) }
-		#[cfg(not(target_feature = "sve"))]
+		#[cfg(not(all(target_arch = "aarch64", target_feature = "sve")))]
 		{ packed_tower_16x8b_multiply_optimized(a, b) }
 	} else {
 		packed_tower_16x8b_multiply_optimized(a, b)
