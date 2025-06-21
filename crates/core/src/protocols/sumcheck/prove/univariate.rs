@@ -757,9 +757,12 @@ fn spread_product<P, FBase>(
 
 			for (block_idx, dest) in accum.iter_mut().enumerate() {
 				let block_offset = block_idx | batch_idx << (log_n - P::LOG_WIDTH);
-				let spread_small = small[block_offset >> log_embedding_degree]
-					.spread(P::LOG_WIDTH, block_offset & mask);
-				*dest += P::cast_ext(spread_large * spread_small);
+				let small_index = block_offset >> log_embedding_degree;
+				if small_index < small.len() {
+					let spread_small = small[small_index]
+						.spread(P::LOG_WIDTH, block_offset & mask);
+					*dest += P::cast_ext(spread_large * spread_small);
+				}
 			}
 		}
 	} else {
