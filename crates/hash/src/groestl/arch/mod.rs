@@ -9,6 +9,9 @@ cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64", target_feature = "avx2", target_feature = "gfni",))] {
 		mod groestl_multi_avx2;
 		pub use groestl_multi_avx2::Groestl256Parallel;
+	} else if #[cfg(all(target_arch = "aarch64", target_feature = "sve", target_feature = "aes"))] {
+		mod groestl_sve;
+		pub use groestl_sve::Groestl256Parallel;
 	} else {
 		use super::Groestl256;
 		pub type Groestl256Parallel = Groestl256;
@@ -19,6 +22,9 @@ cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64",target_feature = "avx512bw",target_feature = "avx512vbmi",target_feature = "avx512f",target_feature = "gfni",))] {
 		mod groestl_avx512;
 		pub use groestl_avx512::GroestlShortImpl;
+	} else if #[cfg(all(target_arch = "aarch64", target_feature = "sve", target_feature = "aes"))] {
+		mod groestl_sve;
+		pub use groestl_sve::GroestlShortImpl;
 	} else {
 		mod portable;
 		pub use portable::GroestlShortImpl;

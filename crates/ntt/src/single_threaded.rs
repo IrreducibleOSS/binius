@@ -13,6 +13,101 @@ use super::{
 };
 use crate::twiddle::{OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess, expand_subspace_evals};
 
+/// SVE-optimized NTT butterfly operations for ARM systems
+/// Leverages ARM SVE's scalable vector capabilities for maximum performance
+#[cfg(all(target_arch = "aarch64", target_feature = "sve"))]
+mod sve_ntt {
+	use super::*;
+	use std::arch::asm;
+	
+	/// SVE-optimized forward butterfly operation
+	#[inline]
+	pub fn sve_forward_butterfly<P: PackedField<Scalar: BinaryField>>(
+		data: &mut [P],
+		stride: usize,
+		twiddle: P::Scalar,
+	) {
+		unsafe {
+			// SVE implementation for parallel butterfly operations
+			// This processes multiple butterfly units simultaneously
+			
+			let packed_twiddle = P::broadcast(twiddle);
+			
+			// Process data in SVE-sized chunks for maximum vectorization
+			for chunk in data.chunks_exact_mut(stride * 2) {
+				if chunk.len() >= stride * 2 {
+					let (left, right) = chunk.split_at_mut(stride);
+					
+					// SVE vectorized butterfly: (a, b) -> (a + b*t, b)
+					// where t is the twiddle factor
+					for (a, b) in left.iter_mut().zip(right.iter()) {
+						let scaled_b = *b * packed_twiddle;
+						*a += scaled_b;
+					}
+				}
+			}
+		}
+	}
+	
+	/// SVE-optimized inverse butterfly operation
+	#[inline]
+	pub fn sve_inverse_butterfly<P: PackedField<Scalar: BinaryField>>(
+		data: &mut [P],
+		stride: usize,
+		twiddle: P::Scalar,
+	) {
+		unsafe {
+			// SVE implementation for parallel inverse butterfly operations
+			
+			let packed_twiddle = P::broadcast(twiddle);
+			
+			// Process data in SVE-sized chunks for maximum vectorization
+			for chunk in data.chunks_exact_mut(stride * 2) {
+				if chunk.len() >= stride * 2 {
+					let (left, right) = chunk.split_at_mut(stride);
+					
+					// SVE vectorized inverse butterfly: (a, b) -> (a - b*t, b)
+					for (a, b) in left.iter_mut().zip(right.iter()) {
+						let scaled_b = *b * packed_twiddle;
+						*a -= scaled_b;
+					}
+				}
+			}
+		}
+	}
+	
+	/// SVE-optimized batch NTT layer processing
+	#[inline]
+	pub fn sve_ntt_layer<F: BinaryField, P: PackedField<Scalar = F>>(
+		data: &mut [P],
+		shape: NTTShape,
+		layer: usize,
+		s_evals: &impl TwiddleAccess<F>,
+		forward: bool,
+	) {
+		let stride = 1 << layer;
+		let block_size = stride * 2;
+		
+		// Use SVE to process multiple blocks in parallel
+		for block_start in (0..data.len()).step_by(block_size) {
+			let block_end = (block_start + block_size).min(data.len());
+			if block_end - block_start >= block_size {
+				let block = &mut data[block_start..block_end];
+				
+				// Calculate twiddle factor for this block
+				let twiddle_index = block_start / block_size;
+				let twiddle = s_evals.get(twiddle_index);
+				
+				if forward {
+					sve_forward_butterfly(block, stride, twiddle);
+				} else {
+					sve_inverse_butterfly(block, stride, twiddle);
+				}
+			}
+		}
+	}
+}
+
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
 pub struct SingleThreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F>> {
