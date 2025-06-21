@@ -30,27 +30,58 @@ fn is_sve_available() -> bool {
 	false
 }
 
+// Pre-computed NEON format lookup tables for optimal performance
+const TOWER_TO_AES_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_TO_AES_LOOKUP_TABLE)
+};
+
+const AES_TO_TOWER_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(AES_TO_TOWER_LOOKUP_TABLE)
+};
+
+const TOWER_SQUARE_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_SQUARE_LOOKUP_TABLE)
+};
+
+const TOWER_INVERT_OR_ZERO_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_INVERT_OR_ZERO_LOOKUP_TABLE)
+};
+
+const TOWER_MUL_ALPHA_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_MUL_ALPHA_LOOKUP_TABLE)
+};
+
+const AES_INVERT_OR_ZERO_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(AES_INVERT_OR_ZERO_LOOKUP_TABLE)
+};
+
+const TOWER_EXP_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_EXP_LOOKUP_TABLE)
+};
+
+const TOWER_LOG_NEON_TABLE: [uint8x16x4_t; 4] = unsafe {
+	std::mem::transmute(TOWER_LOG_LOOKUP_TABLE)
+};
+
 // SVE-optimized lookup function
 #[cfg(target_feature = "sve")]
 #[inline]
-pub fn lookup_sve_optimized(table: [u8; 256], x: M128) -> M128 {
+pub fn lookup_sve_optimized(table_neon: &[uint8x16x4_t; 4], x: M128) -> M128 {
 	unsafe {
 		// Use SVE for wider vectorization if available
 		// This is a placeholder - actual SVE implementation would use svld1_u8, svtbl_u8, etc.
 		// For now, fall back to NEON implementation
-		lookup_16x8b_neon_optimized(table, x)
+		lookup_16x8b_neon_precomputed(table_neon, x)
 	}
 }
 
-// NEON-optimized lookup with pre-computed table format
+// Ultra-fast NEON lookup using pre-computed table format
 #[inline]
-pub fn lookup_16x8b_neon_optimized(table: [u8; 256], x: M128) -> M128 {
+pub fn lookup_16x8b_neon_precomputed(table_neon: &[uint8x16x4_t; 4], x: M128) -> M128 {
 	unsafe {
-		// Pre-compute table format to avoid repeated transmutation
-		let table_neon = std::mem::transmute::<[u8; 256], [uint8x16x4_t; 4]>(table);
 		let x = x.into();
 		
-		// Use prefetch hints for better cache performance
+		// Use pre-computed NEON tables - no transmutation overhead!
 		let y0 = vqtbl4q_u8(table_neon[0], x);
 		let y1 = vqtbl4q_u8(table_neon[1], veorq_u8(x, vdupq_n_u8(0x40)));
 		let y2 = vqtbl4q_u8(table_neon[2], veorq_u8(x, vdupq_n_u8(0x80)));
@@ -72,7 +103,7 @@ pub fn packed_tower_sve_multiply(a: M128, b: M128) -> M128 {
 	packed_tower_16x8b_multiply_optimized(a, b)
 }
 
-// Optimized multiplication with fast paths for common cases
+// Optimized multiplication with fast paths for common cases and pre-computed tables
 #[inline]
 pub fn packed_tower_16x8b_multiply_optimized(a: M128, b: M128) -> M128 {
 	unsafe {
@@ -88,9 +119,9 @@ pub fn packed_tower_16x8b_multiply_optimized(a: M128, b: M128) -> M128 {
 			return M128::from(vdupq_n_u8(0));
 		}
 		
-		// Optimized logarithmic multiplication
-		let loga = lookup_16x8b_neon_optimized(TOWER_LOG_LOOKUP_TABLE, a);
-		let logb = lookup_16x8b_neon_optimized(TOWER_LOG_LOOKUP_TABLE, b);
+		// Optimized logarithmic multiplication using pre-computed tables
+		let loga = lookup_16x8b_neon_precomputed(&TOWER_LOG_NEON_TABLE, a);
+		let logb = lookup_16x8b_neon_precomputed(&TOWER_LOG_NEON_TABLE, b);
 		let logc = {
 			let loga_vec = loga.into();
 			let logb_vec = logb.into();
@@ -98,7 +129,7 @@ pub fn packed_tower_16x8b_multiply_optimized(a: M128, b: M128) -> M128 {
 			let overflow = vcgtq_u8(loga_vec, sum);
 			vsubq_u8(sum, overflow)
 		};
-		let c = lookup_16x8b_neon_optimized(TOWER_EXP_LOOKUP_TABLE, logc.into()).into();
+		let c = lookup_16x8b_neon_precomputed(&TOWER_EXP_NEON_TABLE, logc.into()).into();
 		
 		// Apply zero mask
 		let a_or_b_is_0 = vorrq_u8(vceqzq_u8(a_vec), vceqzq_u8(b_vec));
@@ -121,22 +152,22 @@ pub fn packed_tower_16x8b_multiply(a: M128, b: M128) -> M128 {
 
 #[inline]
 pub fn packed_tower_16x8b_square(x: M128) -> M128 {
-	lookup_16x8b(TOWER_SQUARE_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&TOWER_SQUARE_NEON_TABLE, x)
 }
 
 #[inline]
 pub fn packed_tower_16x8b_invert_or_zero(x: M128) -> M128 {
-	lookup_16x8b(TOWER_INVERT_OR_ZERO_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&TOWER_INVERT_OR_ZERO_NEON_TABLE, x)
 }
 
 #[inline]
 pub fn packed_tower_16x8b_multiply_alpha(x: M128) -> M128 {
-	lookup_16x8b(TOWER_MUL_ALPHA_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&TOWER_MUL_ALPHA_NEON_TABLE, x)
 }
 
 #[inline]
 pub fn packed_aes_16x8b_invert_or_zero(x: M128) -> M128 {
-	lookup_16x8b(AES_INVERT_OR_ZERO_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&AES_INVERT_OR_ZERO_NEON_TABLE, x)
 }
 
 #[inline]
@@ -183,26 +214,15 @@ pub fn packed_aes_16x8b_multiply(a: M128, b: M128) -> M128 {
 
 #[inline]
 pub fn packed_tower_16x8b_into_aes(x: M128) -> M128 {
-	lookup_16x8b(TOWER_TO_AES_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&TOWER_TO_AES_NEON_TABLE, x)
 }
 
 #[inline]
 pub fn packed_aes_16x8b_into_tower(x: M128) -> M128 {
-	lookup_16x8b(AES_TO_TOWER_LOOKUP_TABLE, x)
+	lookup_16x8b_neon_precomputed(&AES_TO_TOWER_NEON_TABLE, x)
 }
 
-// Optimized lookup with dispatch to best available implementation
-#[inline]
-pub fn lookup_16x8b(table: [u8; 256], x: M128) -> M128 {
-	if is_sve_available() {
-		#[cfg(target_feature = "sve")]
-		{ lookup_sve_optimized(table, x) }
-		#[cfg(not(target_feature = "sve"))]
-		{ lookup_16x8b_neon_optimized(table, x) }
-	} else {
-		lookup_16x8b_neon_optimized(table, x)
-	}
-}
+
 
 pub const TOWER_TO_AES_LOOKUP_TABLE: [u8; 256] = [
 	0x00, 0x01, 0xBC, 0xBD, 0xB0, 0xB1, 0x0C, 0x0D, 0xEC, 0xED, 0x50, 0x51, 0x5C, 0x5D, 0xE0, 0xE1,
