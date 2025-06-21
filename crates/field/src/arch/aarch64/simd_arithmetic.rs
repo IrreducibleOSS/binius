@@ -4,7 +4,7 @@ use std::arch::aarch64::*;
 
 use super::m128::M128;
 use crate::{
-	BinaryField, TowerField,
+	BinaryField, TowerField, TowerExtensionField,
 	arch::{
 		SimdStrategy,
 		portable::packed_arithmetic::{
@@ -12,9 +12,8 @@ use crate::{
 		},
 	},
 	arithmetic_traits::{
-		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
+		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
-	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
 
 // Import parallel processing capabilities for multi-core performance
@@ -509,37 +508,33 @@ pub fn packed_tower_sve_multiply(a: M128, b: M128) -> M128 {
 	}
 }
 
-// Optimized multiplication with fast paths for common cases and pre-computed tables
+// Use the standard tower field multiplication algorithm (like x86_64 SIMD)
+// This is the correct approach rather than lookup tables
 #[inline]
 pub fn packed_tower_16x8b_multiply_optimized(a: M128, b: M128) -> M128 {
+	// Remove the ARM-specific optimizations for now and use the portable implementation
+	// The issue is that we need to call the existing PackedField multiplication
+	// rather than implementing our own lookup table approach
+	
+	// This is a temporary fallback - we should not have ARM-specific multiplication
+	// that differs from the standard algorithm
 	unsafe {
-		// Fast path for zero operands
-		let a_vec = a.into();
-		let b_vec = b.into();
-		let a_is_zero = vceqzq_u8(a_vec);
-		let b_is_zero = vceqzq_u8(b_vec);
-		let either_zero = vorrq_u8(a_is_zero, b_is_zero);
+		// Convert to individual bytes and use scalar multiplication
+		let a_uint8x16: uint8x16_t = a.into();
+		let b_uint8x16: uint8x16_t = b.into();
+		let a_bytes: [u8; 16] = std::mem::transmute(a_uint8x16);
+		let b_bytes: [u8; 16] = std::mem::transmute(b_uint8x16);
+		let mut result_bytes = [0u8; 16];
 		
-		// Check if all lanes are zero for early return
-		if vmaxvq_u8(either_zero) == 0xFF {
-			return M128::from(vdupq_n_u8(0));
+		for i in 0..16 {
+			// Use scalar multiplication which is known to be correct
+			let a_scalar = crate::BinaryField8b::new(a_bytes[i]);
+			let b_scalar = crate::BinaryField8b::new(b_bytes[i]);
+			let result_scalar = a_scalar * b_scalar;
+			result_bytes[i] = result_scalar.val();
 		}
 		
-		// Optimized logarithmic multiplication using pre-computed tables
-		let loga = lookup_16x8b_neon_precomputed(&TOWER_LOG_NEON_TABLE, a);
-		let logb = lookup_16x8b_neon_precomputed(&TOWER_LOG_NEON_TABLE, b);
-		let logc = {
-			let loga_vec = loga.into();
-			let logb_vec = logb.into();
-			let sum = vaddq_u8(loga_vec, logb_vec);
-			let overflow = vcgtq_u8(loga_vec, sum);
-			vsubq_u8(sum, overflow)
-		};
-		let c = lookup_16x8b_neon_precomputed(&TOWER_EXP_NEON_TABLE, logc.into()).into();
-		
-		// Apply zero mask
-		let a_or_b_is_0 = vorrq_u8(vceqzq_u8(a_vec), vceqzq_u8(b_vec));
-		vandq_u8(c, veorq_u8(a_or_b_is_0, M128::fill_with_bit(1).into())).into()
+		M128::from(std::mem::transmute::<[u8; 16], uint8x16_t>(result_bytes))
 	}
 }
 
@@ -784,38 +779,29 @@ impl<PT> TaggedMul<SimdStrategy> for PT
 where
 	PT: PackedTowerField<Underlier = M128>,
 	PT::DirectSubfield: TowerConstants<M128> + BinaryField,
+	PT::Scalar: TowerExtensionField<DirectSubfield: MulAlpha>,
 {
 	#[inline]
 	fn mul(self, rhs: Self) -> Self {
-		let alphas = PT::DirectSubfield::ALPHAS_ODD;
-		let odd_mask = M128::INTERLEAVE_ODD_MASK[PT::DirectSubfield::TOWER_LEVEL];
-		let a = self.as_packed_subfield();
-		let b = rhs.as_packed_subfield();
-		let p1 = (a * b).to_underlier();
-		let (lo, hi) =
-			M128::interleave(a.to_underlier(), b.to_underlier(), PT::DirectSubfield::TOWER_LEVEL);
-		let (lhs, rhs) =
-			M128::interleave(lo ^ hi, alphas ^ (p1 & odd_mask), PT::DirectSubfield::TOWER_LEVEL);
-		let p2 = (PT::PackedDirectSubfield::from_underlier(lhs)
-			* PT::PackedDirectSubfield::from_underlier(rhs))
-		.to_underlier();
-		let q1 = p1 ^ flip_even_odd::<PT::DirectSubfield>(p1);
-		let q2 = p2 ^ shift_left::<PT::DirectSubfield>(p2);
-		Self::from_underlier(q1 ^ (q2 & odd_mask))
+		// Use the portable implementation to avoid infinite recursion
+		use crate::arch::PairwiseRecursiveStrategy;
+		use crate::arithmetic_traits::TaggedMul;
+		TaggedMul::<PairwiseRecursiveStrategy>::mul(self, rhs)
 	}
 }
 
 impl<PT> TaggedMulAlpha<SimdStrategy> for PT
 where
-	PT: PackedTowerField<Underlier = M128>,
+	PT: PackedTowerField<Underlier = M128> + MulAlpha,
 	PT::PackedDirectSubfield: MulAlpha,
+	PT::Scalar: TowerExtensionField<DirectSubfield: MulAlpha>,
 {
 	#[inline]
 	fn mul_alpha(self) -> Self {
-		let a0_a1 = self.as_packed_subfield();
-		let a0alpha_a1alpha: M128 = a0_a1.mul_alpha().to_underlier();
-		let a1_a0 = flip_even_odd::<PT::DirectSubfield>(a0_a1.to_underlier());
-		Self::from_underlier(blend_odd_even::<PT::DirectSubfield>(a1_a0 ^ a0alpha_a1alpha, a1_a0))
+		// Use the portable implementation to avoid infinite recursion
+		use crate::arch::PairwiseRecursiveStrategy;
+		use crate::arithmetic_traits::TaggedMulAlpha;
+		TaggedMulAlpha::<PairwiseRecursiveStrategy>::mul_alpha(self)
 	}
 }
 
@@ -823,18 +809,14 @@ impl<PT> TaggedSquare<SimdStrategy> for PT
 where
 	PT: PackedTowerField<Underlier = M128>,
 	PT::PackedDirectSubfield: MulAlpha + Square,
+	PT::Scalar: TowerExtensionField<DirectSubfield: MulAlpha>,
 {
 	#[inline]
 	fn square(self) -> Self {
-		let a0_a1 = self.as_packed_subfield();
-		let a0sq_a1sq = Square::square(a0_a1);
-		let a1sq_a0sq = flip_even_odd::<PT::DirectSubfield>(a0sq_a1sq.to_underlier());
-		let a0sq_plus_a1sq = a0sq_a1sq.to_underlier() ^ a1sq_a0sq;
-		let a1_mul_alpha = a0sq_a1sq.mul_alpha();
-		Self::from_underlier(blend_odd_even::<PT::DirectSubfield>(
-			a1_mul_alpha.to_underlier(),
-			a0sq_plus_a1sq,
-		))
+		// Use the portable implementation to avoid infinite recursion
+		use crate::arch::PairwiseRecursiveStrategy;
+		use crate::arithmetic_traits::TaggedSquare;
+		TaggedSquare::<PairwiseRecursiveStrategy>::square(self)
 	}
 }
 
@@ -842,21 +824,14 @@ impl<PT> TaggedInvertOrZero<SimdStrategy> for PT
 where
 	PT: PackedTowerField<Underlier = M128>,
 	PT::PackedDirectSubfield: MulAlpha + Square,
+	PT::Scalar: TowerExtensionField<DirectSubfield: MulAlpha + InvertOrZero>,
 {
 	#[inline]
 	fn invert_or_zero(self) -> Self {
-		let a0_a1 = self.as_packed_subfield();
-		let a1_a0 = a0_a1.mutate_underlier(flip_even_odd::<PT::DirectSubfield>);
-		let a1alpha = a1_a0.mul_alpha();
-		let a0_plus_a1alpha = a0_a1 + a1alpha;
-		let a1sq_a0sq = Square::square(a1_a0);
-		let delta = a1sq_a0sq + (a0_plus_a1alpha * a0_a1);
-		let deltainv = delta.invert_or_zero();
-		let deltainv_deltainv = deltainv.mutate_underlier(duplicate_odd::<PT::DirectSubfield>);
-		let delta_multiplier = a0_a1.mutate_underlier(|a0_a1| {
-			blend_odd_even::<PT::DirectSubfield>(a0_a1, a0_plus_a1alpha.to_underlier())
-		});
-		PT::from_packed_subfield(deltainv_deltainv * delta_multiplier)
+		// Use the portable implementation to avoid infinite recursion
+		use crate::arch::PairwiseRecursiveStrategy;
+		use crate::arithmetic_traits::TaggedInvertOrZero;
+		TaggedInvertOrZero::<PairwiseRecursiveStrategy>::invert_or_zero(self)
 	}
 }
 
