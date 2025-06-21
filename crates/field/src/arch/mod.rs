@@ -9,19 +9,19 @@ mod strategies;
 cfg_if! {
 	if #[cfg(all(feature = "nightly_features", target_arch = "x86_64"))] {
 		#[allow(dead_code)]
-		mod portable;
+		pub mod portable;
 
 		mod x86_64;
 		pub use x86_64::{packed_128, packed_256, packed_512, packed_aes_128, packed_aes_256, packed_aes_512, packed_polyval_128, packed_polyval_256, packed_polyval_512};
 	} else if #[cfg(target_arch = "aarch64")] {
 		#[allow(dead_code)]
-		mod portable;
+		pub mod portable;
 
 		pub mod aarch64;
 		pub use aarch64::{packed_128, packed_polyval_128, packed_aes_128};
 		pub use portable::{packed_256, packed_512, packed_aes_256, packed_aes_512, packed_polyval_256, packed_polyval_512};
 	} else {
-		mod portable;
+		pub mod portable;
 		pub use portable::{packed_128, packed_256, packed_512, packed_aes_128, packed_aes_256, packed_aes_512, packed_polyval_128, packed_polyval_256, packed_polyval_512};
 	}
 }
