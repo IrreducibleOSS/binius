@@ -26,6 +26,7 @@ use binius_field::{
 use binius_hash::groestl::Groestl256;
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use criterion::{Criterion, criterion_group, criterion_main};
+use pprof::criterion::{Output, PProfProfiler};
 
 fn bench_sumcheck_v3<T: TowerFamily, P: PackedTop<T>>(
 	c: &mut Criterion,
@@ -108,6 +109,25 @@ fn sumcheck_v3(c: &mut Criterion) {
 	bench_sumcheck_v3::<AESTowerFamily, ByteSlicedAES32x128b>(c, "ByteSlicedAES32x128b", 18);
 }
 
-criterion_group!(sumcheck_benches, sumcheck_v3);
-
+// This enables profiling with pprof and flamegraph.
+//
+// Run
+// ```
+// export RUSTFLAGS="-Ctarget-cpu=native"
+// cargo bench --bench big_field_sumcheck -- --profile-time=10
+// ```
+// to generate a flamegraph.svg file.
+//
+// The file can be found in target/criterion/big_field_sumcheck/*/profile/flamegraph.svg.
+//
+// I recommend opening the SVG file in a browser (I use Firefox).
+//
+// The flamegraph could be more useful by disabling the "rayon" feature in Cargo.toml. (But the
+// real benchmark does use multithreading.)
+criterion_group! {
+	name = sumcheck_benches;
+	config = Criterion::default().sample_size(10)
+		.with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+	targets = sumcheck_v3
+}
 criterion_main!(sumcheck_benches);

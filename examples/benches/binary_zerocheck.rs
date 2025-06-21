@@ -8,8 +8,8 @@ use binius_core::{
 	transcript::ProverTranscript,
 };
 use binius_field::{
-	AESTowerField8b, AESTowerField128b, BinaryField1b, PackedField, arch::OptimalUnderlier,
-	as_packed_field::PackedType,
+	AESTowerField8b, AESTowerField128b, BinaryField1b, PackedField,
+	arch::OptimalUnderlier128b as OptimalUnderlier, as_packed_field::PackedType,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::groestl::Groestl256;
@@ -18,6 +18,7 @@ use binius_math::{
 	MultilinearExtension,
 };
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use pprof::criterion::{Output, PProfProfiler};
 use rand::{SeedableRng, rngs::StdRng};
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -113,7 +114,8 @@ fn bench_univariate_skip_aes_tower(c: &mut Criterion) {
 
 criterion_group! {
 	name = binary_zerocheck;
-	config = Criterion::default().sample_size(10);
+	config = Criterion::default().sample_size(10)
+		.with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
 	targets = bench_univariate_skip_aes_tower
 }
 criterion_main!(binary_zerocheck);

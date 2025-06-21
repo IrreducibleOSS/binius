@@ -10,6 +10,7 @@ use binius_field::{
 };
 use binius_ntt::{AdditiveNTT, NTTShape, SingleThreadedNTT};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use pprof::criterion::{Output, PProfProfiler};
 
 fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterion, field: &str) {
 	let mut group = c.benchmark_group("NTT");
@@ -21,7 +22,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 		.take(data_len)
 		.collect::<Vec<_>>();
 
-	let params = format!("{field}");
+	let params = field.to_string();
 	group.throughput(Throughput::Bytes((data_len * size_of::<PE>()) as u64));
 
 	let shape = NTTShape {
@@ -65,7 +66,8 @@ fn bench_packed128b(c: &mut Criterion) {
 
 criterion_group! {
 	name = additive_ntt;
-	config = Criterion::default().sample_size(10);
+	config = Criterion::default().sample_size(10)
+		.with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
 	targets = bench_byte_sliced
 }
 criterion_main!(additive_ntt);

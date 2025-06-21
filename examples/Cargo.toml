@@ -27,7 +27,8 @@ itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
-criterion = "0.6.0"
+pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }
+criterion = "0.5.0"
 
 [[example]]
 name = "keccak"
