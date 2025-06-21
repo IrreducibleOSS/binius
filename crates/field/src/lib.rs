@@ -32,7 +32,7 @@ pub mod packed_binary_field;
 pub mod packed_extension;
 pub mod packed_extension_ops;
 mod packed_polyval;
-pub mod parallel_ops;
+
 pub mod polyval;
 #[cfg(test)]
 mod tests;
@@ -59,7 +59,7 @@ pub use packed_binary_field::*;
 pub use packed_extension::*;
 pub use packed_extension_ops::*;
 pub use packed_polyval::*;
-pub use parallel_ops::*;
+
 pub use polyval::*;
 pub use tower::*;
 pub use tower_levels::*;

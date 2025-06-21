@@ -28,9 +28,8 @@ use crate::Error;
 use binius_maybe_rayon::prelude::*;
 
 // Import our parallel field operations for ARM NEON optimization (ready for future integration)
-#[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
-#[allow(unused_imports)]
-use binius_field::parallel_ops::*;
+
+
 
 /// SVE-optimized linear interpolation folding for ARM systems
 /// Leverages ARM SVE's scalable vector capabilities for maximum performance
