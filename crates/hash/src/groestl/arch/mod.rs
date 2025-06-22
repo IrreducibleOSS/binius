@@ -1,6 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 use cfg_if::cfg_if;
 
+// Always include portable module for use by other implementations
+mod portable;
+
 // We will choose the AVX512 Implementation of Grøstl if our machine supports the various AVX512
 // extensions, otherwise defaults to the portable implementation which was found to be fast in most
 // machines
@@ -26,7 +29,6 @@ cfg_if! {
 		mod groestl_sve_short;
 		pub use groestl_sve_short::GroestlShortImpl;
 	} else {
-		mod portable;
 		pub use portable::GroestlShortImpl;
 	}
 }

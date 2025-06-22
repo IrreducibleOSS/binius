@@ -21,17 +21,23 @@ impl GroestlShortInternal for GroestlShortImpl {
 	fn state_from_bytes(bytes: &[u8; 64]) -> Self::State {
 		let mut state = [0u64; COLS];
 		for (chunk, v) in bytes.chunks_exact(8).zip(state.iter_mut()) {
-			*v = u64::from_le_bytes(chunk.try_into().unwrap());
+			*v = u64::from_be_bytes(chunk.try_into().unwrap());
 		}
 		state
 	}
 
-	fn state_into_bytes(state: &Self::State) -> [u8; 64] {
+	fn state_to_bytes(state: &Self::State) -> [u8; 64] {
 		let mut bytes = [0u8; 64];
 		for (v, chunk) in state.iter().zip(bytes.chunks_exact_mut(8)) {
-			chunk.copy_from_slice(&v.to_le_bytes());
+			chunk.copy_from_slice(&v.to_be_bytes());
 		}
 		bytes
+	}
+
+	fn xor_state(h: &mut Self::State, m: &Self::State) {
+		for i in 0..COLS {
+			h[i] ^= m[i];
+		}
 	}
 
 	fn p_perm(state: &mut Self::State) {
@@ -133,7 +139,7 @@ pub fn sve_batch_process(inputs: &[&[u8]], outputs: &mut [[u8; 32]]) {
 		}
 		
 		// Extract output
-		let final_bytes = GroestlShortImpl::state_into_bytes(&state);
+		let final_bytes = GroestlShortImpl::state_to_bytes(&state);
 		output.copy_from_slice(&final_bytes[..32]);
 	}
 }
