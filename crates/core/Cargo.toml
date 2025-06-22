@@ -20,6 +20,7 @@ binius_math = { path = "../math", default-features = false }
 binius_ntt = { path = "../ntt", default-features = false }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
+bit-vec = "0.6"
 bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 digest.workspace = true
