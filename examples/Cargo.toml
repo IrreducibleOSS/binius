@@ -75,6 +75,10 @@ harness = false
 name = "big_field_sumcheck"
 harness = false
 
+[[bench]]
+name = "simple_bit_optimization"
+harness = false
+
 [features]
 default = ["rayon", "nightly_features"]
 bail_panic = ["binius_utils/bail_panic"]

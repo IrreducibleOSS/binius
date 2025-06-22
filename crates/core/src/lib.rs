@@ -12,6 +12,8 @@
 #![allow(clippy::suspicious_arithmetic_impl)]
 #![allow(clippy::suspicious_op_assign_impl)]
 
+pub mod bit_optimized_zerocheck;
+pub mod bit_packed_mle;
 pub mod composition;
 pub mod constraint_system;
 pub mod fiat_shamir;

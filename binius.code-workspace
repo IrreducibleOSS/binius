@@ -1,0 +1,57 @@
+{
+	"folders": [
+		{
+			"name": "Binius Root",
+			"path": "."
+		},
+		{
+			"name": "Core",
+			"path": "./crates/core"
+		},
+		{
+			"name": "Field", 
+			"path": "./crates/field"
+		},
+		{
+			"name": "Math",
+			"path": "./crates/math"
+		},
+		{
+			"name": "Hash",
+			"path": "./crates/hash"
+		},
+		{
+			"name": "Compute",
+			"path": "./crates/compute"
+		},
+		{
+			"name": "Examples",
+			"path": "./examples"
+		}
+	],
+	"settings": {
+		"rust-analyzer.linkedProjects": [
+			"./Cargo.toml"
+		],
+		"rust-analyzer.cargo.features": "all",
+		"files.exclude": {
+			"**/target": true,
+			"**/.git": true,
+			"**/node_modules": true
+		},
+		"search.exclude": {
+			"**/target": true,
+			"**/Cargo.lock": true
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"rust-lang.rust-analyzer",
+			"vadimcn.vscode-lldb", 
+			"tamasfe.even-better-toml",
+			"serayuzgur.crates",
+			"dustypomerleau.rust-syntax",
+			"ms-vscode.hexeditor"
+		]
+	}
+}
