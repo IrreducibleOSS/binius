@@ -51,7 +51,7 @@ pub use binary_field::*;
 pub use byte_iteration::*;
 pub use error::*;
 pub use extension::*;
-pub use field::Field;
+pub use field::*;
 pub use linear_transformation::*;
 pub use packed::*;
 pub use packed_aes_field::*;
@@ -66,3 +66,4 @@ pub use tower_levels::*;
 pub use transpose::{Error as TransposeError, square_transpose};
 pub use underlier::*;
 pub use util::*;
+
