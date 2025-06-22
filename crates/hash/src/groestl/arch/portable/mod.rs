@@ -3,7 +3,7 @@
 use super::super::GroestlShortInternal;
 
 mod compress512;
-mod table;
+pub mod table;
 
 #[derive(Debug, Clone)]
 pub struct GroestlShortImpl;
