@@ -224,6 +224,11 @@ While dramatically reducing memory usage, the optimization requires data convers
 ### Precision
 All optimizations maintain mathematical correctness. No approximations or probabilistic methods are used.
 
+## Codes
+- ./examples/benches/simple_bit_optimization.rs
+- ./crates/core/src/bit_optimized_zerocheck.rs
+- ./crates/core/src/bit_packed_mle.rs
+
 ## Contributing
 
 This implementation demonstrates advanced optimization techniques for cryptographic protocols. The codebase serves as:
