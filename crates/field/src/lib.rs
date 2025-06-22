@@ -32,6 +32,7 @@ pub mod packed_binary_field;
 pub mod packed_extension;
 pub mod packed_extension_ops;
 mod packed_polyval;
+
 pub mod polyval;
 #[cfg(test)]
 mod tests;
@@ -44,15 +45,25 @@ pub mod util;
 
 pub use aes_field::*;
 pub use arch::byte_sliced::*;
+pub use arithmetic_traits::*;
+pub use as_packed_field::*;
 pub use binary_field::*;
+pub use byte_iteration::*;
 pub use error::*;
 pub use extension::*;
-pub use field::Field;
-pub use packed::PackedField;
+pub use field::*;
+pub use linear_transformation::*;
+pub use packed::*;
 pub use packed_aes_field::*;
 pub use packed_binary_field::*;
 pub use packed_extension::*;
 pub use packed_extension_ops::*;
 pub use packed_polyval::*;
+
 pub use polyval::*;
+pub use tower::*;
+pub use tower_levels::*;
 pub use transpose::{Error as TransposeError, square_transpose};
+pub use underlier::*;
+pub use util::*;
+

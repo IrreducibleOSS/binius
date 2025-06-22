@@ -97,3 +97,33 @@ define_packed_binary_fields!(
 		}
 	]
 );
+
+// Import the AES packed type for conversion implementations
+use super::packed_aes_128::PackedAESBinaryField16x8b;
+
+// High-performance conversion implementations using packed transformations
+impl From<PackedAESBinaryField16x8b> for PackedBinaryField16x8b {
+	fn from(aes_packed: PackedAESBinaryField16x8b) -> Self {
+		// Use the same approach as in aes_field.rs convert_as_packed_8b function
+		// This converts efficiently using the field isomorphism at the 8b level
+		use crate::{AESTowerField8b, BinaryField8b, PackedField};
+		
+		Self::from_fn(|i| {
+			let aes_elem: AESTowerField8b = aes_packed.get(i);
+			BinaryField8b::from(aes_elem)
+		})
+	}
+}
+
+impl From<PackedBinaryField16x8b> for PackedAESBinaryField16x8b {
+	fn from(binary_packed: PackedBinaryField16x8b) -> Self {
+		// Use the same approach as in aes_field.rs convert_as_packed_8b function
+		// This converts efficiently using the field isomorphism at the 8b level
+		use crate::{AESTowerField8b, BinaryField8b, PackedField};
+		
+		Self::from_fn(|i| {
+			let binary_elem: BinaryField8b = binary_packed.get(i);
+			AESTowerField8b::from(binary_elem)
+		})
+	}
+}
