@@ -1,6 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
+
+use std::any::TypeId;
+
 use crate::{
-	AESTowerField8b, PackedField,
+	AESTowerField8b, BinaryField1b, PackedField,
 	tower_levels::{TowerLevel, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
 };
@@ -16,20 +19,21 @@ pub fn mul<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
 }
 
 #[inline(always)]
-pub fn mul_alpha<
-	const WRITING_TO_ZEROS: bool,
-	P: PackedField<Scalar = AESTowerField8b>,
-	Level: TowerLevel,
->(
+pub fn mul_alpha<const WRITING_TO_ZEROS: bool, P: PackedField, Level: TowerLevel>(
 	field_element: &Level::Data<P>,
 	destination: &mut Level::Data<P>,
 	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
-		if WRITING_TO_ZEROS {
-			destination.as_mut()[0] = field_element[0] * base_alpha;
+		let multiplied = if TypeId::of::<P::Scalar>() == TypeId::of::<BinaryField1b>() {
+			field_element[0]
 		} else {
-			destination.as_mut()[0] += field_element[0] * base_alpha;
+			field_element[0] * base_alpha
+		};
+		if WRITING_TO_ZEROS {
+			destination.as_mut()[0] = multiplied;
+		} else {
+			destination.as_mut()[0] += multiplied;
 		}
 		return;
 	}
@@ -56,11 +60,7 @@ pub fn mul_alpha<
 }
 
 #[inline(always)]
-pub fn mul_main<
-	const WRITING_TO_ZEROS: bool,
-	P: PackedField<Scalar = AESTowerField8b>,
-	Level: TowerLevel,
->(
+pub fn mul_main<const WRITING_TO_ZEROS: bool, P: PackedField, Level: TowerLevel>(
 	field_element_a: &Level::Data<P>,
 	field_element_b: &Level::Data<P>,
 	destination: &mut Level::Data<P>,

@@ -193,118 +193,124 @@ macro_rules! benchmark_packed_operation {
 			strategies @ $strategies,
 			packed_fields @ [
 				// 8-bit binary tower
-				PackedBinaryField1x8b
+				// PackedBinaryField1x8b
 
-				// 16-bit binary tower
-				PackedBinaryField2x8b
-				PackedBinaryField1x16b
+				// // 16-bit binary tower
+				// PackedBinaryField2x8b
+				// PackedBinaryField1x16b
 
-				// 32-bit binary tower
-				PackedBinaryField4x8b
-				PackedBinaryField2x16b
-				PackedBinaryField1x32b
+				// // 32-bit binary tower
+				// PackedBinaryField4x8b
+				// PackedBinaryField2x16b
+				// PackedBinaryField1x32b
 
 				// 64-bit binary tower
-				PackedBinaryField8x8b
-				PackedBinaryField4x16b
-				PackedBinaryField2x32b
-				PackedBinaryField1x64b
+				// PackedBinaryField8x8b
+				// PackedBinaryField4x16b
+				// PackedBinaryField2x32b
+				// PackedBinaryField1x64b
 
 				// 128-bit binary tower
-				PackedBinaryField16x8b
-				PackedBinaryField8x16b
-				PackedBinaryField4x32b
-				PackedBinaryField2x64b
-				PackedBinaryField1x128b
+				// PackedBinaryField16x8b
+				// PackedBinaryField8x16b
+				// PackedBinaryField4x32b
+				// PackedBinaryField2x64b
+				// PackedBinaryField1x128b
 
 				// 256-bit binary tower
-				PackedBinaryField32x8b
-				PackedBinaryField16x16b
-				PackedBinaryField8x32b
-				PackedBinaryField4x64b
-				PackedBinaryField2x128b
+				// PackedBinaryField32x8b
+				// PackedBinaryField16x16b
+				// PackedBinaryField8x32b
+				// PackedBinaryField4x64b
+				// PackedBinaryField2x128b
 
-				// 512-bit binary tower
-				PackedBinaryField64x8b
-				PackedBinaryField32x16b
-				PackedBinaryField16x32b
-				PackedBinaryField8x64b
-				PackedBinaryField4x128b
+				// // 512-bit binary tower
+				// PackedBinaryField64x8b
+				// PackedBinaryField32x16b
+				// PackedBinaryField16x32b
+				// PackedBinaryField8x64b
+				// PackedBinaryField4x128b
 
 				// 8-bit AES tower
-				PackedAESBinaryField1x8b
+				// PackedAESBinaryField1x8b
 
-				// 16-bit AES tower
-				PackedAESBinaryField2x8b
-				PackedAESBinaryField1x16b
+				// // 16-bit AES tower
+				// PackedAESBinaryField2x8b
+				// PackedAESBinaryField1x16b
 
-				// 32-bit AES tower
-				PackedAESBinaryField4x8b
-				PackedAESBinaryField2x16b
-				PackedAESBinaryField1x32b
+				// // 32-bit AES tower
+				// PackedAESBinaryField4x8b
+				// PackedAESBinaryField2x16b
+				// PackedAESBinaryField1x32b
 
 				// 64-bit AES tower
-				PackedAESBinaryField8x8b
-				PackedAESBinaryField4x16b
-				PackedAESBinaryField2x32b
-				PackedAESBinaryField1x64b
+				// PackedAESBinaryField8x8b
+				// PackedAESBinaryField4x16b
+				// PackedAESBinaryField2x32b
+				// PackedAESBinaryField1x64b
 
 				// 128-bit AES tower
-				PackedAESBinaryField16x8b
-				PackedAESBinaryField8x16b
-				PackedAESBinaryField4x32b
-				PackedAESBinaryField2x64b
-				PackedAESBinaryField1x128b
+				// PackedAESBinaryField16x8b
+				// PackedAESBinaryField8x16b
+				// PackedAESBinaryField4x32b
+				// PackedAESBinaryField2x64b
+				// PackedAESBinaryField1x128b
 
 				// 256-bit AES tower
-				PackedAESBinaryField32x8b
-				PackedAESBinaryField16x16b
-				PackedAESBinaryField8x32b
-				PackedAESBinaryField4x64b
-				PackedAESBinaryField2x128b
+				// PackedAESBinaryField32x8b
+				// PackedAESBinaryField16x16b
+				// PackedAESBinaryField8x32b
+				// PackedAESBinaryField4x64b
+				// PackedAESBinaryField2x128b
 
-				// 512-bit AES tower
-				PackedAESBinaryField64x8b
-				PackedAESBinaryField32x16b
-				PackedAESBinaryField16x32b
-				PackedAESBinaryField8x64b
-				PackedAESBinaryField4x128b
+				// // 512-bit AES tower
+				// PackedAESBinaryField64x8b
+				// PackedAESBinaryField32x16b
+				// PackedAESBinaryField16x32b
+				// PackedAESBinaryField8x64b
+				// PackedAESBinaryField4x128b
 
 				// Packed polyval fields
 				PackedBinaryPolyval1x128b
-				PackedBinaryPolyval2x128b
-				PackedBinaryPolyval4x128b
+				// PackedBinaryPolyval2x128b
+				// PackedBinaryPolyval4x128b
 
 				// Byte sliced AES fields
-				ByteSlicedAES16x128b
-				ByteSlicedAES16x64b
-				ByteSlicedAES2x16x64b
-				ByteSlicedAES16x32b
-				ByteSlicedAES4x16x32b
-				ByteSlicedAES16x16b
-				ByteSlicedAES8x16x16b
-				ByteSlicedAES16x8b
-				ByteSlicedAES16x16x8b
+				// ByteSlicedAES16x128b
+				// ByteSlicedAES16x64b
+				// ByteSlicedAES2x16x64b
+				// ByteSlicedAES16x32b
+				// ByteSlicedAES4x16x32b
+				// ByteSlicedAES16x16b
+				// ByteSlicedAES8x16x16b
+				//ByteSlicedAES16x8b
+				//ByteSlicedAES16x16x8b
 
-				ByteSlicedAES32x128b
-				ByteSlicedAES32x64b
-				ByteSlicedAES2x32x64b
-				ByteSlicedAES32x32b
-				ByteSlicedAES4x32x32b
-				ByteSlicedAES32x16b
-				ByteSlicedAES8x32x16b
-				ByteSlicedAES32x8b
-				ByteSlicedAES16x32x8b
+				// ByteSlicedAES32x128b
+				// ByteSlicedAES32x64b
+				// ByteSlicedAES2x32x64b
+				// ByteSlicedAES32x32b
+				// ByteSlicedAES4x32x32b
+				// ByteSlicedAES32x16b
+				// ByteSlicedAES8x32x16b
+				// ByteSlicedAES32x8b
+				// ByteSlicedAES16x32x8b
 
-				ByteSlicedAES64x128b
-				ByteSlicedAES64x64b
-				ByteSlicedAES2x64x64b
-				ByteSlicedAES64x32b
-				ByteSlicedAES4x64x32b
-				ByteSlicedAES64x16b
-				ByteSlicedAES8x64x16b
-				ByteSlicedAES64x8b
-				ByteSlicedAES16x64x8b
+				// ByteSlicedAES64x128b
+				// ByteSlicedAES64x64b
+				// ByteSlicedAES2x64x64b
+				// ByteSlicedAES64x32b
+				// ByteSlicedAES4x64x32b
+				// ByteSlicedAES64x16b
+				// ByteSlicedAES8x64x16b
+				// ByteSlicedAES64x8b
+				// ByteSlicedAES16x64x8b
+
+				// Bit sliced binary fields
+				// BitSliced128x128b
+				// BitSliced64x128b
+				// BitSliced128x8b
+				// BitSliced64x8b
 			]);
 	};
 }

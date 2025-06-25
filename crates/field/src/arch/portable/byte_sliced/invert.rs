@@ -20,7 +20,7 @@ pub fn invert_or_zero<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLeve
 }
 
 #[inline(always)]
-fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
+pub fn inv_main<P: PackedField, Level: TowerLevel>(
 	field_element: &Level::Data<P>,
 	destination: &mut Level::Data<P>,
 	base_alpha: P,

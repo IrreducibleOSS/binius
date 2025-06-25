@@ -654,6 +654,14 @@ macro_rules! impl_field_extension {
 					$subfield_name::from_underlier(self.to_underlier().get_subvalue(i))
 				}
 			}
+
+			#[inline]
+		    unsafe fn set_base_unchecked(&mut self, i: usize, value: $subfield_name) {
+				use $crate::underlier::{WithUnderlier, UnderlierWithBitOps};
+				unsafe {
+					self.to_underlier_ref_mut().set_subvalue(i, value.to_underlier());
+				}
+			}
 		}
 	};
 }

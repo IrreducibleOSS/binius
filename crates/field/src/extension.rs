@@ -83,6 +83,8 @@ pub trait ExtensionField<F: Field>:
 	/// # Safety
 	/// `i` must be less than `DEGREE`.
 	unsafe fn get_base_unchecked(&self, i: usize) -> F;
+
+	unsafe fn set_base_unchecked(&mut self, i: usize, value: F);
 }
 
 impl<F: Field> ExtensionField<F> for F {
@@ -126,5 +128,11 @@ impl<F: Field> ExtensionField<F> for F {
 	unsafe fn get_base_unchecked(&self, i: usize) -> F {
 		debug_assert_eq!(i, 0);
 		*self
+	}
+
+	#[inline(always)]
+	unsafe fn set_base_unchecked(&mut self, i: usize, value: F) {
+		debug_assert_eq!(i, 0);
+		*self = value;
 	}
 }

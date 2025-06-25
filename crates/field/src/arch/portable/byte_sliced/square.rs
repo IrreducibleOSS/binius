@@ -16,11 +16,7 @@ pub fn square<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
 }
 
 #[inline(always)]
-pub fn square_main<
-	const WRITING_TO_ZEROS: bool,
-	P: PackedField<Scalar = AESTowerField8b>,
-	Level: TowerLevel,
->(
+pub fn square_main<const WRITING_TO_ZEROS: bool, P: PackedField, Level: TowerLevel>(
 	field_element: &Level::Data<P>,
 	destination: &mut Level::Data<P>,
 	base_alpha: P,

@@ -87,6 +87,47 @@ pub trait TowerLevelWithArithOps: TowerLevel {
 
 impl<T: TowerLevel> TowerLevelWithArithOps for T {}
 
+pub struct TowerLevel128;
+
+impl TowerLevel for TowerLevel128 {
+	const WIDTH: usize = 128;
+
+	type Data<T> = [T; 128];
+	type Base = TowerLevel64;
+
+	#[inline(always)]
+	fn split<T>(
+		data: &Self::Data<T>,
+	) -> (&<Self::Base as TowerLevel>::Data<T>, &<Self::Base as TowerLevel>::Data<T>) {
+		((data[0..64].try_into().unwrap()), (data[64..128].try_into().unwrap()))
+	}
+
+	#[inline(always)]
+	fn split_mut<T>(
+		data: &mut Self::Data<T>,
+	) -> (&mut <Self::Base as TowerLevel>::Data<T>, &mut <Self::Base as TowerLevel>::Data<T>) {
+		let (chunk_1, chunk_2) = data.split_at_mut(64);
+
+		((chunk_1.try_into().unwrap()), (chunk_2.try_into().unwrap()))
+	}
+
+	#[inline(always)]
+	fn join<T: Copy + Default>(
+		left: &<Self::Base as TowerLevel>::Data<T>,
+		right: &<Self::Base as TowerLevel>::Data<T>,
+	) -> Self::Data<T> {
+		let mut result = [T::default(); 128];
+		result[..64].copy_from_slice(left);
+		result[64..].copy_from_slice(right);
+		result
+	}
+
+	#[inline(always)]
+	fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self::Data<T> {
+		array::from_fn(f)
+	}
+}
+
 pub struct TowerLevel64;
 
 impl TowerLevel for TowerLevel64 {

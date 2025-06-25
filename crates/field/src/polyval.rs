@@ -461,6 +461,11 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	unsafe fn get_base_unchecked(&self, i: usize) -> BinaryField1b {
 		BinaryField1b(U1::num_cast_from(self.0 >> i))
 	}
+
+	#[inline]
+	unsafe fn set_base_unchecked(&mut self, i: usize, value: BinaryField1b) {
+		unsafe { self.0.set_subvalue(i, value.to_underlier()) }
+	}
 }
 
 impl SerializeBytes for BinaryField128bPolyval {

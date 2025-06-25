@@ -2,10 +2,12 @@
 
 mod invert;
 mod multiply;
+mod packed_bit_sliced;
 mod packed_byte_sliced;
 mod square;
 mod underlier;
 
+pub use packed_bit_sliced::*;
 pub use packed_byte_sliced::*;
 pub use underlier::ByteSlicedUnderlier;
 
