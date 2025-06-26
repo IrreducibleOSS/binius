@@ -1307,6 +1307,7 @@ pub(crate) mod tests {
 	}
 
 	#[test]
+	#[cfg(not(target_arch = "wasm32"))]
 	fn test_gf2_new_unchecked() {
 		for i in 0..2 {
 			assert_eq!(unsafe { BF1::new_unchecked(i) }, BF1::from(i));
@@ -1317,6 +1318,7 @@ pub(crate) mod tests {
 	}
 
 	#[test]
+	#[cfg(not(target_arch = "wasm32"))]
 	fn test_bin2b_new_unchecked() {
 		for i in 0..4 {
 			assert_eq!(unsafe { BF2::new_unchecked(i) }, BF2::from(i));
@@ -1327,6 +1329,7 @@ pub(crate) mod tests {
 	}
 
 	#[test]
+	#[cfg(not(target_arch = "wasm32"))]
 	fn test_bin4b_new_unchecked() {
 		for i in 0..16 {
 			assert_eq!(unsafe { BF4::new_unchecked(i) }, BF4::from(i));
