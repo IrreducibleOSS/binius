@@ -12,22 +12,10 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::inv_main, multiply::mul_main, square::square_main};
 use crate::{
-	AESTowerField8b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField128b,
-	BinaryField1b, BinaryField8b, BinaryField128b, ExtensionField, PackedAESBinaryField16x8b,
-	PackedAESBinaryField64x8b, PackedBinaryField64x1b, PackedBinaryField128x1b,
-	PackedBinaryField256x1b, PackedBinaryField512x1b, PackedExtension, PackedField,
-	arch::{
-		byte_sliced::underlier::ByteSlicedUnderlier, portable::packed_scaled::ScaledPackedField,
-	},
-	as_packed_field::{PackScalar, PackedType},
+	BinaryField1b, BinaryField8b, BinaryField128b, ExtensionField, PackedBinaryField64x1b,
+	PackedBinaryField128x1b, PackedField,
 	binary_field::BinaryField,
-	linear_transformation::{
-		FieldLinearTransformation, IDTransformation, PackedTransformationFactory, Transformation,
-	},
-	packed_aes_field::PackedAESBinaryField32x8b,
-	tower_levels::{
-		TowerLevel, TowerLevel1, TowerLevel2, TowerLevel4, TowerLevel8, TowerLevel16, TowerLevel128,
-	},
+	tower_levels::{TowerLevel, TowerLevel8, TowerLevel128},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
 
@@ -357,7 +345,7 @@ mod tests {
 			let expected = lhs_scalar * rhs_scalar;
 			let actual = result.get(i);
 
-			assert_eq!(expected, actual, "Mismatch at index {}", i);
+			assert_eq!(expected, actual, "Mismatch at index {i}");
 		}
 	}
 

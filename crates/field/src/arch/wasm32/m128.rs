@@ -36,7 +36,7 @@ impl Default for M128 {
 
 impl PartialEq for M128 {
 	fn eq(&self, other: &Self) -> bool {
-		unsafe { i8x16_all_true(i8x16_eq(self.0, other.0)) }
+		i8x16_all_true(i8x16_eq(self.0, other.0))
 	}
 }
 
@@ -44,7 +44,7 @@ impl Eq for M128 {}
 
 impl PartialOrd for M128 {
 	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		u128::from(*self).partial_cmp(&u128::from(*other))
+		Some(self.cmp(other))
 	}
 }
 
@@ -64,15 +64,15 @@ unsafe impl Zeroable for M128 {
 
 impl From<u128> for M128 {
 	fn from(value: u128) -> Self {
-		M128(unsafe { v128_load(&value as *const u128 as *const v128) })
+		Self(unsafe { v128_load(&raw const value as *const v128) })
 	}
 }
 
 impl From<M128> for u128 {
-	fn from(m: M128) -> u128 {
+	fn from(m: M128) -> Self {
 		let mut value = 0u128;
 		unsafe {
-			v128_store(&mut value as *mut u128 as *mut v128, m.0);
+			v128_store(&raw mut value as *mut v128, m.0);
 		}
 		value
 	}
@@ -141,7 +141,7 @@ impl BitAnd for M128 {
 
 	#[inline(always)]
 	fn bitand(self, rhs: Self) -> Self::Output {
-		Self(unsafe { v128_and(self.0, rhs.0) })
+		Self(v128_and(self.0, rhs.0))
 	}
 }
 
@@ -157,7 +157,7 @@ impl BitOr for M128 {
 
 	#[inline(always)]
 	fn bitor(self, rhs: Self) -> Self::Output {
-		Self(unsafe { v128_or(self.0, rhs.0) })
+		Self(v128_or(self.0, rhs.0))
 	}
 }
 
@@ -173,7 +173,7 @@ impl BitXor for M128 {
 
 	#[inline(always)]
 	fn bitxor(self, rhs: Self) -> Self::Output {
-		Self(unsafe { v128_xor(self.0, rhs.0) })
+		Self(v128_xor(self.0, rhs.0))
 	}
 }
 
@@ -188,7 +188,7 @@ impl Not for M128 {
 	type Output = Self;
 
 	fn not(self) -> Self::Output {
-		Self(unsafe { v128_not(self.0) })
+		Self(v128_not(self.0))
 	}
 }
 
@@ -237,10 +237,10 @@ impl std::fmt::Display for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let data: u128 = unsafe {
 			let mut value = 0u128;
-			v128_store(&mut value as *mut u128 as *mut v128, self.0);
+			v128_store(&raw mut value as *mut v128, self.0);
 			value
 		};
-		core::write!(f, "{:032X}", data)
+		core::write!(f, "{data:032X}")
 	}
 }
 
@@ -248,10 +248,10 @@ impl std::fmt::Debug for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let data: u128 = unsafe {
 			let mut value = 0u128;
-			v128_store(&mut value as *mut u128 as *mut v128, self.0);
+			v128_store(&raw mut value as *mut v128, self.0);
 			value
 		};
-		core::write!(f, "M128({:032X})", data)
+		core::write!(f, "M128({data:032X})")
 	}
 }
 
@@ -260,9 +260,9 @@ impl UnderlierType for M128 {
 }
 
 impl UnderlierWithBitOps for M128 {
-	const ZERO: Self = unsafe { Self(u64x2(0, 0)) };
-	const ONE: Self = unsafe { Self(u64x2(1, 0)) };
-	const ONES: Self = unsafe { Self(u64x2(u64::MAX, u64::MAX)) };
+	const ZERO: Self = { Self(u64x2(0, 0)) };
+	const ONE: Self = { Self(u64x2(1, 0)) };
+	const ONES: Self = { Self(u64x2(u64::MAX, u64::MAX)) };
 
 	fn fill_with_bit(val: u8) -> Self {
 		if val == 0 { Self::ZERO } else { Self::ONES }
@@ -293,19 +293,19 @@ where
 					value |= value << (1 << n);
 				}
 
-				unsafe { u8x16_splat(value) }.into()
+				u8x16_splat(value).into()
 			}
 			4 => {
 				let value = u128::from(scalar.to_underlier()) as u16;
-				unsafe { u16x8_splat(value) }.into()
+				u16x8_splat(value).into()
 			}
 			5 => {
 				let value = u128::from(scalar.to_underlier()) as u32;
-				unsafe { u32x4_splat(value) }.into()
+				u32x4_splat(value).into()
 			}
 			6 => {
 				let value = u128::from(scalar.to_underlier()) as u64;
-				unsafe { u64x2_splat(value) }.into()
+				u64x2_splat(value).into()
 			}
 			7 => {
 				let value = u128::from(scalar.to_underlier());
