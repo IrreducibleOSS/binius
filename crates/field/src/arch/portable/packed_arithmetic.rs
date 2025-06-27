@@ -47,6 +47,60 @@ where
 
 		(self, other)
 	}
+
+	fn transpose_bits_128x128(matrix: &mut [Self; 128]) {
+		// transpose 2x2 bit blocks
+		for i in 0..64 {
+			(matrix[2 * i], matrix[2 * i + 1]) = matrix[2 * i].interleave(matrix[2 * i + 1], 0);
+		}
+
+		// transpose 4x4 bit blocks
+		for i in 0..32 {
+			(matrix[4 * i], matrix[4 * i + 2]) = matrix[4 * i].interleave(matrix[4 * i + 2], 1);
+			(matrix[4 * i + 1], matrix[4 * i + 3]) =
+				matrix[4 * i + 1].interleave(matrix[4 * i + 3], 1);
+		}
+
+		// transpose 8x8 bit blocks
+		for i in 0..16 {
+			(matrix[8 * i], matrix[8 * i + 4]) = matrix[8 * i].interleave(matrix[8 * i + 4], 2);
+			(matrix[8 * i + 1], matrix[8 * i + 5]) =
+				matrix[8 * i + 1].interleave(matrix[8 * i + 5], 2);
+			(matrix[8 * i + 2], matrix[8 * i + 6]) =
+				matrix[8 * i + 2].interleave(matrix[8 * i + 6], 2);
+			(matrix[8 * i + 3], matrix[8 * i + 7]) =
+				matrix[8 * i + 3].interleave(matrix[8 * i + 7], 2);
+		}
+
+		// transpose 16x16 bit blocks
+		for i in 0..8 {
+			for j in 0..8 {
+				(matrix[16 * i + j], matrix[16 * i + j + 8]) =
+					matrix[16 * i + j].interleave(matrix[16 * i + j + 8], 3);
+			}
+		}
+
+		// transpose 32x32 bit blocks
+		for i in 0..4 {
+			for j in 0..16 {
+				(matrix[32 * i + j], matrix[32 * i + j + 16]) =
+					matrix[32 * i + j].interleave(matrix[32 * i + j + 16], 4);
+			}
+		}
+
+		// transpose 64x64 bit blocks
+		for i in 0..2 {
+			for j in 0..32 {
+				(matrix[64 * i + j], matrix[64 * i + j + 32]) =
+					matrix[64 * i + j].interleave(matrix[64 * i + j + 32], 5);
+			}
+		}
+
+		// transpose 128x128 bit blocks
+		for i in 0..64 {
+			(matrix[i], matrix[i + 64]) = matrix[i].interleave(matrix[i + 64], 6);
+		}
+	}
 }
 
 /// Abstraction for a packed tower field of height greater than 0.

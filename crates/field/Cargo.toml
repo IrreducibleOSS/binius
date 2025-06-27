@@ -48,6 +48,10 @@ name = "binary_field_util"
 harness = false
 
 [[bench]]
+name = "bit_sliced"
+harness = false
+
+[[bench]]
 name = "byte_sliced"
 harness = false
 

@@ -31,7 +31,7 @@ pub mod byte_sliced;
 pub(super) mod packed_scaled;
 
 pub(super) mod hybrid_recursive_arithmetics;
-pub(super) mod packed_arithmetic;
+pub mod packed_arithmetic;
 pub(super) mod pairwise_arithmetic;
 pub(super) mod pairwise_recursive_arithmetic;
 pub(super) mod pairwise_table_arithmetic;

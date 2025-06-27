@@ -17,7 +17,10 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	BinaryField,
-	arch::portable::packed::{PackedPrimitiveType, impl_pack_scalar},
+	arch::portable::{
+		packed::{PackedPrimitiveType, impl_pack_scalar},
+		packed_arithmetic::{UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd},
+	},
 	arithmetic_traits::Broadcast,
 	underlier::{
 		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, impl_divisible,
@@ -26,7 +29,13 @@ use crate::{
 
 #[derive(Copy, Clone, From, Into)]
 #[repr(transparent)]
-pub(super) struct M128(pub v128);
+pub struct M128(pub v128);
+
+impl M128 {
+	const fn from_u128(value: u128) -> Self {
+		Self(u64x2(value as u64, (value >> 64) as u64))
+	}
+}
 
 impl Default for M128 {
 	fn default() -> Self {
@@ -317,5 +326,196 @@ where
 		};
 
 		Self::from_underlier(underlier)
+	}
+}
+
+impl UnderlierWithBitConstants for M128 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
+		Self::from_u128(interleave_mask_even!(u128, 0)),
+		Self::from_u128(interleave_mask_even!(u128, 1)),
+		Self::from_u128(interleave_mask_even!(u128, 2)),
+		Self::from_u128(interleave_mask_even!(u128, 3)),
+		Self::from_u128(interleave_mask_even!(u128, 4)),
+		Self::from_u128(interleave_mask_even!(u128, 5)),
+		Self::from_u128(interleave_mask_even!(u128, 6)),
+	];
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
+		Self::from_u128(interleave_mask_odd!(u128, 0)),
+		Self::from_u128(interleave_mask_odd!(u128, 1)),
+		Self::from_u128(interleave_mask_odd!(u128, 2)),
+		Self::from_u128(interleave_mask_odd!(u128, 3)),
+		Self::from_u128(interleave_mask_odd!(u128, 4)),
+		Self::from_u128(interleave_mask_odd!(u128, 5)),
+		Self::from_u128(interleave_mask_odd!(u128, 6)),
+	];
+
+	#[inline]
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		unsafe {
+			match log_block_len {
+				// Bitwise/masked interleave (as in your original code, for log_block_len = 0..=2)
+				0..=2 => {
+					let a: v128 = self.into();
+					let b: v128 = other.into();
+					let mask: v128 = Self::INTERLEAVE_EVEN_MASK[log_block_len].into();
+					let shift_amt = 1 << log_block_len;
+					let t = v128_and(v128_xor(i64x2_shr(a, shift_amt as u32), b), mask);
+					let c = v128_xor(a, i64x2_shl(t, shift_amt as u32));
+					let d = v128_xor(b, t);
+					(c.into(), d.into())
+				}
+
+				// 8-bit interleaving
+				3 => {
+					let a: v128 = self.into();
+					let b: v128 = other.into();
+					let c =
+						i8x16_shuffle::<0, 16, 2, 18, 4, 20, 6, 22, 8, 24, 10, 26, 12, 28, 14, 30>(
+							a, b,
+						);
+					let d =
+						i8x16_shuffle::<1, 17, 3, 19, 5, 21, 7, 23, 9, 25, 11, 27, 13, 29, 15, 31>(
+							a, b,
+						);
+					(c.into(), d.into())
+				}
+
+				// 16-bit interleaving
+				4 => {
+					let a: v128 = self.into();
+					let b: v128 = other.into();
+					let c = i8x16_shuffle::<0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29>(
+						a, b,
+					);
+					let d = i8x16_shuffle::<
+						2,
+						3,
+						18,
+						19,
+						6,
+						7,
+						22,
+						23,
+						10,
+						11,
+						26,
+						27,
+						14,
+						15,
+						30,
+						31,
+					>(a, b);
+					(c.into(), d.into())
+				}
+
+				// 32-bit interleaving
+				5 => {
+					let a: v128 = self.into();
+					let b: v128 = other.into();
+					let c = i8x16_shuffle::<0, 1, 2, 3, 16, 17, 18, 19, 8, 9, 10, 11, 24, 25, 26, 27>(
+						a, b,
+					);
+					let d = i8x16_shuffle::<
+						4,
+						5,
+						6,
+						7,
+						20,
+						21,
+						22,
+						23,
+						12,
+						13,
+						14,
+						15,
+						28,
+						29,
+						30,
+						31,
+					>(a, b);
+					(c.into(), d.into())
+				}
+
+				// 64-bit interleaving
+				6 => {
+					let a: v128 = self.into();
+					let b: v128 = other.into();
+					let c = i8x16_shuffle::<0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23>(
+						a, b,
+					);
+					let d = i8x16_shuffle::<
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						24,
+						25,
+						26,
+						27,
+						28,
+						29,
+						30,
+						31,
+					>(a, b);
+					(c.into(), d.into())
+				}
+
+				_ => panic!("Unsupported block length"),
+			}
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use rand::{SeedableRng, rngs::StdRng};
+
+	use super::*;
+
+	#[test]
+	fn transpose_to_bit_sliced() {
+		let mut values = std::array::from_fn(|_| M128::random(StdRng::from_seed([0; 32])));
+		let values_copy = values.clone();
+		M128::transpose_bits_128x128(&mut values);
+
+		for i in 0..128 {
+			for j in 0..128 {
+				let bit_i = (u128::from(values[i]) >> j) & 1;
+				let bit_j = (u128::from(values_copy[j]) >> i) & 1;
+				assert_eq!(bit_i, bit_j, "Bit mismatch at ({}, {})", i, j);
+			}
+		}
+	}
+
+	fn check_interleave(lhs: M128, rhs: M128, log_block_len: usize) {
+		let (interleaved_lhs, interleaved_rhs) = lhs.interleave(rhs, log_block_len);
+		let (u128_lhs, u128_rhs) = u128::from(lhs).interleave(u128::from(rhs), log_block_len);
+
+		assert_eq!(u128::from(interleaved_lhs), u128_lhs);
+		assert_eq!(u128::from(interleaved_rhs), u128_rhs);
+	}
+
+	#[test]
+	fn test_interleave() {
+		let mut rng = StdRng::from_seed([0; 32]);
+		let lhs = M128::random(&mut rng);
+		let rhs = M128::random(&mut rng);
+
+		for log_block_len in 0..=6 {
+			check_interleave(lhs, rhs, log_block_len);
+			check_interleave(rhs, lhs, log_block_len);
+		}
+	}
+
+	#[test]
+	fn test_from_into_roundtrip() {
+		let value: u128 = 0x01;
+		let m128: M128 = value.into();
+		let roundtrip_value: u128 = m128.into();
+		assert_eq!(value, roundtrip_value, "Roundtrip conversion failed");
 	}
 }

@@ -618,4 +618,19 @@ mod tests {
 
 		assert_eq!(original_value, deserialized_value);
 	}
+
+	#[test]
+	fn transpose_to_bit_sliced() {
+		let mut values = std::array::from_fn(|_| M128::random(StdRng::from_seed([0; 32])));
+		let values_copy = values.clone();
+		M128::transpose_bits_128x128(&mut values);
+
+		for i in 0..128 {
+			for j in 0..128 {
+				let bit_i = (values[i].0 >> j) & 1;
+				let bit_j = (values_copy[j].0 >> i) & 1;
+				assert_eq!(bit_i, bit_j, "Bit mismatch at ({}, {})", i, j);
+			}
+		}
+	}
 }

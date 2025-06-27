@@ -4,7 +4,7 @@ use cfg_if::cfg_if;
 
 cfg_if! {
 	if #[cfg(all(target_feature = "neon", target_feature = "aes"))] {
-		pub(super) mod m128;
+		pub mod m128;
 		pub(super) mod simd_arithmetic;
 
 		pub mod packed_128;
