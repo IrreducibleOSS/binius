@@ -11,18 +11,20 @@ use binius_utils::{
 	serialization::{assert_enough_data_for, assert_enough_space_for},
 };
 use bytemuck::{Pod, Zeroable};
+use derive_more::{From, Into};
 use rand::{Rng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	BinaryField,
 	arch::portable::packed::{PackedPrimitiveType, impl_pack_scalar},
+	arithmetic_traits::Broadcast,
 	underlier::{
 		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, impl_divisible,
 	},
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, From, Into)]
 #[repr(transparent)]
 pub(super) struct M128(pub v128);
 
@@ -284,26 +286,26 @@ where
 	#[inline(always)]
 	fn broadcast(scalar: Scalar) -> Self {
 		let tower_level = Scalar::N_BITS.ilog2() as usize;
-		match tower_level {
+		let underlier = match tower_level {
 			0..=3 => {
 				let mut value = u128::from(scalar.to_underlier()) as u8;
 				for n in tower_level..3 {
 					value |= value << (1 << n);
 				}
 
-				unsafe { u8x16_splat(value as i8) }.into()
+				unsafe { u8x16_splat(value) }.into()
 			}
 			4 => {
 				let value = u128::from(scalar.to_underlier()) as u16;
-				unsafe { u16x8_splat(value as i16) }.into()
+				unsafe { u16x8_splat(value) }.into()
 			}
 			5 => {
 				let value = u128::from(scalar.to_underlier()) as u32;
-				unsafe { u32x4_splat(value as i32) }.into()
+				unsafe { u32x4_splat(value) }.into()
 			}
 			6 => {
 				let value = u128::from(scalar.to_underlier()) as u64;
-				unsafe { u64x2_splat(value as i64) }.into()
+				unsafe { u64x2_splat(value) }.into()
 			}
 			7 => {
 				let value = u128::from(scalar.to_underlier());
@@ -312,6 +314,8 @@ where
 			_ => {
 				unreachable!("invalid tower level")
 			}
-		}
+		};
+
+		Self::from_underlier(underlier)
 	}
 }
