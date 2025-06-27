@@ -24,7 +24,7 @@ use crate::{
 
 #[derive(Copy, Clone)]
 #[repr(transparent)]
-struct M128(pub v128);
+pub(super) struct M128(pub v128);
 
 impl Default for M128 {
 	fn default() -> Self {
@@ -263,20 +263,55 @@ impl UnderlierWithBitOps for M128 {
 	const ONES: Self = unsafe { Self(u64x2(u64::MAX, u64::MAX)) };
 
 	fn fill_with_bit(val: u8) -> Self {
-		// Fill all 128 bits with the given bit (0 or 1)
-		let fill = if val & 1 == 1 { u128::MAX } else { 0u128 };
-		Self::from(fill)
+		if val == 0 { Self::ZERO } else { Self::ONES }
 	}
 
 	fn shl_128b_lanes(self, shift: usize) -> Self {
-		// Shift the whole 128-bit value left by shift bits
 		let val: u128 = self.into();
 		Self::from(val << shift)
 	}
 
 	fn shr_128b_lanes(self, shift: usize) -> Self {
-		// Shift the whole 128-bit value right by shift bits
 		let val: u128 = self.into();
 		Self::from(val >> shift)
+	}
+}
+
+impl<Scalar: BinaryField> Broadcast<Scalar> for PackedPrimitiveType<M128, Scalar>
+where
+	u128: From<Scalar::Underlier>,
+{
+	#[inline(always)]
+	fn broadcast(scalar: Scalar) -> Self {
+		let tower_level = Scalar::N_BITS.ilog2() as usize;
+		match tower_level {
+			0..=3 => {
+				let mut value = u128::from(scalar.to_underlier()) as u8;
+				for n in tower_level..3 {
+					value |= value << (1 << n);
+				}
+
+				unsafe { u8x16_splat(value as i8) }.into()
+			}
+			4 => {
+				let value = u128::from(scalar.to_underlier()) as u16;
+				unsafe { u16x8_splat(value as i16) }.into()
+			}
+			5 => {
+				let value = u128::from(scalar.to_underlier()) as u32;
+				unsafe { u32x4_splat(value as i32) }.into()
+			}
+			6 => {
+				let value = u128::from(scalar.to_underlier()) as u64;
+				unsafe { u64x2_splat(value as i64) }.into()
+			}
+			7 => {
+				let value = u128::from(scalar.to_underlier());
+				value.into()
+			}
+			_ => {
+				unreachable!("invalid tower level")
+			}
+		}
 	}
 }
