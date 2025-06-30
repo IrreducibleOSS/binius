@@ -71,6 +71,15 @@ cfg_if! {
 		pub type OptimalUnderlier256b = ScaledUnderlier<OptimalUnderlier128b, 2>;
 		pub type OptimalUnderlier512b = ScaledUnderlier<OptimalUnderlier256b, 2>;
 		pub type OptimalUnderlier = OptimalUnderlier128b;
+	} else if #[cfg(target_arch = "wasm32")] {
+		use crate::underlier::ScaledUnderlier;
+
+		pub const OPTIMAL_ALIGNMENT: usize = 128;
+
+		pub type OptimalUnderlier128b = crate::arch::wasm32::m128::M128;
+		pub type OptimalUnderlier256b = ScaledUnderlier<OptimalUnderlier128b, 2>;
+		pub type OptimalUnderlier512b = ScaledUnderlier<OptimalUnderlier256b, 2>;
+		pub type OptimalUnderlier = OptimalUnderlier128b;
 	} else {
 		use crate::underlier::ScaledUnderlier;
 

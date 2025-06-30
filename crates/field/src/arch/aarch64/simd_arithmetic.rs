@@ -390,6 +390,7 @@ fn flip_even_odd<F: TowerField>(x: M128) -> M128 {
 
 #[inline]
 fn blend_odd_even<F: TowerField>(x: M128, y: M128) -> M128 {
+	// TODO: efficient implementation with `vqtbl2q_u8` for tower level >= 3
 	let m1 = M128::INTERLEAVE_ODD_MASK[F::TOWER_LEVEL];
 	let m2 = M128::INTERLEAVE_EVEN_MASK[F::TOWER_LEVEL];
 	(x & m1) | (y & m2)

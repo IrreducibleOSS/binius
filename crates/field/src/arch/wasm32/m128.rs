@@ -23,7 +23,8 @@ use crate::{
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, impl_divisible,
+		NumCast, Random, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+		impl_divisible, impl_iteration,
 	},
 };
 
@@ -32,8 +33,15 @@ use crate::{
 pub struct M128(pub v128);
 
 impl M128 {
-	const fn from_u128(value: u128) -> Self {
+	pub(super) const fn from_u128(value: u128) -> Self {
 		Self(u64x2(value as u64, (value >> 64) as u64))
+	}
+
+	#[inline(always)]
+	pub(super) fn shuffle_u8(self, mask: [u8; 16]) -> Self {
+		let mask = M128::from_u128(u128::from_le_bytes(mask).into());
+
+		u8x16_swizzle(self.0, mask.into()).into()
 	}
 }
 
@@ -73,17 +81,13 @@ unsafe impl Zeroable for M128 {
 
 impl From<u128> for M128 {
 	fn from(value: u128) -> Self {
-		Self(unsafe { v128_load(&raw const value as *const v128) })
+		Self::from_u128(value)
 	}
 }
 
 impl From<M128> for u128 {
 	fn from(m: M128) -> Self {
-		let mut value = 0u128;
-		unsafe {
-			v128_store(&raw mut value as *mut v128, m.0);
-		}
-		value
+		u64x2_extract_lane::<0>(m.0) as u128 | (u64x2_extract_lane::<1>(m.0) as u128) << 64
 	}
 }
 
@@ -111,6 +115,12 @@ impl From<u8> for M128 {
 impl<const N: usize> From<SmallU<N>> for M128 {
 	fn from(value: SmallU<N>) -> Self {
 		Self::from(value.val() as u128)
+	}
+}
+
+impl<U: NumCast<u128>> NumCast<M128> for U {
+	fn num_cast_from(val: M128) -> Self {
+		Self::num_cast_from(val.into())
 	}
 }
 
@@ -244,22 +254,14 @@ impl Random for M128 {
 
 impl std::fmt::Display for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let data: u128 = unsafe {
-			let mut value = 0u128;
-			v128_store(&raw mut value as *mut v128, self.0);
-			value
-		};
+		let data: u128 = (*self).into();
 		core::write!(f, "{data:032X}")
 	}
 }
 
 impl std::fmt::Debug for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let data: u128 = unsafe {
-			let mut value = 0u128;
-			v128_store(&raw mut value as *mut v128, self.0);
-			value
-		};
+		let data: u128 = (*self).into();
 		core::write!(f, "M128({data:032X})")
 	}
 }
@@ -470,6 +472,24 @@ impl UnderlierWithBitConstants for M128 {
 	}
 }
 
+impl_iteration!(M128,
+	@strategy BitIterationStrategy, U1,
+	@strategy FallbackStrategy, U2, U4,
+	@strategy DivisibleStrategy, u8, u16, u32, u64, u128, M128,
+);
+
+impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
+	fn from(value: u128) -> Self {
+		Self::from(M128::from(value))
+	}
+}
+
+impl<Scalar: BinaryField> From<PackedPrimitiveType<M128, Scalar>> for u128 {
+	fn from(value: PackedPrimitiveType<M128, Scalar>) -> Self {
+		value.to_underlier().into()
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use rand::{SeedableRng, rngs::StdRng};
@@ -513,9 +533,29 @@ mod tests {
 
 	#[test]
 	fn test_from_into_roundtrip() {
-		let value: u128 = 0x01;
+		let mut rng = StdRng::from_seed([0; 32]);
+		let value: u128 = rng.random();
 		let m128: M128 = value.into();
+		let m128_2 = M128::from_u128(value);
+		assert_eq!(m128, m128_2, "Conversion from u128 to M128 failed");
+
 		let roundtrip_value: u128 = m128.into();
 		assert_eq!(value, roundtrip_value, "Roundtrip conversion failed");
+	}
+
+	#[test]
+	fn test_shuffle() {
+		let mut rng = StdRng::from_seed([0; 32]);
+		let value: u128 = rng.random();
+		let m128: M128 = value.into();
+
+		let shuffled = m128.shuffle_u8([15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+		let expected: M128 = (0u128..=15)
+			.enumerate()
+			.map(|(i, _)| ((value >> (i * 8)) & 0xFF) << (15 - i) * 8)
+			.sum::<u128>()
+			.into();
+
+		assert_eq!(shuffled, expected, "Shuffle operation failed");
 	}
 }
