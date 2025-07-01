@@ -1,10 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::ops::Mul;
-
 use super::{m128::M128, packed_macros::*};
 use crate::{
-	PackedBinaryField16x8b,
 	aes_field::AESTowerField8b,
 	arch::portable::{
 		packed::PackedPrimitiveType,
@@ -12,10 +9,9 @@ use crate::{
 		packed_macros::*,
 	},
 	arithmetic_traits::{
-		InvertOrZero, MulAlpha, Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with,
-		impl_square_with, impl_transformation_with_strategy,
+		Square, impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
 	},
-	underlier::WithUnderlier,
 };
 
 define_packed_binary_fields!(

@@ -19,7 +19,7 @@ use std::ops::Mul;
 use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
 	BinaryField128bPolyval,
-	arch::{PackedStrategy, PairwiseStrategy, ReuseMultiplyStrategy},
+	arch::{PackedStrategy, ReuseMultiplyStrategy},
 	arithmetic_traits::{InvertOrZero, impl_square_with, impl_transformation_with_strategy},
 };
 

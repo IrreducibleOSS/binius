@@ -7,9 +7,8 @@ use crate::{
 	arch::{
 		SimdStrategy,
 		m128::M128,
-		portable::{
-			packed::PackedPrimitiveType,
-			packed_arithmetic::{PackedTowerField, TowerConstants, UnderlierWithBitConstants},
+		portable::packed_arithmetic::{
+			PackedTowerField, TowerConstants, UnderlierWithBitConstants,
 		},
 	},
 	arithmetic_traits::{

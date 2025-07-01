@@ -39,7 +39,7 @@ impl M128 {
 
 	#[inline(always)]
 	pub(super) fn shuffle_u8(self, mask: [u8; 16]) -> Self {
-		let mask = M128::from_u128(u128::from_le_bytes(mask).into());
+		let mask = Self::from_u128(u128::from_le_bytes(mask));
 
 		u8x16_swizzle(self.0, mask.into()).into()
 	}

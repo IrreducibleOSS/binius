@@ -2,12 +2,7 @@
 
 use binius_field::{
 	ExtensionField, PackedField,
-	arch::{
-		byte_sliced::*, packed_8::*, packed_16::*, packed_32::*, packed_64::*, packed_128::*,
-		packed_256::*, packed_512::*, packed_aes_8::*, packed_aes_16::*, packed_aes_32::*,
-		packed_aes_64::*, packed_aes_128::*, packed_aes_256::*, packed_aes_512::*,
-		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*,
-	},
+	arch::{byte_sliced::*, packed_128::*, packed_aes_128::*, packed_polyval_128::*},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
