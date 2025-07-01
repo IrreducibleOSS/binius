@@ -81,13 +81,17 @@ unsafe impl Zeroable for M128 {
 
 impl From<u128> for M128 {
 	fn from(value: u128) -> Self {
-		Self::from_u128(value)
+		Self(unsafe { v128_load(&raw const value as *const v128) })
 	}
 }
 
 impl From<M128> for u128 {
 	fn from(m: M128) -> Self {
-		u64x2_extract_lane::<0>(m.0) as u128 | (u64x2_extract_lane::<1>(m.0) as u128) << 64
+		let mut value = 0u128;
+		unsafe {
+			v128_store(&raw mut value as *mut v128, m.0);
+		}
+		value
 	}
 }
 
@@ -254,14 +258,22 @@ impl Random for M128 {
 
 impl std::fmt::Display for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let data: u128 = (*self).into();
+		let data: u128 = unsafe {
+			let mut value = 0u128;
+			v128_store(&raw mut value as *mut v128, self.0);
+			value
+		};
 		core::write!(f, "{data:032X}")
 	}
 }
 
 impl std::fmt::Debug for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let data: u128 = (*self).into();
+		let data: u128 = unsafe {
+			let mut value = 0u128;
+			v128_store(&raw mut value as *mut v128, self.0);
+			value
+		};
 		core::write!(f, "M128({data:032X})")
 	}
 }
