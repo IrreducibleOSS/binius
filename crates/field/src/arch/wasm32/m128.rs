@@ -511,14 +511,14 @@ mod tests {
 	#[test]
 	fn transpose_to_bit_sliced() {
 		let mut values = std::array::from_fn(|_| M128::random(StdRng::from_seed([0; 32])));
-		let values_copy = values.clone();
+		let values_copy = values;
 		M128::transpose_bits_128x128(&mut values);
 
 		for i in 0..128 {
 			for j in 0..128 {
 				let bit_i = (u128::from(values[i]) >> j) & 1;
 				let bit_j = (u128::from(values_copy[j]) >> i) & 1;
-				assert_eq!(bit_i, bit_j, "Bit mismatch at ({}, {})", i, j);
+				assert_eq!(bit_i, bit_j, "Bit mismatch at ({i}, {j})");
 			}
 		}
 	}
@@ -564,7 +564,7 @@ mod tests {
 		let shuffled = m128.shuffle_u8([15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
 		let expected: M128 = (0u128..=15)
 			.enumerate()
-			.map(|(i, _)| ((value >> (i * 8)) & 0xFF) << (15 - i) * 8)
+			.map(|(i, _)| ((value >> (i * 8)) & 0xFF) << ((15 - i) * 8))
 			.sum::<u128>()
 			.into();
 

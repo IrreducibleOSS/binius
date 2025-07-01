@@ -170,9 +170,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b, BinaryField16b, BinaryField32b,
-		BinaryField64b,
-		arch::portable::packed_arithmetic::{interleave_mask_even, interleave_mask_odd},
-		underlier::{Random, UnderlierType},
+		BinaryField64b, underlier::Random,
 	};
 
 	fn check_flip_even_odd<F: TowerField>(x: M128) {

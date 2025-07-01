@@ -98,7 +98,7 @@ define_packed_binary_fields!(
 			square:    (PackedStrategy),
 			invert:    (PackedStrategy),
 			mul_alpha: (HybridRecursiveStrategy),
-			transform: (PairwiseRecursiveStrategy),
+			transform: (PackedStrategy),
 		},
 	]
 );
