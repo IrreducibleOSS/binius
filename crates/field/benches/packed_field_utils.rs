@@ -211,11 +211,11 @@ macro_rules! benchmark_packed_operation {
 				// PackedBinaryField1x64b
 
 				// 128-bit binary tower
-				PackedBinaryField16x8b
+				// PackedBinaryField16x8b
 				// PackedBinaryField8x16b
 				// PackedBinaryField4x32b
 				// PackedBinaryField2x64b
-				PackedBinaryField1x128b
+				// PackedBinaryField1x128b
 
 				// 256-bit binary tower
 				// PackedBinaryField32x8b
@@ -250,11 +250,11 @@ macro_rules! benchmark_packed_operation {
 				// PackedAESBinaryField1x64b
 
 				// 128-bit AES tower
-				PackedAESBinaryField16x8b
+				// PackedAESBinaryField16x8b
 				// PackedAESBinaryField8x16b
 				// PackedAESBinaryField4x32b
 				// PackedAESBinaryField2x64b
-				PackedAESBinaryField1x128b
+				// PackedAESBinaryField1x128b
 
 				// 256-bit AES tower
 				// PackedAESBinaryField32x8b
@@ -271,12 +271,12 @@ macro_rules! benchmark_packed_operation {
 				// PackedAESBinaryField4x128b
 
 				// Packed polyval fields
-				PackedBinaryPolyval1x128b
+				// PackedBinaryPolyval1x128b
 				// PackedBinaryPolyval2x128b
 				// PackedBinaryPolyval4x128b
 
 				// Byte sliced AES fields
-				ByteSlicedAES16x128b
+				// ByteSlicedAES16x128b
 				// ByteSlicedAES16x64b
 				// ByteSlicedAES2x16x64b
 				// ByteSlicedAES16x32b
@@ -307,10 +307,15 @@ macro_rules! benchmark_packed_operation {
 				// ByteSlicedAES16x64x8b
 
 				// Bit sliced binary fields
-				BitSliced128x128b
-				BitSliced64x128b
-				BitSliced128x8b
-				BitSliced64x8b
+				// BitSliced128x128b
+				// BitSliced64x128b
+				// BitSliced128x8b
+				// BitSliced64x8b
+
+				// NIST binary fields
+				PackedNISTBinaryField1x64b
+				PackedNISTBinaryField2x64b
+				PackedNISTBinaryField1x128b
 			]);
 	};
 }

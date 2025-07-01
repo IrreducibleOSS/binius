@@ -4,7 +4,10 @@ mod packed_field_utils;
 
 use std::ops::Mul;
 
-use binius_field::arch::{byte_sliced::*, packed_128::*, packed_aes_128::*, packed_polyval_128::*};
+use binius_field::{
+	PackedNISTBinaryField1x64b, PackedNISTBinaryField1x128b, PackedNISTBinaryField2x64b,
+	arch::{byte_sliced::*, packed_128::*, packed_aes_128::*, packed_polyval_128::*},
+};
 use cfg_if::cfg_if;
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;

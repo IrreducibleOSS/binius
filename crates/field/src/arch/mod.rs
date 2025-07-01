@@ -21,6 +21,7 @@ cfg_if! {
 		pub use aarch64::{packed_128, packed_polyval_128, packed_aes_128};
 		pub use portable::{packed_256, packed_512, packed_aes_256, packed_aes_512, packed_polyval_256, packed_polyval_512};
 		pub use aarch64::m128;
+		pub use aarch64::packed_nist_128;
 	} else if #[cfg(target_arch = "wasm32")] {
 		#[allow(dead_code)]
 		pub mod portable;

@@ -358,7 +358,7 @@ where
 }
 
 #[inline]
-fn duplicate_odd<F: TowerField>(x: M128) -> M128 {
+pub(super) fn duplicate_odd<F: TowerField>(x: M128) -> M128 {
 	match F::TOWER_LEVEL {
 		0..=2 => {
 			let t = x & M128::INTERLEAVE_ODD_MASK[F::TOWER_LEVEL];
@@ -373,7 +373,7 @@ fn duplicate_odd<F: TowerField>(x: M128) -> M128 {
 }
 
 #[inline]
-fn flip_even_odd<F: TowerField>(x: M128) -> M128 {
+pub(super) fn flip_even_odd<F: TowerField>(x: M128) -> M128 {
 	match F::TOWER_LEVEL {
 		0..=2 => {
 			let m1 = M128::INTERLEAVE_ODD_MASK[F::TOWER_LEVEL];
@@ -389,7 +389,7 @@ fn flip_even_odd<F: TowerField>(x: M128) -> M128 {
 }
 
 #[inline]
-fn blend_odd_even<F: TowerField>(x: M128, y: M128) -> M128 {
+pub(super) fn blend_odd_even<F: TowerField>(x: M128, y: M128) -> M128 {
 	// TODO: efficient implementation with `vqtbl2q_u8` for tower level >= 3
 	let m1 = M128::INTERLEAVE_ODD_MASK[F::TOWER_LEVEL];
 	let m2 = M128::INTERLEAVE_EVEN_MASK[F::TOWER_LEVEL];
@@ -397,7 +397,7 @@ fn blend_odd_even<F: TowerField>(x: M128, y: M128) -> M128 {
 }
 
 #[inline]
-fn shift_left<F: TowerField>(x: M128) -> M128 {
+pub(super) fn shift_left<F: TowerField>(x: M128) -> M128 {
 	let tower_level = F::TOWER_LEVEL;
 	seq!(TOWER_LEVEL in 0..=5 {
 		if tower_level == TOWER_LEVEL {
@@ -411,7 +411,7 @@ fn shift_left<F: TowerField>(x: M128) -> M128 {
 }
 
 #[inline]
-fn shift_right<F: TowerField>(x: M128) -> M128 {
+pub(super) fn shift_right<F: TowerField>(x: M128) -> M128 {
 	let tower_level = F::TOWER_LEVEL;
 	seq!(TOWER_LEVEL in 0..=5 {
 		if tower_level == TOWER_LEVEL {
