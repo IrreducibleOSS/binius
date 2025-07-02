@@ -316,6 +316,7 @@ macro_rules! benchmark_packed_operation {
 				PackedNISTBinaryField1x64b
 				PackedNISTBinaryField2x64b
 				PackedNISTBinaryField1x128b
+				PackedNISTBinaryField2x128b
 			]);
 	};
 }
