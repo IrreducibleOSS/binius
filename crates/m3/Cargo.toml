@@ -28,6 +28,7 @@ assert_matches.workspace = true
 binius_m3 = { path = ".", default-features = false, features = ["test_utils"] }
 digest.workspace = true
 rand.workspace = true
+sha2 = { version = "0.10.9", features = ["compress"] }
 
 [features]
 default = ["nightly_features"]
