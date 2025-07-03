@@ -172,13 +172,13 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 	}
 
 	fn subspace(&self, i: usize) -> BinarySubspace<F> {
-		let (subspace, shift) = self.s_evals[i].affine_subspace();
+		let (subspace, shift) = self.s_evals[self.log_domain_size() - i].affine_subspace();
 		debug_assert_eq!(shift, F::ZERO, "s_evals subspaces must be linear by construction");
 		subspace
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.s_evals[i].get(j)
+		self.s_evals[self.log_domain_size() - i].get(j)
 	}
 
 	fn forward_transform<P: PackedField<Scalar = F>>(
