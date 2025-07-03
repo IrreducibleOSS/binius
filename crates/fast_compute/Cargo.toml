@@ -22,5 +22,5 @@ thread_local = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-binius_compute_test_utils = { path = "../compute_test_utils", default-features = false }
-rand.workspace = true
+binius_compute_test_utils = { path = "../compute/test_utils", default-features = false }
+rand = { workspace = true, features = ["std"] }
