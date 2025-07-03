@@ -2,6 +2,10 @@
 
 //! The version of the Keccakf permutation taking the arithmetization approach that is based on
 //! stacked columns and lookups.
+//!
+//! **Note**: This implementation serves primarily as a proxy to measure lookup performance
+//! characteristics. For production use, the stacked version (see [`super::stacked`]) is more
+//! performant.
 
 // This implementation tries to be as close to the
 // [Keccak Specification Summary][keccak_spec_summary] and as such it is highly recommended to
@@ -43,6 +47,11 @@ const STATE_IN_TRACK: usize = 0;
 const STATE_OUT_TRACK: usize = 7;
 
 /// Keccak-f\[1600\] permutation function verification gadget.
+///
+/// **Performance Note**: This implementation uses lookup tables for the AND operation in the Chi
+/// step of the permutation and serves primarily as a proxy to measure lookup performance
+/// characteristics. For production use, consider the stacked version ([`super::stacked::Keccakf`])
+/// which is more performant as it uses direct arithmetic constraints instead of lookups.
 ///
 /// This gadget consists of 3x horizontally combined batches of 8x rounds each, 24 rounds in total.
 /// You can think about it as 8x wide SIMD performing one permutation per a table row. Below is
@@ -470,20 +479,36 @@ impl LookedupRoundBatch {
 		for xy in 0..25 {
 			let x = xy % 5;
 			let y = xy / 5;
+			// Get access to the merged column that will store the combined values used for lookup
 			let mut merged: std::cell::RefMut<'_, [B32]> =
 				index.get_scalars_mut(self.merged[(x, y)])?;
 
+			// Get the first input operand (B[x+1,y]) for the AND operation
 			let b1: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 1, y)])?;
 
+			// Get the second input operand (B[x+2,y]) for the AND operation
 			let b2: std::cell::Ref<'_, [B8]> = index.get_as(self.b[(x + 2, y)])?;
+
+			// Get the result storage for the AND operation between inputs
 			let mut b1_and_b2: std::cell::RefMut<'_, [B8]> =
 				index.get_mut_as(self.b1_and_b2[(x, y)])?;
+
 			for i in 0..b2.len() {
-				// B[x,y] xor ((not B[x+1,y]) and B[x+2,y])
+				// In the Chi step, we compute: B[x,y] xor ((not B[x+1,y]) and B[x+2,y])
+				// Here we're computing just the AND part: B[x+1,y] & B[x+2,y]
+				// Note: This implementation actually computes B[x+1,y] & B[x+2,y], and the NOT
+				// operation is applied elsewhere in the circuit
 				let in_a = b1[i].val();
 				let in_b = b2[i].val();
 				let output = in_a & in_b;
+
+				// Store the AND result for later use in the final calculation
 				b1_and_b2[i] = output.into();
+
+				// Prepare the lookup value by merging both inputs and the output into a single
+				// value This creates a 32-bit entry that will be used to perform a lookup in
+				// the bitwise AND table The lookup table contains all possible input-output
+				// combinations for the AND operation
 				merged[i] = merge_bitand_vals(in_a, in_b, output).into();
 			}
 		}
