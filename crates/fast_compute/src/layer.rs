@@ -46,12 +46,12 @@ use binius_utils::{
 	strided_array::StridedArray2DViewMut,
 };
 use bytemuck::{Pod, zeroed_vec};
-use itertools::izip;
+use itertools::{Itertools, izip};
 use thread_local::ThreadLocal;
 
 use crate::{
 	arith_circuit::ArithCircuitPoly,
-	memory::{PackedMemory, PackedMemorySliceMut},
+	memory::{PackedMemory, PackedMemorySlice, PackedMemorySliceMut},
 };
 
 /// Optimized CPU implementation of the compute layer.
@@ -176,14 +176,11 @@ impl<T: TowerFamily, P: PackedTop<T>> ComputeLayer<T::B128> for FastCpuLayer<T, 
 		slice: &mut <Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>,
 		value: T::B128,
 	) -> Result<(), Error> {
-		match slice {
-			PackedMemorySliceMut::Slice(items) => {
-				items.fill(P::broadcast(value));
-			}
-			PackedMemorySliceMut::SingleElement { owned, .. } => {
-				owned.fill(value);
-			}
-		};
+		let value = P::broadcast(value);
+
+		for element in slice.as_slice_mut() {
+			*element = value;
+		}
 		Ok(())
 	}
 }
@@ -622,11 +619,68 @@ impl<'a, T: TowerFamily, P: PackedTop<T>> ComputeLayerExecutor<T::B128>
 
 	fn pairwise_product_reduce(
 		&mut self,
-		_input: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
-		_round_outputs: &mut [<Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>],
+		input: <Self::DevMem as ComputeMemory<T::B128>>::FSlice<'_>,
+		round_outputs: &mut [<Self::DevMem as ComputeMemory<T::B128>>::FSliceMut<'_>],
 	) -> Result<(), Error> {
-		// TODO(CRY-490)
-		todo!()
+		let log_num_inputs = match strict_log_2(input.len()) {
+			None => {
+				return Err(Error::InputValidation(format!(
+					"input length must be a power of 2: {}",
+					input.len()
+				)));
+			}
+			Some(0) => {
+				return Err(Error::InputValidation(format!(
+					"input length must be greater than or equal to 2 in order to perform at least one reduction: {}",
+					input.len()
+				)));
+			}
+			Some(log_num_inputs) => log_num_inputs,
+		};
+		let expected_round_outputs_len = log_num_inputs;
+		if round_outputs.len() != expected_round_outputs_len as usize {
+			return Err(Error::InputValidation(format!(
+				"round_outputs.len() does not match the expected length: {} != {expected_round_outputs_len}",
+				round_outputs.len()
+			)));
+		}
+		for (round_idx, round_output_data) in round_outputs.iter().enumerate() {
+			let expected_output_size = 1usize << (log_num_inputs as usize - round_idx - 1);
+			if round_output_data.len() != expected_output_size {
+				return Err(Error::InputValidation(format!(
+					"round_outputs[{}].len() = {}, expected {expected_output_size}",
+					round_idx,
+					round_output_data.len()
+				)));
+			}
+		}
+
+		let mut round_data_source = input;
+		for round_output_data in round_outputs.iter_mut() {
+			match round_data_source {
+				PackedMemorySlice::Slice(input) => {
+					input
+						.par_chunks(2)
+						.zip(round_output_data.as_slice_mut().par_iter_mut())
+						.for_each(|(chunk, output)| {
+							let scalar_iter = P::iter_slice(chunk)
+								.tuples()
+								.map(|(left, right)| left * right);
+							*output = P::from_scalars(scalar_iter);
+						});
+				}
+				PackedMemorySlice::Owned(..) => {
+					let scalar_iter = P::iter_slice(round_data_source.as_slice())
+						.tuples()
+						.map(|(left, right)| left * right);
+
+					round_output_data.as_slice_mut()[0] = P::from_scalars(scalar_iter);
+				}
+			}
+			round_data_source = round_output_data.as_const();
+		}
+
+		Ok(())
 	}
 }
 

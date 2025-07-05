@@ -167,3 +167,23 @@ fn test_map_kernels() {
 		log_len,
 	);
 }
+
+#[test]
+fn test_pairwise_product_reduce_single_round() {
+	type P = PackedBinaryField4x128b;
+	let log_len = 1;
+	binius_compute_test_utils::layer::test_generic_pairwise_product_reduce(
+		FastCpuLayerHolder::<CanonicalTowerFamily, P>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+		log_len,
+	);
+}
+
+#[test]
+fn test_pairwise_product_reduce() {
+	type P = PackedBinaryField4x128b;
+	let log_len = 8;
+	binius_compute_test_utils::layer::test_generic_pairwise_product_reduce(
+		FastCpuLayerHolder::<CanonicalTowerFamily, P>::new(1 << (log_len + 4), 1 << (log_len + 3)),
+		log_len,
+	);
+}
