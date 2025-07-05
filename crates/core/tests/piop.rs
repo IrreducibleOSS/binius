@@ -64,7 +64,7 @@ fn test_commit_prove_verify_extreme_rate() {
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 8;
-	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let compute_holder = CpuLayerHolder::<B128>::new(1 << 16, 1 << 22);
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,

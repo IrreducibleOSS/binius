@@ -159,11 +159,12 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 		.iter()
 		.map(|mle| {
 			let mut buffer = dev_alloc.alloc(1 << mle.n_vars()).unwrap();
+			let host_buffer = host_alloc.alloc(1 << mle.n_vars()).unwrap();
+			for (input, out) in P::iter_slice(mle.evals()).zip(host_buffer.iter_mut()) {
+				*out = input;
+			}
 
-			let evals = P::iter_slice(mle.evals()).collect::<Vec<_>>();
-
-			hal.copy_h2d(&evals[0..1 << mle.n_vars()], &mut buffer)
-				.unwrap();
+			hal.copy_h2d(host_buffer, &mut buffer).unwrap();
 			HAL::DevMem::to_const(buffer)
 		})
 		.collect::<Vec<_>>();
