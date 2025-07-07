@@ -16,15 +16,9 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::{
 	BinaryField, BinaryField1b, BinaryField64b, ExtensionField, Field, PackedField, TowerField,
-	arch::{
-		SimdStrategy,
-		aarch64::simd_arithmetic::{flip_even_odd, shift_left},
-		m128::M128,
-		portable::{packed::PackedPrimitiveType, packed_arithmetic::UnderlierWithBitConstants},
-	},
-	arithmetic_traits::{InvertOrZero, MulAlpha, Square, TaggedMul},
-	tower_levels::TowerLevel2,
-	underlier::WithUnderlier,
+	arch::{aarch64::m128::M128, portable::packed::PackedPrimitiveType},
+	arithmetic_traits::{InvertOrZero, MulAlpha, Square},
+	underlier::{UnderlierWithBitOps, WithUnderlier},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Zeroable, Pod, Default, Hash)]
@@ -126,7 +120,7 @@ impl Neg for NISTBinaryField64 {
 impl<'a> Add<&'a NISTBinaryField64> for NISTBinaryField64 {
 	type Output = Self;
 	fn add(self, _rhs: &'a NISTBinaryField64) -> Self::Output {
-		todo!()
+		Self(self.0 ^ _rhs.0)
 	}
 }
 
@@ -365,7 +359,7 @@ impl From<NISTBinaryField64> for BinaryField1b {
 }
 
 pub type PackedNISTBinaryField1x64b = PackedPrimitiveType<u64, NISTBinaryField64>;
-pub type PackedNISTBinaryField2x64b = PackedPrimitiveType<u128, NISTBinaryField64>;
+pub type PackedNISTBinaryField2x64b = PackedPrimitiveType<M128, NISTBinaryField64>;
 
 // Implement Broadcast for packed NIST field types
 use crate::arithmetic_traits::Broadcast;
@@ -376,33 +370,28 @@ impl Broadcast<NISTBinaryField64> for PackedPrimitiveType<u64, NISTBinaryField64
 	}
 }
 
-impl Broadcast<NISTBinaryField64> for PackedPrimitiveType<u128, NISTBinaryField64> {
-	fn broadcast(scalar: NISTBinaryField64) -> Self {
-		Self::from_underlier((scalar.0 as u128) << 64 | (scalar.0 as u128))
-	}
-}
-
 impl crate::arithmetic_traits::Square for PackedPrimitiveType<u64, NISTBinaryField64> {
 	fn square(self) -> Self {
 		todo!()
 	}
 }
 
-impl crate::arithmetic_traits::Square for PackedPrimitiveType<u128, NISTBinaryField64> {
+impl crate::arithmetic_traits::Square for PackedPrimitiveType<M128, NISTBinaryField64> {
 	fn square(self) -> Self {
 		todo!()
 	}
 }
 
-impl MulAlpha for PackedPrimitiveType<u128, NISTBinaryField64> {
+impl MulAlpha for PackedPrimitiveType<M128, NISTBinaryField64> {
 	fn mul_alpha(self) -> Self {
-		let mut res: uint64x2_t = M128::from(self.0).into();
+		let res = self.to_underlier().0;
+		let shifted = unsafe { vshlq_n_u64(res, 1) };
 		let msbs = unsafe { vshrq_n_u64(res, 63) };
 		let zero = unsafe { vdupq_n_u64(0) };
 		let poly = unsafe { vdupq_n_u64((1u64 << 4) | (1u64 << 3) | 1u64) };
 		let mask = unsafe { vsubq_u64(zero, msbs) };
 
-		Self::from_underlier(M128::from(unsafe { veorq_u64(res, vandq_u64(mask, poly)) }).into())
+		Self::from_underlier(M128(unsafe { veorq_u64(shifted, vandq_u64(mask, poly)) }))
 	}
 }
 
@@ -412,7 +401,7 @@ impl crate::arithmetic_traits::InvertOrZero for PackedPrimitiveType<u64, NISTBin
 	}
 }
 
-impl crate::arithmetic_traits::InvertOrZero for PackedPrimitiveType<u128, NISTBinaryField64> {
+impl crate::arithmetic_traits::InvertOrZero for PackedPrimitiveType<M128, NISTBinaryField64> {
 	fn invert_or_zero(self) -> Self {
 		todo!()
 	}
@@ -425,11 +414,11 @@ impl std::ops::Mul for PackedPrimitiveType<u64, NISTBinaryField64> {
 	}
 }
 
-impl std::ops::Mul for PackedPrimitiveType<u128, NISTBinaryField64> {
+impl std::ops::Mul for PackedPrimitiveType<M128, NISTBinaryField64> {
 	type Output = Self;
 	fn mul(self, rhs: Self) -> Self::Output {
-		let lhs: uint64x2_t = M128::from(self.0).into();
-		let rhs: uint64x2_t = M128::from(rhs.0).into();
+		let lhs = self.to_underlier().0;
+		let rhs = rhs.to_underlier().0;
 
 		unsafe {
 			let lo = NISTBinaryField64(vgetq_lane_u64(lhs, 0))
@@ -437,43 +426,25 @@ impl std::ops::Mul for PackedPrimitiveType<u128, NISTBinaryField64> {
 			let hi = NISTBinaryField64(vgetq_lane_u64(lhs, 1))
 				* NISTBinaryField64(vgetq_lane_u64(rhs, 1));
 
-			Self::from_underlier(std::mem::transmute([lo, hi]))
+			let result_array = [lo.0, hi.0];
+			Self::from_underlier(M128(vld1q_u64(result_array.as_ptr())))
 		}
-
-		// let prod_0 = unsafe { vmull_p64(vgetq_lane_u64(lhs, 0), vgetq_lane_u64(rhs, 0)) };
-		// let prod_1 = unsafe { vmull_p64(vgetq_lane_u64(lhs, 1), vgetq_lane_u64(rhs, 1)) };
-		// let prod_0 = M128::from(prod_0);
-		// let prod_1 = M128::from(prod_1);
-
-		// let (lo, hi) = prod_0.interleave(prod_1, 6);
-
-		// let (r_lo, r_hi): (uint64x2_t, uint64x2_t) = (lo.into(), hi.into());
-
-		// unsafe {
-		// 	let mut res = veorq_u64(
-		// 		veorq_u64(veorq_u64(r_lo, r_hi), vshlq_n_u64(r_hi, 1)),
-		// 		veorq_u64(vshlq_n_u64(r_hi, 3), vshlq_n_u64(r_hi, 4)),
-		// 	);
-
-		// 	let carry = vshrq_n_u64(r_hi, 60); // top-4 bits of each lane
-		// 	let fold = veorq_u64(
-		// 		veorq_u64(carry, vshlq_n_u64(carry, 1)),
-		// 		veorq_u64(vshlq_n_u64(carry, 3), vshlq_n_u64(carry, 4)),
-		// 	);
-
-		// 	res = veorq_u64(res, fold);
-
-		// 	Self::from_underlier(M128::from(res).into())
-		// }
 	}
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Zeroable, Pod, Default, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Zeroable, Pod, Default)]
 #[repr(transparent)]
-pub struct NISTBinaryField128(u128);
+pub struct NISTBinaryField128(M128);
+
+impl Hash for NISTBinaryField128 {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		let value: u128 = self.0.into();
+		value.hash(state);
+	}
+}
 
 unsafe impl WithUnderlier for NISTBinaryField128 {
-	type Underlier = u128;
+	type Underlier = M128;
 
 	fn to_underlier(self) -> Self::Underlier {
 		self.0
@@ -517,8 +488,8 @@ unsafe impl WithUnderlier for NISTBinaryField128 {
 }
 
 impl Field for NISTBinaryField128 {
-	const ZERO: Self = Self(0);
-	const ONE: Self = Self(1);
+	const ZERO: Self = Self(M128::ZERO);
+	const ONE: Self = Self(M128::ONE);
 	const CHARACTERISTIC: usize = 2;
 	fn random(_rng: impl rand::RngCore) -> Self {
 		unimplemented!()
@@ -544,7 +515,7 @@ impl Neg for NISTBinaryField128 {
 impl<'a> Add<&'a NISTBinaryField128> for NISTBinaryField128 {
 	type Output = Self;
 	fn add(self, _rhs: &'a NISTBinaryField128) -> Self::Output {
-		unimplemented!()
+		Self(self.0 ^ _rhs.0)
 	}
 }
 
@@ -648,19 +619,19 @@ impl ExtensionField<BinaryField1b> for NISTBinaryField128 {
 }
 
 impl BinaryField for NISTBinaryField128 {
-	const MULTIPLICATIVE_GENERATOR: Self = Self(1);
+	const MULTIPLICATIVE_GENERATOR: Self = Self(M128::ONE);
 }
 
 impl Add for NISTBinaryField128 {
 	type Output = Self;
 	fn add(self, _other: Self) -> Self::Output {
-		unimplemented!()
+		Self(self.0 ^ _other.0)
 	}
 }
 
 impl AddAssign for NISTBinaryField128 {
 	fn add_assign(&mut self, _other: Self) {
-		unimplemented!()
+		self.0 ^= _other.0;
 	}
 }
 
@@ -750,31 +721,25 @@ impl From<NISTBinaryField128> for BinaryField1b {
 	}
 }
 
-pub type PackedNISTBinaryField1x128b = PackedPrimitiveType<u128, NISTBinaryField128>;
+pub type PackedNISTBinaryField1x128b = PackedPrimitiveType<M128, NISTBinaryField128>;
 
-impl Broadcast<NISTBinaryField128> for PackedPrimitiveType<u128, NISTBinaryField128> {
-	fn broadcast(scalar: NISTBinaryField128) -> Self {
-		Self::from_underlier((scalar.0 as u128) << 64 | (scalar.0 as u128))
-	}
-}
-
-impl Square for PackedPrimitiveType<u128, NISTBinaryField128> {
+impl Square for PackedPrimitiveType<M128, NISTBinaryField128> {
 	fn square(self) -> Self {
 		todo!()
 	}
 }
 
-impl InvertOrZero for PackedPrimitiveType<u128, NISTBinaryField128> {
+impl InvertOrZero for PackedPrimitiveType<M128, NISTBinaryField128> {
 	fn invert_or_zero(self) -> Self {
 		todo!()
 	}
 }
 
-impl Mul for PackedPrimitiveType<u128, NISTBinaryField128> {
+impl Mul for PackedPrimitiveType<M128, NISTBinaryField128> {
 	type Output = Self;
 	fn mul(self, rhs: Self) -> Self::Output {
-		let lhs: uint64x2_t = M128::from(self.0).into();
-		let rhs: uint64x2_t = M128::from(rhs.0).into();
+		let lhs = self.to_underlier().0;
+		let rhs = rhs.to_underlier().0;
 		let a = unsafe { vgetq_lane_u64(lhs, 0) };
 		let b = unsafe { vgetq_lane_u64(lhs, 1) };
 		let c = unsafe { vgetq_lane_u64(rhs, 0) };
@@ -786,17 +751,18 @@ impl Mul for PackedPrimitiveType<u128, NISTBinaryField128> {
 		let bd_alpha = bd.mul_alpha();
 		let res_0 = ac.0 ^ bd.0;
 		let arr = [res_0, ab_cd.0 ^ res_0 ^ bd_alpha.0];
-		let res: uint64x2_t = unsafe { vld1q_u64(arr.as_ptr()) };
 
-		Self::from_underlier(M128::from(res).into())
+		Self::from_underlier(M128(unsafe { vld1q_u64(arr.as_ptr()) }))
 	}
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Zeroable, Pod, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Zeroable, Pod, Default)]
 #[repr(transparent)]
 pub struct PackedNISTBinaryField2x128b {
 	data: [PackedNISTBinaryField2x64b; 2],
 }
+
+impl Copy for PackedNISTBinaryField2x128b {}
 
 impl PackedField for PackedNISTBinaryField2x128b {
 	type Scalar = NISTBinaryField128;
@@ -804,7 +770,11 @@ impl PackedField for PackedNISTBinaryField2x128b {
 	const LOG_WIDTH: usize = 1;
 
 	unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-		todo!()
+		NISTBinaryField128::from_underlier(
+			(u128::from(self.data[0].get(i).to_underlier())
+				| (u128::from(self.data[1].get(i).to_underlier()) << 64))
+				.into(),
+		)
 	}
 
 	unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
@@ -848,13 +818,16 @@ impl PackedField for PackedNISTBinaryField2x128b {
 
 impl std::ops::Add for PackedNISTBinaryField2x128b {
 	type Output = Self;
-	fn add(self, _rhs: Self) -> Self {
-		unimplemented!()
+	fn add(self, rhs: Self) -> Self {
+		Self {
+			data: [self.data[0] + rhs.data[0], self.data[1] + rhs.data[1]],
+		}
 	}
 }
 impl std::ops::AddAssign for PackedNISTBinaryField2x128b {
 	fn add_assign(&mut self, _rhs: Self) {
-		unimplemented!()
+		self.data[0] += _rhs.data[0];
+		self.data[1] += _rhs.data[1];
 	}
 }
 impl std::ops::Sub for PackedNISTBinaryField2x128b {

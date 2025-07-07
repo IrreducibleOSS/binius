@@ -114,3 +114,7 @@ harness = false
 [[bench]]
 name = "main_field_binary_ops"
 harness = false
+
+[[bench]]
+name = "packed_field_dot_product"
+harness = false
