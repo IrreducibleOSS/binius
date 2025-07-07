@@ -11,7 +11,6 @@ use binius_utils::{
 	serialization::{assert_enough_data_for, assert_enough_space_for},
 };
 use bytemuck::{Pod, Zeroable};
-use derive_more::Not;
 use rand::RngCore;
 use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -32,17 +31,75 @@ use crate::{
 };
 
 /// 128-bit value that is used for 128-bit SIMD operations
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable, Not)]
+#[derive(Copy, Clone)]
 #[repr(transparent)]
-pub struct M128(pub u128);
+pub struct M128(pub uint64x2_t);
+
+// Manual implementations of Pod and Zeroable since they can't be derived for SIMD types
+unsafe impl Pod for M128 {}
+unsafe impl Zeroable for M128 {}
+
+impl Default for M128 {
+	fn default() -> Self {
+		Self(unsafe { std::mem::zeroed() })
+	}
+}
+
+impl PartialEq for M128 {
+	fn eq(&self, other: &Self) -> bool {
+		let self_u128: u128 = (*self).into();
+		let other_u128: u128 = (*other).into();
+		self_u128 == other_u128
+	}
+}
+
+impl Eq for M128 {}
+
+impl PartialOrd for M128 {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		let self_u128: u128 = (*self).into();
+		let other_u128: u128 = (*other).into();
+		self_u128.partial_cmp(&other_u128)
+	}
+}
+
+impl Ord for M128 {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		let self_u128: u128 = (*self).into();
+		let other_u128: u128 = (*other).into();
+		self_u128.cmp(&other_u128)
+	}
+}
+
+impl std::ops::Not for M128 {
+	type Output = Self;
+
+	fn not(self) -> Self::Output {
+		// Bitwise NOT using SIMD
+		unsafe {
+			let ones = vdupq_n_u64(u64::MAX);
+			Self(veorq_u64(self.0, ones))
+		}
+	}
+}
 
 impl M128 {
+	pub const fn from_u128_const(val: u128) -> Self {
+		// Const function to convert u128 to M128 for use in const contexts
+		let array = [val as u64, (val >> 64) as u64];
+		Self(unsafe { std::mem::transmute(array) })
+	}
+
 	pub const fn from_le_bytes(bytes: [u8; 16]) -> Self {
-		Self(u128::from_le_bytes(bytes))
+		// Convert bytes to u128 first, then to uint64x2_t via transmute
+		let val = u128::from_le_bytes(bytes);
+		Self::from_u128_const(val)
 	}
 
 	pub const fn from_be_bytes(bytes: [u8; 16]) -> Self {
-		Self(u128::from_be_bytes(bytes))
+		// Convert bytes to u128 first, then to uint64x2_t via transmute
+		let val = u128::from_be_bytes(bytes);
+		Self::from_u128_const(val)
 	}
 
 	#[inline]
@@ -53,68 +110,77 @@ impl M128 {
 
 impl From<M128> for u128 {
 	fn from(value: M128) -> Self {
-		value.0
+		// Extract u128 from uint64x2_t
+		unsafe {
+			let mut result: [u64; 2] = [0; 2];
+			vst1q_u64(result.as_mut_ptr(), value.0);
+			(result[1] as u128) << 64 | (result[0] as u128)
+		}
 	}
 }
 impl From<M128> for uint8x16_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_u8_p128(value.0) }
+		unsafe { vreinterpretq_u8_u64(value.0) }
 	}
 }
 impl From<M128> for uint16x8_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_u16_p128(value.0) }
+		unsafe { vreinterpretq_u16_u64(value.0) }
 	}
 }
 impl From<M128> for uint32x4_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_u32_p128(value.0) }
+		unsafe { vreinterpretq_u32_u64(value.0) }
 	}
 }
 impl From<M128> for uint64x2_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_u64_p128(value.0) }
+		value.0
 	}
 }
 impl From<M128> for poly8x16_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_p8_p128(value.0) }
+		unsafe { vreinterpretq_p8_u64(value.0) }
 	}
 }
 impl From<M128> for poly16x8_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_p16_p128(value.0) }
+		unsafe { vreinterpretq_p16_u64(value.0) }
 	}
 }
 impl From<M128> for poly64x2_t {
 	fn from(value: M128) -> Self {
-		unsafe { vreinterpretq_p64_p128(value.0) }
+		unsafe { vreinterpretq_p64_u64(value.0) }
 	}
 }
 
 impl From<u128> for M128 {
 	fn from(value: u128) -> Self {
-		Self(value)
+		// Convert u128 to uint64x2_t
+		unsafe {
+			let array = [value as u64, (value >> 64) as u64];
+			Self(vld1q_u64(array.as_ptr()))
+		}
 	}
 }
 impl From<u64> for M128 {
 	fn from(value: u64) -> Self {
-		Self(value as u128)
+		Self::from(value as u128)
 	}
 }
 impl From<u32> for M128 {
 	fn from(value: u32) -> Self {
-		Self(value as u128)
+		Self::from(value as u128)
 	}
 }
 impl From<u16> for M128 {
 	fn from(value: u16) -> Self {
-		Self(value as u128)
+		Self::from(value as u128)
 	}
 }
 impl From<u8> for M128 {
 	fn from(value: u8) -> Self {
-		Self(value as u128)
+		Self::from(value as u128)
 	}
 }
 
@@ -126,37 +192,37 @@ impl<const N: usize> From<SmallU<N>> for M128 {
 
 impl From<uint8x16_t> for M128 {
 	fn from(value: uint8x16_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_u8(value) })
+		Self(unsafe { vreinterpretq_u64_u8(value) })
 	}
 }
 impl From<uint16x8_t> for M128 {
 	fn from(value: uint16x8_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_u16(value) })
+		Self(unsafe { vreinterpretq_u64_u16(value) })
 	}
 }
 impl From<uint32x4_t> for M128 {
 	fn from(value: uint32x4_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_u32(value) })
+		Self(unsafe { vreinterpretq_u64_u32(value) })
 	}
 }
 impl From<uint64x2_t> for M128 {
 	fn from(value: uint64x2_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_u64(value) })
+		Self(value)
 	}
 }
 impl From<poly8x16_t> for M128 {
 	fn from(value: poly8x16_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_p8(value) })
+		Self(unsafe { vreinterpretq_u64_p8(value) })
 	}
 }
 impl From<poly16x8_t> for M128 {
 	fn from(value: poly16x8_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_p16(value) })
+		Self(unsafe { vreinterpretq_u64_p16(value) })
 	}
 }
 impl From<poly64x2_t> for M128 {
 	fn from(value: poly64x2_t) -> Self {
-		Self(unsafe { vreinterpretq_p128_p64(value) })
+		Self(unsafe { vreinterpretq_u64_p64(value) })
 	}
 }
 
@@ -168,7 +234,9 @@ impl SerializeBytes for M128 {
 	) -> Result<(), SerializationError> {
 		assert_enough_space_for(&write_buf, std::mem::size_of::<Self>())?;
 
-		write_buf.put_u128_le(self.0);
+		// Convert to u128 for serialization
+		let value: u128 = (*self).into();
+		write_buf.put_u128_le(value);
 
 		Ok(())
 	}
@@ -184,7 +252,9 @@ impl DeserializeBytes for M128 {
 	{
 		assert_enough_data_for(&read_buf, std::mem::size_of::<Self>())?;
 
-		Ok(Self(read_buf.get_u128_le()))
+		// Read u128 and convert to M128
+		let value = read_buf.get_u128_le();
+		Ok(Self::from(value))
 	}
 }
 
@@ -241,7 +311,9 @@ impl Shr<usize> for M128 {
 
 	#[inline]
 	fn shr(self, rhs: usize) -> Self::Output {
-		Self(self.0 >> rhs)
+		// Convert to u128, shift, and convert back
+		let value: u128 = self.into();
+		Self::from(value >> rhs)
 	}
 }
 
@@ -250,13 +322,17 @@ impl Shl<usize> for M128 {
 
 	#[inline]
 	fn shl(self, rhs: usize) -> Self::Output {
-		Self(self.0 << rhs)
+		// Convert to u128, shift, and convert back
+		let value: u128 = self.into();
+		Self::from(value << rhs)
 	}
 }
 
 impl ConstantTimeEq for M128 {
 	fn ct_eq(&self, other: &Self) -> subtle::Choice {
-		self.0.ct_eq(&other.0)
+		let self_u128: u128 = (*self).into();
+		let other_u128: u128 = (*other).into();
+		self_u128.ct_eq(&other_u128)
 	}
 }
 
@@ -268,7 +344,7 @@ impl ConditionallySelectable for M128 {
 
 impl Random for M128 {
 	fn random(rng: impl RngCore) -> Self {
-		Self(u128::random(rng))
+		Self::from(u128::random(rng))
 	}
 }
 
@@ -290,12 +366,12 @@ impl UnderlierType for M128 {
 }
 
 impl UnderlierWithBitOps for M128 {
-	const ZERO: Self = Self(0);
-	const ONE: Self = Self(1);
-	const ONES: Self = Self(u128::MAX);
+	const ZERO: Self = Self(unsafe { std::mem::transmute([0u64; 2]) });
+	const ONE: Self = Self(unsafe { std::mem::transmute([1u64, 0u64]) });
+	const ONES: Self = Self(unsafe { std::mem::transmute([u64::MAX; 2]) });
 
 	fn fill_with_bit(val: u8) -> Self {
-		Self(u128::fill_with_bit(val))
+		Self::from(u128::fill_with_bit(val))
 	}
 
 	#[inline(always)]
@@ -374,12 +450,14 @@ impl UnderlierWithBitOps for M128 {
 
 	#[inline(always)]
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
-		Self(self.0 << rhs)
+		let value: u128 = self.into();
+		Self::from(value << rhs)
 	}
 
 	#[inline(always)]
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
-		Self(self.0 >> rhs)
+		let value: u128 = self.into();
+		Self::from(value >> rhs)
 	}
 
 	#[inline(always)]
@@ -454,22 +532,92 @@ impl UnderlierWithBitOps for M128 {
 
 impl UnderlierWithBitConstants for M128 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
-		Self(interleave_mask_even!(u128, 0)),
-		Self(interleave_mask_even!(u128, 1)),
-		Self(interleave_mask_even!(u128, 2)),
-		Self(interleave_mask_even!(u128, 3)),
-		Self(interleave_mask_even!(u128, 4)),
-		Self(interleave_mask_even!(u128, 5)),
-		Self(interleave_mask_even!(u128, 6)),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 0) as u64,
+				(interleave_mask_even!(u128, 0) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 1) as u64,
+				(interleave_mask_even!(u128, 1) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 2) as u64,
+				(interleave_mask_even!(u128, 2) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 3) as u64,
+				(interleave_mask_even!(u128, 3) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 4) as u64,
+				(interleave_mask_even!(u128, 4) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 5) as u64,
+				(interleave_mask_even!(u128, 5) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_even!(u128, 6) as u64,
+				(interleave_mask_even!(u128, 6) >> 64) as u64,
+			])
+		}),
 	];
 	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
-		Self(interleave_mask_odd!(u128, 0)),
-		Self(interleave_mask_odd!(u128, 1)),
-		Self(interleave_mask_odd!(u128, 2)),
-		Self(interleave_mask_odd!(u128, 3)),
-		Self(interleave_mask_odd!(u128, 4)),
-		Self(interleave_mask_odd!(u128, 5)),
-		Self(interleave_mask_odd!(u128, 6)),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 0) as u64,
+				(interleave_mask_odd!(u128, 0) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 1) as u64,
+				(interleave_mask_odd!(u128, 1) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 2) as u64,
+				(interleave_mask_odd!(u128, 2) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 3) as u64,
+				(interleave_mask_odd!(u128, 3) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 4) as u64,
+				(interleave_mask_odd!(u128, 4) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 5) as u64,
+				(interleave_mask_odd!(u128, 5) >> 64) as u64,
+			])
+		}),
+		Self(unsafe {
+			std::mem::transmute([
+				interleave_mask_odd!(u128, 6) as u64,
+				(interleave_mask_odd!(u128, 6) >> 64) as u64,
+			])
+		}),
 	];
 
 	#[inline]
@@ -577,16 +725,16 @@ where
 			value |= value << (1 << n);
 		}
 
-		let value = match tower_level {
-			0..=3 => unsafe { vreinterpretq_p128_u8(vdupq_n_u8(value as u8)) },
-			4 => unsafe { vreinterpretq_p128_u16(vdupq_n_u16(value as u16)) },
-			5 => unsafe { vreinterpretq_p128_u32(vdupq_n_u32(value as u32)) },
-			6 => unsafe { vreinterpretq_p128_u64(vdupq_n_u64(value as u64)) },
-			7 => value,
+		let simd_value = match tower_level {
+			0..=3 => unsafe { vreinterpretq_u64_u8(vdupq_n_u8(value as u8)) },
+			4 => unsafe { vreinterpretq_u64_u16(vdupq_n_u16(value as u16)) },
+			5 => unsafe { vreinterpretq_u64_u32(vdupq_n_u32(value as u32)) },
+			6 => unsafe { vdupq_n_u64(value as u64) },
+			7 => return PackedPrimitiveType::from_underlier(M128::from(value)),
 			_ => unreachable!(),
 		};
 
-		value.into()
+		PackedPrimitiveType::from_underlier(M128(simd_value))
 	}
 }
 
