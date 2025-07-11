@@ -12,6 +12,11 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 
+/// Under FRI conjecture, q >> n^2 is enough to ensure the FRI conjecture validity.
+///
+/// So this factor is the ratio between the field size and the blocklength squared.
+const FRI_CONJECTURE_SAFETY_FACTOR: f64 = 10.0;
+
 /// Parameters for an FRI interleaved code proximity protocol.
 #[derive(Debug, Getters, CopyGetters)]
 pub struct FRIParams<F, FA>
@@ -65,19 +70,22 @@ where
 	/// * `security_bits` - the target security level in bits.
 	/// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
 	/// * `arity` - the folding arity.
+	/// * `fri_conjecture` - whether to use FRI conjecture.
 	pub fn choose_with_constant_fold_arity(
 		ntt: &impl AdditiveNTT<FA>,
 		log_msg_len: usize,
+		arity: usize,
 		security_bits: usize,
 		log_inv_rate: usize,
-		arity: usize,
+		fri_conjecture: bool,
 	) -> Result<Self, Error> {
 		assert!(arity > 0);
 
 		let log_dim = log_msg_len.saturating_sub(arity);
 		let log_batch_size = log_msg_len.min(arity);
 		let rs_code = ReedSolomonCode::with_ntt_subspace(ntt, log_dim, log_inv_rate)?;
-		let n_test_queries = calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
+		let n_test_queries =
+			calculate_n_test_queries::<F, _>(security_bits, &rs_code, fri_conjecture)?;
 
 		let cap_height = log2_ceil_usize(n_test_queries);
 		let fold_arities = std::iter::repeat_n(
@@ -195,15 +203,21 @@ pub type TerminateCodeword<F> = Vec<F>;
 /// Calculates the number of test queries required to achieve a target security level.
 ///
 /// Throws [`Error::ParameterError`] if the security level is unattainable given the code
+/// Throws [`Error::FriConjectureUnsatisfiable`] if the FRI conjecture is unsatisfiable.
 /// parameters.
 pub fn calculate_n_test_queries<F, FEncode>(
 	security_bits: usize,
 	code: &ReedSolomonCode<FEncode>,
+	fri_conjecture: bool,
 ) -> Result<usize, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 {
+	if fri_conjecture {
+		return calculate_n_test_queries_fri_conjecture::<FEncode>(security_bits, code);
+	}
+
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
 	let sumcheck_err = (2 * code.log_dim()) as f64 / field_size;
 	// 2 ⋅ ℓ' / |T_{τ}|
@@ -216,6 +230,51 @@ where
 	}
 	let n_queries = allowed_query_err.log(per_query_err).ceil() as usize;
 	Ok(n_queries)
+}
+
+/// Calculate the number of test queries required to achieve a target security level.
+/// Under the FRI conjecture, the number of test queries is independent of the code length.
+/// 
+/// The number of test queries is given by:
+/// s = 2λ / log(1/ρ)
+/// under the condition q >> n^2.
+/// 
+/// ## Arguments
+/// 
+/// * `security_bits` - the target security level in bits.
+/// * `code` - the Reed–Solomon code.
+///
+/// ## Returns
+///
+/// The number of test queries required to achieve the target security level.
+pub fn calculate_n_test_queries_fri_conjecture<BF: BinaryField>(
+	security_bits: usize,
+	code: &ReedSolomonCode<BF>,
+) -> Result<usize, Error> {
+	// k
+	let dimension = code.dim() as f64;
+	// n
+	let blocklength = code.len() as f64;
+	// q
+	let field_size = 2.0_f64.powi(BF::N_BITS as i32);
+
+	// See teorem 8.3 discussion of Proximity Gaps for Reed–Solomon Codes (https://eprint.iacr.org/2020/654.pdf)
+	// The condition under which the security parameter e_FRI ≤ 2^−λ holds is with q >> n^2.
+	// here we check that at least the field size is greater than the blocklength squared
+	// by a factor of FRI_CONJECTURE_SAFETY_FACTOR.
+	if field_size >= FRI_CONJECTURE_SAFETY_FACTOR * blocklength.powi(2) {
+		return Err(Error::FriConjectureUnsatisfiable(
+			field_size,
+			blocklength,
+			FRI_CONJECTURE_SAFETY_FACTOR,
+		));
+	}
+
+	// ρ = k+1/n
+	let rate = (dimension + 1.0) / blocklength;
+
+	// 2λ / log(1/ρ)
+	Ok((2.0 * security_bits as f64 / (1.0 / rate).log2()).ceil() as usize)
 }
 
 /// Heuristic for estimating the optimal FRI folding arity that minimizes proof size.
@@ -262,16 +321,49 @@ mod tests {
 	fn test_calculate_n_test_queries() {
 		let security_bits = 96;
 		let rs_code = ReedSolomonCode::new(28, 1).unwrap();
-		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
-				.unwrap();
+		let fri_conjecture = false;
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			fri_conjecture,
+		)
+		.unwrap();
 		assert_eq!(n_test_queries, 232);
 
 		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
-		let n_test_queries =
-			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
-				.unwrap();
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			fri_conjecture,
+		)
+		.unwrap();
 		assert_eq!(n_test_queries, 143);
+	}
+
+	#[test]
+	fn test_calculate_n_test_queries_fri_conjecture() {
+		let security_bits = 96;
+		let log_dimension = 28;
+		let log_inv_rate = 1;
+		let rs_code = ReedSolomonCode::new(log_dimension, log_inv_rate).unwrap();
+		let fri_conjecture = true;
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			fri_conjecture,
+		)
+		.unwrap();
+
+		assert_eq!(n_test_queries, 193);
+
+		let rs_code = ReedSolomonCode::new(28, 2).unwrap();
+		let n_test_queries = calculate_n_test_queries::<BinaryField128b, BinaryField32b>(
+			security_bits,
+			&rs_code,
+			fri_conjecture,
+		)
+		.unwrap();
+		assert_eq!(n_test_queries, 97);
 	}
 
 	#[test]
@@ -279,9 +371,55 @@ mod tests {
 		let security_bits = 128;
 		let rs_code = ReedSolomonCode::<BinaryField32b>::new(28, 1).unwrap();
 		assert_matches!(
-			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code),
+			calculate_n_test_queries::<BinaryField128b, _>(security_bits, &rs_code, false),
 			Err(Error::ParameterError)
 		);
+	}
+
+	#[test]
+	fn test_n_test_queries_fri_conjecture_66_security_bits() {
+		// Example with 66 bits of security.
+		let security_bits = 66; // 66 bits of security
+		let log_inv_rate = 5; //  ρ = 2^(-5) 
+		let log_dimension = 12; // k = 4095 (dimension)
+		type Field = BinaryField128b; // Field size 2^128
+
+		let rs_code = ReedSolomonCode::new(log_dimension, log_inv_rate).unwrap();
+
+		let proven_queries =
+			calculate_n_test_queries::<Field, BinaryField32b>(security_bits, &rs_code, false)
+				.unwrap();
+
+		let conjecture_queries =
+			calculate_n_test_queries::<Field, BinaryField32b>(security_bits, &rs_code, true)
+				.unwrap();
+
+		assert_eq!(proven_queries, 70);
+		// This is slighlty lower than Johnson bounds m = 3 where the result is 30
+		// see "A summary on the FRI low degree test" (https://eprint.iacr.org/2022/1216.pdf) section 3.5.1.
+		assert_eq!(conjecture_queries, 27);
+	}
+
+	#[test]
+	fn test_n_test_queries_fri_conjecture_128_security_bits() {
+		// Example with 128 bits of security.
+		let security_bits = 128; // 128 bits of security
+		let log_inv_rate = 5; //  ρ = 2^(-5) 
+		let log_dimension = 12; // k = 4095 (dimension)
+		type Field = BinaryField128b; // Field size 2^128
+
+		let rs_code = ReedSolomonCode::new(log_dimension, log_inv_rate).unwrap();
+
+		// Proven queries fail at evaluating in
+		// in 128 bits security bits!
+
+		let conjecture_queries =
+			calculate_n_test_queries::<Field, BinaryField32b>(security_bits, &rs_code, true)
+				.unwrap();
+
+		// This is slighlty lower than Johnson bounds m = 3 where the result is 57
+		// see "A summary on the FRI low degree test" (https://eprint.iacr.org/2022/1216.pdf) section 3.5.3.
+		assert_eq!(conjecture_queries, 52);
 	}
 
 	#[test]

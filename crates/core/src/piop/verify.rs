@@ -120,6 +120,7 @@ fn make_commit_params_with_constant_arity<F, FEncode>(
 	security_bits: usize,
 	log_inv_rate: usize,
 	arity: usize,
+	fri_conjecture: bool,
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
@@ -131,6 +132,7 @@ where
 		security_bits,
 		log_inv_rate,
 		arity,
+		fri_conjecture,
 	)?;
 	Ok(params)
 }
@@ -143,11 +145,13 @@ where
 /// * `merkle_scheme` - the Merkle tree commitment scheme used in FRI.
 /// * `security_bits` - the target security level in bits.
 /// * `log_inv_rate` - the binary logarithm of the inverse Reed–Solomon code rate.
+/// * `fri_conjecture` - whether to use FRI conjecture.
 pub fn make_commit_params_with_optimal_arity<F, FEncode, MTScheme>(
 	commit_meta: &CommitMeta,
 	_merkle_scheme: &MTScheme,
 	security_bits: usize,
 	log_inv_rate: usize,
+	fri_conjecture: bool,
 ) -> Result<FRIParams<F, FEncode>, Error>
 where
 	F: BinaryField + ExtensionField<FEncode>,
@@ -164,7 +168,14 @@ where
 		size_of::<MTScheme::Digest>(),
 		size_of::<F>(),
 	);
-	make_commit_params_with_constant_arity(&ntt, commit_meta, security_bits, log_inv_rate, arity)
+	make_commit_params_with_constant_arity(
+		&ntt,
+		commit_meta,
+		security_bits,
+		log_inv_rate,
+		arity,
+		fri_conjecture,
+	)
 }
 
 /// A description of a sumcheck claim arising from a FRI PCS sumcheck.

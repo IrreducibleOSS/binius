@@ -42,6 +42,10 @@ pub enum Error {
 	AllocationError(#[from] binius_compute::alloc::Error),
 	#[error("compute error: {0}")]
 	ComputeError(#[from] binius_compute::layer::Error),
+	#[error(
+		"FRI conjecture is unsatisfiable, field size ({0}) must be greater than blocklength squared ({1}) by a factor of {2} - q >= n^2 * {2}"
+	)]
+	FriConjectureUnsatisfiable(f64, f64, f64),
 }
 
 #[derive(Debug, thiserror::Error)]

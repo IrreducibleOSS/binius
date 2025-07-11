@@ -195,6 +195,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 	oracles: &MultilinearOracleSet<F>,
 	log_inv_rate: usize,
 	create_hal_holder: impl FnOnce(usize, usize) -> HalHolder,
+	fri_conjecture: bool,
 ) where
 	U: TowerUnderlier + PackScalar<F>,
 	PackedType<U, F>: PackedFieldIndexable + PackedTop,
@@ -224,6 +225,7 @@ pub fn commit_prove_verify_piop<U, F, MTScheme, MTProver, Hal, HalHolder>(
 		merkle_scheme,
 		SECURITY_BITS,
 		log_inv_rate,
+		fri_conjecture,
 	)
 	.unwrap();
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();

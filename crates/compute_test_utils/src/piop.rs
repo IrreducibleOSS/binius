@@ -104,6 +104,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 	n_transparents: usize,
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
 	log_inv_rate: usize,
+	fri_conjecture: bool,
 ) where
 	FDomain: BinaryField,
 	FEncode: BinaryField,
@@ -132,6 +133,7 @@ pub fn commit_prove_verify<FDomain, FEncode, F, P, MTScheme, HAL, ComputeHolderT
 		merkle_scheme,
 		SECURITY_BITS,
 		log_inv_rate,
+		fri_conjecture,
 	)
 	.unwrap();
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace()).unwrap();

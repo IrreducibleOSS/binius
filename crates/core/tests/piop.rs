@@ -14,6 +14,7 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -21,6 +22,7 @@ fn test_with_one_poly() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
 
@@ -31,6 +33,7 @@ fn test_without_opening_claims() {
 	let n_transparents = 0;
 	let log_inv_rate = 1;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -38,6 +41,7 @@ fn test_without_opening_claims() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
 
@@ -48,6 +52,7 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -55,6 +60,7 @@ fn test_with_one_n_vars() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
 
@@ -65,6 +71,7 @@ fn test_commit_prove_verify_extreme_rate() {
 	let n_transparents = 2;
 	let log_inv_rate = 8;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -72,6 +79,7 @@ fn test_commit_prove_verify_extreme_rate() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
 
@@ -82,6 +90,7 @@ fn test_commit_prove_verify_small() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -89,6 +98,7 @@ fn test_commit_prove_verify_small() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
 
@@ -99,6 +109,7 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 	let compute_holder = CpuLayerHolder::<B128>::new(1 << 14, 1 << 22);
+	let fri_conjecture = false;
 
 	commit_prove_verify::<B8, B16, B128, PackedBinaryField2x128b, _, _, _>(
 		compute_holder,
@@ -106,5 +117,6 @@ fn test_commit_prove_verify() {
 		n_transparents,
 		&merkle_prover,
 		log_inv_rate,
+		fri_conjecture,
 	);
 }
