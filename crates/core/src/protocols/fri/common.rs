@@ -74,9 +74,9 @@ where
 	pub fn choose_with_constant_fold_arity(
 		ntt: &impl AdditiveNTT<FA>,
 		log_msg_len: usize,
-		arity: usize,
 		security_bits: usize,
 		log_inv_rate: usize,
+		arity: usize,
 		fri_conjecture: bool,
 	) -> Result<Self, Error> {
 		assert!(arity > 0);
@@ -233,7 +233,6 @@ where
 }
 
 /// Calculate the number of test queries required to achieve a target security level.
-/// Under the FRI conjecture, the number of test queries is independent of the code length.
 /// 
 /// The number of test queries is given by:
 /// s = 2λ / log(1/ρ)
