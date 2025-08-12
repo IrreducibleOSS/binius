@@ -25,7 +25,7 @@ jobs:
             name: "pre-commit"
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -70,7 +70,7 @@ jobs:
             cmd: 'scripts/check_cpu_extensions_sets.sh'
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install deps
         run: sudo yum -y install gcc openssl-devel curl jq
       - name: Setup Rust
@@ -120,7 +120,7 @@ jobs:
             cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install deps
         run: sudo yum -y install gcc openssl-devel
       - name: Setup Rust
@@ -146,7 +146,7 @@ jobs:
             cmd: 'RUSTFLAGS="-C target-cpu=native" BINIUS_M3_TEST_PROVE_VERIFY=1 cargo test --package binius_m3'
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install deps
         run: sudo yum -y install gcc openssl-devel
       - name: Setup Rust

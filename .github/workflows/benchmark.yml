@@ -48,7 +48,7 @@ jobs:
                 os: [c7a-2xlarge, c8g-2xlarge, supermicro]
         steps:
             - name: Checkout Repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
               with:
                   fetch-depth: 0 # Fetch all history to include all git information in traces
             - name: Set safe directory
@@ -94,7 +94,7 @@ jobs:
                 os: [c7a-2xlarge, c8g-2xlarge, supermicro]
         steps:
             - name: Checkout Repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
             - name: Setup Bencher
               uses: bencherdev/bencher@v0.4.37 # Pin to specific version to avoid breaking changes
             - name: Download raw results for Bencher
