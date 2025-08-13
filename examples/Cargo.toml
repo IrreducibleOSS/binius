@@ -25,6 +25,9 @@ itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
+[[example]]
+name = "sha256"
+path = "sha256.rs"
 
 [[example]]
 name = "keccak"
