@@ -63,7 +63,7 @@ where
 {
 	let (fri_params, merkle_prover, committed_multilins) =
 		create_poly_commit::<F, P, FEncode>(LOG_SIZE);
-	let ntt = SingleThreadedNTT::new(fri_params.rs_code().log_len())
+	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace())
 		.unwrap()
 		.precompute_twiddles()
 		.multithreaded();
