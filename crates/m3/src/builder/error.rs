@@ -37,15 +37,15 @@ pub enum Error {
 	TableSizePowerOfTwoRequired { table_id: TableId, size: usize },
 	#[error("table {table_id} is required to have a fixed power-of-two size, instead got {size}")]
 	TableSizeFixedRequired { table_id: TableId, size: usize },
-	// TODO: These should have column IDs
+
 	#[error(
-		"witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data"
+		"witness borrow error for column {column_id:?}: {source}. Note that packed columns are aliases for the unpacked column when accessing witness data"
 	)]
-	WitnessBorrow(#[source] BorrowError),
+	WitnessBorrow { column_id: ColumnId, #[source] source: BorrowError },
 	#[error(
-		"witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data"
+		"witness borrow error for column {column_id:?}: {source}. Note that packed columns are aliases for the unpacked column when accessing witness data"
 	)]
-	WitnessBorrowMut(#[source] BorrowMutError),
+	WitnessBorrowMut { column_id: ColumnId, #[source] source: BorrowMutError },
 	#[error(
 		"the table index was initialized for {expected} events; attempted to fill with {actual}"
 	)]
