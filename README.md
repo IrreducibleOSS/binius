@@ -6,6 +6,8 @@ Binius is a Rust library implementing a cryptographic *succinct non-interactive 
 
 Comprehensive documentation is available at [binius.xyz](https://www.binius.xyz/).
 
+:bangbang: **_Update (2025-09-09)_: This codebase is archived and officially succeeded by [Binius64](https://github.com/IrreducibleOSS/binius64). Read Irreducible's [announcement blog post](https://www.irreducible.com/posts/announcing-binius64) for Binius64 for more context.** :bangbang:
+
 ## Usage
 
 At this stage, the primary interfaces are the unit tests and benchmarks. The benchmarks use the [criterion](https://docs.rs/criterion/0.3.4/criterion/) library.
