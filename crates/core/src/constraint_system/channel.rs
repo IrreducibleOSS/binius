@@ -112,7 +112,7 @@ where
 			direction,
 			multiplicity,
 		} = boundary;
-		if channel_id > max_channel_id {
+		if channel_id >= channel_count {
 			return Err(Error::ChannelIdOutOfRange {
 				max: max_channel_id,
 				got: channel_id,
@@ -132,7 +132,7 @@ where
 			log_values_per_row,
 		} = flush;
 
-		if channel_id > max_channel_id {
+		if channel_id >= channel_count {
 			return Err(Error::ChannelIdOutOfRange {
 				max: max_channel_id,
 				got: channel_id,
