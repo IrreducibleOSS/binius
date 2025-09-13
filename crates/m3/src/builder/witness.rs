@@ -961,7 +961,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		let col = self
 			.get_col_data(col.id())
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
-		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let col_ref = col.try_borrow().map_err(|e| Error::WitnessBorrow { column_id: col.id(), source: e })?;
 		Ok(Ref::map(col_ref, |packed| PackedExtension::cast_bases(packed)))
 	}
 
@@ -983,7 +983,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		let col = self
 			.get_col_data(col.id())
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
-		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let col_ref = col.try_borrow_mut().map_err(|e| Error::WitnessBorrowMut { column_id: col.id(), source: e })?;
 		Ok(RefMut::map(col_ref, |packed| PackedExtension::cast_bases_mut(packed)))
 	}
 
@@ -1024,7 +1024,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		let col = self
 			.get_col_data(col.id())
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
-		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let col_ref = col.try_borrow().map_err(|e| Error::WitnessBorrow { column_id: col.id(), source: e })?;
 		Ok(Ref::map(col_ref, |col| must_cast_slice(P::unpack_scalars(col))))
 	}
 
@@ -1046,7 +1046,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 		let col = self
 			.get_col_data(col.id())
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
-		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let col_ref = col.try_borrow_mut().map_err(|e| Error::WitnessBorrowMut { column_id: col.id(), source: e })?;
 		Ok(RefMut::map(col_ref, |col| must_cast_slice_mut(P::unpack_scalars_mut(col))))
 	}
 
@@ -1085,7 +1085,7 @@ impl<'a, F: TowerField, P: PackedField<Scalar = F>> TableWitnessSegment<'a, P> {
 					let col = self
 						.get_col_data(*col_id)
 						.ok_or_else(|| Error::MissingColumn(*col_id))?;
-					let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+					let col_ref = col.try_borrow().map_err(|e| Error::WitnessBorrow { column_id: *col_id, source: e })?;
 					Ok::<_, Error>(Ref::map(col_ref, |packed| PackedExtension::cast_bases(packed)))
 				})
 				.transpose()
@@ -1149,7 +1149,7 @@ where
 		let col = self
 			.get_col_data(col_id)
 			.ok_or_else(|| Error::MissingColumn(col_id))?;
-		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		let col_ref = col.try_borrow().map_err(|e| Error::WitnessBorrow { column_id: col_id, source: e })?;
 		let tower_level = self.table[col_id].shape.tower_height;
 		let ret: Box<dyn WitnessColView<_>> = match tower_level {
 			0 => Box::new(WitnessColViewImpl(Ref::map(col_ref, |packed| {
@@ -1183,7 +1183,7 @@ where
 		let col = self
 			.get_col_data(col_id)
 			.ok_or_else(|| Error::MissingColumn(col_id))?;
-		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		let col_ref = col.try_borrow_mut().map_err(|e| Error::WitnessBorrowMut { column_id: col_id, source: e })?;
 		let tower_level = self.table[col_id].shape.tower_height;
 		let ret: Box<dyn WitnessColViewMut<_>> = match tower_level {
 			0 => Box::new(WitnessColViewImpl(RefMut::map(col_ref, |packed| {
@@ -1323,11 +1323,11 @@ mod tests {
 		{
 			let col0_ref0 = segment.get(col0).unwrap();
 			let _col0_ref1 = segment.get(col0).unwrap();
-			assert_matches!(segment.get_mut(col0), Err(Error::WitnessBorrowMut(_)));
+			assert_matches!(segment.get_mut(col0), Err(Error::WitnessBorrowMut { column_id: _, source: _ }));
 			drop(col0_ref0);
 
 			let col1_ref = segment.get_mut(col1).unwrap();
-			assert_matches!(segment.get(col1), Err(Error::WitnessBorrow(_)));
+			assert_matches!(segment.get(col1), Err(Error::WitnessBorrow { column_id: _, source: _ }));
 			drop(col1_ref);
 		}
 
