@@ -40,7 +40,7 @@ lto = "fat"
 There are examples of simple commit-and-prove SNARKs in the `examples` directory. For example, you may run
 
 ```bash
-cargo run --release --example sha256_circuit
+cargo run --release --example keccak
 ```
 
 By default, all the examples are run on relatively small instance sizes. The examples accept command line arguments to specify the size of the data.
