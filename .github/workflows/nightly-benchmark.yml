@@ -22,7 +22,7 @@ jobs:
         os: [ c7a-2xlarge, c8g-2xlarge, supermicro ]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
