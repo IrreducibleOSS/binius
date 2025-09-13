@@ -59,6 +59,7 @@ pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system_digest: &Output<Hash>,
 	boundaries: &[Boundary<FExt<Tower>>],
 	proof: Proof,
+	fri_conjecture: bool,
 ) -> Result<(), Error>
 where
 	U: TowerUnderlier<Tower>,
@@ -128,6 +129,7 @@ where
 		&merkle_scheme,
 		security_bits,
 		log_inv_rate,
+		fri_conjecture,
 	)?;
 
 	// Read polynomial commitment polynomials

@@ -124,6 +124,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 	if prove_verify {
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
+		const FRI_CONJECTURE: bool = false;
 
 		let mut compute_holder =
 			FastCpuLayerHolder::<CanonicalTowerFamily, PackedType<U, B128>>::new(1 << 16, 1 << 24);
@@ -149,6 +150,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			&table_sizes,
 			witness,
 			&binius_hal::make_portable_backend(),
+			FRI_CONJECTURE,
 		)
 		.unwrap();
 
@@ -158,7 +160,7 @@ pub fn validate_system_witness_with_prove_verify<U>(
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &boundaries, proof)
+		>(&ccs, LOG_INV_RATE, SECURITY_BITS, &ccs_digest, &boundaries, proof, false)
 		.unwrap();
 	}
 }

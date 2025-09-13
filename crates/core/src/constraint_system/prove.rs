@@ -91,6 +91,7 @@ pub fn prove<
 	table_sizes: &[usize],
 	mut witness: MultilinearExtensionIndex<PackedType<U, FExt<Tower>>>,
 	backend: &Backend,
+	fri_conjecture: bool,
 ) -> Result<Proof, Error>
 where
 	Hal: ComputeLayer<Tower::B128> + Default,
@@ -213,6 +214,7 @@ where
 		merkle_scheme,
 		security_bits,
 		log_inv_rate,
+		fri_conjecture,
 	)?;
 	let ntt = SingleThreadedNTT::with_subspace(fri_params.rs_code().subspace())?
 		.precompute_twiddles()

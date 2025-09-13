@@ -108,11 +108,13 @@ fn test_prove_verify_piop_integration() {
 	let oracles = make_test_oracle_set();
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+	let fri_conjecture = false;
 
 	commit_prove_verify_piop::<U, F, _, _, CpuLayer<F>, CpuLayerHolder<F>>(
 		&merkle_prover,
 		&oracles,
 		log_inv_rate,
 		CpuLayerHolder::new,
+		fri_conjecture,
 	);
 }

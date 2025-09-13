@@ -173,6 +173,7 @@ impl BitwiseGadget {
 
 fn main() -> Result<()> {
 	const SECURITY_BITS: usize = 100;
+	const FRI_CONJECTURE: bool = false;
 
 	adjust_thread_pool()
 		.as_ref()
@@ -267,6 +268,7 @@ fn main() -> Result<()> {
 		&table_sizes,
 		witness,
 		&make_portable_backend(),
+		FRI_CONJECTURE,
 	)?;
 
 	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
@@ -277,7 +279,15 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&ccs, args.log_inv_rate as usize, SECURITY_BITS, &cs_digest, &boundaries, proof)?;
+	>(
+		&ccs,
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&cs_digest,
+		&boundaries,
+		proof,
+		FRI_CONJECTURE,
+	)?;
 
 	Ok(())
 }
