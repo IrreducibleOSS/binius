@@ -136,8 +136,13 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		codeword,
 	} = fri::commit_interleaved(&committed_rs_code, &params, &ntt, &merkle_prover, &msg).unwrap();
 
-	let mut compute_holder = CpuLayerHolder::<F>::new(1 << 10, 1 << 20);
-	let ComputeData { hal, dev_alloc, .. } = compute_holder.to_data();
+	let mut compute_holder = CpuLayerHolder::<F>::new(1 << 11, 1 << 20);
+	let ComputeData {
+		hal,
+		dev_alloc,
+		host_alloc,
+		..
+	} = compute_holder.to_data();
 
 	// Run the prover to generate the proximity proof
 	let mut round_prover =
@@ -149,7 +154,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	for _i in 0..params.n_fold_rounds() {
 		let challenge = prover_challenger.sample();
 		let fold_round_output = round_prover
-			.execute_fold_round(&dev_alloc, challenge)
+			.execute_fold_round(&host_alloc, &dev_alloc, challenge)
 			.unwrap();
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
@@ -160,7 +165,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		}
 	}
 
-	round_prover.finish_proof(&mut prover_challenger).unwrap();
+	round_prover
+		.finish_proof(&mut prover_challenger, &host_alloc)
+		.unwrap();
 	// Now run the verifier
 	let mut verifier_challenger = prover_challenger.into_verifier();
 	codeword_commitment = verifier_challenger.message().read().unwrap();
