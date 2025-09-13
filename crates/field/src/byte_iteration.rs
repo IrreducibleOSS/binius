@@ -22,7 +22,7 @@ use crate::{
 /// must be the same.
 ///
 /// # Safety
-/// The implementor must ensure that the cast of the slice of packed values to the slice of bytes
+/// The implementer must ensure that the cast of the slice of packed values to the slice of bytes
 /// is safe and preserves the order of the 1-bit elements.
 #[allow(unused)]
 unsafe trait SequentialBytes: Pod {}
